@@ -1,4 +1,4 @@
-name: XAUUSD BIQUOTE REALTIME V5.1.2 FIXED
+name: XAUUSD BIQUOTE REALTIME V5.1.2 FIXED FINAL
 
 on:
   workflow_dispatch:
