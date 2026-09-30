@@ -1,4 +1,4 @@
-name: XAUUSD BIQUOTE REALTIME
+name: XAUUSD BIQUOTE REALTIME V5.1
 
 on:
   workflow_dispatch:
