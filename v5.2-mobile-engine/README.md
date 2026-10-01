@@ -32,3 +32,6 @@ Workflow: `.github/workflows/build-v52-mobile.yml`
 Artifacts:
 - `XAUUSD-MOBILE-ENGINE-V5-2-PRO` — debug APK
 - `XAUUSD-MOBILE-ENGINE-V5-2-SOURCE` — source ZIP
+
+
+CI build marker: V5.2 PRO APK validation branch.
