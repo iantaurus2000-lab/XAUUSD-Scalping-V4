@@ -2,6 +2,7 @@ name: XAUUSD MOBILE TRADING ENGINE V5.2 PRO BUILD
 
 on:
   workflow_dispatch:
+  pull_request:
   push:
     paths:
       - "v5.2-mobile-engine/**"
