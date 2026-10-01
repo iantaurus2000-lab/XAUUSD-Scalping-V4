@@ -18,7 +18,7 @@ string HttpGet(string url){
    string response_headers="";
    string h="Authorization: Bearer "+ApiToken+"\r\n";
    ResetLastError();
-   int code=WebRequest("GET",url,h,"",5000,data,0,result,response_headers);
+   int code=WebRequest("GET",url,h,5000,data,0,result,response_headers);
    if(code==-1){
       Print("Bridge WebRequest failed: ",GetLastError());
       return "";
