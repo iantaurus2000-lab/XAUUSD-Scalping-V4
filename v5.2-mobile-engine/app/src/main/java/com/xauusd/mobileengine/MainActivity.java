@@ -69,7 +69,7 @@ public class MainActivity extends Activity {
     }
     EditText input(String hint,String value){
         EditText e=new EditText(this); e.setHint(hint); e.setText(value); e.setTextColor(Color.WHITE); e.setHintTextColor(Color.GRAY);
-        e.setSingleLine(true); e.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_DECIMAL);
+        e.setSingleLine(true); e.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
         e.setPadding(14,8,14,8); e.setBackground(bg("#111720",14)); return e;
     }
 
@@ -141,6 +141,18 @@ public class MainActivity extends Activity {
             d.dismiss();connectExness();
         }));
         d.show();
+    }
+
+    void loadAccount(){
+        new Thread(()->{
+            try{
+                ExnessClient.Response r=exness.accountInfo();
+                runOnUiThread(()->{
+                    if(r.ok()) account.setText("Account: "+trim(r.body));
+                    else account.setText("Account API: "+r.code);
+                });
+            }catch(Exception e){ runOnUiThread(()->account.setText("Account: "+e.getMessage())); }
+        }).start();
     }
 
     void connectExness(){
