@@ -17,6 +17,7 @@ public class TradingService extends Service {
     SecurityStore store;
     ExnessClient exness;
     TelegramClient telegram;
+    TradeManager manager;
     static final String BASE="https://biquote.io/api/XAUUSD";
     long lastOrderAt=0;
     long lastSnapshotAt=0;
@@ -29,7 +30,7 @@ public class TradingService extends Service {
     Runnable loop=new Runnable(){@Override public void run(){tick();h.postDelayed(this,3000);}};
 
     @Override public void onCreate(){
-        super.onCreate();store=new SecurityStore(this);exness=new ExnessClient(store);telegram=new TelegramClient(store);createChannel();
+        super.onCreate();store=new SecurityStore(this);exness=new ExnessClient(store);telegram=new TelegramClient(store);manager=new TradeManager(store,exness);createChannel();
         Notification n=new Notification.Builder(this,CH).setContentTitle("XAUUSD V5.2 Auto Engine")
             .setContentText("Auto execution armed with risk guards").setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true).setColor(Color.rgb(0,200,83)).build();
@@ -64,6 +65,7 @@ public class TradingService extends Service {
                 int maxTrades=(int)parseDouble(store.rawPrefs().getString("max_trades","3"),3);
                 long cooldown=(long)parseDouble(store.rawPrefs().getString("cooldown","10"),10)*60_000L;
                 refreshSnapshot();
+                manager.manage(lastSnapshotBody, mid);
                 if(dayStartEquity<0)dayStartEquity=readEquity();
                 if(dayStartEquity>0){
                     double eq=readEquity();
@@ -88,10 +90,30 @@ public class TradingService extends Service {
                 ExnessClient.Response r=exness.placeLimit("XAUUSD",side,lot,fmt(d.entry,digits),fmt(d.sl,digits),fmt(d.tp2,digits),"XAUUSD-V5.2-AUTO");
                 if(r.ok()){
                     lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;
-                    notifyUser("ORDER ACK "+d.side,d.summary());
+                    String op=exness.operationId(r);
+                    notifyUser("ORDER ACCEPTED "+d.side,d.summary()+"\nOperation: "+(op.isEmpty()?"pending":op));
+                    waitForOperation(op);
                     if(telegram.enabled()) try{ telegram.send("🟢 XAUUSD SCALPING\\n"+d.side+"\\n"+d.summary()+"\\nTF: M1 | Bias: M5\\nSetup: Wick + Sweep + BOS + EMA/RSI/MACD\nScore: "+d.score+"/100"); }catch(Exception ignored){}
                 }else notifyUser("ORDER REJECT "+r.code,trim(r.body));
             }catch(Exception e){notifyUser("AUTO ERROR",e.getMessage());}
+        }).start();
+    }
+
+    void waitForOperation(String operationId){
+        if(operationId==null || operationId.isEmpty()) return;
+        new Thread(()->{
+            try{
+                for(int i=0;i<8;i++){
+                    ExnessClient.Response x=exness.operationStatus(operationId);
+                    if(x.ok()){
+                        String st=new JSONObject(x.body).optString("status","pending");
+                        if("confirmed".equalsIgnoreCase(st)){ notifyUser("ORDER CONFIRMED","Exness confirmed operation "+operationId); refreshSnapshot(); return; }
+                        if("rejected".equalsIgnoreCase(st)||"failed".equalsIgnoreCase(st)){ notifyUser("ORDER FAILED",trim(x.body)); return; }
+                    }
+                    Thread.sleep(1000);
+                }
+                refreshSnapshot();
+            }catch(Exception ignored){}
         }).start();
     }
 
