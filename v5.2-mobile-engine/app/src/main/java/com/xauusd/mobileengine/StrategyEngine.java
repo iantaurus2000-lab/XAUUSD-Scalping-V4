@@ -59,8 +59,8 @@ public final class StrategyEngine {
 
         boolean trendBuy = ema9 > ema21 && ema21 > ema50;
         boolean trendSell = ema9 < ema21 && ema21 < ema50;
-        boolean momentumBuy = rsi >= 50 && rsi <= 72 && macd[0] > macd[1] && stoch[0] > 45;
-        boolean momentumSell = rsi <= 50 && rsi >= 28 && macd[0] < macd[1] && stoch[0] < 55;
+        boolean momentumBuy = rsi >= 50 && rsi <= 72 && macd[0] > macd[1] && stoch > 45;
+        boolean momentumSell = rsi <= 50 && rsi >= 28 && macd[0] < macd[1] && stoch < 55;
         boolean locationBuy = c.close <= bb[0] || c.low <= support + atr*0.35;
         boolean locationSell = c.close >= bb[0] || c.high >= resistance - atr*0.35;
 
