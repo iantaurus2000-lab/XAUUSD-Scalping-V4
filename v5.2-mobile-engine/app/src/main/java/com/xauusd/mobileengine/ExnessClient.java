@@ -127,6 +127,19 @@ public final class ExnessClient {
         return request(c.host, "GET", path, "", "");
     }
 
+    public Response modifyOrder(String orderId, String price, String sl, String tp) throws Exception {
+        Credentials c = loadCredentials();
+        requireCredentials(c);
+        JSONObject j = new JSONObject();
+        if (price != null && !price.trim().isEmpty()) j.put("price", price);
+        if (sl != null && !sl.trim().isEmpty()) j.put("stop_loss_price", sl);
+        if (tp != null && !tp.trim().isEmpty()) j.put("take_profit_price", tp);
+        String body = j.toString();
+        String path = "/v1/trading/accounts/" + c.accountId + "/orders/" + orderId;
+        String idem = "modify-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 8);
+        return request(c.host, "PATCH", path, body, idem);
+    }
+
     public Response cancelOrder(String orderId) throws Exception {
         Credentials c = loadCredentials();
         requireCredentials(c);
