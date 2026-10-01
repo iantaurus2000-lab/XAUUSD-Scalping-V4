@@ -50,7 +50,7 @@ jobs:
           p = Path("app/src/main/java/com/xauusd/scalper/SignalService.kt")
           s = p.read_text()
           lines = s.splitlines()
-          # Correct the two notification constants without touching AudioAttributes.USAGE_NOTIFICATION_HIGH.
+          # Correct the two notification constants without touching AudioAttributes.USAGE_NOTIFICATION.
           for i, line in enumerate(lines):
               if "NotificationChannel(" in line and "XAUUSD BUY SELL Alerts" in line:
                   lines[i] = '        val ch = NotificationChannel("signal_alerts_v3", "XAUUSD BUY SELL Alerts", NotificationManager.IMPORTANCE_HIGH)'
