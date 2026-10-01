@@ -286,7 +286,7 @@ public class MainActivity extends Activity {
     void renderDecision(){
         signal.setText(decision.side.equals("WAIT")?"WAIT  •  SCORE "+decision.score+"/100":decision.side+"  •  "+decision.score+"/100\n"+decision.summary());
         signal.setTextColor(decision.side.startsWith("BUY")?Color.rgb(0,230,118):decision.side.startsWith("SELL")?Color.rgb(255,82,82):Color.WHITE);
-        metrics.setText("M5 Bias: "+(decision.bias?(decision.side.startsWith("BUY")?"BUY":"SELL"):"NEUTRAL")+"\nWick: "+(decision.wick?"YES":"--")+"  Sweep: "+(decision.sweep?"YES":"--")+"  BOS: "+(decision.bos?"YES":"--")+"\nEMA9/21/50: "+fmt(decision.ema9)+" / "+fmt(decision.ema21)+" / "+fmt(decision.ema50)+"\nRSI: "+fmt(decision.rsi)+"  ATR: "+fmt(decision.atr)+"  MACD: "+fmt(decision.macd));
+        metrics.setText("M5 Bias: "+(decision.side.startsWith("BUY")?"BUY":decision.side.startsWith("SELL")?"SELL":"NEUTRAL")+"\nWick: "+(decision.wick?"YES":"--")+"  Sweep: "+(decision.sweep?"YES":"--")+"  BOS: "+(decision.bos?"YES":"--")+"\nEMA9/21/50: "+fmt(decision.ema9)+" / "+fmt(decision.ema21)+" / "+fmt(decision.ema50)+"\nRSI: "+fmt(decision.rsi)+"  ATR: "+fmt(decision.atr)+"  MACD: "+fmt(decision.macd));
     }
 
     String fmt(double d){return String.format(Locale.US,"%.2f",d);}
