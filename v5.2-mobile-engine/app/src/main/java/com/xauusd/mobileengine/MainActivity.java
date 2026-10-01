@@ -59,7 +59,7 @@ public class MainActivity extends Activity {
         HttpURLConnection c=(HttpURLConnection)new URL(u).openConnection(); c.setConnectTimeout(7000); c.setReadTimeout(7000);
         c.setRequestMethod("GET"); c.setRequestProperty("Accept","application/json");
         BufferedReader r=new BufferedReader(new InputStreamReader(c.getInputStream())); StringBuilder s=new StringBuilder(); String x;
-        while((x=r.readLine())!=null)s.append(x); r.disconnect(); return s.toString();
+        while((x=r.readLine())!=null)s.append(x); r.close(); c.disconnect(); return s.toString();
     }
 
     ArrayList<Candle> parse(String s)throws Exception{
