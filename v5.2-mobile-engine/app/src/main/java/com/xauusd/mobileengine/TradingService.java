@@ -24,6 +24,7 @@ public class TradingService extends Service {
     String lastSignalKey="";
     int dayCount=0;
     double dayStartEquity=-1;
+    String tradeDay="";
 
     Runnable loop=new Runnable(){@Override public void run(){tick();h.postDelayed(this,3000);}};
 
@@ -52,6 +53,7 @@ public class TradingService extends Service {
         if(!store.rawPrefs().getBoolean("auto",false))return;
         new Thread(()->{
             try{
+                resetDailyGuardsIfNeeded();
                 JSONObject t=new JSONObject(get(BASE));
                 double mid=t.optDouble("mid",0), spread=t.optDouble("spread",0);
                 ArrayList<StrategyEngine.Candle> m1=parse(get(BASE+"/ohlc?interval=1m&limit=100"));
@@ -79,14 +81,21 @@ public class TradingService extends Service {
                 if(hasActiveExposure())return;
 
                 String lot=store.rawPrefs().getString("lot","0.01");
+                int digits=2;
+                try{ ExnessClient.Response cr=exness.instrumentConditions("XAUUSD"); if(cr.ok()) digits=new JSONObject(cr.body).optInt("point_digits",2); }catch(Exception ignored){}
                 String side=d.side.startsWith("BUY")?"buy":"sell";
-                ExnessClient.Response r=exness.placeLimit("XAUUSD",side,lot,fmt(d.entry),fmt(d.sl),fmt(d.tp2),"XAUUSD-V5.2-AUTO");
+                ExnessClient.Response r=exness.placeLimit("XAUUSD",side,lot,fmt(d.entry,digits),fmt(d.sl,digits),fmt(d.tp2,digits),"XAUUSD-V5.2-AUTO");
                 if(r.ok()){
                     lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;
                     notifyUser("ORDER ACK "+d.side,d.summary());\n                    if(telegram.enabled()) try{ telegram.send("🟢 XAUUSD SCALPING\\n"+d.side+"\\n"+d.summary()+"\\nTF: M1 | Bias: M5\\nSetup: Wick + Sweep + BOS + EMA/RSI/MACD\nScore: "+d.score+"/100"); }catch(Exception ignored){}
                 }else notifyUser("ORDER REJECT "+r.code,trim(r.body));
             }catch(Exception e){notifyUser("AUTO ERROR",e.getMessage());}
         }).start();
+    }
+
+    void resetDailyGuardsIfNeeded(){
+        String today=new java.text.SimpleDateFormat("yyyy-MM-dd",java.util.Locale.US).format(new java.util.Date());
+        if(!today.equals(tradeDay)){ tradeDay=today; dayCount=0; lastSignalKey=""; dayStartEquity=readEquity(); }
     }
 
     void refreshSnapshot(){
