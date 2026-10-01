@@ -37,7 +37,7 @@ public final class StrategyEngine {
         double rsi = rsi(m1,14,n-2);
         double[] macd = macd(m1,n-2);
         double[] bb = bollinger(m1,20,2,n-2);
-        double[] stoch = stochastic(m1,14,3,n-2);
+        double stoch = stochastic(m1,14,3,n-2);
         double support = support(m1,20,n-2);
         double resistance = resistance(m1,20,n-2);
 
@@ -61,8 +61,8 @@ public final class StrategyEngine {
         boolean trendSell = ema9 < ema21 && ema21 < ema50;
         boolean momentumBuy = rsi >= 50 && rsi <= 72 && macd[0] > macd[1] && stoch[0] > 45;
         boolean momentumSell = rsi <= 50 && rsi >= 28 && macd[0] < macd[1] && stoch[0] < 55;
-        boolean locationBuy = c.close <= bb.get(0) || c.low <= support + atr*0.35;
-        boolean locationSell = c.close >= bb.get(0) || c.high >= resistance - atr*0.35;
+        boolean locationBuy = c.close <= bb[0] || c.low <= support + atr*0.35;
+        boolean locationSell = c.close >= bb[0] || c.high >= resistance - atr*0.35;
 
         int buy = 0;
         buy += buyWick ? 22:0;
