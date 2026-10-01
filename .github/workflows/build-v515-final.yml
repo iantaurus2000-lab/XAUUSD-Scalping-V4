@@ -99,3 +99,5 @@ jobs:
             android_project/app/build/outputs/apk/**/*.apk
             XAUUSD_BIQUOTE_V5_1_5_FINAL_SOURCE.zip
           if-no-files-found: error
+
+# Exness MT5 Demo integration baseline build trigger
