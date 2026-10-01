@@ -1,4 +1,4 @@
-name: XAUUSD MOBILE ENGINE V5.2-A
+name: XAUUSD MOBILE TRADING ENGINE V5.2 PRO
 
 on:
   workflow_dispatch:
@@ -14,27 +14,44 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
-      - name: Install Gradle
+
+      - name: Install Gradle 8.10
         run: |
           wget -q https://services.gradle.org/distributions/gradle-8.10-bin.zip
           unzip -q gradle-8.10-bin.zip
           echo "$PWD/gradle-8.10/bin" >> "$GITHUB_PATH"
-      - name: Build V5.2-A
+
+      - name: Build V5.2 PRO
         working-directory: v5.2-mobile-engine
         run: gradle :app:assembleDebug --no-daemon --stacktrace
+
       - name: Verify APK
         run: |
-          APK=$(find v5.2-mobile-engine/app/build/outputs/apk -name "*.apk" | head -1)
+          set -e
+          APK=$(find v5.2-mobile-engine/app/build/outputs/apk -type f -name "*.apk" | head -1)
           test -n "$APK"
+          echo "BUILD BERHASIL"
           sha256sum "$APK"
           ls -lh "$APK"
-      - uses: actions/upload-artifact@v4
+
+      - name: Package source
+        run: |
+          cd v5.2-mobile-engine
+          zip -qr ../XAUUSD-MOBILE-ENGINE-V5-2-SOURCE.zip . -x ".gradle/*" "build/*" "app/build/*"
+
+      - name: Upload APK and source
+        uses: actions/upload-artifact@v4
         with:
-          name: XAUUSD-MOBILE-ENGINE-V5-2-A
-          path: v5.2-mobile-engine/app/build/outputs/apk/**/*.apk
+          name: XAUUSD-MOBILE-ENGINE-V5-2-PRO
+          path: |
+            v5.2-mobile-engine/app/build/outputs/apk/**/*.apk
+            XAUUSD-MOBILE-ENGINE-V5-2-SOURCE.zip
           if-no-files-found: error
