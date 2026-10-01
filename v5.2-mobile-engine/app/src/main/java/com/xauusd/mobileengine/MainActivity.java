@@ -99,10 +99,12 @@ public class MainActivity extends Activity {
         actions.addView(stop,new LinearLayout.LayoutParams(0,56,1));
         content.addView(actions);
 
+        Button manager=btn("🛡 Position Manager");
         Button risk=btn("💰 Risk & Strategy");
         Button orders=btn("📋 Orders / Account");
         Button mt5=btn("🔗 MT5 Bridge");
         Button telegram=btn("📲 Telegram");
+        content.addView(manager,new LinearLayout.LayoutParams(-1,56));
         content.addView(risk,new LinearLayout.LayoutParams(-1,56));
         content.addView(orders,new LinearLayout.LayoutParams(-1,56));
         content.addView(mt5,new LinearLayout.LayoutParams(-1,56));
@@ -116,6 +118,7 @@ public class MainActivity extends Activity {
         manual.setOnClickListener(v->showManualOrderDialog());
         start.setOnClickListener(v->startAuto());
         stop.setOnClickListener(v->stopAuto());
+        manager.setOnClickListener(v->showManagerDialog());
         risk.setOnClickListener(v->showRiskDialog());
         orders.setOnClickListener(v->showAccountDialog());
         mt5.setOnClickListener(v->showMt5Dialog());
@@ -219,6 +222,23 @@ public class MainActivity extends Activity {
     boolean hasCredentials(){
         ExnessClient.Credentials c=exness.loadCredentials();
         return !c.accountId.isEmpty()&&!c.apiKey.isEmpty()&&!c.secret.isEmpty();
+    }
+
+    void showManagerDialog(){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(18,4,18,4);
+        CheckBox enabled=new CheckBox(this);enabled.setText("Enable TP1 partial-close + Break-even");enabled.setTextColor(Color.WHITE);
+        enabled.setChecked(store.rawPrefs().getBoolean("manager_enabled",false));
+        EditText pct=input("TP1 close %",store.get("tp1_percent","50"));
+        EditText rr=input("TP1 at R",store.get("tp1_r","1.0"));
+        CheckBox be=new CheckBox(this);be.setText("Move SL to entry after TP1");be.setTextColor(Color.WHITE);
+        be.setChecked(store.rawPrefs().getBoolean("be_on_tp1",true));
+        box.addView(enabled);box.addView(pct,new LinearLayout.LayoutParams(-1,52));box.addView(rr,new LinearLayout.LayoutParams(-1,52));box.addView(be);
+        AlertDialog d=new AlertDialog.Builder(this).setTitle("Position Manager").setView(box).setNegativeButton("Cancel",null).setPositiveButton("SAVE",null).create();
+        d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            store.rawPrefs().edit().putBoolean("manager_enabled",enabled.isChecked()).putBoolean("be_on_tp1",be.isChecked()).apply();
+            store.put("tp1_percent",pct.getText().toString());store.put("tp1_r",rr.getText().toString());
+            d.dismiss();toast("Position Manager tersimpan.");
+        }));d.show();
     }
 
     void showRiskDialog(){
