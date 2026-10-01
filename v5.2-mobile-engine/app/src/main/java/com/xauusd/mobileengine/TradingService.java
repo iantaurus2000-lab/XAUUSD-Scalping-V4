@@ -71,7 +71,8 @@ public class TradingService extends Service {
                     double maxLoss=parseDouble(store.rawPrefs().getString("max_loss","2.0"),2.0);
                     if(dd>=maxLoss){notifyUser("RISK STOP","Daily drawdown guard reached; auto engine remains armed but will not place new orders.");return;}
                 }
-                if(t.optBoolean("stale",false))return;\n                if(spread>maxSpread || d.score<minScore || "WAIT".equals(d.side))return;
+                if(t.optBoolean("stale",false))return;
+                if(spread>maxSpread || d.score<minScore || "WAIT".equals(d.side))return;
                 if(dayCount>=maxTrades)return;
                 if(System.currentTimeMillis()-lastOrderAt<cooldown)return;
                 String key=d.side+"-"+(m1.get(m1.size()-2).t);
@@ -143,7 +144,8 @@ public class TradingService extends Service {
         for(int i=ar.length()-1;i>=0;i--){JSONObject o=ar.getJSONObject(i);out.add(new StrategyEngine.Candle(o.optLong("openTime",0),o.getDouble("open"),o.getDouble("high"),o.getDouble("low"),o.getDouble("close")));}return out;
     }
     double parseDouble(String s,double f){try{return Double.parseDouble(s);}catch(Exception e){return f;}}
-    String fmt(double d){return String.format(Locale.US,"%.2f",d);}\n    String fmt(double d,int digits){return String.format(Locale.US,"%."+Math.max(0,Math.min(8,digits))+"f",d);}
+    String fmt(double d){return String.format(Locale.US,"%.2f",d);
+    String fmt(double d,int digits){return String.format(Locale.US,"%."+Math.max(0,Math.min(8,digits))+"f",d);}
     String trim(String s){return s==null?"":s.length()>500?s.substring(0,500)+"…":s;}
     void notifyUser(String title,String msg){
         Notification n=new Notification.Builder(this,CH).setContentTitle(title).setContentText(msg==null?"":trim(msg))
