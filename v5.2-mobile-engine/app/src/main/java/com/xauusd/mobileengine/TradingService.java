@@ -16,6 +16,7 @@ public class TradingService extends Service {
     final Handler h=new Handler(Looper.getMainLooper());
     SecurityStore store;
     ExnessClient exness;
+    TelegramClient telegram;
     static final String BASE="https://biquote.io/api/XAUUSD";
     long lastOrderAt=0;
     long lastSnapshotAt=0;
@@ -27,7 +28,7 @@ public class TradingService extends Service {
     Runnable loop=new Runnable(){@Override public void run(){tick();h.postDelayed(this,3000);}};
 
     @Override public void onCreate(){
-        super.onCreate();store=new SecurityStore(this);exness=new ExnessClient(store);createChannel();
+        super.onCreate();store=new SecurityStore(this);exness=new ExnessClient(store);telegram=new TelegramClient(store);createChannel();
         Notification n=new Notification.Builder(this,CH).setContentTitle("XAUUSD V5.2 Auto Engine")
             .setContentText("Auto execution armed with risk guards").setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true).setColor(Color.rgb(0,200,83)).build();
@@ -82,7 +83,7 @@ public class TradingService extends Service {
                 ExnessClient.Response r=exness.placeLimit("XAUUSD",side,lot,fmt(d.entry),fmt(d.sl),fmt(d.tp2),"XAUUSD-V5.2-AUTO");
                 if(r.ok()){
                     lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;
-                    notifyUser("ORDER ACK "+d.side,d.summary());
+                    notifyUser("ORDER ACK "+d.side,d.summary());\n                    if(telegram.enabled()) try{ telegram.send("🟢 XAUUSD SCALPING\\n"+d.side+"\\n"+d.summary()+"\\nTF: M1 | Bias: M5\\nSetup: Wick + Sweep + BOS + EMA/RSI/MACD\nScore: "+d.score+"/100"); }catch(Exception ignored){}
                 }else notifyUser("ORDER REJECT "+r.code,trim(r.body));
             }catch(Exception e){notifyUser("AUTO ERROR",e.getMessage());}
         }).start();
