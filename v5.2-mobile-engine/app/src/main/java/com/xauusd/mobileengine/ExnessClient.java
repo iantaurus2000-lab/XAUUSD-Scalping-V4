@@ -120,12 +120,49 @@ public final class ExnessClient {
         return request(c.host, "POST", path, body, idem);
     }
 
+    public Response operationStatus(String operationId) throws Exception {
+        Credentials c = loadCredentials();
+        requireCredentials(c);
+        String path = "/v1/trading/accounts/" + c.accountId + "/operations/" + operationId;
+        return request(c.host, "GET", path, "", "");
+    }
+
+    public Response modifyOrder(String orderId, String price, String sl, String tp) throws Exception {
+        Credentials c = loadCredentials();
+        requireCredentials(c);
+        JSONObject j = new JSONObject();
+        if (price != null && !price.trim().isEmpty()) j.put("price", price);
+        if (sl != null && !sl.trim().isEmpty()) j.put("stop_loss_price", sl);
+        if (tp != null && !tp.trim().isEmpty()) j.put("take_profit_price", tp);
+        String body = j.toString();
+        String path = "/v1/trading/accounts/" + c.accountId + "/orders/" + orderId;
+        String idem = "modify-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 8);
+        return request(c.host, "PATCH", path, body, idem);
+    }
+
     public Response cancelOrder(String orderId) throws Exception {
         Credentials c = loadCredentials();
         requireCredentials(c);
         String path = "/v1/trading/accounts/" + c.accountId + "/orders/" + orderId;
         String idem = "cancel-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 8);
         return request(c.host, "DELETE", path, "", idem);
+    }
+
+    public Response closePosition(String positionId, String volume) throws Exception {
+        Credentials c = loadCredentials();
+        requireCredentials(c);
+        String path = "/v1/trading/accounts/" + c.accountId + "/positions/" + positionId;
+        if (volume != null && !volume.trim().isEmpty()) {
+            path += "?volume=" + java.net.URLEncoder.encode(volume, "UTF-8");
+        }
+        String idem = "close-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 8);
+        return request(c.host, "DELETE", path, "", idem);
+    }
+
+    public String operationId(Response response) {
+        if (response == null || response.body == null || response.body.isEmpty()) return "";
+        try { return new JSONObject(response.body).optString("operation_id", ""); }
+        catch (Exception e) { return ""; }
     }
 
     private void requireCredentials(Credentials c) {
