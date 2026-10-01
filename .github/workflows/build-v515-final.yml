@@ -60,6 +60,11 @@ jobs:
           test -f app/build.gradle.kts
           test -f app/src/main/java/com/xauusd/scalper/SignalService.kt
 
+      - name: Debug SignalService source
+        working-directory: android_project
+        run: |
+          nl -ba app/src/main/java/com/xauusd/scalper/SignalService.kt | sed -n "70,85p"
+
       - name: Build APK
         working-directory: android_project
         run: gradle :app:assembleDebug --no-daemon --stacktrace
