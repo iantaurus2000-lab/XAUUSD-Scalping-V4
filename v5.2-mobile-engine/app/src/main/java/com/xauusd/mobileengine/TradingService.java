@@ -144,7 +144,7 @@ public class TradingService extends Service {
         for(int i=ar.length()-1;i>=0;i--){JSONObject o=ar.getJSONObject(i);out.add(new StrategyEngine.Candle(o.optLong("openTime",0),o.getDouble("open"),o.getDouble("high"),o.getDouble("low"),o.getDouble("close")));}return out;
     }
     double parseDouble(String s,double f){try{return Double.parseDouble(s);}catch(Exception e){return f;}}
-    String fmt(double d){return String.format(Locale.US,"%.2f",d);
+    String fmt(double d){return String.format(Locale.US,"%.2f",d);}
     String fmt(double d,int digits){return String.format(Locale.US,"%."+Math.max(0,Math.min(8,digits))+"f",d);}
     String trim(String s){return s==null?"":s.length()>500?s.substring(0,500)+"…":s;}
     void notifyUser(String title,String msg){
