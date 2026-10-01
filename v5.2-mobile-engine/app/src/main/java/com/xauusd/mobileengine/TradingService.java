@@ -37,7 +37,7 @@ public class TradingService extends Service {
         h.post(loop);
     }
 
-    @Override public int onStartCommand(Intent i,int flags,int id){return START_STICKY;}
+    @Override public int onStartCommand(Intent i,int flags,int id){return START_NOT_STICKY;}
 
     @Override public void onDestroy(){h.removeCallbacksAndMessages(null);stopForeground(true);super.onDestroy();}
     @Override public IBinder onBind(Intent i){return null;}
@@ -87,7 +87,8 @@ public class TradingService extends Service {
                 ExnessClient.Response r=exness.placeLimit("XAUUSD",side,lot,fmt(d.entry,digits),fmt(d.sl,digits),fmt(d.tp2,digits),"XAUUSD-V5.2-AUTO");
                 if(r.ok()){
                     lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;
-                    notifyUser("ORDER ACK "+d.side,d.summary());\n                    if(telegram.enabled()) try{ telegram.send("🟢 XAUUSD SCALPING\\n"+d.side+"\\n"+d.summary()+"\\nTF: M1 | Bias: M5\\nSetup: Wick + Sweep + BOS + EMA/RSI/MACD\nScore: "+d.score+"/100"); }catch(Exception ignored){}
+                    notifyUser("ORDER ACK "+d.side,d.summary());
+                    if(telegram.enabled()) try{ telegram.send("🟢 XAUUSD SCALPING\\n"+d.side+"\\n"+d.summary()+"\\nTF: M1 | Bias: M5\\nSetup: Wick + Sweep + BOS + EMA/RSI/MACD\nScore: "+d.score+"/100"); }catch(Exception ignored){}
                 }else notifyUser("ORDER REJECT "+r.code,trim(r.body));
             }catch(Exception e){notifyUser("AUTO ERROR",e.getMessage());}
         }).start();
