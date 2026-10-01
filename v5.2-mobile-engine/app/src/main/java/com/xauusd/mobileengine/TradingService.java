@@ -2,6 +2,7 @@ package com.xauusd.mobileengine;
 
 import android.app.*;
 import android.content.*;
+import android.content.pm.ServiceInfo;
 import android.os.*;
 import android.graphics.Color;
 
@@ -17,6 +18,8 @@ public class TradingService extends Service {
     ExnessClient exness;
     static final String BASE="https://biquote.io/api/XAUUSD";
     long lastOrderAt=0;
+    long lastSnapshotAt=0;
+    String lastSnapshotBody="";
     String lastSignalKey="";
     int dayCount=0;
     double dayStartEquity=-1;
@@ -57,6 +60,7 @@ public class TradingService extends Service {
                 int minScore=(int)parseDouble(store.rawPrefs().getString("min_score","75"),75);
                 int maxTrades=(int)parseDouble(store.rawPrefs().getString("max_trades","3"),3);
                 long cooldown=(long)parseDouble(store.rawPrefs().getString("cooldown","10"),10)*60_000L;
+                refreshSnapshot();
                 if(dayStartEquity<0)dayStartEquity=readEquity();
                 if(dayStartEquity>0){
                     double eq=readEquity();
@@ -84,10 +88,16 @@ public class TradingService extends Service {
         }).start();
     }
 
+    void refreshSnapshot(){
+        if(System.currentTimeMillis()-lastSnapshotAt < 15000 && !lastSnapshotBody.isEmpty()) return;
+        try{ ExnessClient.Response r=exness.snapshot(); if(r.ok()){ lastSnapshotBody=r.body; lastSnapshotAt=System.currentTimeMillis(); } }
+        catch(Exception ignored){}
+    }
+
     double readEquity(){
         try{
-            ExnessClient.Response r=exness.snapshot();if(!r.ok())return -1;
-            JSONObject j=new JSONObject(r.body);
+            if(lastSnapshotBody.isEmpty()) return -1;
+            JSONObject j=new JSONObject(lastSnapshotBody);
             JSONObject a=j.optJSONObject("account_state");
             if(a==null)a=j.optJSONObject("accountState");
             if(a!=null)return a.optDouble("equity",-1);
@@ -97,8 +107,8 @@ public class TradingService extends Service {
 
     boolean hasActiveExposure(){
         try{
-            ExnessClient.Response r=exness.snapshot();if(!r.ok())return false;
-            JSONObject j=new JSONObject(r.body);
+            if(lastSnapshotBody.isEmpty()) return false;
+            JSONObject j=new JSONObject(lastSnapshotBody);
             JSONArray orders=j.optJSONArray("orders");if(orders==null)orders=j.optJSONArray("open_orders");
             if(orders!=null)for(int i=0;i<orders.length();i++){
                 JSONObject o=orders.getJSONObject(i);
