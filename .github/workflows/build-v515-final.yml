@@ -45,13 +45,21 @@ jobs:
         working-directory: android_project
         run: |
           set -e
-          FILES=$(grep -RIl "USAGE_NOTIFICATION_HIGH\|IMPORTANCE_HIGH" app/src/main/java || true)
-          for f in $FILES; do
-            sed -i 's/USAGE_NOTIFICATION_HIGH/android.app.NotificationManager.IMPORTANCE_HIGH/g' "$f"
-            sed -i 's/NotificationManager\.IMPORTANCE_HIGH/android.app.NotificationManager.IMPORTANCE_HIGH/g' "$f"
-          done
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("app/src/main/java/com/xauusd/scalper/SignalService.kt")
+          s = p.read_text()
+          lines = s.splitlines()
+          # Correct the two notification constants without touching AudioAttributes.USAGE_NOTIFICATION_HIGH.
+          for i, line in enumerate(lines):
+              if "NotificationChannel(" in line and "XAUUSD BUY SELL Alerts" in line:
+                  lines[i] = '        val ch = NotificationChannel("signal_alerts_v3", "XAUUSD BUY SELL Alerts", NotificationManager.IMPORTANCE_HIGH)'
+              if "ch.setSound(" in line and "AudioAttributes.Builder()" in line:
+                  lines[i] = '        if (soundOn) ch.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION), AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_HIGH).build()) else ch.setSound(null, null)'
+          p.write_text("\n".join(lines) + "\n")
+          PY
           echo "Checking SignalService.kt:"
-          grep -n "IMPORTANCE_HIGH" app/src/main/java/com/xauusd/scalper/SignalService.kt || true
+          nl -ba app/src/main/java/com/xauusd/scalper/SignalService.kt | sed -n "74,81p"
 
       - name: Verify project
         working-directory: android_project
