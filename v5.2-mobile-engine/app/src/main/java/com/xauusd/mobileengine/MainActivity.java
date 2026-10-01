@@ -311,6 +311,18 @@ public class MainActivity extends Activity {
             if(decision.entry>0)drawLevel(c,decision.entry,lo,hi,top,bottom,Color.YELLOW,"ENTRY");
             if(decision.sl>0)drawLevel(c,decision.sl,lo,hi,top,bottom,Color.RED,"SL");
             if(decision.tp2>0)drawLevel(c,decision.tp2,lo,hi,top,bottom,Color.CYAN,"TP2");
+
+            int fs=Math.max(start,m1.size()-45);
+            double sh=-1e99, slow=1e99;
+            for(int z=fs;z<m1.size();z++){ sh=Math.max(sh,m1.get(z).high); slow=Math.min(slow,m1.get(z).low); }
+            drawLevel(c,sh,lo,hi,top,bottom,Color.MAGENTA,"R");
+            drawLevel(c,slow,lo,hi,top,bottom,Color.GREEN,"S");
+            double range=sh-slow;
+            if(range>0){
+                drawLevel(c,sh-range*0.382,lo,hi,top,bottom,Color.LTGRAY,"F38");
+                drawLevel(c,sh-range*0.500,lo,hi,top,bottom,Color.LTGRAY,"F50");
+                drawLevel(c,sh-range*0.618,lo,hi,top,bottom,Color.LTGRAY,"F62");
+            }
         }
         void drawLevel(Canvas c,double v,double lo,double hi,int top,int bottom,int color,String label){
             float y=bottom-(float)((v-lo)/(hi-lo))*(bottom-top);p.setColor(color);p.setStrokeWidth(1.5f);c.drawLine(18,y,getWidth()-22,y,p);p.setTextSize(12);c.drawText(label+" "+fmt(v),24,y-3,p);
