@@ -20,6 +20,7 @@ public class TradingService extends Service {
     TradeManager manager;
     static final String BASE="https://biquote.io/api/XAUUSD";
     long lastOrderAt=0;
+    long lastSignalAlertAt=0;
     long lastSnapshotAt=0;
     String lastSnapshotBody="";
     String lastSignalKey="";
@@ -86,6 +87,12 @@ public class TradingService extends Service {
                     if(dd>=maxLoss)return;
                 }
                 if(tick.optBoolean("stale",false)||spread>maxSpread||d.score<minScore||"WAIT".equals(d.side))return;
+                if(System.currentTimeMillis()-lastSignalAlertAt>60000){
+                    lastSignalAlertAt=System.currentTimeMillis();
+                    notifyUser("ENTRY READY • "+d.side,"Entry "+fmt(d.entry)+" | SL "+fmt(d.sl)+" | TP1 "+fmt(d.tp1)+" | TP2 "+fmt(d.tp2)+" | "+d.score+"/100");
+                    try{store.put("last_ready",d.summary()+" | "+d.pattern+" | "+System.currentTimeMillis());}catch(Exception ignored){}
+                    if(telegram.enabled())try{telegram.send("🟢 XAUUSD SCALPING\n"+d.side+"\n"+d.summary()+"\nTF: M1\nBias: M5\nSetup: Liquidity Sweep + Wick Rejection + BOS\nConfidence: "+(d.score/20)+"/5");}catch(Exception ignored){}
+                }
                 if(d.side.startsWith("BUY")&&!store.rawPrefs().getBoolean("auto_buy",true))return;
                 if(d.side.startsWith("SELL")&&!store.rawPrefs().getBoolean("auto_sell",true))return;
                 if(dayCount>=maxTrades||System.currentTimeMillis()-lastOrderAt<cooldown)return;
@@ -167,7 +174,7 @@ public class TradingService extends Service {
                     ExnessClient.Response x=exness.operationStatus(operationId);
                     if(x.ok()){
                         String st=new JSONObject(x.body).optString("status","pending");
-                        if("confirmed".equalsIgnoreCase(st)){ notifyUser("ORDER CONFIRMED","Exness confirmed operation "+operationId); refreshSnapshot(); return; }
+                        if("confirmed".equalsIgnoreCase(st)||"success".equalsIgnoreCase(st)||"completed".equalsIgnoreCase(st)){ notifyUser("ORDER CONFIRMED","Exness confirmed operation "+operationId); refreshSnapshot(); return; }
                         if("rejected".equalsIgnoreCase(st)||"failed".equalsIgnoreCase(st)){ notifyUser("ORDER FAILED",trim(x.body)); return; }
                     }
                     Thread.sleep(1000);
