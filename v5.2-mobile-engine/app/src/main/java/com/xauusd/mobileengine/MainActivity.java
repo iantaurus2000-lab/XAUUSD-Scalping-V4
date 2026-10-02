@@ -835,6 +835,18 @@ public class MainActivity extends Activity {
         }catch(Exception e){return false;}
     }
 
+    ArrayList<StrategyEngine.Candle> parse(String s)throws Exception{
+        JSONArray ar=new JSONObject(s).getJSONArray("bars");
+        ArrayList<StrategyEngine.Candle> out=new ArrayList<>();
+        for(int i=ar.length()-1;i>=0;i--){
+            JSONObject o=ar.getJSONObject(i);
+            long t=o.optLong("openTime",0);
+            if(t==0)t=o.optLong("time",0);
+            out.add(new StrategyEngine.Candle(t,o.getDouble("open"),o.getDouble("high"),o.getDouble("low"),o.getDouble("close")));
+        }
+        return out;
+    }
+
     String get(String url) throws Exception{
         HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();
         c.setConnectTimeout(7000); c.setReadTimeout(7000); c.setRequestMethod("GET");
