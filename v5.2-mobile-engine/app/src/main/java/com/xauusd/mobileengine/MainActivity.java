@@ -487,52 +487,122 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-        String fmt(double d){return String.format(Locale.US,"%.2f",d);}
+    
+    void createNotificationChannel(){
+        if(Build.VERSION.SDK_INT>=26){
+            NotificationChannel ch=new NotificationChannel("xauusd_alerts","XAUUSD Signal Alerts",NotificationManager.IMPORTANCE_HIGH);
+            ch.setDescription("Entry ready, order and risk alerts");
+            getSystemService(NotificationManager.class).createNotificationChannel(ch);
+        }
+    }
+
+    void notifySignalReady(StrategyEngine.Decision d){
+        if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)return;
+        String title="XAUUSD "+d.side+" • ENTRY READY";
+        String msg="Entry "+fmt(d.entry)+" | SL "+fmt(d.sl)+" | TP1 "+fmt(d.tp1)+" | TP2 "+fmt(d.tp2)+" • "+d.score+"/100";
+        Notification n=new Notification.Builder(this,"xauusd_alerts").setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(title).setContentText(msg).setStyle(new Notification.BigTextStyle().bigText(msg+"\\n"+d.reason)).setAutoCancel(true).build();
+        getSystemService(NotificationManager.class).notify((int)(System.currentTimeMillis()%100000),n);
+    }
+
+    void copyPrice(String label,double value){
+        if(value<=0){toast(label+" belum tersedia");return;}
+        ((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(android.content.ClipData.newPlainText(label,fmt(value)));
+        toast(label+" disalin: "+fmt(value));
+    }
+
+    void showIndicatorDialog(){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(18,4,18,4);
+        CheckBox ema=new CheckBox(this);ema.setText("EMA 9 / 21 / 50");ema.setTextColor(Color.WHITE);ema.setChecked(store.rawPrefs().getBoolean("ind_ema",true));
+        CheckBox sr=new CheckBox(this);sr.setText("Support / Resistance");sr.setTextColor(Color.WHITE);sr.setChecked(store.rawPrefs().getBoolean("ind_sr",true));
+        CheckBox fib=new CheckBox(this);fib.setText("Fibonacci 38.2 / 50 / 61.8");fib.setTextColor(Color.WHITE);fib.setChecked(store.rawPrefs().getBoolean("ind_fib",true));
+        CheckBox rsi=new CheckBox(this);rsi.setText("RSI filter");rsi.setTextColor(Color.WHITE);rsi.setChecked(store.rawPrefs().getBoolean("ind_rsi",true));
+        CheckBox macd=new CheckBox(this);macd.setText("MACD filter");macd.setTextColor(Color.WHITE);macd.setChecked(store.rawPrefs().getBoolean("ind_macd",true));
+        CheckBox atr=new CheckBox(this);atr.setText("ATR + spread filter");atr.setTextColor(Color.WHITE);atr.setChecked(store.rawPrefs().getBoolean("ind_atr",true));
+        box.addView(ema);box.addView(sr);box.addView(fib);box.addView(rsi);box.addView(macd);box.addView(atr);
+        new AlertDialog.Builder(this).setTitle("INDICATORS • CHART + ENGINE").setView(box).setNegativeButton("Tutup",null).setPositiveButton("SAVE",null).setOnDismissListener(x->{
+            store.rawPrefs().edit().putBoolean("ind_ema",ema.isChecked()).putBoolean("ind_sr",sr.isChecked()).putBoolean("ind_fib",fib.isChecked()).putBoolean("ind_rsi",rsi.isChecked()).putBoolean("ind_macd",macd.isChecked()).putBoolean("ind_atr",atr.isChecked()).apply();
+            if(chart!=null)chart.setLayers(ema.isChecked(),sr.isChecked(),fib.isChecked());
+        }).show();
+    }
+
+    void scanMarket(){
+        if(m1.size()<60||m5.size()<30){toast("Data market belum cukup untuk scan.");return;}
+        StrategyEngine.Decision d=StrategyEngine.analyze(m1,m5,mid);
+        String msg="XAUUSD SCAN\\n\\n"+d.side+" • "+d.score+"/100\\nPattern: "+d.pattern+"\\nM5 Bias: "+(d.bias?"CONFIRMED":"WAIT")+
+            "\\nWick: "+d.wick+" • Sweep: "+d.sweep+" • BOS: "+d.bos+
+            "\\nEMA9/21/50: "+fmt(d.ema9)+" / "+fmt(d.ema21)+" / "+fmt(d.ema50)+
+            "\\nRSI: "+fmt(d.rsi)+" • ATR: "+fmt(d.atr)+"\\nM5 candle close in: "+d.secondsToClose+"s\\n\\n"+d.reason;
+        new AlertDialog.Builder(this).setTitle("🔎 MARKET SCANNER").setMessage(msg).setPositiveButton("OK",null).show();
+    }
+
+    void saveSignalHistory(StrategyEngine.Decision d){
+        try{
+            String old=store.get("signal_history","");
+            String line=System.currentTimeMillis()+" | "+d.side+" | "+fmt(d.entry)+" | "+fmt(d.sl)+" | "+fmt(d.tp1)+" | "+fmt(d.tp2)+" | "+d.score+" | "+d.pattern;
+            String out=line+"\\n"+old;
+            String[] rows=out.split("\\n");StringBuilder b=new StringBuilder();
+            for(int i=0;i<Math.min(50,rows.length);i++){if(rows[i].trim().length()>0)b.append(rows[i]).append("\\n");}
+            store.put("signal_history",b.toString());
+        }catch(Exception ignored){}
+    }
+
+    void showHistoryDialog(){
+        String h=store.get("signal_history","Belum ada ENTRY READY.");
+        new AlertDialog.Builder(this).setTitle("📋 SIGNAL HISTORY").setMessage(h).setPositiveButton("OK",null).show();
+    }
+
+    Runnable newsPoll=new Runnable(){@Override public void run(){loadNewsTicker();handler.postDelayed(this,300000);}};
+
+    void loadNewsTicker(){
+        new Thread(()->{
+            String session=marketSession();
+            String news="NEWS: "+session+" • XAUUSD • Network "+(isNetworkOk()?"OK":"OFFLINE");
+            try{
+                String body=get("https://nfs.faireconomy.media/ff_calendar_thisweek.json");
+                JSONArray ar=new JSONArray(body);long now=System.currentTimeMillis();long best=Long.MAX_VALUE;String bestTitle="";
+                for(int i=0;i<ar.length();i++){
+                    JSONObject o=ar.optJSONObject(i);if(o==null)continue;
+                    String cur=o.optString("country",o.optString("currency",""));String title=o.optString("title","");
+                    String impact=o.optString("impact","");String date=o.optString("date","");String time=o.optString("time","");
+                    if(!"USD".equalsIgnoreCase(cur)&&!"US".equalsIgnoreCase(cur))continue;
+                    if(!impact.toLowerCase(Locale.US).contains("high"))continue;
+                    long ts=parseNewsTime(date,time);if(ts>=now&&ts<best){best=ts;bestTitle=title;}
+                }
+                if(!bestTitle.isEmpty())news+=" • HIGH USD: "+bestTitle+" in "+Math.max(0,(best-now)/60000)+"m";
+            }catch(Exception ignored){news+=" • Calendar feed unavailable";}
+            final String out=news;runOnUiThread(()->{newsTicker=out;if(ticker!=null)ticker.setText(newsTicker);});
+        }).start();
+    }
+
+    long parseNewsTime(String date,String time){
+        try{
+            String s=date+" "+time;
+            java.text.SimpleDateFormat f=new java.text.SimpleDateFormat("yyyy-MM-dd hh:mm a",Locale.US);
+            f.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+            return f.parse(s).getTime();
+        }catch(Exception e){return Long.MAX_VALUE;}
+    }
+
+    String marketSession(){
+        java.util.Calendar c=java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"));
+        int h=c.get(java.util.Calendar.HOUR_OF_DAY);
+        if(h>=0&&h<7)return "ASIA";
+        if(h>=7&&h<13)return "LONDON";
+        if(h>=13&&h<21)return "NEW YORK";
+        return "ASIA PREOPEN";
+    }
+
+    boolean isNetworkOk(){
+        try{
+            android.net.ConnectivityManager cm=(android.net.ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);
+            android.net.Network n=cm.getActiveNetwork();
+            return n!=null;
+        }catch(Exception e){return false;}
+    }
+
+    String fmt(double d){return String.format(Locale.US,"%.2f",d);}
     String trim(String s){return s==null?"":s.length()>800?s.substring(0,800)+"…":s;}
     void toast(String s){Toast.makeText(this,s==null?"":s,Toast.LENGTH_LONG).show();}
 
-    class ChartView extends View{
-        Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
-        ScaleGestureDetector scaleDetector;
-        float xZoom=1f,yZoom=1f,xPan=0f,yPan=0f,lastX,lastY,crossX=-1,crossY=-1;
-        boolean liveMode=true,showCross=false;
-        ChartView(){super(MainActivity.this);scaleDetector=new ScaleGestureDetector(MainActivity.this,new ScaleGestureDetector.SimpleOnScaleGestureListener(){
-            public boolean onScale(ScaleGestureDetector d){float s=d.getScaleFactor();xZoom=Math.max(.65f,Math.min(5f,xZoom*s));yZoom=Math.max(.7f,Math.min(4f,yZoom*s));liveMode=false;invalidate();return true;}
-        });}
-        ArrayList<StrategyEngine.Candle> data(){return "M5".equals(chartTf)?m5:"M15".equals(chartTf)?m5:m1;}
-        void resetView(){xZoom=1;yZoom=1;xPan=0;yPan=0;liveMode=true;invalidate();}
-        void zoomX(float f){xZoom=Math.max(.65f,Math.min(5f,xZoom*f));liveMode=false;invalidate();}
-        void zoomY(float f){yZoom=Math.max(.7f,Math.min(4f,yZoom*f));liveMode=false;invalidate();}
-        public boolean onTouchEvent(MotionEvent e){
-            scaleDetector.onTouchEvent(e);
-            if(e.getPointerCount()>1)return true;
-            if(e.getActionMasked()==MotionEvent.ACTION_DOWN){lastX=e.getX();lastY=e.getY();crossX=lastX;crossY=lastY;showCross=true;return true;}
-            if(e.getActionMasked()==MotionEvent.ACTION_MOVE&&!scaleDetector.isInProgress()){float dx=e.getX()-lastX,dy=e.getY()-lastY;xPan+=dx;yPan+=dy;liveMode=false;lastX=e.getX();lastY=e.getY();crossX=e.getX();crossY=e.getY();invalidate();return true;}
-            if(e.getActionMasked()==MotionEvent.ACTION_UP){if(e.getX()>getWidth()*.86f){resetView();}else{showCross=false;invalidate();}return true;}return true;
-        }
-        protected void onDraw(Canvas c){
-            c.drawColor(Color.rgb(5,8,12));ArrayList<StrategyEngine.Candle> a=data();if(a.size()<2){p.setColor(Color.LTGRAY);p.setTextSize(14);c.drawText("Menunggu market Biquote...",20,40,p);return;}
-            int left=12,right=getWidth()-72,top=38,bottom=getHeight()-22;float w=right-left;
-            int n=Math.min(a.size(),90);int end=a.size();double hi=-1e99,lo=1e99;
-            for(int i=Math.max(0,end-n);i<end;i++){StrategyEngine.Candle z=a.get(i);hi=Math.max(hi,z.high);lo=Math.min(lo,z.low);}
-            hi=Math.max(hi,mid);lo=Math.min(lo,mid);double pad=Math.max((hi-lo)*.10,.5);hi+=pad;lo-=pad;
-            double center=(hi+lo)/2,range=(hi-lo)/yZoom, max=center+range/2,min=center-range/2;
-            java.util.function.DoubleFunction<Float> yy=v->(float)(bottom-((v-min)/(max-min))*(bottom-top)+yPan);
-            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1);p.setColor(Color.rgb(28,34,44));
-            for(int g=0;g<=6;g++){float y=top+(bottom-top)*g/6f;c.drawLine(left,y,right,y,p);}
-            p.setStyle(Paint.Style.FILL);p.setTextSize(11);p.setColor(Color.WHITE);c.drawText("XAU/USD "+chartTf,left,18,p);
-            p.setColor(Color.rgb(0,230,118));c.drawText(liveMode?"● LIVE 1s":"● SCROLL",left+100,18,p);
-            float step=w/(n+1f)*xZoom,bw=Math.max(2.5f,step*.55f);
-            for(int j=0;j<n;j++){int idx=end-n+j;StrategyEngine.Candle z=a.get(idx);float x=right-(n-1-j)*step+xPan; if(x<left-20||x>right+20)continue;
-                p.setColor(z.close>=z.open?Color.rgb(38,198,120):Color.rgb(239,83,80));p.setStrokeWidth(1.5f);
-                c.drawLine(x,yy.apply(z.high),x,yy.apply(z.low),p);float o=yy.apply(z.open),cl=yy.apply(z.close);c.drawRect(x-bw/2,Math.min(o,cl),x+bw/2,Math.max(o,cl)+1,p);
-            }
-            double sr=StrategyEngine.resistance(a,45,a.size()-1),ss=StrategyEngine.support(a,45,a.size()-1);
-            level(c,sr,yy,"R",Color.rgb(239,83,80));level(c,ss,yy,"S",Color.rgb(66,165,245));
-            if(decision.entry>0)level(c,decision.entry,yy,"ENTRY",Color.YELLOW);if(decision.sl>0)level(c,decision.sl,yy,"SL",Color.RED);if(decision.tp1>0)level(c,decision.tp1,yy,"TP1",Color.CYAN);if(decision.tp2>0)level(c,decision.tp2,yy,"TP2",Color.GREEN);level(c,mid,yy,"LIVE",Color.WHITE);
-            if(showCross&&crossX>=left&&crossX<=right&&crossY>=top&&crossY<=bottom){p.setColor(Color.argb(160,180,180,180));p.setStrokeWidth(1);c.drawLine(crossX,top,crossX,bottom,p);c.drawLine(left,crossY,right,crossY,p);}
-            p.setColor(Color.LTGRAY);p.setTextSize(10);c.drawText("← drag →   ↑↓ move   pinch/zoom   tap RIGHT = LIVE",left,bottom+18,p);
-        }
-        void level(Canvas c,double v,java.util.function.DoubleFunction<Float> yy,String s,int col){float y=yy.apply(v);if(y<30||y>getHeight()-20)return;p.setColor(col);p.setStrokeWidth(s.equals("LIVE")?2:1.2f);c.drawLine(12,y,getWidth()-72,y,p);p.setTextSize(9);c.drawText(s+" "+fmt(v),getWidth()-68,y-3,p);}
-    }
 }
