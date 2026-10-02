@@ -5,7 +5,7 @@
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical">
         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="XAUUSD  •  MOBILE TRADING ENGINE" android:textColor="#FFFFFF" android:textStyle="bold" android:textSize="14sp"/>
-            <TextView android:id="@+id/connection" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="● MARKET OFFLINE" android:textColor="#78909C" android:textSize="10sp"/>
+            <TextView android:id="@+id/connection" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="● MARKET OFFLINE" android:textColor="#C5D0DA" android:textSize="11sp"/>
         </LinearLayout>
         <Button android:id="@+id/btnMenu" android:layout_width="48dp" android:layout_height="44dp" android:text="☰" android:textSize="18sp" android:textColor="#FFFFFF" android:background="#16202B"/>
     </LinearLayout>
@@ -33,13 +33,13 @@
         <TextView android:id="@+id/boxTp2" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:text="TP2&#10;--" android:textColor="#26C6DA" android:textSize="10sp"/>
     </LinearLayout>
     <LinearLayout android:layout_width="match_parent" android:layout_height="32dp">
-        <Button android:id="@+id/btnCopyEntry" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="ENTRY" android:textSize="9sp"/>
-        <Button android:id="@+id/btnCopySl" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="SL" android:textSize="9sp" android:layout_marginStart="3dp"/>
-        <Button android:id="@+id/btnCopyTp" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="TP1" android:textSize="9sp" android:layout_marginStart="3dp"/>
+        <Button android:id="@+id/btnCopyEntry" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="ENTRY" android:textSize="11sp"/>
+        <Button android:id="@+id/btnCopySl" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="⧉" android:textSize="14sp" android:layout_marginStart="3dp"/>
+        <Button android:id="@+id/btnCopyTp" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="⧉" android:textSize="14sp" android:layout_marginStart="3dp"/>
         <TextView android:id="@+id/m5Bias" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:text="M5 WAIT" android:textColor="#80CBC4" android:textSize="9sp"/>
         <TextView android:id="@+id/m1State" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:text="M1 WATCH" android:textColor="#80CBC4" android:textSize="9sp"/>
     </LinearLayout>
-    <TextView android:id="@+id/signalDetail" android:layout_width="match_parent" android:layout_height="30dp" android:text="M5 Bias → Liquidity Sweep → Wick Rejection → BOS" android:textColor="#607D8B" android:textSize="9sp" android:gravity="center_vertical"/>
+    <TextView android:id="@+id/signalDetail" android:layout_width="match_parent" android:layout_height="30dp" android:text="M5 Bias → Liquidity Sweep → Wick Rejection → BOS" android:textColor="#B7C3CE" android:textSize="9sp" android:gravity="center_vertical"/>
     <LinearLayout android:layout_width="match_parent" android:layout_height="34dp">
         <Button android:id="@+id/tfM1" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="M1" android:textSize="10sp"/>
         <Button android:id="@+id/tfM5" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="M5" android:textSize="10sp" android:layout_marginStart="3dp"/>
@@ -58,5 +58,5 @@
     </LinearLayout>
     <TextView android:id="@+id/botState" android:layout_width="match_parent" android:layout_height="24dp" android:gravity="center" android:text="AUTO: OFF • MANUAL" android:textColor="#FFFFFF" android:textSize="9sp"/>
     <TextView android:id="@+id/account" android:layout_width="match_parent" android:layout_height="18dp" android:text="Account: not connected" android:textColor="#78909C" android:textSize="9sp"/>
-    <TextView android:id="@+id/log" android:layout_width="match_parent" android:layout_height="22dp" android:text="Ready • engine active • auto OFF" android:textColor="#455A64" android:textSize="9sp"/>
+    <TextView android:id="@+id/log" android:layout_width="match_parent" android:layout_height="22dp" android:text="Ready • engine active • auto OFF" android:textColor="#AAB7C4" android:textSize="9sp"/>
 </LinearLayout>
