@@ -819,7 +819,9 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    long parseIsoTime(String iso){try{return java.time.Instant.parse(iso).toEpochMilli();}catch(Exception e){return Long.MAX_VALUE;}}\n\n    long parseNewsTime(String date,String time){
+    long parseIsoTime(String iso){try{return java.time.Instant.parse(iso).toEpochMilli();}catch(Exception e){return Long.MAX_VALUE;}}
+
+    long parseNewsTime(String date,String time){
         try{
             String s=date+" "+time;
             java.text.SimpleDateFormat f=new java.text.SimpleDateFormat("yyyy-MM-dd hh:mm a",Locale.US);
