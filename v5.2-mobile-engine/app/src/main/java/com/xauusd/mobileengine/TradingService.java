@@ -25,6 +25,7 @@ public class TradingService extends Service {
     String lastSignalKey="";
     int dayCount=0;
     long lastBarsAt=0;
+    PowerManager.WakeLock wakeLock;
     volatile boolean busy=false;
     ArrayList<StrategyEngine.Candle> cachedM1=new ArrayList<>(),cachedM5=new ArrayList<>();
     double dayStartEquity=-1;
@@ -33,7 +34,12 @@ public class TradingService extends Service {
     Runnable loop=new Runnable(){@Override public void run(){tick();h.postDelayed(this,3000);}};
 
     @Override public void onCreate(){
-        super.onCreate();store=new SecurityStore(this);exness=new ExnessClient(store);telegram=new TelegramClient(store);manager=new TradeManager(store,exness);createChannel();
+        super.onCreate();
+        PowerManager pm=(PowerManager)getSystemService(POWER_SERVICE);
+        wakeLock=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"XAUUSD:Engine");
+        wakeLock.setReferenceCounted(false);
+        wakeLock.acquire();
+        store=new SecurityStore(this);exness=new ExnessClient(store);telegram=new TelegramClient(store);manager=new TradeManager(store,exness);createChannel();
         Notification n=new Notification.Builder(this,CH).setContentTitle("XAUUSD V5.2 Auto Engine")
             .setContentText("Auto execution armed with risk guards").setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true).setColor(Color.rgb(0,200,83)).build();
@@ -43,7 +49,7 @@ public class TradingService extends Service {
 
     @Override public int onStartCommand(Intent i,int flags,int id){return START_STICKY;}
 
-    @Override public void onDestroy(){h.removeCallbacksAndMessages(null);stopForeground(true);super.onDestroy();}
+    @Override public void onDestroy(){h.removeCallbacksAndMessages(null);if(wakeLock!=null&&wakeLock.isHeld())wakeLock.release();stopForeground(true);super.onDestroy();}
     @Override public IBinder onBind(Intent i){return null;}
 
     void createChannel(){
