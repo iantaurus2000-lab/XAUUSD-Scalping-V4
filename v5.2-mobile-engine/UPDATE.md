@@ -1,7 +1,7 @@
 # XAUUSD Mobile Trading Engine — Update Track
 
-Current release: V5.2.1
-Version code: 541
+Current release: V5.2.3
+Version code: 542
 
 UI CONTRACT
 The V5.1.3-style dashboard is the fixed UI structure. Future updates must not replace or redesign the main dashboard.
@@ -19,7 +19,12 @@ CURRENT UPDATE
 - Market scanner based on strategy filters
 - Candle pattern classification
 - Background ENTRY READY notification + TEST ALARM
-- News/session/network ticker
+- Stable single-flight Biquote 1s feed with candle fallback
+- Fixed Biquote XAUUSD LIVE 1s label (non-scrolling)
+- Running session/news ticker in signal detail
+- Entry result tracking with WIN/LOSS percentage
+- Simplified one-row Signal History with Entry/SL/TP1/TP2/WIN-LOSS
+- Consolidated Cancel Auto menu
 - Exness API preflight before AUTO
 - Pending-order manager, cancel-by-ID, modify order, close/partial-close
 - Configurable Exness instrument
