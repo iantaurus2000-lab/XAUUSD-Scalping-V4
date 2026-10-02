@@ -487,8 +487,9 @@ public class MainActivity extends Activity {
                 final boolean stale=t.optBoolean("stale",false);
                 final String state=t.optString("marketState","open");
                 updateHistoryResults(mm);
+                final ArrayList<StrategyEngine.Candle> fa=a, fb=b, fc15=c15;
                 runOnUiThread(()->{
-                    mid=mm;spread=sp;m1=a;m5=b;m15=c15;decision=dd;lastLoad=now;
+                    mid=mm;spread=sp;m1=fa;m5=fb;m15=fc15;decision=dd;lastLoad=now;
                     price.setText(fmt(mid));
                     double prev=lastPrice; lastPrice=mid;
                     if(prev>0){
@@ -496,7 +497,7 @@ public class MainActivity extends Activity {
                         priceChange.setTextColor(mid>=prev?Color.rgb(0,230,118):Color.rgb(255,82,82));
                     }
                     spreadLine.setText("Spread "+fmt(spread));
-                    ArrayList<StrategyEngine.Candle> hd="M5".equals(chartTf)?b:"M15".equals(chartTf)?c15:a;
+                    ArrayList<StrategyEngine.Candle> hd="M5".equals(chartTf)?fb:"M15".equals(chartTf)?fc15:fa;
                     if(!hd.isEmpty()) highLow.setText("H "+fmt(hd.stream().mapToDouble(x->x.high).max().orElse(mm))+"   L "+fmt(hd.stream().mapToDouble(x->x.low).min().orElse(mm)));
                     ticker.setText("BIQUOTE • XAUUSD • LIVE 1s");
                     connection.setText("● BIQUOTE 1s • "+("closed".equalsIgnoreCase(state)?"MARKET CLOSED":stale?"STALE":"LIVE")+" • Spread "+fmt(spread));
