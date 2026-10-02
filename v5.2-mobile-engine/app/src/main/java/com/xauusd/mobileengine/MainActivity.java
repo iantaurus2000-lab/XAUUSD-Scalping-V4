@@ -395,9 +395,8 @@ public class MainActivity extends Activity {
     }
 
     void renderChart(){ if(chart!=null)chart.invalidate(); }
-
     String sessionText(){int h=Calendar.getInstance(TimeZone.getTimeZone("UTC")).get(Calendar.HOUR_OF_DAY);if(h<7)return "ASIA";if(h<13)return "LONDON";if(h<21)return "NEW YORK";return "ASIA PREOPEN";}
-    String momentumText(ArrayList<StrategyEngine.Candle> a){if(a==null||a.isEmpty())return "CANDLE MOMENTUM WAIT";StrategyEngine.Candle c=a.get(a.size()-1);double r=Math.max(c.high-c.low,1e-9),body=Math.abs(c.close-c.open),pct=body/r*100.0;String d=c.close>c.open?"BULLISH":c.close<c.open?"BEARISH":"NEUTRAL";return "CANDLE MOMENTUM "+d+" "+String.format(Locale.US,"%.0f%%",pct);}
+    String momentumText(ArrayList<StrategyEngine.Candle> a){if(a==null||a.isEmpty())return "CANDLE MOMENTUM WAIT";StrategyEngine.Candle c=a.get(a.size()-1);double r=Math.max(c.high-c.low,1e-9),pct=Math.abs(c.close-c.open)/r*100.0;String d=c.close>c.open?"BULLISH":c.close<c.open?"BEARISH":"NEUTRAL";return "CANDLE MOMENTUM "+d+" "+String.format(Locale.US,"%.0f%%",pct);}
     void renderCandleMomentum(){if(candleMomentum!=null)candleMomentum.setText(momentumText(m1));}
 
     void renderDecision(){
