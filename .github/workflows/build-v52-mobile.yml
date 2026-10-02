@@ -7,6 +7,7 @@ on:
     paths:
       - "v5.2-mobile-engine/**"
       - ".github/workflows/build-v52-mobile.yml"
+      - "mt5-bridge/**"
 
 permissions:
   contents: read
