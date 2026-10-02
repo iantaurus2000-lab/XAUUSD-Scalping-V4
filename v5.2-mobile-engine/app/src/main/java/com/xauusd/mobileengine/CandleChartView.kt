@@ -115,7 +115,26 @@ class CandleChartView @JvmOverloads constructor(
         ask?.let{lineBadge(canvas,y(it),String.format(Locale.US,"A %.2f",it),Color.rgb(90,40,40),right)}
         decision?.let{if(it.entry>0)level(canvas,it.entry,::y,"ENTRY",if(it.side.startsWith("BUY"))Color.rgb(0,230,118) else Color.rgb(255,82,82),left,right);if(it.sl>0)level(canvas,it.sl,::y,"SL",Color.RED,left,right);if(it.tp1>0)level(canvas,it.tp1,::y,"TP1",Color.CYAN,left,right);if(it.tp2>0)level(canvas,it.tp2,::y,"TP2",Color.GREEN,left,right)}
         if(showCross&&crossX in left..right&&crossY in top..bottom){paint.color=Color.argb(170,210,210,210);paint.strokeWidth=1f;canvas.drawLine(crossX,top,crossX,bottom,paint);canvas.drawLine(left,crossY,right,crossY,paint);val pv=minP+(1.0-((crossY-top)/h))*(maxP-minP);paint.color=Color.YELLOW;paint.textSize=10f;canvas.drawText(String.format(Locale.US,"%.2f",pv),crossX+6,crossY-6,paint)}
-        paint.color=Color.GRAY;paint.textSize=8f;canvas.drawText("← drag →   ↑↓ move   pinch/zoom   tap RIGHT = LIVE",left,bottom+18,paint)
+        // Time axis + small signal marker
+        paint.color=Color.rgb(145,155,165);paint.textSize=8f
+        val labels=min(5,n)
+        for(k in 0 until labels){
+            val idx=if(labels==1)0 else k*(n-1)/(labels-1)
+            val cc=visible[idx]
+            val tm=if(cc.t<100000000000L)cc.t*1000L else cc.t
+            val s=java.text.SimpleDateFormat("HH:mm",Locale.US).format(java.util.Date(tm))
+            val xx=left+step*idx+step/2f
+            canvas.drawText(s,xx-14f,bottom+18f,paint)
+        }
+        decision?.let{d->
+            if(visible.isNotEmpty()&&(d.wick||d.sweep||d.bos)){
+                val last=visible.last();val x=left+step*(visible.size-1)+step/2f
+                val yy=if(d.side.startsWith("BUY"))y(last.low)-7f else y(last.high)+12f
+                paint.color=if(d.side.startsWith("BUY"))Color.rgb(0,230,118) else Color.rgb(255,82,82)
+                paint.textSize=9f;canvas.drawText(if(d.side.startsWith("BUY"))"▲ BUY":"▼ SELL",x-20f,yy,paint)
+            }
+        }
+        paint.color=Color.GRAY;paint.textSize=8f;canvas.drawText("← drag →   ↑↓ move   pinch/zoom   tap RIGHT = LIVE",left,bottom+32f,paint)
     }
 
     private fun drawEma(c:Canvas,a:List<StrategyEngine.Candle>,period:Int,color:Int,left:Float,step:Float,y:(Double)->Float){if(a.size<period)return;val vals=ArrayList(a);var prev:PointF?=null;for(i in a.indices){val v=StrategyEngine.ema(vals,period,i);val pt=PointF(left+step*i+step/2,y(v));if(prev!=null){paint.color=color;paint.strokeWidth=1.7f;c.drawLine(prev!!.x,prev!!.y,pt.x,pt.y,paint)};prev=pt}}
