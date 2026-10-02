@@ -230,7 +230,7 @@ public class TradingService extends Service {
     }
     ArrayList<StrategyEngine.Candle> parse(String s)throws Exception{
         JSONArray ar=new JSONObject(s).getJSONArray("bars");ArrayList<StrategyEngine.Candle> out=new ArrayList<>();
-        for(int i=ar.length()-1;i>=0;i--){JSONObject o=ar.getJSONObject(i);out.add(new StrategyEngine.Candle(o.optLong("openTime",0),o.getDouble("open"),o.getDouble("high"),o.getDouble("low"),o.getDouble("close")));}return out;
+        for(int i=ar.length()-1;i>=0;i--){JSONObject o=ar.getJSONObject(i);String raw=o.optString("openTime","");long tm=0;try{tm=java.time.Instant.parse(raw).toEpochMilli();}catch(Exception ignored){tm=o.optLong("openTime",0);}out.add(new StrategyEngine.Candle(tm,o.getDouble("open"),o.getDouble("high"),o.getDouble("low"),o.getDouble("close")));}return out;
     }
     double parseDouble(String s,double f){try{return Double.parseDouble(s);}catch(Exception e){return f;}}
     String fmt(double d){return String.format(Locale.US,"%.2f",d);}
