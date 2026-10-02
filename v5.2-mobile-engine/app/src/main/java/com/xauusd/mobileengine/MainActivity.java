@@ -195,10 +195,46 @@ public class MainActivity extends Activity {
             try{
                 ExnessClient.Response r=exness.placeLimit("XAUUSD",side,lot,entry,sl,tp,"XAUUSD-V5.2-"+tag);
                 runOnUiThread(()->{
-                    if(r.ok()){log.setText("ORDER ACK: "+r.body);toast("Order diterima Exness (ACK).");}
-                    else {log.setText("ORDER REJECT "+r.code+": "+trim(r.body));toast("Order ditolak: "+r.code);}
+                    if(r.ok()){
+                        String op=exness.operationId(r);
+                        log.setText("ORDER ACK • "+("buy".equals(side)?"BUY LIMIT":"sell".equals(side)?"SELL LIMIT":"LIMIT")+" • operation "+(op.isEmpty()?"--":op));
+                        toast("ACK diterima. Memastikan order masuk akun MT5...");
+                        waitForManualOperation(op, side, entry);
+                    } else {log.setText("ORDER REJECT "+r.code+": "+trim(r.body));toast("Order ditolak: "+r.code);}
                 });
             }catch(Exception e){runOnUiThread(()->toast(e.getMessage()));}
+        }).start();
+    }
+
+    void waitForManualOperation(String operationId,String side,String entry){
+        if(operationId==null || operationId.isEmpty()) return;
+        new Thread(()->{
+            try{
+                for(int i=0;i<10;i++){
+                    ExnessClient.Response x=exness.operationStatus(operationId);
+                    if(x.ok()){
+                        JSONObject j=new JSONObject(x.body);
+                        String st=j.optString("status","pending");
+                        if("confirmed".equalsIgnoreCase(st)){
+                            ExnessClient.Response snap=exness.snapshot();
+                            runOnUiThread(()->{
+                                log.setText("ORDER CONFIRMED • "+("buy".equals(side)?"BUY LIMIT":"SELL LIMIT")+" @ "+entry+" • MT5 account state updated");
+                                toast("ORDER CONFIRMED • cek MT5: Pending Orders");
+                            });
+                            return;
+                        }
+                        if("rejected".equalsIgnoreCase(st)||"failed".equalsIgnoreCase(st)){
+                            runOnUiThread(()->{
+                                log.setText("ORDER FAILED: "+trim(x.body));
+                                toast("Order gagal: "+trim(x.body));
+                            });
+                            return;
+                        }
+                    }
+                    Thread.sleep(1000);
+                }
+                runOnUiThread(()->log.setText("ORDER ACK masih diproses. Buka Orders / Account untuk melihat status."));
+            }catch(Exception e){runOnUiThread(()->log.setText("ORDER STATUS ERROR: "+e.getMessage()));}
         }).start();
     }
 
