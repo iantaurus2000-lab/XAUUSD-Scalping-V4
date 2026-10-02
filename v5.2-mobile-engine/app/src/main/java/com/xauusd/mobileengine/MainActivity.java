@@ -285,33 +285,28 @@ public class MainActivity extends Activity {
     }
 
     void startAuto(){
-        if(!hasCredentials()){toast("Isi Exness API dulu.");showExnessDialog();return;}
-        log.setText("AUTO PREFLIGHT • testing Exness API + instrument...");
+        if(!hasCredentials()){toast("Sambungkan MT5 Connector atau Exness API dulu.");showMt5Dialog();return;}
+        log.setText(metaApi.configured()?"AUTO PREFLIGHT • testing MT5 MetaApi...":"AUTO PREFLIGHT • testing Exness API...");
         new Thread(()->{
             try{
-                ExnessClient.Response a=exness.connectAndResolve();
-                if(!a.ok()) throw new IllegalStateException("API connection "+a.code+": "+trim(a.body));
-                ExnessClient.Response i=exness.instrumentConditions(orderSymbol());
-                if(!i.ok()) throw new IllegalStateException("Instrument "+orderSymbol()+" "+i.code+": "+trim(i.body));
+                if(metaApi.configured()){
+                    MetaApiClient.Response a=metaApi.accountInfo();
+                    if(!a.ok())throw new IllegalStateException("MT5 MetaApi "+a.code+": "+trim(a.body));
+                }else{
+                    ExnessClient.Response a=exness.connectAndResolve();
+                    if(!a.ok())throw new IllegalStateException("API connection "+a.code+": "+trim(a.body));
+                    ExnessClient.Response i=exness.instrumentConditions(orderSymbol());
+                    if(!i.ok())throw new IllegalStateException("Instrument "+orderSymbol()+" "+i.code+": "+trim(i.body));
+                }
                 store.rawPrefs().edit().putBoolean("auto",true).apply();
                 runOnUiThread(()->{
-                    botState.setText("AUTO: ON  •  guarded execution");
+                    botState.setText(metaApi.configured()?"AUTO: ON • MT5 CLOUD":"AUTO: ON • guarded execution");
                     botState.setTextColor(Color.rgb(0,230,118));
                     Intent intent=new Intent(this,TradingService.class);
                     if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
-                    if(Build.VERSION.SDK_INT>=23){
-                        try{
-                            android.os.PowerManager pm=(android.os.PowerManager)getSystemService(POWER_SERVICE);
-                            if(!pm.isIgnoringBatteryOptimizations(getPackageName())){
-                                Intent bi=new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
-                                bi.setData(android.net.Uri.parse("package:"+getPackageName()));
-                                startActivity(bi);
-                            }
-                        }catch(Exception ignored){}
-                    }
-                    log.setText("AUTO ON • API + "+orderSymbol()+" preflight OK");
+                    log.setText(metaApi.configured()?"AUTO ON • MT5 MetaApi preflight OK":"AUTO ON • Exness API preflight OK");
                 });
-            }catch(Exception e){runOnUiThread(()->{store.rawPrefs().edit().putBoolean("auto",false).apply();botState.setText("AUTO: OFF • API ERROR");log.setText("AUTO PREFLIGHT ERROR • "+e.getMessage());toast("Auto gagal: "+e.getMessage());});}
+            }catch(Exception e){runOnUiThread(()->{store.rawPrefs().edit().putBoolean("auto",false).apply();botState.setText("AUTO: OFF • CONNECTOR ERROR");log.setText("AUTO PREFLIGHT ERROR • "+e.getMessage());toast("Auto gagal: "+e.getMessage());});}
         }).start();
     }
 
@@ -323,6 +318,7 @@ public class MainActivity extends Activity {
     }
 
     boolean hasCredentials(){
+        if(metaApi!=null&&metaApi.configured())return true;
         ExnessClient.Credentials c=exness.loadCredentials();
         return !c.accountId.isEmpty()&&!c.apiKey.isEmpty()&&!c.secret.isEmpty();
     }
