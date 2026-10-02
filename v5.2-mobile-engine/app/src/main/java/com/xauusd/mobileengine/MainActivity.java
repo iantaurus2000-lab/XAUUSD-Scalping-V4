@@ -26,6 +26,7 @@ public class MainActivity extends Activity {
     SecurityStore store;
     ExnessClient exness;
     MetaApiClient metaApi;
+    MetaApiClient metaApi;
     Handler handler = new Handler(Looper.getMainLooper());
     ArrayList<StrategyEngine.Candle> m1 = new ArrayList<>(), m5 = new ArrayList<>(), m15 = new ArrayList<>();
     StrategyEngine.Decision lastReady = new StrategyEngine.Decision();
@@ -52,6 +53,7 @@ public class MainActivity extends Activity {
         super.onCreate(b);
         store=new SecurityStore(this);
         exness=new ExnessClient(store);
+        metaApi=new MetaApiClient(store);
         metaApi=new MetaApiClient(store);
         buildUi();
         requestNotificationPermission();
@@ -237,6 +239,7 @@ public class MainActivity extends Activity {
                     runOnUiThread(()->{if(mr.ok()){log.setText("MT5 ORDER CONFIRMED • "+side.toUpperCase(Locale.US)+" LIMIT • "+trim(mr.body));toast("MT5 DEMO ORDER DITERIMA");}else{log.setText("MT5 ORDER REJECT "+mr.code+" • "+trim(mr.body));toast("MT5 order ditolak "+mr.code);}});
                     return;
                 }
+                if(metaApi.configured()){ MetaApiClient.Response mr=metaApi.placeLimit(orderSymbol(),side,Double.parseDouble(lot),Double.parseDouble(entry),Double.parseDouble(sl),Double.parseDouble(tp),"XAUUSD-V5.2-"+tag); runOnUiThread(()->{if(mr.ok()){log.setText("MT5 ORDER CONFIRMED • "+side.toUpperCase(Locale.US)+" LIMIT • "+trim(mr.body));toast("MT5 DEMO ORDER DITERIMA");}else{log.setText("MT5 ORDER REJECT "+mr.code+" • "+trim(mr.body));toast("MT5 order ditolak "+mr.code);}}); return; }
                 ExnessClient.Response r=exness.placeLimit(orderSymbol(),side,lot,entry,sl,tp,"XAUUSD-V5.2-"+tag);
                 runOnUiThread(()->{
                     if(r.ok()){
@@ -457,23 +460,16 @@ public class MainActivity extends Activity {
     void showMt5Dialog(){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(18,4,18,4);
         EditText token=input("MetaApi auth token",store.get("meta_token","")); token.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        EditText aid=input("MetaApi account ID",store.get("meta_account","")); aid.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
-        EditText host=input("MetaApi trade host",store.get("meta_host",MetaApiClient.DEFAULT_HOST)); host.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
-        TextView info=tv("MODE: MT5 CLOUD CONNECTOR • DEMO TEST\nMetaApi menghubungkan akun MT5 ke cloud; HP tidak perlu menjalankan MT5 desktop.",11);
-        box.addView(info);box.addView(token,new LinearLayout.LayoutParams(-1,55));box.addView(aid,new LinearLayout.LayoutParams(-1,55));box.addView(host,new LinearLayout.LayoutParams(-1,55));
-        AlertDialog d=new AlertDialog.Builder(this).setTitle("🔗 MT5 CONNECTOR • MetaApi").setView(box)
-            .setNegativeButton("Tutup",null).setPositiveButton("SAVE + TEST",null).create();
-        d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
-            store.put("meta_token",token.getText().toString().trim());store.put("meta_account",aid.getText().toString().trim());store.put("meta_host",host.getText().toString().trim());
-            d.dismiss(); testMetaApi();
-        })); d.show();
+        EditText aid=input("MetaApi account ID",store.get("meta_account",""));
+        EditText host=input("MetaApi trade host",store.get("meta_host",MetaApiClient.DEFAULT_HOST));
+        box.addView(tv("MT5 CLOUD CONNECTOR • DEMO TEST\nHP → MetaApi Cloud → akun MT5 demo.",11));
+        box.addView(token,new LinearLayout.LayoutParams(-1,55));box.addView(aid,new LinearLayout.LayoutParams(-1,55));box.addView(host,new LinearLayout.LayoutParams(-1,55));
+        AlertDialog d=new AlertDialog.Builder(this).setTitle("🔗 MT5 CONNECTOR • MetaApi").setView(box).setNegativeButton("Tutup",null).setPositiveButton("SAVE + TEST",null).create();
+        d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{store.put("meta_token",token.getText().toString().trim());store.put("meta_account",aid.getText().toString().trim());store.put("meta_host",host.getText().toString().trim());d.dismiss();testMetaApi();}));d.show();
     }
     void testMetaApi(){
         if(!metaApi.configured()){toast("Isi MetaApi token + account ID.");return;}
-        new Thread(()->{try{
-            MetaApiClient.Response r=metaApi.accountInfo();
-            runOnUiThread(()->{if(r.ok()){log.setText("MT5 CONNECTED • MetaApi account OK\\n"+trim(r.body));toast("MT5 CONNECTED • siap test pending order");}else{log.setText("MT5 CONNECT ERROR "+r.code+" • "+trim(r.body));toast("MT5 connector error "+r.code);}});
-        }catch(Exception e){runOnUiThread(()->toast("MT5 connector: "+e.getMessage()));}}).start();
+        new Thread(()->{try{MetaApiClient.Response r=metaApi.accountInfo();runOnUiThread(()->{if(r.ok()){log.setText("MT5 CONNECTED • MetaApi account OK\n"+trim(r.body));toast("MT5 CONNECTED • siap test pending order");}else{log.setText("MT5 CONNECT ERROR "+r.code+" • "+trim(r.body));toast("MT5 connector error "+r.code);}});}catch(Exception e){runOnUiThread(()->toast("MT5 connector: "+e.getMessage()));}}).start();
     }
 
     void showTelegramDialog(){
