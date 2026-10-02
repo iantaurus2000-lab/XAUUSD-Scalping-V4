@@ -835,6 +835,21 @@ public class MainActivity extends Activity {
         }catch(Exception e){return false;}
     }
 
+    String get(String url) throws Exception{
+        HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();
+        c.setConnectTimeout(7000); c.setReadTimeout(7000); c.setRequestMethod("GET");
+        c.setRequestProperty("Accept","application/json");
+        int code=c.getResponseCode();
+        InputStream in=code>=200&&code<300?c.getInputStream():c.getErrorStream();
+        if(in==null)throw new IOException("HTTP "+code);
+        BufferedReader br=new BufferedReader(new InputStreamReader(in));
+        StringBuilder b=new StringBuilder(); String line;
+        while((line=br.readLine())!=null)b.append(line);
+        br.close(); c.disconnect();
+        if(code<200||code>=300)throw new IOException("HTTP "+code+" "+b);
+        return b.toString();
+    }
+
     String fmt(double d){return String.format(Locale.US,"%.2f",d);}
     String trim(String s){return s==null?"":s.length()>800?s.substring(0,800)+"…":s;}
     void toast(String s){Toast.makeText(this,s==null?"":s,Toast.LENGTH_LONG).show();}
