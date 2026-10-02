@@ -26,7 +26,7 @@ public class MainActivity extends Activity {
     SecurityStore store;
     ExnessClient exness;
     Handler handler = new Handler(Looper.getMainLooper());
-    ArrayList<StrategyEngine.Candle> m1 = new ArrayList<>(), m5 = new ArrayList<>();
+    ArrayList<StrategyEngine.Candle> m1 = new ArrayList<>(), m5 = new ArrayList<>(), m15 = new ArrayList<>();
     StrategyEngine.Decision decision = new StrategyEngine.Decision();
     double mid=0, spread=0;
     String chartTf="M1";
@@ -390,6 +390,8 @@ public class MainActivity extends Activity {
         JSONArray ar=new JSONObject(s).getJSONArray("bars");ArrayList<StrategyEngine.Candle> out=new ArrayList<>();
         for(int i=ar.length()-1;i>=0;i--){JSONObject o=ar.getJSONObject(i);out.add(new StrategyEngine.Candle(o.optLong("openTime",0),o.getDouble("open"),o.getDouble("high"),o.getDouble("low"),o.getDouble("close")));}return out;
     }
+
+    void renderChart(){ if(chart!=null)chart.invalidate(); }
 
     void renderDecision(){
         if(signal==null)return;
