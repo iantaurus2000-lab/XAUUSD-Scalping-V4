@@ -28,7 +28,7 @@ public final class StrategyEngine {
         Candle c=m1.get(n-1),p=m1.get(n-2);
         Candle c5=m5.get(m-1),p5=m5.get(m-2);
         double atr=atr(m1,14,n-1),ema9=ema(m1,9,n-1),ema21=ema(m1,21,n-1),ema50=ema(m1,50,n-1);
-        double rsi=rsi(m1,14,n-1),[]macd=macd(m1,n-1),[]bb=bollinger(m1,20,2,n-1);
+        double rsi=rsi(m1,14,n-1); double[] macd=macd(m1,n-1); double[] bb=bollinger(m1,20,2,n-1);
         double stoch=stochastic(m1,14,3,n-1),support=support(m1,20,n-1),resistance=resistance(m1,20,n-1);
         double e59=ema(m5,9,m-1),e521=ema(m5,21,m-1);
         boolean biasBuy=c5.close>e59&&c5.close>e521;
