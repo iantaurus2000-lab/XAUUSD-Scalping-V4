@@ -21,7 +21,7 @@ public class MainActivity extends Activity {
     static final int REQ_NOTIF=9001;
 
     LinearLayout root, content;
-    TextView price, connection, signal, metrics, account, botState, log;
+    TextView price, priceChange, connection, signal, signalDetail, confidence, m5Bias, m1State, ticker, metrics, account, botState, log, spreadLine, highLow, resultsBar, boxEntry, boxSl, boxTp1, boxTp2;
     ChartView chart;
     SecurityStore store;
     ExnessClient exness;
@@ -29,6 +29,8 @@ public class MainActivity extends Activity {
     ArrayList<StrategyEngine.Candle> m1 = new ArrayList<>(), m5 = new ArrayList<>();
     StrategyEngine.Decision decision = new StrategyEngine.Decision();
     double mid=0, spread=0;
+    String chartTf="M1";
+    double lastPrice=0;
     long lastLoad=0, lastBarsLoad=0;
     static final String FEED="XAUUSD";
 
@@ -75,73 +77,65 @@ public class MainActivity extends Activity {
     }
 
     void buildUi(){
-        root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(10,10,10,6);root.setBackgroundColor(Color.rgb(7,10,15));
-        LinearLayout head=new LinearLayout(this);head.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title=tv("XAUUSD  •  MOBILE TRADING ENGINE",17);title.setTypeface(null,1);
-        price=tv("--.--",25);price.setGravity(Gravity.RIGHT);price.setTypeface(null,1);
-        head.addView(title,new LinearLayout.LayoutParams(0,60,1));head.addView(price,new LinearLayout.LayoutParams(0,60,1));root.addView(head);
-        connection=tv("● NOT CONNECTED",12);connection.setTextColor(Color.LTGRAY);root.addView(connection);
+        setContentView(R.layout.activity_main);
+        price=findViewById(R.id.price); priceChange=findViewById(R.id.priceChange);
+        connection=findViewById(R.id.connection); ticker=findViewById(R.id.ticker);
+        signal=findViewById(R.id.signalState); signalDetail=findViewById(R.id.signalDetail);
+        confidence=findViewById(R.id.confidence); m5Bias=findViewById(R.id.m5Bias); m1State=findViewById(R.id.m1State);
+        spreadLine=findViewById(R.id.spreadLine); highLow=findViewById(R.id.highLow); resultsBar=findViewById(R.id.resultsBar);
+        boxEntry=findViewById(R.id.boxEntry); boxSl=findViewById(R.id.boxSl); boxTp1=findViewById(R.id.boxTp1); boxTp2=findViewById(R.id.boxTp2);
+        chart=findViewById(R.id.chart); account=findViewById(R.id.account); botState=findViewById(R.id.botState); log=findViewById(R.id.log);
+        ticker.setSelected(true);
 
-        ScrollView sv=new ScrollView(this);
-        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);sv.addView(content);root.addView(sv,new LinearLayout.LayoutParams(-1,0,1));
+        findViewById(Button.class.cast(findViewById(R.id.tfM1)).getId()).setOnClickListener(v->{chartTf="M1";renderChart();});
+        findViewById(R.id.tfM5).setOnClickListener(v->{chartTf="M5";renderChart();});
+        findViewById(R.id.tfM15).setOnClickListener(v->{chartTf="M15";renderChart();});
+        findViewById(R.id.btnStart).setOnClickListener(v->startAuto());
+        findViewById(R.id.btnStop).setOnClickListener(v->stopAuto());
+        findViewById(R.id.btnMenu).setOnClickListener(v->showProfessionalMenu());
+        findViewById(R.id.btnExness).setOnClickListener(v->showExnessDialog());
+        findViewById(R.id.btnManual).setOnClickListener(v->showManualOrderDialog());
+        findViewById(R.id.btnCancelAuto).setOnClickListener(v->showCancelAutoDialog());
+        findViewById(R.id.btnCopyEntry).setOnClickListener(v->toast("Entry "+fmt(decision.entry)));
+        findViewById(R.id.btnCopySl).setOnClickListener(v->toast("SL "+fmt(decision.sl)));
+        findViewById(R.id.btnCopyTp).setOnClickListener(v->toast("TP1 "+fmt(decision.tp1)));
+        renderDecision();
+    }
 
-        chart=new ChartView(); addCard(chart,330);
-        LinearLayout chartTools=new LinearLayout(this);
-        chartTools.setGravity(Gravity.CENTER);
-        String[] chartBtns={"LIVE","X+","X-","Y+","Y-"};
-        for(String s:chartBtns){
-            Button cb=btn(s);
-            chartTools.addView(cb,new LinearLayout.LayoutParams(0,48,1));
-            if("LIVE".equals(s)) cb.setOnClickListener(v->chart.resetView());
-            else if("X+".equals(s)) cb.setOnClickListener(v->chart.zoomX(1.18f));
-            else if("X-".equals(s)) cb.setOnClickListener(v->chart.zoomX(0.85f));
-            else if("Y+".equals(s)) cb.setOnClickListener(v->chart.zoomY(1.18f));
-            else cb.setOnClickListener(v->chart.zoomY(0.85f));
-        }
-        content.addView(chartTools,new LinearLayout.LayoutParams(-1,50));
-        signal=tv("WAITING FOR SETUP",19);signal.setGravity(Gravity.CENTER);signal.setTypeface(null,1);addCard(signal,64);
-        metrics=tv("M5 Bias: --\nWick: --  Sweep: --  BOS: --\nEMA9/21/50: -- / -- / --\nRSI: --  ATR: --  MACD: --",12);addCard(metrics,110);
-
-        LinearLayout actions=new LinearLayout(this);actions.setPadding(0,4,0,4);
-        Button connect=btn("🔐 Exness");
-        Button manual=btn("🎯 Manual Limit");
-        Button start=btn("▶ Start Auto");
-        Button stop=btn("■ Stop Auto");
-        actions.addView(connect,new LinearLayout.LayoutParams(0,56,1));
-        actions.addView(manual,new LinearLayout.LayoutParams(0,56,1));
-        actions.addView(start,new LinearLayout.LayoutParams(0,56,1));
-        actions.addView(stop,new LinearLayout.LayoutParams(0,56,1));
-        content.addView(actions);
-
-        Button manager=btn("🛡 Position Manager");
-        Button risk=btn("💰 Risk & Strategy");
-        Button orders=btn("📋 Orders / Account");
-        Button mt5=btn("🔗 MT5 DIRECT • HP ONLY");
-        Button telegram=btn("📲 Telegram");
-        Button cancelAuto=btn("🛑 Cancel Auto BUY / SELL");
-        content.addView(manager,new LinearLayout.LayoutParams(-1,56));
-        content.addView(risk,new LinearLayout.LayoutParams(-1,56));
-        content.addView(orders,new LinearLayout.LayoutParams(-1,56));
-        content.addView(mt5,new LinearLayout.LayoutParams(-1,56));
-        content.addView(telegram,new LinearLayout.LayoutParams(-1,56));
-        cancelAuto.setBackground(bg("#28151A",16));
-        content.addView(cancelAuto,new LinearLayout.LayoutParams(-1,58));
-
-        botState=tv("AUTO: OFF",13);botState.setGravity(Gravity.CENTER);botState.setBackground(bg("#151B23",15));content.addView(botState,new LinearLayout.LayoutParams(-1,48));
-        account=tv("Account: --",12);content.addView(account);
-        log=tv("Ready. Signal engine active; automatic execution is OFF until explicitly started.",11);log.setTextColor(Color.GRAY);content.addView(log);
-
-        connect.setOnClickListener(v->showExnessDialog());
-        manual.setOnClickListener(v->showManualOrderDialog());
-        start.setOnClickListener(v->startAuto());
-        stop.setOnClickListener(v->stopAuto());
-        manager.setOnClickListener(v->showManagerDialog());
-        risk.setOnClickListener(v->showRiskDialog());
-        orders.setOnClickListener(v->showAccountDialog());
-        mt5.setOnClickListener(v->showMt5Dialog());
-        telegram.setOnClickListener(v->showTelegramDialog());
-        cancelAuto.setOnClickListener(v->showCancelAutoDialog());
-        setContentView(root);
+    void showProfessionalMenu(){
+        String auto=store.rawPrefs().getBoolean("auto",false)?"ON":"OFF";
+        String[] items={
+            "🔐 Exness API / Instrument",
+            "🎯 Manual BUY/SELL LIMIT",
+            "🛡 Position Manager",
+            "💰 Risk & Strategy",
+            "📋 Orders / Account",
+            "🔗 MT5 DIRECT • HP ONLY",
+            "📲 Telegram",
+            "🛑 Cancel Auto BUY",
+            "🛑 Cancel Auto SELL",
+            "🧹 Cancel ALL Auto LIMIT",
+            "🔔 Notification",
+            "📜 Log / Status",
+            "AUTO ENGINE: "+auto
+        };
+        new AlertDialog.Builder(this).setTitle("XAUUSD ENGINE • CONTROL").setItems(items,(d,w)->{
+            switch(w){
+                case 0: showExnessDialog();break;
+                case 1: showManualOrderDialog();break;
+                case 2: showManagerDialog();break;
+                case 3: showRiskDialog();break;
+                case 4: showAccountDialog();break;
+                case 5: showMt5Dialog();break;
+                case 6: showTelegramDialog();break;
+                case 7: cancelAutoOrders("buy");break;
+                case 8: cancelAutoOrders("sell");break;
+                case 9: cancelAutoOrders("all");break;
+                case 10: requestNotificationPermission();toast("Notification permission diperiksa.");break;
+                case 11: new AlertDialog.Builder(this).setTitle("ENGINE LOG").setMessage(log.getText()).setPositiveButton("OK",null).show();break;
+                case 12: if(store.rawPrefs().getBoolean("auto",false))stopAuto(); else startAuto();break;
+            }
+        }).setNegativeButton("Tutup",null).show();
     }
 
     void addCard(View v,int h){v.setBackground(bg("#0E131A",18));content.addView(v,new LinearLayout.LayoutParams(-1,h));}
@@ -364,6 +358,11 @@ public class MainActivity extends Activity {
                 runOnUiThread(()->{
                     mid=mm;spread=sp;m1=a;m5=b;decision=dd;lastLoad=now;
                     price.setText(fmt(mid));
+                    double prev=lastPrice; lastPrice=mid;
+                    priceChange.setText((prev>0&&mid>=prev?"+":"")+fmt(prev>0?mid-prev:0));
+                    priceChange.setTextColor(mid>=prev?Color.rgb(0,230,118):Color.rgb(255,82,82));
+                    spreadLine.setText("Spread "+fmt(spread));
+                    if(ticker!=null)ticker.setText("BIQUOTE • XAUUSD • 1s • "+(t.optBoolean("stale",false)?"STALE":"LIVE"));
                     connection.setText("● 1s MARKET FEED  •  "+(t.optBoolean("stale",false)?"STALE":"LIVE")+"  • Spread "+fmt(spread));
                     renderDecision();chart.invalidate();
                 });
@@ -392,9 +391,20 @@ public class MainActivity extends Activity {
     }
 
     void renderDecision(){
-        signal.setText(decision.side.equals("WAIT")?"WAIT  •  SCORE "+decision.score+"/100":decision.side+"  •  "+decision.score+"/100\n"+decision.summary());
-        signal.setTextColor(decision.side.startsWith("BUY")?Color.rgb(0,230,118):decision.side.startsWith("SELL")?Color.rgb(255,82,82):Color.WHITE);
-        metrics.setText("M5 Bias: "+(decision.side.startsWith("BUY")?"BUY":decision.side.startsWith("SELL")?"SELL":"NEUTRAL")+"\nWick: "+(decision.wick?"YES":"--")+"  Sweep: "+(decision.sweep?"YES":"--")+"  BOS: "+(decision.bos?"YES":"--")+"\nEMA9/21/50: "+fmt(decision.ema9)+" / "+fmt(decision.ema21)+" / "+fmt(decision.ema50)+"\nRSI: "+fmt(decision.rsi)+"  ATR: "+fmt(decision.atr)+"  MACD: "+fmt(decision.macd));
+        if(signal==null)return;
+        boolean buy=decision.side.startsWith("BUY"),sell=decision.side.startsWith("SELL");
+        signal.setText(decision.side.equals("WAIT")?"WAIT • SCORE "+decision.score+"/100":decision.side+" • "+(decision.score>=85?"ENTRY READY":"LIMIT ZONE"));
+        signal.setTextColor(buy?Color.rgb(0,230,118):sell?Color.rgb(255,82,82):Color.WHITE);
+        signalDetail.setText(decision.reason==null||decision.reason.isEmpty()?"M5 Bias → Liquidity Sweep → Wick Rejection → BOS":decision.reason);
+        int stars=Math.max(0,Math.min(5,decision.score/20));
+        confidence.setText("★★★★★".substring(0,stars)+"☆☆☆☆☆".substring(0,5-stars)+"  "+decision.score+"/100");
+        m5Bias.setText("M5 "+(decision.bias?"BIAS CONFIRMED":"WAIT"));
+        m1State.setText("M1 "+(decision.side.equals("WAIT")?"WATCH":decision.side));
+        boxEntry.setText("ENTRY\n"+fmt(decision.entry)); boxSl.setText("SL\n"+fmt(decision.sl));
+        boxTp1.setText("TP1\n"+fmt(decision.tp1)); boxTp2.setText("TP2\n"+fmt(decision.tp2));
+        if(botState!=null)botState.setText(store.rawPrefs().getBoolean("auto",false)?"AUTO: ON • GUARDED":"AUTO: OFF • MANUAL");
+        if(account!=null)account.setText("Account: "+(hasCredentials()?"API configured":"not connected"));
+        if(chart!=null)renderChart();
     }
 
     String orderSymbol(){String s=store.get("symbol","XAUUSD").trim();return s.isEmpty()?"XAUUSD":s;}
@@ -468,114 +478,45 @@ public class MainActivity extends Activity {
     class ChartView extends View{
         Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
         ScaleGestureDetector scaleDetector;
-        float xZoom=1f,yZoom=1f,xPan=0f,yPan=0f,lastX,lastY;
-        boolean liveMode=true;
-        final float MIN_X=0.65f,MAX_X=5f,MIN_Y=0.75f,MAX_Y=4f;
-
-        ChartView(){
-            super(MainActivity.this);
-            scaleDetector=new ScaleGestureDetector(MainActivity.this,new ScaleGestureDetector.SimpleOnScaleGestureListener(){
-                @Override public boolean onScale(ScaleGestureDetector d){
-                    float s=d.getScaleFactor();zoomX(s);zoomY(s);liveMode=false;return true;
-                }
-            });
-            setClickable(true);
-        }
-
-        void resetView(){xZoom=1f;yZoom=1f;xPan=0f;yPan=0f;liveMode=true;invalidate();}
-        void zoomX(float f){xZoom=Math.max(MIN_X,Math.min(MAX_X,xZoom*f));invalidate();}
-        void zoomY(float f){yZoom=Math.max(MIN_Y,Math.min(MAX_Y,yZoom*f));invalidate();}
-
-        @Override public boolean onTouchEvent(android.view.MotionEvent e){
+        float xZoom=1f,yZoom=1f,xPan=0f,yPan=0f,lastX,lastY,crossX=-1,crossY=-1;
+        boolean liveMode=true,showCross=false;
+        ChartView(){super(MainActivity.this);scaleDetector=new ScaleGestureDetector(MainActivity.this,new ScaleGestureDetector.SimpleOnScaleGestureListener(){
+            public boolean onScale(ScaleGestureDetector d){float s=d.getScaleFactor();xZoom=Math.max(.65f,Math.min(5f,xZoom*s));yZoom=Math.max(.7f,Math.min(4f,yZoom*s));liveMode=false;invalidate();return true;}
+        });}
+        ArrayList<StrategyEngine.Candle> data(){return "M5".equals(chartTf)?m5:"M15".equals(chartTf)?m5:m1;}
+        void resetView(){xZoom=1;yZoom=1;xPan=0;yPan=0;liveMode=true;invalidate();}
+        void zoomX(float f){xZoom=Math.max(.65f,Math.min(5f,xZoom*f));liveMode=false;invalidate();}
+        void zoomY(float f){yZoom=Math.max(.7f,Math.min(4f,yZoom*f));liveMode=false;invalidate();}
+        public boolean onTouchEvent(MotionEvent e){
             scaleDetector.onTouchEvent(e);
             if(e.getPointerCount()>1)return true;
-            switch(e.getActionMasked()){
-                case MotionEvent.ACTION_DOWN:lastX=e.getX();lastY=e.getY();return true;
-                case MotionEvent.ACTION_MOVE:
-                    if(!scaleDetector.isInProgress()){
-                        float dx=e.getX()-lastX,dy=e.getY()-lastY;
-                        xPan+=dx;yPan+=dy;liveMode=false;lastX=e.getX();lastY=e.getY();
-                        invalidate();
-                    }return true;
-                case MotionEvent.ACTION_UP:case MotionEvent.ACTION_CANCEL:return true;
-            }
-            return true;
+            if(e.getActionMasked()==MotionEvent.ACTION_DOWN){lastX=e.getX();lastY=e.getY();crossX=lastX;crossY=lastY;showCross=true;return true;}
+            if(e.getActionMasked()==MotionEvent.ACTION_MOVE&&!scaleDetector.isInProgress()){float dx=e.getX()-lastX,dy=e.getY()-lastY;xPan+=dx;yPan+=dy;liveMode=false;lastX=e.getX();lastY=e.getY();crossX=e.getX();crossY=e.getY();invalidate();return true;}
+            if(e.getActionMasked()==MotionEvent.ACTION_UP){if(e.getX()>getWidth()*.86f){resetView();}else{showCross=false;invalidate();}return true;}return true;
         }
-
-        @Override protected void onDraw(Canvas c){
-            super.onDraw(c);c.drawColor(Color.rgb(8,12,18));if(m1.size()<2)return;
-            final int left=30,right=getWidth()-48,top=24,bottom=getHeight()-34;
-            final float midY=(top+bottom)/2f;
-            final float baseW=Math.max(5f,(right-left)/65f),cw=Math.max(3f,baseW*xZoom);
-
-            double hi=-1e99,lo=1e99;
-            for(int k=0;k<m1.size();k++){
-                float x=right-(m1.size()-1-k)*cw+xPan;
-                if(x>left-cw && x<right+cw){hi=Math.max(hi,m1.get(k).high);lo=Math.min(lo,m1.get(k).low);}
-            }
-            if(!(hi>lo)){hi=mid+1;lo=mid-1;}
-            double pad=(hi-lo)*0.10;hi+=pad;lo-=pad;
-            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1);p.setColor(Color.rgb(35,42,52));
+        protected void onDraw(Canvas c){
+            c.drawColor(Color.rgb(5,8,12));ArrayList<StrategyEngine.Candle> a=data();if(a.size()<2){p.setColor(Color.LTGRAY);p.setTextSize(14);c.drawText("Menunggu market Biquote...",20,40,p);return;}
+            int left=12,right=getWidth()-72,top=38,bottom=getHeight()-22;float w=right-left;
+            int n=Math.min(a.size(),90);int end=a.size();double hi=-1e99,lo=1e99;
+            for(int i=Math.max(0,end-n);i<end;i++){StrategyEngine.Candle z=a.get(i);hi=Math.max(hi,z.high);lo=Math.min(lo,z.low);}
+            hi=Math.max(hi,mid);lo=Math.min(lo,mid);double pad=Math.max((hi-lo)*.10,.5);hi+=pad;lo-=pad;
+            double center=(hi+lo)/2,range=(hi-lo)/yZoom, max=center+range/2,min=center-range/2;
+            java.util.function.DoubleFunction<Float> yy=v->(float)(bottom-((v-min)/(max-min))*(bottom-top)+yPan);
+            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1);p.setColor(Color.rgb(28,34,44));
             for(int g=0;g<=6;g++){float y=top+(bottom-top)*g/6f;c.drawLine(left,y,right,y,p);}
-            for(int g=0;g<=8;g++){float x=left+(right-left)*g/8f;c.drawLine(x,top,x,bottom,p);}
-            p.setStyle(Paint.Style.FILL);
-
-            p.setTextSize(13);p.setColor(Color.LTGRAY);c.drawText("M1 • 1s LIVE",left,16,p);
-            p.setTextSize(11);
-            for(int g=0;g<=6;g++){double v=hi-(hi-lo)*g/6.0;float y=top+(bottom-top)*g/6f;c.drawText(fmt(v),right+4,y+4,p);}
-
-            for(int k=0;k<m1.size();k++){
-                StrategyEngine.Candle x=m1.get(k);
-                float cx=right-(m1.size()-1-k)*cw+xPan;
-                if(cx<left-cw || cx>right+cw)continue;
-                float yH=mapY(x.high,lo,hi,top,bottom),yL=mapY(x.low,lo,hi,top,bottom);
-                float yO=mapY(x.open,lo,hi,top,bottom),yC=mapY(x.close,lo,hi,top,bottom);
-                int col=x.close>=x.open?Color.rgb(0,210,105):Color.rgb(255,75,75);
-                p.setColor(col);p.setStrokeWidth(Math.max(1.5f,xZoom*1.5f));c.drawLine(cx,yH,cx,yL,p);
-                p.setStyle(Paint.Style.FILL);
-                float bw=Math.max(2.5f,cw*.58f);
-                c.drawRect(cx-bw/2,Math.min(yO,yC),cx+bw/2,Math.max(yO,yC)+1,p);
-                if(k==m1.size()-1){p.setColor(Color.WHITE);c.drawCircle(cx,yC,4f,p);}
+            p.setStyle(Paint.Style.FILL);p.setTextSize(11);p.setColor(Color.WHITE);c.drawText("XAU/USD "+chartTf,left,18,p);
+            p.setColor(Color.rgb(0,230,118));c.drawText(liveMode?"● LIVE 1s":"● SCROLL",left+100,18,p);
+            float step=w/(n+1f)*xZoom,bw=Math.max(2.5f,step*.55f);
+            for(int j=0;j<n;j++){int idx=end-n+j;StrategyEngine.Candle z=a.get(idx);float x=right-(n-1-j)*step+xPan; if(x<left-20||x>right+20)continue;
+                p.setColor(z.close>=z.open?Color.rgb(38,198,120):Color.rgb(239,83,80));p.setStrokeWidth(1.5f);
+                c.drawLine(x,yy.apply(z.high),x,yy.apply(z.low),p);float o=yy.apply(z.open),cl=yy.apply(z.close);c.drawRect(x-bw/2,Math.min(o,cl),x+bw/2,Math.max(o,cl)+1,p);
             }
-
-            double srHigh=StrategyEngine.resistance(m1,45,m1.size()-1),srLow=StrategyEngine.support(m1,45,m1.size()-1);
-            drawLevel(c,srHigh,lo,hi,top,bottom,Color.MAGENTA,"R");
-            drawLevel(c,srLow,lo,hi,top,bottom,Color.GREEN,"S");
-            double range=srHigh-srLow;
-            if(range>0){
-                drawLevel(c,srHigh-range*.382,lo,hi,top,bottom,Color.LTGRAY,"F38");
-                drawLevel(c,srHigh-range*.500,lo,hi,top,bottom,Color.LTGRAY,"F50");
-                drawLevel(c,srHigh-range*.618,lo,hi,top,bottom,Color.LTGRAY,"F62");
-            }
-
-            if(decision.entry>0)drawLevel(c,decision.entry,lo,hi,top,bottom,Color.YELLOW,"ENTRY");
-            if(decision.sl>0)drawLevel(c,decision.sl,lo,hi,top,bottom,Color.RED,"SL");
-            if(decision.tp1>0)drawLevel(c,decision.tp1,lo,hi,top,bottom,Color.rgb(0,180,255),"TP1");
-            if(decision.tp2>0)drawLevel(c,decision.tp2,lo,hi,top,bottom,Color.CYAN,"TP2");
-            if(mid>0)drawLevel(c,mid,lo,hi,top,bottom,Color.WHITE,"LIVE");
-
-            if(!"WAIT".equals(decision.side)){
-                float mx=right-18;
-                float my=decision.side.startsWith("BUY")?top+42:bottom-22;
-                p.setColor(decision.side.startsWith("BUY")?Color.rgb(0,230,118):Color.rgb(255,82,82));
-                c.drawCircle(mx,my,11,p);
-                p.setColor(Color.BLACK);p.setTextSize(10);p.setTextAlign(Paint.Align.CENTER);
-                c.drawText(decision.side.startsWith("BUY")?"B":"S",mx,my+4,p);p.setTextAlign(Paint.Align.LEFT);
-                p.setColor(Color.WHITE);p.setTextSize(12);
-                c.drawText((decision.side.startsWith("BUY")?"BUY READY":"SELL READY")+"  "+decision.score+"/100",left+8,top+34,p);
-            }
-            if(liveMode){p.setColor(Color.rgb(0,230,118));p.setTextSize(11);c.drawText("LIVE",right-34,bottom+24,p);}
+            double sr=StrategyEngine.resistance(a,45,a.size()-1),ss=StrategyEngine.support(a,45,a.size()-1);
+            level(c,sr,yy,"R",Color.rgb(239,83,80));level(c,ss,yy,"S",Color.rgb(66,165,245));
+            if(decision.entry>0)level(c,decision.entry,yy,"ENTRY",Color.YELLOW);if(decision.sl>0)level(c,decision.sl,yy,"SL",Color.RED);if(decision.tp1>0)level(c,decision.tp1,yy,"TP1",Color.CYAN);if(decision.tp2>0)level(c,decision.tp2,yy,"TP2",Color.GREEN);level(c,mid,yy,"LIVE",Color.WHITE);
+            if(showCross&&crossX>=left&&crossX<=right&&crossY>=top&&crossY<=bottom){p.setColor(Color.argb(160,180,180,180));p.setStrokeWidth(1);c.drawLine(crossX,top,crossX,bottom,p);c.drawLine(left,crossY,right,crossY,p);}
+            p.setColor(Color.LTGRAY);p.setTextSize(10);c.drawText("← drag →   ↑↓ move   pinch/zoom   tap RIGHT = LIVE",left,bottom+18,p);
         }
-
-        float mapY(double v,double lo,double hi,int top,int bottom){
-            float raw=bottom-(float)((v-lo)/(hi-lo))*(bottom-top);
-            return (top+bottom)/2f+(raw-(top+bottom)/2f)*yZoom+yPan;
-        }
-        void drawLevel(Canvas c,double v,double lo,double hi,int top,int bottom,int color,String label){
-            float y=mapY(v,lo,hi,top,bottom);if(y<top-20||y>bottom+20)return;
-            p.setColor(color);p.setStrokeWidth(label.equals("LIVE")?2.2f:1.3f);p.setStyle(Paint.Style.STROKE);
-            c.drawLine(30,y,getWidth()-48,y,p);p.setStyle(Paint.Style.FILL);
-            p.setTextSize(10);c.drawRect(32,y-14,116,y+1,p);p.setColor(Color.BLACK);c.drawText(label+" "+fmt(v),36,y-3,p);
-        }
+        void level(Canvas c,double v,java.util.function.DoubleFunction<Float> yy,String s,int col){float y=yy.apply(v);if(y<30||y>getHeight()-20)return;p.setColor(col);p.setStrokeWidth(s.equals("LIVE")?2:1.2f);c.drawLine(12,y,getWidth()-72,y,p);p.setTextSize(9);c.drawText(s+" "+fmt(v),getWidth()-68,y-3,p);}
     }
 }
