@@ -463,81 +463,69 @@ public class MainActivity extends Activity {
                 double mm=t.optDouble("mid",0),sp=t.optDouble("spread",0);
                 if(mm<=0)throw new IOException("Biquote returned no mid price");
 
-                ArrayList<StrategyEngine.Candle> a,b,c15;
-                if(m1.size()<60 || now-lastBarsLoad>=10000){
-                    try{
-                        a=parse(get(BASE+"/ohlc?interval=1m&limit=100"));
-                        b=parse(get(BASE+"/ohlc?interval=5m&limit=60"));
-                        c15=parse(get(BASE+"/ohlc?interval=15m&limit=60"));
-                        if(a.size()>=60&&b.size()>=30&&c15.size()>=20){
-                            m1=a;m5=b;m15=c15;lastBarsLoad=now;
-                        }else throw new IOException("OHLC data incomplete");
-                    }catch(Exception barsError){
-                        if(m1.size()<60||m5.size()<30||m15.size()<20)throw barsError;
-                        a=new ArrayList<>(m1);b=new ArrayList<>(m5);c15=new ArrayList<>(m15);
-                    }
-                }else{
-                    a=cloneWithLive(m1,mm);
-                    b=new ArrayList<>(m5);
-                    c15=new ArrayList<>(m15);
-                }
-                if(a.size()<60 || b.size()<30 || c15.size()<20)throw new IOException("Waiting for candle history");
+                ArrayList<StrategyEngine.Candle> a=null;
+                ArrayList<StrategyEngine.Candle> b=m5.isEmpty()?null:new ArrayList<>(m5);
+                ArrayList<StrategyEngine.Candle> c15=m15.isEmpty()?null:new ArrayList<>(m15);
 
-                StrategyEngine.Decision dd=StrategyEngine.analyze(a,b,mm);
+                if(m1.size()<60 || now-lastBarsLoad>=5000){
+                    try{ArrayList<StrategyEngine.Candle> x=parse(get(BASE+"/ohlc?interval=1m&limit=120"));if(x.size()>=20){a=x;lastBarsLoad=now;}}catch(Exception ignored){}
+                }
+                if(a==null&&!m1.isEmpty())a=new ArrayList<>(m1);
+
+                if(b==null || now-lastBarsLoad>=15000){
+                    try{ArrayList<StrategyEngine.Candle> x=parse(get(BASE+"/ohlc?interval=5m&limit=80"));if(x.size()>=20)b=x;}catch(Exception ignored){}
+                }
+                if(c15==null || now-lastBarsLoad>=15000){
+                    try{ArrayList<StrategyEngine.Candle> x=parse(get(BASE+"/ohlc?interval=15m&limit=80"));if(x.size()>=20)c15=x;}catch(Exception ignored){}
+                }
+
+                if(a==null||a.isEmpty()){
+                    a=new ArrayList<>();
+                    a.add(new StrategyEngine.Candle(System.currentTimeMillis(),mm,mm,mm,mm));
+                }
+                if(b==null||b.isEmpty())b=new ArrayList<>(a);
+                if(c15==null||c15.isEmpty())c15=new ArrayList<>(a);
+
+                a=cloneWithLive(a,mm);
+                b=cloneWithLive(b,mm);
+                c15=cloneWithLive(c15,mm);
+
+                ArrayList<StrategyEngine.Candle> analysisM1=a.size()>=60?a:m1;
+                ArrayList<StrategyEngine.Candle> analysisM5=b.size()>=30?b:m5;
+                StrategyEngine.Decision dd=(analysisM1.size()>=60&&analysisM5.size()>=30)
+                        ?StrategyEngine.analyze(analysisM1,analysisM5,mm):new StrategyEngine.Decision();
+
                 final boolean stale=t.optBoolean("stale",false);
                 final String state=t.optString("marketState","open");
                 updateHistoryResults(mm);
+                final ArrayList<StrategyEngine.Candle> fa=a,fb=b,fc=c15;
                 runOnUiThread(()->{
-                    mid=mm;spread=sp;m1=a;m5=b;m15=c15;decision=dd;lastLoad=now;
+                    mid=mm;spread=sp;m1=fa;m5=fb;m15=fc;decision=dd;lastLoad=now;
                     price.setText(fmt(mid));
-                    double prev=lastPrice; lastPrice=mid;
-                    if(prev>0){
-                        priceChange.setText((mid>=prev?"+":"")+fmt(mid-prev));
-                        priceChange.setTextColor(mid>=prev?Color.rgb(0,230,118):Color.rgb(255,82,82));
-                    }
+                    double prev=lastPrice;lastPrice=mid;
+                    if(prev>0){priceChange.setText((mid>=prev?"+":"")+fmt(mid-prev));priceChange.setTextColor(mid>=prev?Color.rgb(0,230,118):Color.rgb(255,82,82));}
                     spreadLine.setText("Spread "+fmt(spread));
-                    ArrayList<StrategyEngine.Candle> hd="M5".equals(chartTf)?b:"M15".equals(chartTf)?c15:a;
-                    if(!hd.isEmpty()) highLow.setText("H "+fmt(hd.stream().mapToDouble(x->x.high).max().orElse(mm))+"   L "+fmt(hd.stream().mapToDouble(x->x.low).min().orElse(mm)));
+                    ArrayList<StrategyEngine.Candle> hd="M5".equals(chartTf)?fb:"M15".equals(chartTf)?fc:fa;
+                    if(!hd.isEmpty())highLow.setText("H "+fmt(hd.stream().mapToDouble(x->x.high).max().orElse(mm))+"   L "+fmt(hd.stream().mapToDouble(x->x.low).min().orElse(mm)));
                     ticker.setText("BIQUOTE • XAUUSD • LIVE 1s");
                     connection.setText("● BIQUOTE 1s • "+("closed".equalsIgnoreCase(state)?"MARKET CLOSED":stale?"STALE":"LIVE")+" • Spread "+fmt(spread));
-                    renderChart();
-                    renderDecision();
-                    renderResultsBar();
+                    renderChart();renderDecision();renderResultsBar();
                     if(now-lastAccountUiAt>=15000){lastAccountUiAt=now;refreshAccountUi();}
                 });
                 feedBackoffUntil=0;
             }catch(Exception e){
                 feedBackoffUntil=System.currentTimeMillis()+2000;
                 runOnUiThread(()->connection.setText("● BIQUOTE FEED ERROR • retry 2s"));
-            }finally{
-                marketBusy=false;
-            }
+            }finally{marketBusy=false;}
         }).start();
     }
 
     ArrayList<StrategyEngine.Candle> cloneWithLive(ArrayList<StrategyEngine.Candle> src,double live){
         ArrayList<StrategyEngine.Candle> out=new ArrayList<>();
         for(StrategyEngine.Candle c:src)out.add(new StrategyEngine.Candle(c.t,c.open,c.high,c.low,c.close));
-        if(!out.isEmpty() && live>0){
+        if(!out.isEmpty()&&live>0){
             StrategyEngine.Candle c=out.get(out.size()-1);
             c.high=Math.max(c.high,live);c.low=Math.min(c.low,live);c.close=live;
-        }
-        return out;
-    }
-
-    String get(String u)throws Exception{
-        HttpURLConnection c=(HttpURLConnection)new URL(u).openConnection();c.setConnectTimeout(7000);c.setReadTimeout(7000);c.setRequestMethod("GET");
-        BufferedReader r=new BufferedReader(new InputStreamReader(c.getInputStream()));StringBuilder s=new StringBuilder();String x;while((x=r.readLine())!=null)s.append(x);r.close();c.disconnect();return s.toString();
-    }
-
-    ArrayList<StrategyEngine.Candle> parse(String s)throws Exception{
-        JSONArray ar=new JSONObject(s).getJSONArray("bars");ArrayList<StrategyEngine.Candle> out=new ArrayList<>();
-        for(int i=ar.length()-1;i>=0;i--){
-            JSONObject o=ar.getJSONObject(i);
-            String raw=o.optString("openTime","");
-            long tm=0;
-            try{tm=java.time.Instant.parse(raw).toEpochMilli();}catch(Exception ignored){tm=o.optLong("openTime",0);}
-            out.add(new StrategyEngine.Candle(tm,o.getDouble("open"),o.getDouble("high"),o.getDouble("low"),o.getDouble("close")));
         }
         return out;
     }
