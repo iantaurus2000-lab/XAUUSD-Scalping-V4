@@ -1,4 +1,4 @@
-name: XAUUSD MOBILE TRADING ENGINE V5.2 PRO BUILD
+name: XAUUSD MOBILE TRADING ENGINE V5.2 FINAL BUILD
 
 on:
   workflow_dispatch:
@@ -52,7 +52,7 @@ jobs:
       - name: Upload APK and source
         uses: actions/upload-artifact@v4
         with:
-          name: XAUUSD-MOBILE-ENGINE-V5-2-PRO
+          name: XAUUSD-MOBILE-ENGINE-V5-2-FINAL
           path: |
             v5.2-mobile-engine/app/build/outputs/apk/**/*.apk
             XAUUSD-MOBILE-ENGINE-V5-2-SOURCE.zip
