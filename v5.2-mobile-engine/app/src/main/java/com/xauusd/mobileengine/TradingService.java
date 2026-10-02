@@ -16,6 +16,7 @@ public class TradingService extends Service {
     final Handler h=new Handler(Looper.getMainLooper());
     SecurityStore store;
     ExnessClient exness;
+    MetaApiClient metaApi;
     TelegramClient telegram;
     TradeManager manager;
     static final String BASE="https://biquote.io/api/XAUUSD";
@@ -39,7 +40,7 @@ public class TradingService extends Service {
         wakeLock=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"XAUUSD:Engine");
         wakeLock.setReferenceCounted(false);
         wakeLock.acquire();
-        store=new SecurityStore(this);exness=new ExnessClient(store);telegram=new TelegramClient(store);manager=new TradeManager(store,exness);createChannel();
+        store=new SecurityStore(this);exness=new ExnessClient(store);metaApi=new MetaApiClient(store);telegram=new TelegramClient(store);manager=new TradeManager(store,exness);createChannel();
         Notification n=new Notification.Builder(this,CH).setContentTitle("XAUUSD V5.2 Auto Engine")
             .setContentText("Auto execution armed with risk guards").setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true).setColor(Color.rgb(0,200,83)).build();
@@ -100,7 +101,7 @@ public class TradingService extends Service {
                 if(key.equals(lastSignalKey))return;
 
                 String symbol=orderSymbol();
-                if(hasActiveExposure(symbol))return;
+                if(metaApi.configured()){ try{ MetaApiClient.Response mr=metaApi.orders(); if(mr.ok() && mr.body.contains(symbol)) return; }catch(Exception ignored){} } else if(hasActiveExposure(symbol))return;
 
                 String lot=store.rawPrefs().getString("lot","0.01");
                 int digits=2;
@@ -110,6 +111,12 @@ public class TradingService extends Service {
                 }catch(Exception ignored){}
 
                 String side=d.side.startsWith("BUY")?"buy":"sell";
+                if(metaApi.configured()){
+                    MetaApiClient.Response mr=metaApi.placeLimit(symbol,side,Double.parseDouble(lot),Double.parseDouble(fmt(d.entry,digits)),Double.parseDouble(fmt(d.sl,digits)),Double.parseDouble(fmt(d.tp2,digits)),"XAUUSD-V5.2-AUTO");
+                    if(mr.ok()){lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;notifyUser("MT5 DEMO ORDER",d.summary()+"\\n"+trim(mr.body));if(telegram.enabled())try{telegram.send("🟢 XAUUSD SCALPING\\n"+d.side+"\\n"+d.summary()+"\\nMT5 DEMO: ORDER SUBMITTED");}catch(Exception ignored){}}
+                    else notifyUser("MT5 ORDER REJECT "+mr.code,trim(mr.body));
+                    return;
+                }
                 ExnessClient.Response r=exness.placeLimit(symbol,side,lot,fmt(d.entry,digits),fmt(d.sl,digits),fmt(d.tp2,digits),"XAUUSD-V5.2-AUTO");
                 if(r.ok()){
                     lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;
