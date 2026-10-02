@@ -425,7 +425,7 @@ public class MainActivity extends Activity {
                     String comment=o.optString("comment","").toUpperCase(Locale.US);
                     String id=o.optString("id",o.optString("order_id",""));
                     if(!orderSymbol().equalsIgnoreCase(ins)||id.isEmpty())continue;
-                    if(!comment.contains("AUTO")&&!comment.contains("V5.2"))continue;
+                    if(!comment.contains("AUTO"))continue;
                     if(!"all".equals(filter)&&!filter.equals(side))continue;
                     ids.add(id);sides.add(side);
                 }
