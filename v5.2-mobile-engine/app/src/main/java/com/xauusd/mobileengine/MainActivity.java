@@ -8,7 +8,6 @@ import android.graphics.*;
 import android.graphics.drawable.GradientDrawable;
 import android.os.*;
 import android.view.*;
-import android.util.AttributeSet;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.*;
 
@@ -85,7 +84,10 @@ public class MainActivity extends Activity {
         confidence=findViewById(R.id.confidence); m5Bias=findViewById(R.id.m5Bias); m1State=findViewById(R.id.m1State);
         spreadLine=findViewById(R.id.spreadLine); highLow=findViewById(R.id.highLow); resultsBar=findViewById(R.id.resultsBar);
         boxEntry=findViewById(R.id.boxEntry); boxSl=findViewById(R.id.boxSl); boxTp1=findViewById(R.id.boxTp1); boxTp2=findViewById(R.id.boxTp2);
-        chart=findViewById(R.id.chart); account=findViewById(R.id.account); botState=findViewById(R.id.botState); log=findViewById(R.id.log);
+        FrameLayout chartHost=findViewById(R.id.chartHost);
+        chart=new ChartView();
+        chartHost.addView(chart,new FrameLayout.LayoutParams(-1,-1));
+        account=findViewById(R.id.account); botState=findViewById(R.id.botState); log=findViewById(R.id.log);
         ticker.setSelected(true);
 
         findViewById(R.id.tfM1).setOnClickListener(v->{chartTf="M1";chart.resetView();renderChart();});
@@ -484,8 +486,7 @@ public class MainActivity extends Activity {
         ScaleGestureDetector scaleDetector;
         float xZoom=1f,yZoom=1f,xPan=0f,yPan=0f,lastX,lastY,crossX=-1,crossY=-1;
         boolean liveMode=true,showCross=false;
-        ChartView(){this(MainActivity.this, null);}
-        ChartView(Context context, AttributeSet attrs){super(context, attrs);scaleDetector=new ScaleGestureDetector(context,new ScaleGestureDetector.SimpleOnScaleGestureListener(){
+        ChartView(){super(MainActivity.this);scaleDetector=new ScaleGestureDetector(MainActivity.this,new ScaleGestureDetector.SimpleOnScaleGestureListener(){
             public boolean onScale(ScaleGestureDetector d){float s=d.getScaleFactor();xZoom=Math.max(.65f,Math.min(5f,xZoom*s));yZoom=Math.max(.7f,Math.min(4f,yZoom*s));liveMode=false;invalidate();return true;}
         });}
         ArrayList<StrategyEngine.Candle> data(){return "M5".equals(chartTf)?m5:"M15".equals(chartTf)?m5:m1;}
