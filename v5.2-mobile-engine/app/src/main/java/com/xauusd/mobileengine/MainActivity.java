@@ -29,6 +29,7 @@ public class MainActivity extends Activity {
     ArrayList<StrategyEngine.Candle> m1 = new ArrayList<>(), m5 = new ArrayList<>(), m15 = new ArrayList<>();
     StrategyEngine.Decision lastReady = new StrategyEngine.Decision();
     long lastReadyAt = 0, lastAlertAt = 0, lastAccountUiAt = 0;
+    String lastHistoryKey = "";
     String newsTicker = "NEWS: loading...";
     StrategyEngine.Decision decision = new StrategyEngine.Decision();
     double mid=0, spread=0;
@@ -364,8 +365,9 @@ public class MainActivity extends Activity {
             try{
                 ExnessClient.Response r=exness.snapshot();
                 if(!r.ok())throw new IllegalStateException("Snapshot "+r.code+": "+trim(r.body));
-                JSONObject root=new JSONObject(r.body); JSONArray orders=root.optJSONArray("orders");if(orders==null)orders=root.optJSONArray("open_orders");
-                JSONArray positions=root.optJSONArray("positions");if(positions==null)positions=root.optJSONArray("open_positions");
+                JSONObject root=new JSONObject(r.body); JSONArray orderData=root.optJSONArray("orders");if(orderData==null)orderData=root.optJSONArray("open_orders");
+                JSONArray positionData=root.optJSONArray("positions");if(positionData==null)positionData=root.optJSONArray("open_positions");
+                final JSONArray orders=orderData, positions=positionData;
                 runOnUiThread(()->{
                     LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(12,4,12,4);
                     TextView head=tv("PENDING ORDERS / OPEN POSITIONS",12);head.setTextColor(Color.WHITE);box.addView(head);
@@ -538,7 +540,7 @@ public class MainActivity extends Activity {
         boxTp1.setText("TP1\n"+fmt(shown.tp1)); boxTp2.setText("TP2\n"+fmt(shown.tp2));
         if(botState!=null)botState.setText(store.rawPrefs().getBoolean("auto",false)?"AUTO: ON • GUARDED":"AUTO: OFF • MANUAL");
         if(account!=null && !hasCredentials())account.setText("Account: not connected");
-        if(ready){saveSignalHistory(decision);}
+        if(ready){String hk=decision.key();if(!hk.equals(lastHistoryKey)){lastHistoryKey=hk;saveSignalHistory(decision);}}
         if(chart!=null)renderChart();
     }
 
@@ -553,7 +555,7 @@ public class MainActivity extends Activity {
                 if(a==null)a=j.optJSONObject("accountState");
                 double balance=a==null?0:a.optDouble("balance",0);
                 double equity=a==null?0:a.optDouble("equity",0);
-                double margin=a==null?a==null?0:a.optDouble("used_margin",0):a.optDouble("used_margin",0);
+                double margin=a==null?0:a.optDouble("used_margin",0);
                 int orders=countArray(j,"orders","open_orders"), positions=countArray(j,"positions","open_positions");
                 final String s=String.format(Locale.US,"B %.2f • E %.2f • M %.2f • P %d • O %d",balance,equity,margin,positions,orders);
                 runOnUiThread(()->account.setText(s));
