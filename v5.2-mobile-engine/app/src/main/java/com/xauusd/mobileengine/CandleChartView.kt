@@ -131,7 +131,7 @@ class CandleChartView @JvmOverloads constructor(
                 val last=visible.last();val x=left+step*(visible.size-1)+step/2f
                 val yy=if(d.side.startsWith("BUY"))y(last.low)-7f else y(last.high)+12f
                 paint.color=if(d.side.startsWith("BUY"))Color.rgb(0,230,118) else Color.rgb(255,82,82)
-                paint.textSize=9f;canvas.drawText(if(d.side.startsWith("BUY"))"▲ BUY":"▼ SELL",x-20f,yy,paint)
+                paint.textSize=9f;canvas.drawText(if(d.side.startsWith("BUY")) "▲ BUY" else "▼ SELL",x-20f,yy,paint)
             }
         }
         paint.color=Color.GRAY;paint.textSize=8f;canvas.drawText("← drag →   ↑↓ move   pinch/zoom   tap RIGHT = LIVE",left,bottom+32f,paint)
