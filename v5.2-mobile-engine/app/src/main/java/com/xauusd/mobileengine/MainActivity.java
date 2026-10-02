@@ -87,15 +87,16 @@ public class MainActivity extends Activity {
         chart=findViewById(R.id.chart); account=findViewById(R.id.account); botState=findViewById(R.id.botState); log=findViewById(R.id.log);
         ticker.setSelected(true);
 
-        findViewById(Button.class.cast(findViewById(R.id.tfM1)).getId()).setOnClickListener(v->{chartTf="M1";renderChart();});
-        findViewById(R.id.tfM5).setOnClickListener(v->{chartTf="M5";renderChart();});
-        findViewById(R.id.tfM15).setOnClickListener(v->{chartTf="M15";renderChart();});
+        findViewById(R.id.tfM1).setOnClickListener(v->{chartTf="M1";chart.resetView();renderChart();});
+        findViewById(R.id.tfM5).setOnClickListener(v->{chartTf="M5";chart.resetView();renderChart();});
+        findViewById(R.id.tfM15).setOnClickListener(v->{chartTf="M15";chart.resetView();renderChart();});
         findViewById(R.id.btnStart).setOnClickListener(v->startAuto());
         findViewById(R.id.btnStop).setOnClickListener(v->stopAuto());
         findViewById(R.id.btnMenu).setOnClickListener(v->showProfessionalMenu());
         findViewById(R.id.btnExness).setOnClickListener(v->showExnessDialog());
         findViewById(R.id.btnManual).setOnClickListener(v->showManualOrderDialog());
         findViewById(R.id.btnCancelAuto).setOnClickListener(v->showCancelAutoDialog());
+        findViewById(R.id.btnLive).setOnClickListener(v->{chart.resetView();});
         findViewById(R.id.btnCopyEntry).setOnClickListener(v->toast("Entry "+fmt(decision.entry)));
         findViewById(R.id.btnCopySl).setOnClickListener(v->toast("SL "+fmt(decision.sl)));
         findViewById(R.id.btnCopyTp).setOnClickListener(v->toast("TP1 "+fmt(decision.tp1)));
