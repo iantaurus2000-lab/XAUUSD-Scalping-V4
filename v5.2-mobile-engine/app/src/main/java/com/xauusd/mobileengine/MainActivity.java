@@ -154,7 +154,7 @@ public class MainActivity extends Activity {
                 case 10: cancelAutoOrders("buy");break;
                 case 11: cancelAutoOrders("sell");break;
                 case 12: cancelAutoOrders("all");break;
-                case 13: requestNotificationPermission();toast("Notification permission diperiksa.");break;
+                case 13: requestNotificationPermission();testAlarm();break;
                 case 14: new AlertDialog.Builder(this).setTitle("ENGINE LOG").setMessage(log.getText()).setPositiveButton("OK",null).show();break;
                 case 15: if(store.rawPrefs().getBoolean("auto",false))stopAuto(); else startAuto();break;
             }
@@ -529,6 +529,14 @@ public class MainActivity extends Activity {
         Notification n=new Notification.Builder(this,"xauusd_alerts").setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(title).setContentText(msg).setStyle(new Notification.BigTextStyle().bigText(msg+"\\n"+d.reason)).setAutoCancel(true).build();
         getSystemService(NotificationManager.class).notify((int)(System.currentTimeMillis()%100000),n);
+    }
+
+    void testAlarm(){
+        new Handler(Looper.getMainLooper()).postDelayed(()->{
+            if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){toast("Izinkan Notification lalu tekan TEST lagi.");return;}
+            StrategyEngine.Decision d=new StrategyEngine.Decision();d.side="BUY LIMIT";d.entry=mid>0?mid-0.50:0;d.sl=mid>0?mid-1.00:0;d.tp1=mid>0?mid+0.50:0;d.tp2=mid>0?mid+1.00:0;d.score=80;
+            notifySignalReady(d);toast("TEST ALARM dikirim.");
+        },300);
     }
 
     void copyPrice(String label,double value){
