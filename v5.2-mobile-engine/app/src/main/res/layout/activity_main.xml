@@ -46,7 +46,7 @@
         <Button android:id="@+id/tfM15" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="M15" android:textSize="10sp" android:layout_marginStart="3dp"/>
         <Button android:id="@+id/btnLive" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="● LIVE" android:textSize="10sp" android:layout_marginStart="3dp"/>
     </LinearLayout>
-    <com.xauusd.mobileengine.MainActivity.ChartView android:id="@+id/chart" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:layout_marginTop="3dp"/>
+    <FrameLayout android:id="@+id/chartHost" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:layout_marginTop="3dp"/>
     <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginTop="4dp">
         <Button android:id="@+id/btnExness" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="🔐 EXNESS" android:textSize="10sp"/>
         <Button android:id="@+id/btnManual" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="🎯 MANUAL LIMIT" android:textSize="10sp" android:layout_marginStart="4dp"/>
