@@ -55,7 +55,7 @@ public class MainActivity extends Activity {
         loadMarket();
         loadNewsTicker();
         handler.postDelayed(marketPoll,2500);
-        handler.postDelayed(newsPoll,300000);
+        handler.postDelayed(newsPoll,60000);
     }
 
     @Override protected void onDestroy() {
@@ -485,6 +485,7 @@ public class MainActivity extends Activity {
                     if(!hd.isEmpty()) highLow.setText("H "+fmt(hd.stream().mapToDouble(x->x.high).max().orElse(mm))+"   L "+fmt(hd.stream().mapToDouble(x->x.low).min().orElse(mm)));
                     if(ticker!=null)ticker.setText("BIQUOTE • XAUUSD • 1s • "+(t.optBoolean("stale",false)?"STALE":"LIVE"));
                     connection.setText("● 1s MARKET FEED  •  "+(t.optBoolean("stale",false)?"STALE":"LIVE")+"  • Spread "+fmt(spread));
+                    renderChart();
                     renderDecision();
                     String rr=String.format(Locale.US,"ATR %.2f • RSI %.0f • MACD %.2f/% .2f • %s",dd.atr,dd.rsi,dd.macd,dd.macdSignal,dd.pattern);
                     resultsBar.setText(rr.replace("/ ","/"));
@@ -523,7 +524,7 @@ public class MainActivity extends Activity {
         if(ready){ lastReady=decision; lastReadyAt=System.currentTimeMillis(); }
         StrategyEngine.Decision shown=decision;
         if(!ready && (lastReady.side.startsWith("BUY")||lastReady.side.startsWith("SELL"))
-                && System.currentTimeMillis()-lastReadyAt<180000) shown=lastReady;
+                && System.currentTimeMillis()-lastReadyAt<900000) shown=lastReady;
         signal.setText(ready
                 ? decision.side+" • "+(decision.score>=85?"ENTRY READY":"LIMIT ZONE")
                 : shown.side.startsWith("BUY")||shown.side.startsWith("SELL")
@@ -533,13 +534,13 @@ public class MainActivity extends Activity {
         if(lamp!=null){lamp.setText("●");lamp.setTextColor((shown.side.startsWith("BUY"))?Color.rgb(0,230,118):shown.side.startsWith("SELL")?Color.rgb(255,82,82):Color.rgb(120,144,156));}
         String why=(shown.reason==null||shown.reason.isEmpty()?"M5 Bias → Liquidity Sweep → Wick Rejection → BOS":shown.reason)
                 +" • Pattern: "+(shown.pattern==null?"--":shown.pattern);
-        signalDetail.setText(why);
+        signalDetail.setText(newsTicker); signalDetail.setSelected(true); signalDetail.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE); signalDetail.setSingleLine(true);
         int stars=Math.max(0,Math.min(5,shown.score/20));
         confidence.setText("★★★★★".substring(0,stars)+"☆☆☆☆☆".substring(0,5-stars)+"  "+shown.score+"/100");
         m5Bias.setText("M5 "+(shown.bias?"BIAS CONFIRMED":"WAIT")+(shown.earlyReady?" • EARLY":""));
         m1State.setText("M1 "+(shown.side.equals("WAIT")?"WATCH":shown.side));
-        boxEntry.setText("ENTRY\n"+fmt(shown.entry)); boxSl.setText("SL\n"+fmt(shown.sl));
-        boxTp1.setText("TP1\n"+fmt(shown.tp1)); boxTp2.setText("TP2\n"+fmt(shown.tp2));
+        boxEntry.setText("ENTRY   ⧉\n"+fmt(shown.entry)); boxSl.setText("SL   ⧉\n"+fmt(shown.sl));
+        boxTp1.setText("TP1   ⧉\n"+fmt(shown.tp1)); boxTp2.setText("TP2   ⧉\n"+fmt(shown.tp2));
         if(botState!=null)botState.setText(store.rawPrefs().getBoolean("auto",false)?"AUTO: ON • GUARDED":"AUTO: OFF • MANUAL");
         if(account!=null && !hasCredentials())account.setText("Account: not connected");
         if(ready){String hk=decision.key();if(!hk.equals(lastHistoryKey)){lastHistoryKey=hk;saveSignalHistory(decision);}}
@@ -694,7 +695,7 @@ public class MainActivity extends Activity {
     void saveSignalHistory(StrategyEngine.Decision d){
         try{
             String old=store.get("signal_history","");
-            String line=System.currentTimeMillis()+" | "+d.side+" | "+fmt(d.entry)+" | "+fmt(d.sl)+" | "+fmt(d.tp1)+" | "+fmt(d.tp2)+" | "+d.score+" | "+d.pattern;
+            String line=d.side+" | Entry "+fmt(d.entry)+" | SL "+fmt(d.sl)+" | TP "+fmt(d.tp2)+" | "+(d.side.startsWith("BUY")?"WIN/LOSS pending":"WIN/LOSS pending");
             String out=line+"\\n"+old;
             String[] rows=out.split("\\n");StringBuilder b=new StringBuilder();
             for(int i=0;i<Math.min(50,rows.length);i++){if(rows[i].trim().length()>0)b.append(rows[i]).append("\\n");}
@@ -707,7 +708,7 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("📋 SIGNAL HISTORY").setMessage(h).setPositiveButton("OK",null).show();
     }
 
-    Runnable newsPoll=new Runnable(){@Override public void run(){loadNewsTicker();handler.postDelayed(this,300000);}};
+    Runnable newsPoll=new Runnable(){@Override public void run(){loadNewsTicker();handler.postDelayed(this,60000);}};
 
     void loadNewsTicker(){
         new Thread(()->{
