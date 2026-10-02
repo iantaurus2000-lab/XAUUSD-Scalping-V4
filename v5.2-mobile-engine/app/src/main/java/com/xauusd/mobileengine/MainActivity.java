@@ -216,7 +216,6 @@ public class MainActivity extends Activity {
                         JSONObject j=new JSONObject(x.body);
                         String st=j.optString("status","pending");
                         if("confirmed".equalsIgnoreCase(st)){
-                            ExnessClient.Response snap=exness.snapshot();
                             runOnUiThread(()->{
                                 log.setText("ORDER CONFIRMED • "+("buy".equals(side)?"BUY LIMIT":"SELL LIMIT")+" @ "+entry+" • MT5 account state updated");
                                 toast("ORDER CONFIRMED • cek MT5: Pending Orders");
