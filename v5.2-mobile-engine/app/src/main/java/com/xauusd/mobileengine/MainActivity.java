@@ -116,9 +116,7 @@ public class MainActivity extends Activity {
             "📋 Orders / Account",
             "🔗 MT5 DIRECT • HP ONLY",
             "📲 Telegram",
-            "🛑 Cancel Auto BUY",
-            "🛑 Cancel Auto SELL",
-            "🧹 Cancel ALL Auto LIMIT",
+            "🛑 Cancel Auto Pending",
             "🔔 Notification",
             "📜 Log / Status",
             "AUTO ENGINE: "+auto
@@ -132,12 +130,10 @@ public class MainActivity extends Activity {
                 case 4: showAccountDialog();break;
                 case 5: showMt5Dialog();break;
                 case 6: showTelegramDialog();break;
-                case 7: cancelAutoOrders("buy");break;
-                case 8: cancelAutoOrders("sell");break;
-                case 9: cancelAutoOrders("all");break;
-                case 10: requestNotificationPermission();toast("Notification permission diperiksa.");break;
-                case 11: new AlertDialog.Builder(this).setTitle("ENGINE LOG").setMessage(log.getText()).setPositiveButton("OK",null).show();break;
-                case 12: if(store.rawPrefs().getBoolean("auto",false))stopAuto(); else startAuto();break;
+                case 7: showCancelAutoDialog();break;
+                case 8: requestNotificationPermission();toast("Notification permission diperiksa.");break;
+                case 9: new AlertDialog.Builder(this).setTitle("ENGINE LOG").setMessage(log.getText()).setPositiveButton("OK",null).show();break;
+                case 10: if(store.rawPrefs().getBoolean("auto",false))stopAuto(); else startAuto();break;
             }
         }).setNegativeButton("Tutup",null).show();
     }
