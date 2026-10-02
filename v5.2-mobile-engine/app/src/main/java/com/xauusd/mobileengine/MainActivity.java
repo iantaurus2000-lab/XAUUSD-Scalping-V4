@@ -22,11 +22,14 @@ public class MainActivity extends Activity {
 
     LinearLayout root, content;
     TextView price, priceChange, connection, signal, signalDetail, confidence, m5Bias, m1State, ticker, metrics, account, botState, log, spreadLine, highLow, resultsBar, boxEntry, boxSl, boxTp1, boxTp2;
-    ChartView chart;
+    CandleChartView chart;
     SecurityStore store;
     ExnessClient exness;
     Handler handler = new Handler(Looper.getMainLooper());
     ArrayList<StrategyEngine.Candle> m1 = new ArrayList<>(), m5 = new ArrayList<>(), m15 = new ArrayList<>();
+    StrategyEngine.Decision lastReady = new StrategyEngine.Decision();
+    long lastReadyAt = 0, lastAlertAt = 0;
+    String newsTicker = "NEWS: loading...";
     StrategyEngine.Decision decision = new StrategyEngine.Decision();
     double mid=0, spread=0;
     String chartTf="M1";
@@ -47,8 +50,11 @@ public class MainActivity extends Activity {
         exness=new ExnessClient(store);
         buildUi();
         requestNotificationPermission();
+        createNotificationChannel();
         loadMarket();
+        loadNewsTicker();
         handler.postDelayed(marketPoll,2500);
+        handler.postDelayed(newsPoll,300000);
     }
 
     @Override protected void onDestroy() {
@@ -85,8 +91,9 @@ public class MainActivity extends Activity {
         spreadLine=findViewById(R.id.spreadLine); highLow=findViewById(R.id.highLow); resultsBar=findViewById(R.id.resultsBar);
         boxEntry=findViewById(R.id.boxEntry); boxSl=findViewById(R.id.boxSl); boxTp1=findViewById(R.id.boxTp1); boxTp2=findViewById(R.id.boxTp2);
         FrameLayout chartHost=findViewById(R.id.chartHost);
-        chart=new ChartView();
+        chart=new CandleChartView(this);
         chartHost.addView(chart,new FrameLayout.LayoutParams(-1,-1));
+        chart.setLayers(true,true,true);
         account=findViewById(R.id.account); botState=findViewById(R.id.botState); log=findViewById(R.id.log);
         ticker.setSelected(true);
 
@@ -100,9 +107,9 @@ public class MainActivity extends Activity {
         findViewById(R.id.btnManual).setOnClickListener(v->showManualOrderDialog());
         findViewById(R.id.btnCancelAuto).setOnClickListener(v->showCancelAutoDialog());
         findViewById(R.id.btnLive).setOnClickListener(v->{chart.resetView();});
-        findViewById(R.id.btnCopyEntry).setOnClickListener(v->toast("Entry "+fmt(decision.entry)));
-        findViewById(R.id.btnCopySl).setOnClickListener(v->toast("SL "+fmt(decision.sl)));
-        findViewById(R.id.btnCopyTp).setOnClickListener(v->toast("TP1 "+fmt(decision.tp1)));
+        findViewById(R.id.btnCopyEntry).setOnClickListener(v->copyPrice("ENTRY",decision.entry));
+        findViewById(R.id.btnCopySl).setOnClickListener(v->copyPrice("SL",decision.sl));
+        findViewById(R.id.btnCopyTp).setOnClickListener(v->copyPrice("TP1",decision.tp1));
         renderDecision();
     }
 
@@ -352,12 +359,13 @@ public class MainActivity extends Activity {
                 if(m1.size()<60 || now-lastBarsLoad>=5000){
                     a=parse(get(BASE+"/ohlc?interval=1m&limit=100"));
                     b=parse(get(BASE+"/ohlc?interval=5m&limit=60"));
+                    m15=parse(get(BASE+"/ohlc?interval=15m&limit=60"));
                     lastBarsLoad=now;
                 }else{
                     a=cloneWithLive(m1,mm);
                     b=new ArrayList<>(m5);
                 }
-                if(a.size()<60 || b.size()<30 || mm<=0)return;
+                if(a.size()<60 || b.size()<30 || m15.size()<20 || mm<=0)return;
                 StrategyEngine.Decision dd=StrategyEngine.analyze(a,b,mm);
                 runOnUiThread(()->{
                     mid=mm;spread=sp;m1=a;m5=b;decision=dd;lastLoad=now;
@@ -366,9 +374,11 @@ public class MainActivity extends Activity {
                     priceChange.setText((prev>0&&mid>=prev?"+":"")+fmt(prev>0?mid-prev:0));
                     priceChange.setTextColor(mid>=prev?Color.rgb(0,230,118):Color.rgb(255,82,82));
                     spreadLine.setText("Spread "+fmt(spread));
+                    ArrayList<StrategyEngine.Candle> hd="M5".equals(chartTf)?b:"M15".equals(chartTf)?m15:a;
+                    if(!hd.isEmpty()) highLow.setText("H "+fmt(hd.stream().mapToDouble(x->x.high).max().orElse(mm))+"   L "+fmt(hd.stream().mapToDouble(x->x.low).min().orElse(mm)));
                     if(ticker!=null)ticker.setText("BIQUOTE • XAUUSD • 1s • "+(t.optBoolean("stale",false)?"STALE":"LIVE"));
                     connection.setText("● 1s MARKET FEED  •  "+(t.optBoolean("stale",false)?"STALE":"LIVE")+"  • Spread "+fmt(spread));
-                    renderDecision();chart.invalidate();
+                    renderDecision();
                 });
             }catch(Exception e){runOnUiThread(()->connection.setText("● MARKET FEED ERROR • retrying 1s")); }
         }).start();
@@ -394,7 +404,7 @@ public class MainActivity extends Activity {
         for(int i=ar.length()-1;i>=0;i--){JSONObject o=ar.getJSONObject(i);out.add(new StrategyEngine.Candle(o.optLong("openTime",0),o.getDouble("open"),o.getDouble("high"),o.getDouble("low"),o.getDouble("close")));}return out;
     }
 
-    void renderChart(){ if(chart!=null)chart.invalidate(); }
+    void renderChart(){ if(chart!=null){ ArrayList<StrategyEngine.Candle> d="M5".equals(chartTf)?m5:"M15".equals(chartTf)?m15:m1; chart.setData(d,chartTf,mid,decision,mid-spread/2.0,mid+spread/2.0); } }
 
     void renderDecision(){
         if(signal==null)return;
