@@ -28,7 +28,7 @@ public class MainActivity extends Activity {
     Handler handler = new Handler(Looper.getMainLooper());
     ArrayList<StrategyEngine.Candle> m1 = new ArrayList<>(), m5 = new ArrayList<>(), m15 = new ArrayList<>();
     StrategyEngine.Decision lastReady = new StrategyEngine.Decision();
-    long lastReadyAt = 0, lastAlertAt = 0;
+    long lastReadyAt = 0, lastAlertAt = 0, lastAccountUiAt = 0;
     String newsTicker = "NEWS: loading...";
     StrategyEngine.Decision decision = new StrategyEngine.Decision();
     double mid=0, spread=0;
@@ -147,7 +147,7 @@ public class MainActivity extends Activity {
                 case 3: scanMarket();break;
                 case 4: showManagerDialog();break;
                 case 5: showRiskDialog();break;
-                case 6: showAccountDialog();break;
+                case 6: showOrderManagerDialog();break;
                 case 7: showHistoryDialog();break;
                 case 8: showMt5Dialog();break;
                 case 9: showTelegramDialog();break;
@@ -358,6 +358,86 @@ public class MainActivity extends Activity {
         }).start();
     }
 
+    void showOrderManagerDialog(){
+        if(!hasCredentials()){toast("Sambungkan Exness API dulu.");return;}
+        new Thread(()->{
+            try{
+                ExnessClient.Response r=exness.snapshot();
+                if(!r.ok())throw new IllegalStateException("Snapshot "+r.code+": "+trim(r.body));
+                JSONObject root=new JSONObject(r.body); JSONArray orders=root.optJSONArray("orders");if(orders==null)orders=root.optJSONArray("open_orders");
+                JSONArray positions=root.optJSONArray("positions");if(positions==null)positions=root.optJSONArray("open_positions");
+                runOnUiThread(()->{
+                    LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(12,4,12,4);
+                    TextView head=tv("PENDING ORDERS / OPEN POSITIONS",12);head.setTextColor(Color.WHITE);box.addView(head);
+                    if(orders!=null && orders.length()>0)for(int i=0;i<orders.length();i++)addOrderRow(box,orders.optJSONObject(i));
+                    else box.addView(tv("Tidak ada pending order.",11));
+                    box.addView(tv("OPEN POSITIONS",12));
+                    if(positions!=null && positions.length()>0)for(int i=0;i<positions.length();i++)addPositionRow(box,positions.optJSONObject(i));
+                    else box.addView(tv("Tidak ada posisi aktif.",11));
+                    AlertDialog d=new AlertDialog.Builder(this).setTitle("📋 ORDER MANAGER").setView(box)
+                        .setNegativeButton("Tutup",null).setNeutralButton("CANCEL ID",null).create();
+                    d.setOnShowListener(v->d.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(x->{d.dismiss();showCancelByIdDialog();}));
+                    d.show();
+                });
+            }catch(Exception e){runOnUiThread(()->toast("Order Manager: "+e.getMessage()));}
+        }).start();
+    }
+
+    void addOrderRow(LinearLayout box,JSONObject o){
+        if(o==null)return;
+        String id=o.optString("id",o.optString("order_id","--"));
+        String side=o.optString("side",o.optString("direction","--"));
+        String ins=o.optString("instrument",o.optString("symbol",orderSymbol()));
+        String priceV=o.optString("price",o.optString("entry_price","--"));
+        String vol=o.optString("volume","--");
+        LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);
+        TextView t=tv(side.toUpperCase(Locale.US)+" "+ins+" @ "+priceV+" • "+vol+" • ID "+id,10);row.addView(t,new LinearLayout.LayoutParams(0,60,1));
+        Button b=btn("CANCEL");b.setOnClickListener(v->confirmCancelOrder(id));row.addView(b,new LinearLayout.LayoutParams(82,60)); Button m=btn("EDIT");m.setOnClickListener(v->showModifyOrderDialog(id));row.addView(m,new LinearLayout.LayoutParams(70,60));
+        box.addView(row);
+    }
+
+    void addPositionRow(LinearLayout box,JSONObject p){
+        if(p==null)return;
+        String id=p.optString("id",p.optString("position_id","--"));
+        String side=p.optString("side",p.optString("direction","--"));
+        String entry=p.optString("open_price",p.optString("entry_price","--"));
+        String vol=p.optString("volume",p.optString("current_volume","--"));
+        LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);
+        TextView t=tv("POS "+side.toUpperCase(Locale.US)+" @ "+entry+" • "+vol+" • ID "+id,10);row.addView(t,new LinearLayout.LayoutParams(0,60,1));
+        Button close=btn("CLOSE");close.setOnClickListener(v->showClosePositionDialog(id,vol));row.addView(close,new LinearLayout.LayoutParams(90,60));
+        box.addView(row);
+    }
+
+    void confirmCancelOrder(String id){
+        new AlertDialog.Builder(this).setTitle("Cancel order").setMessage("Batalkan order ID "+id+"?")
+            .setNegativeButton("Tidak",null).setPositiveButton("Ya", (d,w)->{
+                new Thread(()->{try{ExnessClient.Response r=exness.cancelOrder(id);String op=exness.operationId(r);runOnUiThread(()->{log.setText(r.ok()?"CANCEL REQUEST • "+id:"CANCEL FAILED • "+r.code);toast(r.ok()?"Cancel request diterima":"Cancel gagal: "+trim(r.body));});if(r.ok()&&!op.isEmpty())waitForCancelOperation(op,id,"");}catch(Exception e){runOnUiThread(()->toast("Cancel error: "+e.getMessage()));}}).start();
+            }).show();
+    }
+
+    void showCancelByIdDialog(){
+        EditText id=input("Order ID","");id.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+        new AlertDialog.Builder(this).setTitle("Cancel by Order ID").setView(id).setNegativeButton("Tutup",null).setPositiveButton("CANCEL", (d,w)->confirmCancelOrder(id.getText().toString().trim())).show();
+    }
+
+    void showClosePositionDialog(String id,String currentVolume){
+        EditText vol=input("Volume kosong = full close",currentVolume);
+        vol.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        new AlertDialog.Builder(this).setTitle("Close / Partial Close").setView(vol).setNegativeButton("Tutup",null).setPositiveButton("CLOSE", (d,w)->{
+            String v=vol.getText().toString().trim();
+            new Thread(()->{try{ExnessClient.Response r=exness.closePosition(id,v);runOnUiThread(()->{log.setText(r.ok()?"CLOSE REQUEST • "+id:"CLOSE FAILED • "+r.code);toast(r.ok()?"Close request diterima":"Close gagal: "+trim(r.body));});}catch(Exception e){runOnUiThread(()->toast("Close error: "+e.getMessage()));}}).start();
+        }).show();
+    }
+
+    void showModifyOrderDialog(String id){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(12,4,12,4);
+        EditText price=input("Modify Entry","");EditText sl=input("Modify SL","");EditText tp=input("Modify TP","");
+        box.addView(price);box.addView(sl);box.addView(tp);
+        new AlertDialog.Builder(this).setTitle("Modify Order "+id).setView(box).setNegativeButton("Tutup",null).setPositiveButton("SAVE",(d,w)->{
+            new Thread(()->{try{ExnessClient.Response r=exness.modifyOrder(id,price.getText().toString(),sl.getText().toString(),tp.getText().toString());runOnUiThread(()->{log.setText(r.ok()?"MODIFY REQUEST • "+id:"MODIFY FAILED • "+r.code);toast(r.ok()?"Modify request diterima":"Modify gagal: "+trim(r.body));});}catch(Exception e){runOnUiThread(()->toast("Modify error: "+e.getMessage()));}}).start();
+        }).show();
+    }
+
     void showMt5Dialog(){
         new AlertDialog.Builder(this).setTitle("MT5 DIRECT • HP ONLY")
             .setMessage("Jalur eksekusi V5.2: HP → Exness Public Trader API → akun trading MT5 yang sama. Tidak memakai EA, desktop, atau VPS.\\n\\nBUY LIMIT dan SELL LIMIT dikirim sebagai pending order ke trading account melalui API, lalu status dikonfirmasi dari operation status dan snapshot. MT5/Exness Trade yang login ke akun yang sama akan melihat pending order tersebut.")
@@ -404,6 +484,7 @@ public class MainActivity extends Activity {
                     if(ticker!=null)ticker.setText("BIQUOTE • XAUUSD • 1s • "+(t.optBoolean("stale",false)?"STALE":"LIVE"));
                     connection.setText("● 1s MARKET FEED  •  "+(t.optBoolean("stale",false)?"STALE":"LIVE")+"  • Spread "+fmt(spread));
                     renderDecision();
+                    if(now-lastAccountUiAt>=15000){lastAccountUiAt=now;refreshAccountUi();}
                 });
             }catch(Exception e){runOnUiThread(()->connection.setText("● MARKET FEED ERROR • retrying 1s")); }
         }).start();
@@ -434,20 +515,56 @@ public class MainActivity extends Activity {
     void renderDecision(){
         if(signal==null)return;
         boolean buy=decision.side.startsWith("BUY"),sell=decision.side.startsWith("SELL");
-        signal.setText(decision.side.equals("WAIT")?"WAIT • SCORE "+decision.score+"/100":decision.side+" • "+(decision.score>=85?"ENTRY READY":"LIMIT ZONE"));
-        signal.setTextColor(buy?Color.rgb(0,230,118):sell?Color.rgb(255,82,82):Color.WHITE);
-        if(lamp!=null){lamp.setText(buy?"●":sell?"●":"●");lamp.setTextColor(buy?Color.rgb(0,230,118):sell?Color.rgb(255,82,82):Color.rgb(120,144,156));}
-        signalDetail.setText(decision.reason==null||decision.reason.isEmpty()?"M5 Bias → Liquidity Sweep → Wick Rejection → BOS":decision.reason);
-        int stars=Math.max(0,Math.min(5,decision.score/20));
-        confidence.setText("★★★★★".substring(0,stars)+"☆☆☆☆☆".substring(0,5-stars)+"  "+decision.score+"/100");
-        m5Bias.setText("M5 "+(decision.bias?"BIAS CONFIRMED":"WAIT"));
-        m1State.setText("M1 "+(decision.side.equals("WAIT")?"WATCH":decision.side));
-        boxEntry.setText("ENTRY\n"+fmt(decision.entry)); boxSl.setText("SL\n"+fmt(decision.sl));
-        boxTp1.setText("TP1\n"+fmt(decision.tp1)); boxTp2.setText("TP2\n"+fmt(decision.tp2));
+        boolean ready=buy||sell;
+        if(ready){ lastReady=decision; lastReadyAt=System.currentTimeMillis(); }
+        StrategyEngine.Decision shown=decision;
+        if(!ready && (lastReady.side.startsWith("BUY")||lastReady.side.startsWith("SELL"))
+                && System.currentTimeMillis()-lastReadyAt<180000) shown=lastReady;
+        signal.setText(ready
+                ? decision.side+" • "+(decision.score>=85?"ENTRY READY":"LIMIT ZONE")
+                : shown.side.startsWith("BUY")||shown.side.startsWith("SELL")
+                    ? "LAST READY • "+shown.side+" • "+shown.score+"/100"
+                    : "WAIT • SCORE "+decision.score+"/100");
+        signal.setTextColor((shown.side.startsWith("BUY"))?Color.rgb(0,230,118):shown.side.startsWith("SELL")?Color.rgb(255,82,82):Color.WHITE);
+        if(lamp!=null){lamp.setText("●");lamp.setTextColor((shown.side.startsWith("BUY"))?Color.rgb(0,230,118):shown.side.startsWith("SELL")?Color.rgb(255,82,82):Color.rgb(120,144,156));}
+        String why=(shown.reason==null||shown.reason.isEmpty()?"M5 Bias → Liquidity Sweep → Wick Rejection → BOS":shown.reason)
+                +" • Pattern: "+(shown.pattern==null?"--":shown.pattern);
+        signalDetail.setText(why);
+        int stars=Math.max(0,Math.min(5,shown.score/20));
+        confidence.setText("★★★★★".substring(0,stars)+"☆☆☆☆☆".substring(0,5-stars)+"  "+shown.score+"/100");
+        m5Bias.setText("M5 "+(shown.bias?"BIAS CONFIRMED":"WAIT")+(shown.earlyReady?" • EARLY":""));
+        m1State.setText("M1 "+(shown.side.equals("WAIT")?"WATCH":shown.side));
+        boxEntry.setText("ENTRY\n"+fmt(shown.entry)); boxSl.setText("SL\n"+fmt(shown.sl));
+        boxTp1.setText("TP1\n"+fmt(shown.tp1)); boxTp2.setText("TP2\n"+fmt(shown.tp2));
         if(botState!=null)botState.setText(store.rawPrefs().getBoolean("auto",false)?"AUTO: ON • GUARDED":"AUTO: OFF • MANUAL");
-        if(account!=null)account.setText("Account: "+(hasCredentials()?"API configured":"not connected"));
+        if(account!=null && !hasCredentials())account.setText("Account: not connected");
+        if(ready){saveSignalHistory(decision);}
         if(chart!=null)renderChart();
     }
+
+    void refreshAccountUi(){
+        if(!hasCredentials())return;
+        new Thread(()->{
+            try{
+                ExnessClient.Response r=exness.snapshot();
+                if(!r.ok())return;
+                JSONObject j=new JSONObject(r.body);
+                JSONObject a=j.optJSONObject("account_state");
+                if(a==null)a=j.optJSONObject("accountState");
+                double balance=a==null?0:a.optDouble("balance",0);
+                double equity=a==null?0:a.optDouble("equity",0);
+                double margin=a==null?a==null?0:a.optDouble("used_margin",0):a.optDouble("used_margin",0);
+                int orders=countArray(j,"orders","open_orders"), positions=countArray(j,"positions","open_positions");
+                final String s=String.format(Locale.US,"B %.2f • E %.2f • M %.2f • P %d • O %d",balance,equity,margin,positions,orders);
+                runOnUiThread(()->account.setText(s));
+            }catch(Exception ignored){}
+        }).start();
+    }
+
+    int countArray(JSONObject j,String a,String b){
+        JSONArray x=j.optJSONArray(a);if(x==null)x=j.optJSONArray(b);return x==null?0:x.length();
+    }
+
 
     String orderSymbol(){String s=store.get("symbol","XAUUSD").trim();return s.isEmpty()?"XAUUSD":s;}
     void showCancelAutoDialog(){
