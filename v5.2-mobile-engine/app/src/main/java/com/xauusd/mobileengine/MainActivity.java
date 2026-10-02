@@ -102,7 +102,7 @@ public class MainActivity extends Activity {
         Button manager=btn("🛡 Position Manager");
         Button risk=btn("💰 Risk & Strategy");
         Button orders=btn("📋 Orders / Account");
-        Button mt5=btn("🔗 MT5 Bridge");
+        Button mt5=btn("🔗 MT5 DIRECT • HP ONLY");
         Button telegram=btn("📲 Telegram");
         content.addView(manager,new LinearLayout.LayoutParams(-1,56));
         content.addView(risk,new LinearLayout.LayoutParams(-1,56));
@@ -271,9 +271,9 @@ public class MainActivity extends Activity {
     }
 
     void showMt5Dialog(){
-        new AlertDialog.Builder(this).setTitle("MT5 Execution Path")
-            .setMessage("MT5 mobile tidak menyediakan eksekusi custom EA langsung. Untuk akun MT5 standar, jalur otomatis memerlukan terminal MT5 desktop/VPS/bridge yang menjalankan EA.\n\nV5.2 ini menyediakan Direct Exness API untuk akun yang eligible serta adapter MT5-Bridge sebagai jalur terpisah.")
-            .setPositiveButton("OK",null).show();
+        new AlertDialog.Builder(this).setTitle("MT5 DIRECT • HP ONLY")
+            .setMessage("Jalur eksekusi V5.2: HP → Exness Public Trader API → akun trading MT5 yang sama. Tidak memakai EA, desktop, atau VPS.\\n\\nBUY LIMIT dan SELL LIMIT dikirim sebagai pending order ke trading account melalui API, lalu status dikonfirmasi dari operation status dan snapshot. MT5/Exness Trade yang login ke akun yang sama akan melihat pending order tersebut.")
+            .setPositiveButton("TEST CONNECTION",null).setNegativeButton("OK",null).create().show();
     }
 
     void showTelegramDialog(){
