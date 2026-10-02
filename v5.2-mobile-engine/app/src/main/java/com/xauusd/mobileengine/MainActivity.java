@@ -289,7 +289,7 @@ public class MainActivity extends Activity {
                     botState.setTextColor(Color.rgb(0,230,118));
                     Intent intent=new Intent(this,TradingService.class);
                     if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
-                    log.setText("AUTO ON • API + "+orderSymbol()+" preflight OK");
+                    if(Build.VERSION.SDK_INT>=23){\n                        try{\n                            android.os.PowerManager pm=(android.os.PowerManager)getSystemService(POWER_SERVICE);\n                            if(!pm.isIgnoringBatteryOptimizations(getPackageName())){\n                                Intent bi=new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);\n                                bi.setData(android.net.Uri.parse("package:"+getPackageName()));\n                                startActivity(bi);\n                            }\n                        }catch(Exception ignored){}\n                    }\n                    log.setText("AUTO ON • API + "+orderSymbol()+" preflight OK");
                 });
             }catch(Exception e){runOnUiThread(()->{store.rawPrefs().edit().putBoolean("auto",false).apply();botState.setText("AUTO: OFF • API ERROR");log.setText("AUTO PREFLIGHT ERROR • "+e.getMessage());toast("Auto gagal: "+e.getMessage());});}
         }).start();
