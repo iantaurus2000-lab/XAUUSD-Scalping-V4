@@ -423,7 +423,7 @@ public class MainActivity extends Activity {
     }
 
     void showClosePositionDialog(String id,String currentVolume){
-        EditText vol=input("Volume kosong = full close",currentVolume);
+        EditText vol=input("Volume (kosong = full close)","");
         vol.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
         new AlertDialog.Builder(this).setTitle("Close / Partial Close").setView(vol).setNegativeButton("Tutup",null).setPositiveButton("CLOSE", (d,w)->{
             String v=vol.getText().toString().trim();
@@ -486,6 +486,8 @@ public class MainActivity extends Activity {
                     if(ticker!=null)ticker.setText("BIQUOTE • XAUUSD • 1s • "+(t.optBoolean("stale",false)?"STALE":"LIVE"));
                     connection.setText("● 1s MARKET FEED  •  "+(t.optBoolean("stale",false)?"STALE":"LIVE")+"  • Spread "+fmt(spread));
                     renderDecision();
+                    String rr=String.format(Locale.US,"ATR %.2f • RSI %.0f • MACD %.2f/% .2f • %s",dd.atr,dd.rsi,dd.macd,dd.macdSignal,dd.pattern);
+                    resultsBar.setText(rr.replace("/ ","/"));
                     if(now-lastAccountUiAt>=15000){lastAccountUiAt=now;refreshAccountUi();}
                 });
             }catch(Exception e){runOnUiThread(()->connection.setText("● MARKET FEED ERROR • retrying 1s")); }
