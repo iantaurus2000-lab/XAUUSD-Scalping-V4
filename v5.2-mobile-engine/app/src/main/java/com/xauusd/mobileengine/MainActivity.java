@@ -578,3 +578,4 @@ public class MainActivity extends Activity {
             p.setTextSize(10);c.drawRect(32,y-14,116,y+1,p);p.setColor(Color.BLACK);c.drawText(label+" "+fmt(v),36,y-3,p);
         }
     }
+}
