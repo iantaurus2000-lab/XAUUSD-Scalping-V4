@@ -14,10 +14,10 @@
         <TextView android:id="@+id/price" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="----.--" android:textColor="#FFFFFF" android:textSize="32sp" android:textStyle="bold"/>
         <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="vertical" android:gravity="right">
             <TextView android:id="@+id/priceChange" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="+0.00" android:textColor="#00E676" android:textSize="12sp" android:textStyle="bold"/>
-            <TextView android:id="@+id/spreadLine" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Spread --" android:textColor="#78909C" android:textSize="10sp"/>
+            <TextView android:id="@+id/spreadLine" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Spread --" android:textColor="#C8D3DC" android:textSize="10sp"/>
         </LinearLayout>
     </LinearLayout>
-    <TextView android:id="@+id/highLow" android:layout_width="match_parent" android:layout_height="20dp" android:text="H --   L --" android:textColor="#90A4AE" android:textSize="10sp"/>
+    <TextView android:id="@+id/highLow" android:layout_width="match_parent" android:layout_height="20dp" android:text="H --   L --" android:textColor="#D7E0E8" android:textSize="11sp"/>
     <TextView android:id="@+id/resultsBar" android:layout_width="match_parent" android:layout_height="20dp" android:text="ENGINE • Win 0 • Loss 0 • WR 0%" android:textColor="#80CBC4" android:textSize="10sp"/>
     <LinearLayout android:layout_width="match_parent" android:layout_height="58dp" android:orientation="horizontal" android:background="#0F1620" android:padding="7dp" android:gravity="center_vertical">
         <TextView android:id="@+id/lamp" android:layout_width="42dp" android:layout_height="42dp" android:gravity="center" android:text="●" android:textColor="#78909C" android:textSize="28sp"/>
@@ -39,7 +39,7 @@
         <TextView android:id="@+id/m5Bias" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:text="M5 WAIT" android:textColor="#80CBC4" android:textSize="9sp"/>
         <TextView android:id="@+id/m1State" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:text="M1 WATCH" android:textColor="#80CBC4" android:textSize="9sp"/>
     </LinearLayout>
-    <TextView android:id="@+id/signalDetail" android:layout_width="match_parent" android:layout_height="30dp" android:text="M5 Bias → Liquidity Sweep → Wick Rejection → BOS" android:textColor="#B7C3CE" android:textSize="9sp" android:gravity="center_vertical"/>
+    <TextView android:id="@+id/signalDetail" android:layout_width="match_parent" android:layout_height="30dp" android:text="M5 Bias → Liquidity Sweep → Wick Rejection → BOS" android:textColor="#FFD54F" android:textSize="10sp" android:gravity="center_vertical" android:singleLine="true" android:ellipsize="marquee" android:marqueeRepeatLimit="marquee_forever" android:focusable="true" android:focusableInTouchMode="true" android:scrollHorizontally="true"/>
     <LinearLayout android:layout_width="match_parent" android:layout_height="34dp">
         <Button android:id="@+id/tfM1" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="M1" android:textSize="10sp"/>
         <Button android:id="@+id/tfM5" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="M5" android:textSize="10sp" android:layout_marginStart="3dp"/>
