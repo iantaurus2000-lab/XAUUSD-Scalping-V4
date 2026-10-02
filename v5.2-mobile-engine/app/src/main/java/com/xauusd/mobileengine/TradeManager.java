@@ -31,7 +31,9 @@ public final class TradeManager {
                 JSONObject p = positions.optJSONObject(i);
                 if (p == null) continue;
                 String instrument = first(p, "instrument", "symbol");
-                if (!"XAUUSD".equalsIgnoreCase(instrument)) continue;
+                String configuredSymbol = store.get("symbol","XAUUSD").trim();
+                if (configuredSymbol.isEmpty()) configuredSymbol = "XAUUSD";
+                if (!configuredSymbol.equalsIgnoreCase(instrument)) continue;
 
                 String id = first(p, "position_id", "id");
                 String side = first(p, "side", "direction");
@@ -92,7 +94,9 @@ public final class TradeManager {
     private double normalizeVolume(double value) {
         try {
             ExnessClient.Credentials c = exness.loadCredentials();
-            ExnessClient.Response r = exness.instrumentConditions("XAUUSD");
+            String configuredSymbol = store.get("symbol","XAUUSD").trim();
+            if (configuredSymbol.isEmpty()) configuredSymbol = "XAUUSD";
+            ExnessClient.Response r = exness.instrumentConditions(configuredSymbol);
             if (r.ok()) {
                 JSONObject j = new JSONObject(r.body);
                 double min = num(j, "volume_min");
