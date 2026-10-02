@@ -152,7 +152,7 @@ public class MainActivity extends Activity {
                 case 14: new AlertDialog.Builder(this).setTitle("ENGINE LOG").setMessage(log.getText()).setPositiveButton("OK",null).show();break;
                 case 15: if(store.rawPrefs().getBoolean("auto",false))stopAuto(); else startAuto();break;
             }
-        }
+        }).setNegativeButton("Tutup",null).show();
     }
 
     void addCard(View v,int h){v.setBackground(bg("#0E131A",18));content.addView(v,new LinearLayout.LayoutParams(-1,h));}
