@@ -118,9 +118,12 @@ public class MainActivity extends Activity {
         String[] items={
             "🔐 Exness API / Instrument",
             "🎯 Manual BUY/SELL LIMIT",
+            "📊 Indicators / Fibonacci",
+            "🔎 Scan Market • Entry Ready",
             "🛡 Position Manager",
             "💰 Risk & Strategy",
             "📋 Orders / Account",
+            "📋 Signal History",
             "🔗 MT5 DIRECT • HP ONLY",
             "📲 Telegram",
             "🛑 Cancel Auto BUY",
@@ -134,19 +137,22 @@ public class MainActivity extends Activity {
             switch(w){
                 case 0: showExnessDialog();break;
                 case 1: showManualOrderDialog();break;
-                case 2: showManagerDialog();break;
-                case 3: showRiskDialog();break;
-                case 4: showAccountDialog();break;
-                case 5: showMt5Dialog();break;
-                case 6: showTelegramDialog();break;
-                case 7: cancelAutoOrders("buy");break;
-                case 8: cancelAutoOrders("sell");break;
-                case 9: cancelAutoOrders("all");break;
-                case 10: requestNotificationPermission();toast("Notification permission diperiksa.");break;
-                case 11: new AlertDialog.Builder(this).setTitle("ENGINE LOG").setMessage(log.getText()).setPositiveButton("OK",null).show();break;
-                case 12: if(store.rawPrefs().getBoolean("auto",false))stopAuto(); else startAuto();break;
+                case 2: showIndicatorDialog();break;
+                case 3: scanMarket();break;
+                case 4: showManagerDialog();break;
+                case 5: showRiskDialog();break;
+                case 6: showAccountDialog();break;
+                case 7: showHistoryDialog();break;
+                case 8: showMt5Dialog();break;
+                case 9: showTelegramDialog();break;
+                case 10: cancelAutoOrders("buy");break;
+                case 11: cancelAutoOrders("sell");break;
+                case 12: cancelAutoOrders("all");break;
+                case 13: requestNotificationPermission();toast("Notification permission diperiksa.");break;
+                case 14: new AlertDialog.Builder(this).setTitle("ENGINE LOG").setMessage(log.getText()).setPositiveButton("OK",null).show();break;
+                case 15: if(store.rawPrefs().getBoolean("auto",false))stopAuto(); else startAuto();break;
             }
-        }).setNegativeButton("Tutup",null).show();
+        }
     }
 
     void addCard(View v,int h){v.setBackground(bg("#0E131A",18));content.addView(v,new LinearLayout.LayoutParams(-1,h));}
