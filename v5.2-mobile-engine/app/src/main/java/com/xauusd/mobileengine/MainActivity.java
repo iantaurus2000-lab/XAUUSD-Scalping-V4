@@ -36,6 +36,8 @@ public class MainActivity extends Activity {
     String chartTf="M1";
     double lastPrice=0;
     long lastLoad=0, lastBarsLoad=0;
+    volatile boolean marketBusy=false;
+    long feedBackoffUntil=0;
     static final String FEED="XAUUSD";
 
     Runnable marketPoll = new Runnable() {
@@ -98,8 +100,7 @@ public class MainActivity extends Activity {
         chartHost.addView(chart,new FrameLayout.LayoutParams(-1,-1));
         chart.setLayers(true,true,true);
         account=findViewById(R.id.account); botState=findViewById(R.id.botState); log=findViewById(R.id.log);
-        ticker.setSelected(true);
-
+        
         findViewById(R.id.tfM1).setOnClickListener(v->{chartTf="M1";chart.resetView();renderChart();});
         findViewById(R.id.tfM5).setOnClickListener(v->{chartTf="M5";chart.resetView();renderChart();});
         findViewById(R.id.tfM15).setOnClickListener(v->{chartTf="M15";chart.resetView();renderChart();});
@@ -133,9 +134,7 @@ public class MainActivity extends Activity {
             "📋 Signal History",
             "🔗 MT5 DIRECT • HP ONLY",
             "📲 Telegram",
-            "🛑 Cancel Auto BUY",
-            "🛑 Cancel Auto SELL",
-            "🧹 Cancel ALL Auto LIMIT",
+            "🛑 Cancel Auto Pending",
             "🔔 Notification",
             "📜 Log / Status",
             "AUTO ENGINE: "+auto
@@ -152,12 +151,10 @@ public class MainActivity extends Activity {
                 case 7: showHistoryDialog();break;
                 case 8: showMt5Dialog();break;
                 case 9: showTelegramDialog();break;
-                case 10: cancelAutoOrders("buy");break;
-                case 11: cancelAutoOrders("sell");break;
-                case 12: cancelAutoOrders("all");break;
-                case 13: requestNotificationPermission();testAlarm();break;
-                case 14: new AlertDialog.Builder(this).setTitle("ENGINE LOG").setMessage(log.getText()).setPositiveButton("OK",null).show();break;
-                case 15: if(store.rawPrefs().getBoolean("auto",false))stopAuto(); else startAuto();break;
+                case 10: showCancelAutoDialog();break;
+                case 11: requestNotificationPermission();testAlarm();break;
+                case 12: new AlertDialog.Builder(this).setTitle("ENGINE LOG").setMessage(log.getText()).setPositiveButton("OK",null).show();break;
+                case 13: if(store.rawPrefs().getBoolean("auto",false))stopAuto(); else startAuto();break;
             }
         }).setNegativeButton("Tutup",null).show();
     }
@@ -457,41 +454,64 @@ public class MainActivity extends Activity {
     }
 
     void loadMarket(){
+        if(marketBusy || System.currentTimeMillis()<feedBackoffUntil)return;
+        marketBusy=true;
         new Thread(()->{
             try{
                 long now=System.currentTimeMillis();
-                JSONObject t=new JSONObject(get(BASE));
+                JSONObject t=new JSONObject(get(BASE+"?allowStale=true"));
                 double mm=t.optDouble("mid",0),sp=t.optDouble("spread",0);
-                ArrayList<StrategyEngine.Candle> a,b;
-                if(m1.size()<60 || now-lastBarsLoad>=5000){
-                    a=parse(get(BASE+"/ohlc?interval=1m&limit=100"));
-                    b=parse(get(BASE+"/ohlc?interval=5m&limit=60"));
-                    m15=parse(get(BASE+"/ohlc?interval=15m&limit=60"));
-                    lastBarsLoad=now;
+                if(mm<=0)throw new IOException("Biquote returned no mid price");
+
+                ArrayList<StrategyEngine.Candle> a,b,c15;
+                if(m1.size()<60 || now-lastBarsLoad>=10000){
+                    try{
+                        a=parse(get(BASE+"/ohlc?interval=1m&limit=100"));
+                        b=parse(get(BASE+"/ohlc?interval=5m&limit=60"));
+                        c15=parse(get(BASE+"/ohlc?interval=15m&limit=60"));
+                        if(a.size()>=60&&b.size()>=30&&c15.size()>=20){
+                            m1=a;m5=b;m15=c15;lastBarsLoad=now;
+                        }else throw new IOException("OHLC data incomplete");
+                    }catch(Exception barsError){
+                        if(m1.size()<60||m5.size()<30||m15.size()<20)throw barsError;
+                        a=new ArrayList<>(m1);b=new ArrayList<>(m5);c15=new ArrayList<>(m15);
+                    }
                 }else{
                     a=cloneWithLive(m1,mm);
                     b=new ArrayList<>(m5);
+                    c15=new ArrayList<>(m15);
                 }
-                if(a.size()<60 || b.size()<30 || m15.size()<20 || mm<=0)return;
+                if(a.size()<60 || b.size()<30 || c15.size()<20)throw new IOException("Waiting for candle history");
+
                 StrategyEngine.Decision dd=StrategyEngine.analyze(a,b,mm);
+                final boolean stale=t.optBoolean("stale",false);
+                final String state=t.optString("marketState","open");
+                updateHistoryResults(mm);
                 runOnUiThread(()->{
-                    mid=mm;spread=sp;m1=a;m5=b;decision=dd;lastLoad=now;
+                    mid=mm;spread=sp;m1=a;m5=b;m15=c15;decision=dd;lastLoad=now;
                     price.setText(fmt(mid));
                     double prev=lastPrice; lastPrice=mid;
-                    priceChange.setText((prev>0&&mid>=prev?"+":"")+fmt(prev>0?mid-prev:0));
-                    priceChange.setTextColor(mid>=prev?Color.rgb(0,230,118):Color.rgb(255,82,82));
+                    if(prev>0){
+                        priceChange.setText((mid>=prev?"+":"")+fmt(mid-prev));
+                        priceChange.setTextColor(mid>=prev?Color.rgb(0,230,118):Color.rgb(255,82,82));
+                    }
                     spreadLine.setText("Spread "+fmt(spread));
-                    ArrayList<StrategyEngine.Candle> hd="M5".equals(chartTf)?b:"M15".equals(chartTf)?m15:a;
+                    ArrayList<StrategyEngine.Candle> hd="M5".equals(chartTf)?b:"M15".equals(chartTf)?c15:a;
                     if(!hd.isEmpty()) highLow.setText("H "+fmt(hd.stream().mapToDouble(x->x.high).max().orElse(mm))+"   L "+fmt(hd.stream().mapToDouble(x->x.low).min().orElse(mm)));
-                    if(ticker!=null)ticker.setText("BIQUOTE • XAUUSD • 1s • "+(t.optBoolean("stale",false)?"STALE":"LIVE"));
-                    connection.setText("● 1s MARKET FEED  •  "+(t.optBoolean("stale",false)?"STALE":"LIVE")+"  • Spread "+fmt(spread));
+                    ticker.setText("BIQUOTE • XAUUSD • LIVE 1s");
+                    connection.setText("● BIQUOTE 1s • "+("closed".equalsIgnoreCase(state)?"MARKET CLOSED":stale?"STALE":"LIVE")+" • Spread "+fmt(spread));
                     renderChart();
                     renderDecision();
-                    String rr=String.format(Locale.US,"ATR %.2f • RSI %.0f • MACD %.2f/% .2f • %s",dd.atr,dd.rsi,dd.macd,dd.macdSignal,dd.pattern);
-                    resultsBar.setText(rr.replace("/ ","/"));
+                    renderResultsBar();
                     if(now-lastAccountUiAt>=15000){lastAccountUiAt=now;refreshAccountUi();}
                 });
-            }catch(Exception e){runOnUiThread(()->connection.setText("● MARKET FEED ERROR • retrying 1s")); }
+                feedBackoffUntil=0;
+            }catch(Exception e){
+                feedBackoffUntil=System.currentTimeMillis()+2000;
+                runOnUiThread(()->connection.setText("● BIQUOTE FEED ERROR • retry 2s"));
+            }finally{
+                marketBusy=false;
+            }
         }).start();
     }
 
@@ -512,7 +532,14 @@ public class MainActivity extends Activity {
 
     ArrayList<StrategyEngine.Candle> parse(String s)throws Exception{
         JSONArray ar=new JSONObject(s).getJSONArray("bars");ArrayList<StrategyEngine.Candle> out=new ArrayList<>();
-        for(int i=ar.length()-1;i>=0;i--){JSONObject o=ar.getJSONObject(i);out.add(new StrategyEngine.Candle(o.optLong("openTime",0),o.getDouble("open"),o.getDouble("high"),o.getDouble("low"),o.getDouble("close")));}return out;
+        for(int i=ar.length()-1;i>=0;i--){
+            JSONObject o=ar.getJSONObject(i);
+            String raw=o.optString("openTime","");
+            long tm=0;
+            try{tm=java.time.Instant.parse(raw).toEpochMilli();}catch(Exception ignored){tm=o.optLong("openTime",0);}
+            out.add(new StrategyEngine.Candle(tm,o.getDouble("open"),o.getDouble("high"),o.getDouble("low"),o.getDouble("close")));
+        }
+        return out;
     }
 
     void renderChart(){ if(chart!=null){ ArrayList<StrategyEngine.Candle> d="M5".equals(chartTf)?m5:"M15".equals(chartTf)?m15:m1; chart.setData(d,chartTf,mid,decision,mid-spread/2.0,mid+spread/2.0); } }
@@ -543,7 +570,7 @@ public class MainActivity extends Activity {
         boxTp1.setText("TP1   ⧉\n"+fmt(shown.tp1)); boxTp2.setText("TP2   ⧉\n"+fmt(shown.tp2));
         if(botState!=null)botState.setText(store.rawPrefs().getBoolean("auto",false)?"AUTO: ON • GUARDED":"AUTO: OFF • MANUAL");
         if(account!=null && !hasCredentials())account.setText("Account: not connected");
-        if(ready){String hk=decision.key();if(!hk.equals(lastHistoryKey)){lastHistoryKey=hk;saveSignalHistory(decision);}}
+        if(ready){String hk=decision.side+"-"+decision.candleTime;if(!hk.equals(lastHistoryKey)){lastHistoryKey=hk;saveSignalHistory(decision);}}
         if(chart!=null)renderChart();
     }
 
@@ -695,16 +722,77 @@ public class MainActivity extends Activity {
     void saveSignalHistory(StrategyEngine.Decision d){
         try{
             String old=store.get("signal_history","");
-            String line=d.side+" | Entry "+fmt(d.entry)+" | SL "+fmt(d.sl)+" | TP "+fmt(d.tp2)+" | "+(d.side.startsWith("BUY")?"WIN/LOSS pending":"WIN/LOSS pending");
-            String out=line+"\\n"+old;
+            String line=d.side+" | Entry "+fmt(d.entry)+" | SL "+fmt(d.sl)+" | TP1 "+fmt(d.tp1)+" | TP2 "+fmt(d.tp2)+" | WAITING";
+            String out=line+"\n"+old;
             String[] rows=out.split("\\n");StringBuilder b=new StringBuilder();
             for(int i=0;i<Math.min(50,rows.length);i++){if(rows[i].trim().length()>0)b.append(rows[i]).append("\\n");}
             store.put("signal_history",b.toString());
         }catch(Exception ignored){}
     }
 
+    void updateHistoryResults(double live){
+        if(live<=0)return;
+        try{
+            String old=store.get("signal_history","");
+            if(old.trim().isEmpty())return;
+            String[] rows=old.split("\\n");StringBuilder out=new StringBuilder();boolean changed=false;
+            for(String row:rows){
+                if(row.trim().isEmpty()){continue;}
+                String r=row.trim();
+                if(r.endsWith("WIN")||r.endsWith("LOSS")){out.append(r).append("\\n");continue;}
+                String[] p=r.split("\\|");
+                if(p.length<6){out.append(r).append("\\n");continue;}
+                String side=p[0].trim().toUpperCase(Locale.US);
+                double entry=numField(p[1],"Entry"),sl=numField(p[2],"SL"),tp1=numField(p[3],"TP1");
+                String state=p[5].trim().toUpperCase(Locale.US);
+                if(entry<=0||sl<=0||tp1<=0){out.append(r).append("\\n");continue;}
+                if("WAITING".equals(state)){
+                    boolean filled=side.startsWith("BUY")?live<=entry:live>=entry;
+                    if(filled){r=r.substring(0,r.lastIndexOf("|")+1)+" ACTIVE";changed=true;}
+                }else if("ACTIVE".equals(state)){
+                    String result=null;
+                    if(side.startsWith("BUY")){
+                        if(live<=sl)result="LOSS"; else if(live>=tp1)result="WIN";
+                    }else if(side.startsWith("SELL")){
+                        if(live>=sl)result="LOSS"; else if(live<=tp1)result="WIN";
+                    }
+                    if(result!=null){r=r.substring(0,r.lastIndexOf("|")+1)+" "+result;changed=true;}
+                }
+                out.append(r).append("\\n");
+            }
+            if(changed)store.put("signal_history",out.toString());
+        }catch(Exception ignored){}
+    }
+
+    double numField(String part,String key){
+        try{
+            int i=part.indexOf(key);if(i<0)return 0;
+            String s=part.substring(i+key.length()).trim().replace(",","");
+            return Double.parseDouble(s);
+        }catch(Exception e){return 0;}
+    }
+
+    void renderResultsBar(){
+        try{
+            String h=store.get("signal_history","");
+            int win=0,loss=0;
+            for(String r:h.split("\\n")){String s=r.trim();if(s.endsWith("WIN"))win++;else if(s.endsWith("LOSS"))loss++;}
+            int total=win+loss;double wr=total==0?0:(100.0*win/total);
+            resultsBar.setText(String.format(Locale.US,"RESULT • Entries %d • WIN %d • LOSS %d • WR %.0f%%",total,win,loss,wr));
+        }catch(Exception ignored){resultsBar.setText("RESULT • WIN 0 • LOSS 0 • WR 0%");}
+    }
+
     void showHistoryDialog(){
         String h=store.get("signal_history","Belum ada ENTRY READY.");
+        if(!h.equals("Belum ada ENTRY READY.")){
+            StringBuilder clean=new StringBuilder();
+            for(String r:h.split("\\n")){
+                if(r.trim().isEmpty())continue;
+                String s=r.replace("WAITING","--").replace("ACTIVE","--");
+                clean.append(s).append("\\n");
+            }
+            h=clean.toString().trim();
+        }
         new AlertDialog.Builder(this).setTitle("📋 SIGNAL HISTORY").setMessage(h).setPositiveButton("OK",null).show();
     }
 
@@ -715,23 +803,23 @@ public class MainActivity extends Activity {
             String session=marketSession();
             String news="NEWS: "+session+" • XAUUSD • Network "+(isNetworkOk()?"OK":"OFFLINE");
             try{
-                String body=get("https://nfs.faireconomy.media/ff_calendar_thisweek.json");
+                String body=get("https://biquote.io/api/calendar/upcoming?countries=US&importance=high&limit=10");
                 JSONArray ar=new JSONArray(body);long now=System.currentTimeMillis();long best=Long.MAX_VALUE;String bestTitle="";
                 for(int i=0;i<ar.length();i++){
                     JSONObject o=ar.optJSONObject(i);if(o==null)continue;
-                    String cur=o.optString("country",o.optString("currency",""));String title=o.optString("title","");
-                    String impact=o.optString("impact","");String date=o.optString("date","");String time=o.optString("time","");
+                    String cur=o.optString("countryCode",o.optString("currency",""));String title=o.optString("name",o.optString("title",""));
+                    String impact=o.optString("importance",o.optString("impact",""));String iso=o.optString("time","");
                     if(!"USD".equalsIgnoreCase(cur)&&!"US".equalsIgnoreCase(cur))continue;
                     if(!impact.toLowerCase(Locale.US).contains("high"))continue;
-                    long ts=parseNewsTime(date,time);if(ts>=now&&ts<best){best=ts;bestTitle=title;}
+                    long ts=parseIsoTime(iso);if(ts>=now&&ts<best){best=ts;bestTitle=title;}
                 }
                 if(!bestTitle.isEmpty())news+=" • HIGH USD: "+bestTitle+" in "+Math.max(0,(best-now)/60000)+"m";
             }catch(Exception ignored){news+=" • Calendar feed unavailable";}
-            final String out=news;runOnUiThread(()->{newsTicker=out;if(ticker!=null)ticker.setText(newsTicker);});
+            final String out=news;runOnUiThread(()->{newsTicker=out;if(signalDetail!=null){signalDetail.setText(newsTicker);signalDetail.setSelected(true);signalDetail.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);signalDetail.setSingleLine(true);}});
         }).start();
     }
 
-    long parseNewsTime(String date,String time){
+    long parseIsoTime(String iso){try{return java.time.Instant.parse(iso).toEpochMilli();}catch(Exception e){return Long.MAX_VALUE;}}\n\n    long parseNewsTime(String date,String time){
         try{
             String s=date+" "+time;
             java.text.SimpleDateFormat f=new java.text.SimpleDateFormat("yyyy-MM-dd hh:mm a",Locale.US);
