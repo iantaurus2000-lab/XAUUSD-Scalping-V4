@@ -67,6 +67,8 @@ public class MainActivity extends Activity {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},REQ_NOTIF);
     }
 
+    TextView lamp;
+
     TextView tv(String s,int sp){
         TextView t=new TextView(this); t.setText(s); t.setTextColor(Color.WHITE); t.setTextSize(sp);
         t.setPadding(14,8,14,8); return t;
@@ -85,7 +87,7 @@ public class MainActivity extends Activity {
     void buildUi(){
         setContentView(R.layout.activity_main);
         price=findViewById(R.id.price); priceChange=findViewById(R.id.priceChange);
-        connection=findViewById(R.id.connection); ticker=findViewById(R.id.ticker);
+        connection=findViewById(R.id.connection); ticker=findViewById(R.id.ticker); lamp=findViewById(R.id.lamp);
         signal=findViewById(R.id.signalState); signalDetail=findViewById(R.id.signalDetail);
         confidence=findViewById(R.id.confidence); m5Bias=findViewById(R.id.m5Bias); m1State=findViewById(R.id.m1State);
         spreadLine=findViewById(R.id.spreadLine); highLow=findViewById(R.id.highLow); resultsBar=findViewById(R.id.resultsBar);
@@ -110,6 +112,10 @@ public class MainActivity extends Activity {
         findViewById(R.id.btnCopyEntry).setOnClickListener(v->copyPrice("ENTRY",decision.entry));
         findViewById(R.id.btnCopySl).setOnClickListener(v->copyPrice("SL",decision.sl));
         findViewById(R.id.btnCopyTp).setOnClickListener(v->copyPrice("TP1",decision.tp1));
+        boxEntry.setOnClickListener(v->copyPrice("ENTRY",decision.entry));
+        boxSl.setOnClickListener(v->copyPrice("SL",decision.sl));
+        boxTp1.setOnClickListener(v->copyPrice("TP1",decision.tp1));
+        boxTp2.setOnClickListener(v->copyPrice("TP2",decision.tp2));
         renderDecision();
     }
 
@@ -163,14 +169,16 @@ public class MainActivity extends Activity {
         EditText id=input("Trading Account ID",c.accountId);id.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
         EditText key=input("EXN API Key",c.apiKey);key.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
         EditText secret=input("Secret / Ed25519 Private Key",c.secret);secret.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        EditText host=input("API Host",c.host);host.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+        EditText host=input("API Host (kosong = default resmi)",c.host);host.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
         EditText symbol=input("Instrument (MT5)",store.get("symbol","XAUUSD"));symbol.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
         CheckBox direct=new CheckBox(this);direct.setText("Direct Exness API (eligible accounts only)");direct.setTextColor(Color.WHITE);direct.setChecked(true);
         box.addView(id,new LinearLayout.LayoutParams(-1,55));box.addView(key,new LinearLayout.LayoutParams(-1,55));box.addView(secret,new LinearLayout.LayoutParams(-1,55));box.addView(host,new LinearLayout.LayoutParams(-1,55));box.addView(symbol,new LinearLayout.LayoutParams(-1,55));box.addView(direct);
         AlertDialog d=new AlertDialog.Builder(this).setTitle("Exness API Connection").setView(box)
             .setNegativeButton("Cancel",null).setPositiveButton("SAVE + TEST",null).create();
         d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
-            exness.saveCredentials(id.getText().toString(),key.getText().toString(),secret.getText().toString(),host.getText().toString());
+            String hostValue=host.getText().toString().trim();
+            if(hostValue.isEmpty()) hostValue=ExnessClient.DEFAULT_HOST;
+            exness.saveCredentials(id.getText().toString(),key.getText().toString(),secret.getText().toString(),hostValue);
             store.put("symbol",symbol.getText().toString().trim().isEmpty()?"XAUUSD":symbol.getText().toString().trim());
             d.dismiss();connectExness();
         }));
@@ -270,12 +278,23 @@ public class MainActivity extends Activity {
 
     void startAuto(){
         if(!hasCredentials()){toast("Isi Exness API dulu.");showExnessDialog();return;}
-        store.rawPrefs().edit().putBoolean("auto",true).apply();
-        botState.setText("AUTO: ON  •  guarded execution");
-        botState.setTextColor(Color.rgb(0,230,118));
-        Intent i=new Intent(this,TradingService.class);
-        if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);
-        log.setText("Auto-engine started. It can submit only high-score LIMIT setups within risk guards.");
+        log.setText("AUTO PREFLIGHT • testing Exness API + instrument...");
+        new Thread(()->{
+            try{
+                ExnessClient.Response a=exness.connectAndResolve();
+                if(!a.ok()) throw new IllegalStateException("API connection "+a.code+": "+trim(a.body));
+                ExnessClient.Response i=exness.instrumentConditions(orderSymbol());
+                if(!i.ok()) throw new IllegalStateException("Instrument "+orderSymbol()+" "+i.code+": "+trim(i.body));
+                store.rawPrefs().edit().putBoolean("auto",true).apply();
+                runOnUiThread(()->{
+                    botState.setText("AUTO: ON  •  guarded execution");
+                    botState.setTextColor(Color.rgb(0,230,118));
+                    Intent intent=new Intent(this,TradingService.class);
+                    if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
+                    log.setText("AUTO ON • API + "+orderSymbol()+" preflight OK");
+                });
+            }catch(Exception e){runOnUiThread(()->{store.rawPrefs().edit().putBoolean("auto",false).apply();botState.setText("AUTO: OFF • API ERROR");log.setText("AUTO PREFLIGHT ERROR • "+e.getMessage());toast("Auto gagal: "+e.getMessage());});}
+        }).start();
     }
 
     void stopAuto(){
@@ -417,6 +436,7 @@ public class MainActivity extends Activity {
         boolean buy=decision.side.startsWith("BUY"),sell=decision.side.startsWith("SELL");
         signal.setText(decision.side.equals("WAIT")?"WAIT • SCORE "+decision.score+"/100":decision.side+" • "+(decision.score>=85?"ENTRY READY":"LIMIT ZONE"));
         signal.setTextColor(buy?Color.rgb(0,230,118):sell?Color.rgb(255,82,82):Color.WHITE);
+        if(lamp!=null){lamp.setText(buy?"●":sell?"●":"●");lamp.setTextColor(buy?Color.rgb(0,230,118):sell?Color.rgb(255,82,82):Color.rgb(120,144,156));}
         signalDetail.setText(decision.reason==null||decision.reason.isEmpty()?"M5 Bias → Liquidity Sweep → Wick Rejection → BOS":decision.reason);
         int stars=Math.max(0,Math.min(5,decision.score/20));
         confidence.setText("★★★★★".substring(0,stars)+"☆☆☆☆☆".substring(0,5-stars)+"  "+decision.score+"/100");
