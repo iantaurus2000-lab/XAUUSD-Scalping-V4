@@ -1,6 +1,7 @@
 package com.xauusd.mobileengine;
 
 import android.util.Base64;
+import java.io.IOException;
 
 import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters;
 import org.bouncycastle.crypto.signers.Ed25519Signer;
