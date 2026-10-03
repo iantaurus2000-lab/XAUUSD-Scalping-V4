@@ -102,6 +102,21 @@ public class TradingService extends Service {
                 if(key.equals(lastSignalKey))return;
 
                 String symbol=orderSymbol();
+                if(store.rawPrefs().getBoolean("mt5_bridge",false) && telegram.enabled()){
+                    String bridgeChat=store.get("mt5_bridge_chat","").trim();
+                    if(!bridgeChat.isEmpty()){
+                        String bridgeKey="XAUUSD-"+side+"-"+m1.get(m1.size()-2).t+"-"+System.currentTimeMillis();
+                        try{
+                            telegram.sendTo(bridgeChat,"[MT5BRIDGE]|V1|"+side.toUpperCase(Locale.US)+"_LIMIT|"+symbol+"|"+lot+"|"+fmt(d.entry,digits)+"|"+fmt(d.sl,digits)+"|"+fmt(d.tp2,digits)+"|"+bridgeKey);
+                            telegram.sendTo(bridgeChat,"🟢 XAUUSD SCALPING\n"+d.side+"\n"+d.summary()+"\nMT5 BRIDGE: COMMAND SENT");
+                            lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;
+                            notifyUser("MT5 BRIDGE COMMAND SENT",d.summary());
+                        }catch(Exception e){
+                            notifyUser("MT5 BRIDGE ERROR",e.getMessage());
+                        }
+                    }
+                    return;
+                }
                 if(fxOpen.configured()){ try{ FxOpenTickTraderClient.Response fr=fxOpen.trades(); if(fr.ok() && fr.body.contains(symbol)) return; }catch(Exception ignored){} } else if(metaApi.configured()){ try{ MetaApiClient.Response mr=metaApi.orders(); if(mr.ok() && mr.body.contains(symbol)) return; }catch(Exception ignored){} } else if(hasActiveExposure(symbol))return;
 
                 String lot=store.rawPrefs().getString("lot","0.01");
