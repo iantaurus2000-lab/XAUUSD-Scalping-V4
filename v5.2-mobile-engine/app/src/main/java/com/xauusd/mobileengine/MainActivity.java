@@ -53,7 +53,6 @@ public class MainActivity extends Activity {
         store=new SecurityStore(this);
         exness=new ExnessClient(store);
         metaApi=new MetaApiClient(store);
-        metaApi=new MetaApiClient(store);
         buildUi();
         requestNotificationPermission();
         createNotificationChannel();
