@@ -768,7 +768,8 @@ public class MainActivity extends Activity {
     }
 
     void cancelAutoOrders(String filter){
-        if(!hasCredentials()){toast("Sambungkan Exness API dulu.");return;}
+        if(fxOpen.configured()){cancelAutoFxOpenOrders(filter);return;}
+        if(!hasCredentials()){toast("Sambungkan FXOpen TickTrader atau Exness API dulu.");return;}
         new Thread(()->{
             try{
                 ExnessClient.Response snap=exness.snapshot();
@@ -800,6 +801,32 @@ public class MainActivity extends Activity {
                 int finalOk=ok;
                 runOnUiThread(()->{log.setText("CANCEL AUTO • "+finalOk+"/"+ids.size()+" ACK • "+filter.toUpperCase(Locale.US)+" • "+orderSymbol());toast("Cancel request dikirim: "+finalOk+" order");});
             }catch(Exception e){runOnUiThread(()->toast("Cancel error: "+e.getMessage()));}
+        }).start();
+    }
+
+    void cancelAutoFxOpenOrders(String filter){
+        new Thread(()->{
+            try{
+                FxOpenTickTraderClient.Response tr=fxOpen.trades();
+                if(!tr.ok())throw new IllegalStateException("FXOpen Trades "+tr.code+": "+trim(tr.body));
+                JSONArray ar=fxOpenTradesArray(tr.body);
+                int ok=0,total=0;
+                for(int i=0;i<ar.length();i++){
+                    JSONObject o=ar.optJSONObject(i);if(o==null)continue;
+                    String sym=o.optString("Symbol",o.optString("symbol",""));
+                    String side=o.optString("Side",o.optString("side","")).toLowerCase(Locale.US);
+                    String type=o.optString("Type",o.optString("type","")).toLowerCase(Locale.US);
+                    String comment=o.optString("Comment",o.optString("comment","")).toUpperCase(Locale.US);
+                    String id=o.optString("Id",o.optString("id",""));
+                    if(id.isEmpty()||!orderSymbol().equalsIgnoreCase(sym)||!"limit".equals(type))continue;
+                    if(!comment.contains("AUTO"))continue;
+                    if(!"all".equals(filter)&&!filter.equals(side))continue;
+                    total++;
+                    try{FxOpenTickTraderClient.Response r=fxOpen.cancel(id);if(r.ok())ok++;}catch(Exception ignored){}
+                }
+                int f=ok,t=total;
+                runOnUiThread(()->{log.setText("FXOPEN CANCEL AUTO • "+f+"/"+t+" ACK • "+filter.toUpperCase(Locale.US));toast("FXOpen cancel request: "+f+" order");});
+            }catch(Exception e){runOnUiThread(()->toast("FXOpen cancel error: "+e.getMessage()));}
         }).start();
     }
 
