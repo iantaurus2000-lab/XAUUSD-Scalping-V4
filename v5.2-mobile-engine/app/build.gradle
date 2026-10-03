@@ -15,8 +15,8 @@ android {
         applicationId 'com.xauusd.mobileengine'
         minSdk 26
         targetSdk 34
-        versionCode 548
-        versionName '5.2.5-FXOPEN-FIX2'
+        versionCode 549
+        versionName '5.2.6-STABLE'
     }
 }
 
