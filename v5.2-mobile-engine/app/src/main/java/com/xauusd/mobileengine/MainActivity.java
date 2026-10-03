@@ -478,8 +478,8 @@ public class MainActivity extends Activity {
         EditText id=input("Web API ID",store.get("fx_id",""));id.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
         EditText key=input("Web API Key",store.get("fx_key",""));key.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
         EditText secret=input("Web API Secret",store.get("fx_secret",""));secret.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        EditText host=input("FXOpen Demo API Host",store.get("fx_host",FxOpenTickTraderClient.DEFAULT_DEMO_HOST));host.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
-        box.addView(tv("FXOPEN TICKTRADER • FREE API • DEMO\nHP → APK → FXOpen TickTrader Web API.",11));
+        EditText host=input("Web API Host (default resmi)",store.get("fx_host",FxOpenTickTraderClient.DEFAULT_DEMO_HOST));host.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+        box.addView(tv("FXOPEN TICKTRADER • DEMO\nTrading Server: ttdemomarginal.fxopen.net\nWeb API Host: marginalttdemowebapi.fxopen.net\nJangan masukkan Trading Server ke kolom Web API Host.",11));
         box.addView(id,new LinearLayout.LayoutParams(-1,55));
         box.addView(key,new LinearLayout.LayoutParams(-1,55));
         box.addView(secret,new LinearLayout.LayoutParams(-1,55));
@@ -493,14 +493,14 @@ public class MainActivity extends Activity {
         d.show();
     }
 
-    void testFxOpen(){
+    String fxOpenHostForLog(){ try { java.lang.reflect.Method m=FxOpenTickTraderClient.class.getDeclaredMethod("host"); m.setAccessible(true); return String.valueOf(m.invoke(fxOpen)); } catch(Exception e){ return FxOpenTickTraderClient.DEFAULT_DEMO_HOST; } }\n\n    void testFxOpen(){
         if(!fxOpen.configured()){toast("Isi Web API ID + Key + Secret.");return;}
         new Thread(()->{
             try{
                 FxOpenTickTraderClient.Response r=fxOpen.accountInfo();
                 runOnUiThread(()->{
                     if(r.ok()){
-                        log.setText("FXOPEN CONNECTED • TickTrader account OK\n"+trim(r.body));
+                        log.setText("FXOPEN CONNECTED • Web API OK\nTrading Server: ttdemomarginal.fxopen.net\nWeb API: "+fxOpenHostForLog()+"\n"+trim(r.body));
                         toast("FXOpen CONNECTED • siap test pending order");
                     }else{
                         log.setText("FXOPEN CONNECT ERROR "+r.code+" • "+trim(r.body));
