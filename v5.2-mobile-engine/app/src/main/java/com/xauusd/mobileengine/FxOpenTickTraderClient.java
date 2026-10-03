@@ -2,6 +2,8 @@ package com.xauusd.mobileengine;
 
 import org.json.*;
 import java.io.*;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.InflaterInputStream;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -9,8 +11,8 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 public final class FxOpenTickTraderClient {
-    public static final String DEFAULT_DEMO_HOST="https://marginalttdemowebapi.fxopen.net:8443";
-    public static final String DEFAULT_LIVE_HOST="https://ttlivewebapi.fxopen.net:8443";
+    public static final String DEFAULT_DEMO_HOST="https://marginalttdemowebapi.fxopen.net";
+    public static final String DEFAULT_LIVE_HOST="https://ttlivewebapi.fxopen.net";
 
     public static final class Response {
         public final int code;
@@ -87,7 +89,7 @@ public final class FxOpenTickTraderClient {
         c.setRequestProperty("Accept","application/json");
         int code=c.getResponseCode();
         InputStream in=code>=400?c.getErrorStream():c.getInputStream();
-        String body=read(in);c.disconnect();
+        String body=readResponse(c,in);c.disconnect();
         return new Response(code,body);
     }
 
@@ -119,6 +121,17 @@ public final class FxOpenTickTraderClient {
         Mac mac=Mac.getInstance("HmacSHA256");
         mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8),"HmacSHA256"));
         return Base64.getEncoder().encodeToString(mac.doFinal(message.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    static String readResponse(HttpURLConnection c,InputStream in)throws Exception{
+        if(in==null)return "";
+        String enc=c.getContentEncoding();
+        if(enc!=null){
+            enc=enc.toLowerCase();
+            if(enc.contains("gzip"))in=new GZIPInputStream(in);
+            else if(enc.contains("deflate"))in=new InflaterInputStream(in);
+        }
+        return read(in);
     }
 
     static String read(InputStream in)throws Exception{
