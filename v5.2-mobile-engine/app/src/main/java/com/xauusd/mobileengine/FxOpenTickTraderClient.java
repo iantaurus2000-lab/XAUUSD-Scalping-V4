@@ -123,7 +123,18 @@ public final class FxOpenTickTraderClient {
         return Base64.getEncoder().encodeToString(mac.doFinal(message.getBytes(StandardCharsets.UTF_8)));
     }
 
-    static String readResponse(HttpURLConnection c,InputStream in)throws Exception{\n        if(in==null)return "";\n        String enc=c.getContentEncoding();\n        if(enc!=null){\n            enc=enc.toLowerCase();\n            if(enc.contains("gzip"))in=new GZIPInputStream(in);\n            else if(enc.contains("deflate"))in=new InflaterInputStream(in);\n        }\n        return read(in);\n    }\n\n    static String read(InputStream in)throws Exception{
+    static String readResponse(HttpURLConnection c,InputStream in)throws Exception{
+        if(in==null)return "";
+        String enc=c.getContentEncoding();
+        if(enc!=null){
+            enc=enc.toLowerCase();
+            if(enc.contains("gzip"))in=new GZIPInputStream(in);
+            else if(enc.contains("deflate"))in=new InflaterInputStream(in);
+        }
+        return read(in);
+    }
+
+    static String read(InputStream in)throws Exception{
         if(in==null)return "";
         BufferedReader r=new BufferedReader(new InputStreamReader(in,StandardCharsets.UTF_8));
         StringBuilder b=new StringBuilder();String x;
