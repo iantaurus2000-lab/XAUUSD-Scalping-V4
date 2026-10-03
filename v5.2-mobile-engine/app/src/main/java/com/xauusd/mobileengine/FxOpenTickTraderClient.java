@@ -7,6 +7,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
+import java.util.concurrent.TimeUnit;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
 
 public final class FxOpenTickTraderClient {
     public static final String DEFAULT_DEMO_HOST="https://marginalttdemowebapi.fxopen.net:8443";
@@ -20,6 +25,12 @@ public final class FxOpenTickTraderClient {
     }
 
     private final SecurityStore store;
+    private static final OkHttpClient HTTP = new OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(10, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .build();
     public FxOpenTickTraderClient(SecurityStore s){store=s;}
 
     String id(){return store.get("fx_id","").trim();}
@@ -94,31 +105,36 @@ public final class FxOpenTickTraderClient {
     private Response request(String method,String path,String body)throws Exception{
         String b=body==null?"":body;
         String absolute=host()+path;
-        URL u=new URL(absolute);
-        HttpURLConnection c=(HttpURLConnection)u.openConnection();
-        c.setConnectTimeout(10000);c.setReadTimeout(15000);c.setRequestMethod(method);
-        c.setRequestProperty("Accept","application/json");
-        c.setRequestProperty("Accept-Encoding","gzip, deflate");
-        c.setRequestProperty("Content-Type","application/json");
         long ts=System.currentTimeMillis();
-        String signatureText=String.valueOf(ts)+id()+key()+method+absolute+b;
+        String signatureText=Long.toString(ts)+id()+key()+method.toUpperCase(java.util.Locale.US)+absolute+b;
         String sig=hmacBase64(secret(),signatureText);
-        c.setRequestProperty("Authorization","HMAC "+id()+":"+key()+":"+ts+":"+sig);
-        if("POST".equals(method)||"PUT".equals(method)){
-            c.setDoOutput(true);
-            try(OutputStream out=c.getOutputStream()){out.write(b.getBytes(StandardCharsets.UTF_8));}
+
+        Request.Builder rb=new Request.Builder().url(absolute)
+                .header("Content-Type","application/json")
+                .header("Accept","application/json")
+                .header("Accept-Encoding","gzip")
+                .header("Authorization","HMAC "+id()+":"+key()+":"+ts+":"+sig);
+
+        if("POST".equals(method)||"PUT".equals(method))
+            rb.method(method,okhttp3.RequestBody.create(b,okhttp3.MediaType.parse("application/json")));
+        else rb.method(method,null);
+
+        try(okhttp3.Response response=HTTP.newCall(rb.build()).execute()){
+            String out=response.body()==null?"":response.body().string();
+            return new Response(response.code(),out);
+        }catch(SocketTimeoutException e){
+            throw new IOException("FXOpen TIMEOUT • periksa Demo API Host dan koneksi internet");
+        }catch(UnknownHostException e){
+            throw new IOException("FXOpen DNS ERROR • host tidak ditemukan");
+        }catch(IOException e){
+            throw new IOException("FXOpen NETWORK ERROR • "+e.getMessage(),e);
         }
-        int code=c.getResponseCode();
-        InputStream in=code>=400?c.getErrorStream():c.getInputStream();
-        String out=read(in);
-        c.disconnect();
-        return new Response(code,out);
     }
 
     static String hmacBase64(String secret,String message)throws Exception{
         Mac mac=Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8),"HmacSHA256"));
-        return Base64.getEncoder().encodeToString(mac.doFinal(message.getBytes(StandardCharsets.UTF_8)));
+        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.US_ASCII),"HmacSHA256"));
+        return Base64.getEncoder().encodeToString(mac.doFinal(message.getBytes(StandardCharsets.US_ASCII)));
     }
 
     static String read(InputStream in)throws Exception{
