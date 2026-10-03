@@ -12,7 +12,7 @@ public final class TelegramClient {
         return !store.get("tg_token","").trim().isEmpty() && !store.get("tg_chat","").trim().isEmpty();
     }
 
-    public void send(String text) throws Exception{
+    public void send(String text) throws Exception{ sendTo(store.get("tg_chat","").trim(), text); }\n\n    public void sendTo(String chat, String text) throws Exception{
         String token=store.get("tg_token","").trim();
         String chat=store.get("tg_chat","").trim();
         if(token.isEmpty()||chat.isEmpty()) return;
