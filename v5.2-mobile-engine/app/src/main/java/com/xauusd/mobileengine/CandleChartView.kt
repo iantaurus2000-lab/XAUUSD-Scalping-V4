@@ -29,7 +29,7 @@ class CandleChartView @JvmOverloads constructor(
     private var dragX = 0f
     private var dragY = 0f
     private var scaleY = 1f
-    private var visibleCount = 48
+    private var visibleCount = 60
     private var crossX = -1f
     private var crossY = -1f
     private var showCross = false
