@@ -487,13 +487,18 @@ public class MainActivity extends Activity {
         AlertDialog d=new AlertDialog.Builder(this).setTitle("🔗 FXOPEN TICKTRADER API").setView(box)
             .setNegativeButton("Tutup",null).setPositiveButton("SAVE + TEST",null).create();
         d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
-            fxOpen.save(id.getText().toString(),key.getText().toString(),secret.getText().toString(),host.getText().toString());
+            String h=host.getText().toString().trim();
+            if(h.isEmpty()) h=FxOpenTickTraderClient.DEFAULT_DEMO_HOST;
+            if(h.contains("ttdemomarginal.fxopen.net") && !h.contains("marginalttdemowebapi.fxopen.net")) { toast("Salah server: ttdemomarginal.fxopen.net adalah Trading Server, bukan Web API. Gunakan marginalttdemowebapi.fxopen.net"); return; }
+            fxOpen.save(id.getText().toString(),key.getText().toString(),secret.getText().toString(),h);
             d.dismiss();testFxOpen();
         }));
         d.show();
     }
 
-    String fxOpenHostForLog(){ return fxOpen.host(); }\n\n    void testFxOpen(){
+    String fxOpenHostForLog(){ return fxOpen.host(); }
+
+    void testFxOpen(){
         if(!fxOpen.configured()){toast("Isi Web API ID + Key + Secret.");return;}
         new Thread(()->{
             try{
