@@ -59,6 +59,7 @@ public class MainActivity extends Activity {
         requestNotificationPermission();
         createNotificationChannel();
         loadMarket();
+        if (store.rawPrefs().getBoolean("auto", false) && hasCredentials()) handler.postDelayed(this::resumeBackgroundEngine, 1200);
         loadNewsTicker();
         handler.postDelayed(marketPoll,2500);
         handler.postDelayed(newsPoll,60000);
@@ -182,6 +183,7 @@ public class MainActivity extends Activity {
             if(hostValue.isEmpty()) hostValue=ExnessClient.DEFAULT_HOST;
             exness.saveCredentials(id.getText().toString(),key.getText().toString(),secret.getText().toString(),hostValue);
             store.put("symbol",symbol.getText().toString().trim().isEmpty()?"XAUUSD":symbol.getText().toString().trim());
+            store.put("active_connector","exness");
             d.dismiss();connectExness();
         }));
         d.show();
@@ -190,15 +192,15 @@ public class MainActivity extends Activity {
     void loadAccount(){
         new Thread(()->{
             try{
-                if(fxOpen.configured()){
+                if(useFxOpen()){
                     FxOpenTickTraderClient.Response r=fxOpen.accountInfo();
-                    runOnUiThread(()->account.setText(r.ok()?"FXOpen Account: "+trim(r.body):"FXOpen Account API: "+r.code));
+                    runOnUiThread(()->account.setText(r.ok()?"FXOpen Account: CONNECTED":"FXOpen Account API: "+r.code+" • "+trim(r.body)));
                     return;
                 }
                 ExnessClient.Response r=exness.accountInfo();
                 runOnUiThread(()->{
                     if(r.ok()) account.setText("Account: "+trim(r.body));
-                    else account.setText("Account API: "+r.code);
+                    else account.setText("Account API: "+r.code+" • "+trim(r.body));
                 });
             }catch(Exception e){ runOnUiThread(()->account.setText("Account: "+e.getMessage())); }
         }).start();
@@ -239,7 +241,7 @@ public class MainActivity extends Activity {
         }catch(Exception e){toast(e.getMessage());return;}
         new Thread(()->{
             try{
-                if(fxOpen.configured()){
+                if(useFxOpen()){
                     FxOpenTickTraderClient.Response fr=fxOpen.placeLimit(orderSymbol(),side,Double.parseDouble(lot),Double.parseDouble(entry),Double.parseDouble(sl),Double.parseDouble(tp),"XAUUSD-V5.2-"+tag);
                     runOnUiThread(()->{
                         if(fr.ok()){
@@ -298,10 +300,10 @@ public class MainActivity extends Activity {
 
     void startAuto(){
         if(!hasCredentials()){toast("Sambungkan FXOpen TickTrader atau Exness API dulu.");showFxOpenDialog();return;}
-        log.setText(fxOpen.configured()?"AUTO PREFLIGHT • testing FXOpen TickTrader...":"AUTO PREFLIGHT • testing Exness API...");
+        log.setText(useFxOpen()?"AUTO PREFLIGHT • testing FXOpen TickTrader...":"AUTO PREFLIGHT • testing Exness API...");
         new Thread(()->{
             try{
-                if(fxOpen.configured()){
+                if(useFxOpen()){
                     FxOpenTickTraderClient.Response a=fxOpen.accountInfo();
                     if(!a.ok())throw new IllegalStateException("FXOpen "+a.code+": "+trim(a.body));
                 }else{
@@ -311,12 +313,13 @@ public class MainActivity extends Activity {
                     if(!i.ok())throw new IllegalStateException("Instrument "+orderSymbol()+" "+i.code+": "+trim(i.body));
                 }
                 store.rawPrefs().edit().putBoolean("auto",true).apply();
+                requestBatteryOptimizationExemption();
                 runOnUiThread(()->{
-                    botState.setText(fxOpen.configured()?"AUTO: ON • FXOPEN DEMO":"AUTO: ON • guarded execution");
+                    botState.setText(useFxOpen()?"AUTO: ON • FXOPEN DEMO":"AUTO: ON • guarded execution");
                     botState.setTextColor(Color.rgb(0,230,118));
                     Intent intent=new Intent(this,TradingService.class);
                     if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
-                    log.setText(fxOpen.configured()?"AUTO ON • FXOpen TickTrader preflight OK":"AUTO ON • Exness API preflight OK");
+                    log.setText(useFxOpen()?"AUTO ON • FXOpen TickTrader preflight OK":"AUTO ON • Exness API preflight OK");
                 });
             }catch(Exception e){runOnUiThread(()->{store.rawPrefs().edit().putBoolean("auto",false).apply();botState.setText("AUTO: OFF • CONNECTOR ERROR");log.setText("AUTO PREFLIGHT ERROR • "+e.getMessage());toast("Auto gagal: "+e.getMessage());});}
         }).start();
@@ -329,8 +332,37 @@ public class MainActivity extends Activity {
         log.setText("Auto-engine stopped. No new orders will be submitted.");
     }
 
+    boolean useFxOpen(){
+        String active=store.get("active_connector","");
+        if ("exness".equalsIgnoreCase(active)) return false;
+        return fxOpen!=null && fxOpen.configured();
+    }
+
+    void resumeBackgroundEngine(){
+        try{
+            Intent intent=new Intent(this,TradingService.class);
+            if(Build.VERSION.SDK_INT>=26) startForegroundService(intent); else startService(intent);
+            botState.setText("AUTO: ON • BACKGROUND");
+            botState.setTextColor(Color.rgb(0,230,118));
+        }catch(Exception e){ log.setText("BACKGROUND ENGINE ERROR • "+e.getMessage()); }
+    }
+
+    void requestBatteryOptimizationExemption(){
+        if(Build.VERSION.SDK_INT>=23){
+            try{
+                android.os.PowerManager pm=(android.os.PowerManager)getSystemService(POWER_SERVICE);
+                String pkg=getPackageName();
+                if(!pm.isIgnoringBatteryOptimizations(pkg)){
+                    Intent i=new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                    i.setData(android.net.Uri.parse("package:"+pkg));
+                    startActivity(i);
+                }
+            }catch(Exception ignored){}
+        }
+    }
+
     boolean hasCredentials(){
-        if(fxOpen!=null&&fxOpen.configured())return true;
+        if(fxOpen!=null&&useFxOpen())return true;
         ExnessClient.Credentials c=exness.loadCredentials();
         return !c.accountId.isEmpty()&&!c.apiKey.isEmpty()&&!c.secret.isEmpty();
     }
@@ -373,7 +405,7 @@ public class MainActivity extends Activity {
     }
 
     void showAccountDialog(){
-        if(fxOpen.configured()){
+        if(useFxOpen()){
             new Thread(()->{try{FxOpenTickTraderClient.Response r=fxOpen.accountInfo();runOnUiThread(()->new AlertDialog.Builder(this).setTitle("FXOpen Trading Snapshot").setMessage(r.ok()?r.body:"Error "+r.code+" "+r.body).setPositiveButton("OK",null).show());}catch(Exception e){runOnUiThread(()->toast(e.getMessage()));}}).start();
             return;
         }
@@ -389,7 +421,7 @@ public class MainActivity extends Activity {
     }
 
     void showOrderManagerDialog(){
-        if(fxOpen.configured()){showFxOpenOrderManagerDialog();return;}
+        if(useFxOpen()){showFxOpenOrderManagerDialog();return;}
         if(!hasCredentials()){toast("Sambungkan Exness API dulu.");return;}
         new Thread(()->{
             try{
@@ -441,7 +473,7 @@ public class MainActivity extends Activity {
     }
 
     void confirmCancelOrder(String id){
-        if(fxOpen.configured()){confirmCancelFxOpenOrder(id);return;}
+        if(useFxOpen()){confirmCancelFxOpenOrder(id);return;}
         new AlertDialog.Builder(this).setTitle("Cancel order").setMessage("Batalkan order ID "+id+"?")
             .setNegativeButton("Tidak",null).setPositiveButton("Ya", (d,w)->{
                 new Thread(()->{try{ExnessClient.Response r=exness.cancelOrder(id);String op=exness.operationId(r);runOnUiThread(()->{log.setText(r.ok()?"CANCEL REQUEST • "+id:"CANCEL FAILED • "+r.code);toast(r.ok()?"Cancel request diterima":"Cancel gagal: "+trim(r.body));});if(r.ok()&&!op.isEmpty())waitForCancelOperation(op,id,"");}catch(Exception e){runOnUiThread(()->toast("Cancel error: "+e.getMessage()));}}).start();
@@ -454,7 +486,7 @@ public class MainActivity extends Activity {
     }
 
     void showClosePositionDialog(String id,String currentVolume){
-        if(fxOpen.configured()){showCloseFxOpenTradeDialog(id,currentVolume);return;}
+        if(useFxOpen()){showCloseFxOpenTradeDialog(id,currentVolume);return;}
         EditText vol=input("Volume (kosong = full close)","");
         vol.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
         new AlertDialog.Builder(this).setTitle("Close / Partial Close").setView(vol).setNegativeButton("Tutup",null).setPositiveButton("CLOSE", (d,w)->{
@@ -464,7 +496,7 @@ public class MainActivity extends Activity {
     }
 
     void showModifyOrderDialog(String id){
-        if(fxOpen.configured()){showModifyFxOpenTradeDialog(id);return;}
+        if(useFxOpen()){showModifyFxOpenTradeDialog(id);return;}
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(12,4,12,4);
         EditText price=input("Modify Entry","");EditText sl=input("Modify SL","");EditText tp=input("Modify TP","");
         box.addView(price);box.addView(sl);box.addView(tp);
@@ -488,13 +520,14 @@ public class MainActivity extends Activity {
             .setNegativeButton("Tutup",null).setPositiveButton("SAVE + TEST",null).create();
         d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
             fxOpen.save(id.getText().toString(),key.getText().toString(),secret.getText().toString(),host.getText().toString());
+            store.put("active_connector","fxopen");
             d.dismiss();testFxOpen();
         }));
         d.show();
     }
 
     void testFxOpen(){
-        if(!fxOpen.configured()){toast("Isi Web API ID + Key + Secret.");return;}
+        if(!useFxOpen()){toast("Isi Web API ID + Key + Secret.");return;}
         new Thread(()->{
             try{
                 FxOpenTickTraderClient.Response r=fxOpen.accountInfo();
@@ -740,7 +773,7 @@ public class MainActivity extends Activity {
         if(!hasCredentials())return;
         new Thread(()->{
             try{
-                if(fxOpen.configured()){
+                if(useFxOpen()){
                     FxOpenTickTraderClient.Response r=fxOpen.accountInfo();
                     if(!r.ok()){
                         runOnUiThread(()->account.setText("FXOpen Account: API "+r.code));
@@ -791,7 +824,7 @@ public class MainActivity extends Activity {
     }
 
     void cancelAutoOrders(String filter){
-        if(fxOpen.configured()){cancelAutoFxOpenOrders(filter);return;}
+        if(useFxOpen()){cancelAutoFxOpenOrders(filter);return;}
         if(!hasCredentials()){toast("Sambungkan FXOpen TickTrader atau Exness API dulu.");return;}
         new Thread(()->{
             try{
@@ -1059,21 +1092,33 @@ public class MainActivity extends Activity {
     }
 
     ArrayList<StrategyEngine.Candle> parse(String s)throws Exception{
-        JSONObject env=new JSONObject(s);
-        JSONArray ar=env.optJSONArray("bars");
-        if(ar==null)ar=env.optJSONArray("data");
+        String z=s==null?"":s.trim();
+        JSONArray ar=null;
+        if(z.startsWith("[")) ar=new JSONArray(z);
+        else {
+            JSONObject env=new JSONObject(z);
+            ar=env.optJSONArray("bars");
+            if(ar==null)ar=env.optJSONArray("data");
+            if(ar==null){
+                JSONObject result=env.optJSONObject("result");
+                if(result!=null)ar=result.optJSONArray("bars");
+            }
+        }
         if(ar==null)throw new JSONException("OHLC bars missing");
         ArrayList<StrategyEngine.Candle> out=new ArrayList<>();
         for(int i=ar.length()-1;i>=0;i--){
             JSONObject o=ar.getJSONObject(i);
-            long t=o.optLong("openTime",0);
-            if(t==0)t=o.optLong("time",0);
+            long t=o.optLong("openTime",o.optLong("time",0));
+            if(t==0)t=o.optLong("timestamp",0);
             if(t==0){
                 String iso=o.optString("openTime",o.optString("timestamp",""));
                 if(!iso.isEmpty())try{t=java.time.Instant.parse(iso).toEpochMilli();}catch(Exception ignored){}
             }
             if(t>0&&t<100000000000L)t*=1000L;
-            out.add(new StrategyEngine.Candle(t,o.optDouble("open"),o.optDouble("high"),o.optDouble("low"),o.optDouble("close")));
+            double open=o.optDouble("open",Double.NaN), high=o.optDouble("high",Double.NaN);
+            double low=o.optDouble("low",Double.NaN), close=o.optDouble("close",Double.NaN);
+            if(Double.isNaN(open)||Double.isNaN(high)||Double.isNaN(low)||Double.isNaN(close))continue;
+            out.add(new StrategyEngine.Candle(t,open,high,low,close));
         }
         return out;
     }
