@@ -17,6 +17,7 @@ public class TradingService extends Service {
     SecurityStore store;
     ExnessClient exness;
     MetaApiClient metaApi;
+    FxOpenTickTraderClient fxOpen;
     TelegramClient telegram;
     TradeManager manager;
     static final String BASE="https://biquote.io/api/XAUUSD";
@@ -40,7 +41,7 @@ public class TradingService extends Service {
         wakeLock=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"XAUUSD:Engine");
         wakeLock.setReferenceCounted(false);
         wakeLock.acquire();
-        store=new SecurityStore(this);exness=new ExnessClient(store);metaApi=new MetaApiClient(store);telegram=new TelegramClient(store);manager=new TradeManager(store,exness);createChannel();
+        store=new SecurityStore(this);exness=new ExnessClient(store);metaApi=new MetaApiClient(store);telegram=new TelegramClient(store);manager=new TradeManager(store,exness);fxOpen=new FxOpenTickTraderClient(store);createChannel();
         Notification n=new Notification.Builder(this,CH).setContentTitle("XAUUSD V5.2 Auto Engine")
             .setContentText("Auto execution armed with risk guards").setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true).setColor(Color.rgb(0,200,83)).build();
@@ -84,7 +85,7 @@ public class TradingService extends Service {
                 long cooldown=(long)parseDouble(store.rawPrefs().getString("cooldown","10"),10)*60_000L;
 
                 refreshSnapshot();
-                manager.manage(lastSnapshotBody,mid);
+                if(!fxOpen.configured()) manager.manage(lastSnapshotBody,mid);
                 if(dayStartEquity<0)dayStartEquity=readEquity();
                 if(dayStartEquity>0){
                     double eq=readEquity();
@@ -101,7 +102,7 @@ public class TradingService extends Service {
                 if(key.equals(lastSignalKey))return;
 
                 String symbol=orderSymbol();
-                if(metaApi.configured()){ try{ MetaApiClient.Response mr=metaApi.orders(); if(mr.ok() && mr.body.contains(symbol)) return; }catch(Exception ignored){} } else if(hasActiveExposure(symbol))return;
+                if(fxOpen.configured()){ try{ FxOpenTickTraderClient.Response fr=fxOpen.trades(); if(fr.ok() && fr.body.contains(symbol)) return; }catch(Exception ignored){} } else if(metaApi.configured()){ try{ MetaApiClient.Response mr=metaApi.orders(); if(mr.ok() && mr.body.contains(symbol)) return; }catch(Exception ignored){} } else if(hasActiveExposure(symbol))return;
 
                 String lot=store.rawPrefs().getString("lot","0.01");
                 int digits=2;
@@ -111,10 +112,13 @@ public class TradingService extends Service {
                 }catch(Exception ignored){}
 
                 String side=d.side.startsWith("BUY")?"buy":"sell";
-                if(metaApi.configured()){
-                    MetaApiClient.Response mr=metaApi.placeLimit(symbol,side,Double.parseDouble(lot),Double.parseDouble(fmt(d.entry,digits)),Double.parseDouble(fmt(d.sl,digits)),Double.parseDouble(fmt(d.tp2,digits)),"XAUUSD-V5.2-AUTO");
-                    if(mr.ok()){lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;notifyUser("MT5 DEMO ORDER",d.summary()+"\\n"+trim(mr.body));if(telegram.enabled())try{telegram.send("🟢 XAUUSD SCALPING\\n"+d.side+"\\n"+d.summary()+"\\nMT5 DEMO: ORDER SUBMITTED");}catch(Exception ignored){}}
-                    else notifyUser("MT5 ORDER REJECT "+mr.code,trim(mr.body));
+                if(fxOpen.configured()){
+                    FxOpenTickTraderClient.Response fr=fxOpen.placeLimit(symbol,side,Double.parseDouble(lot),Double.parseDouble(fmt(d.entry,digits)),Double.parseDouble(fmt(d.sl,digits)),Double.parseDouble(fmt(d.tp2,digits)),"XAUUSD-V5.2-AUTO");
+                    if(fr.ok()){
+                        lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;
+                        notifyUser("FXOPEN DEMO ORDER",d.summary()+"\\n"+trim(fr.body));
+                        if(telegram.enabled())try{telegram.send("🟢 XAUUSD SCALPING\\n"+d.side+"\\n"+d.summary()+"\\nFXOPEN DEMO: ORDER SUBMITTED");}catch(Exception ignored){}
+                    }else notifyUser("FXOPEN ORDER REJECT "+fr.code,trim(fr.body));
                     return;
                 }
                 ExnessClient.Response r=exness.placeLimit(symbol,side,lot,fmt(d.entry,digits),fmt(d.sl,digits),fmt(d.tp2,digits),"XAUUSD-V5.2-AUTO");
@@ -197,14 +201,24 @@ public class TradingService extends Service {
 
     void refreshSnapshot(){
         if(System.currentTimeMillis()-lastSnapshotAt < 15000 && !lastSnapshotBody.isEmpty()) return;
-        try{ ExnessClient.Response r=exness.snapshot(); if(r.ok()){ lastSnapshotBody=r.body; lastSnapshotAt=System.currentTimeMillis(); } }
-        catch(Exception ignored){}
+        try{
+            if(fxOpen.configured()){
+                FxOpenTickTraderClient.Response r=fxOpen.accountInfo();
+                if(r.ok()){ lastSnapshotBody=r.body; lastSnapshotAt=System.currentTimeMillis(); }
+                return;
+            }
+            ExnessClient.Response r=exness.snapshot();
+            if(r.ok()){ lastSnapshotBody=r.body; lastSnapshotAt=System.currentTimeMillis(); }
+        }catch(Exception ignored){}
     }
 
     double readEquity(){
         try{
             if(lastSnapshotBody.isEmpty()) return -1;
             JSONObject j=new JSONObject(lastSnapshotBody);
+            double e=j.optDouble("Equity",Double.NaN);
+            if(Double.isNaN(e))e=j.optDouble("equity",Double.NaN);
+            if(!Double.isNaN(e))return e;
             JSONObject a=j.optJSONObject("account_state");
             if(a==null)a=j.optJSONObject("accountState");
             if(a!=null)return a.optDouble("equity",-1);
