@@ -1,16 +1,18 @@
 name: XAUUSD Mobile Trading Engine V5.2.6
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
+  push:
+    paths:
+      - "v5.2-mobile-engine/**"
+      - ".github/workflows/build-v5-2-6-stable.yml"
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: v5.2-mobile-engine
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -19,20 +21,34 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
-      - name: Make Gradle executable
-        run: chmod +x gradlew
+      - name: Install Gradle 8.10
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.10-bin.zip
+          unzip -q gradle-8.10-bin.zip
+          echo "$PWD/gradle-8.10/bin" >> "$GITHUB_PATH"
 
       - name: Clean
-        run: ./gradlew clean
+        working-directory: v5.2-mobile-engine
+        run: gradle clean --no-daemon
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace --no-daemon
+        working-directory: v5.2-mobile-engine
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Verify APK
+        run: |
+          set -e
+          APK=$(find v5.2-mobile-engine/app/build/outputs/apk -type f -name "*.apk" | head -1)
+          test -n "$APK"
+          echo "BUILD BERHASIL"
+          sha256sum "$APK"
+          ls -lh "$APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: XAUUSD-Mobile-Trading-Engine-V5.2.6-STABLE
-          path: v5.2-mobile-engine/app/build/outputs/apk/debug/*.apk
+          path: v5.2-mobile-engine/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
