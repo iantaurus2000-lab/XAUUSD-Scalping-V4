@@ -9,14 +9,17 @@ import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.net.URL;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Locale;
 import java.util.UUID;
+
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.ResponseBody;
 
 public final class ExnessClient {
     public static final String DEFAULT_HOST = "https://api.exness.com";
@@ -37,6 +40,12 @@ public final class ExnessClient {
 
     private final SecurityStore store;
     private final SecureRandom random = new SecureRandom();
+    private static final OkHttpClient HTTP = new OkHttpClient.Builder()
+            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .build();
 
     public ExnessClient(SecurityStore store) {
         this.store = store;
@@ -177,7 +186,8 @@ public final class ExnessClient {
         long ts = System.currentTimeMillis();
 
         JSONObject data = new JSONObject();
-        data.put("api_key", loadCredentials().apiKey);
+        Credentials creds = loadCredentials();
+        data.put("api_key", creds.apiKey);
         data.put("idempotency_key", idem == null ? "" : idem);
         data.put("timestamp", ts);
         data.put("sign_version", 1);
@@ -187,32 +197,37 @@ public final class ExnessClient {
 
         byte[] signedBytes = data.toString().getBytes(StandardCharsets.UTF_8);
         String exnData = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(signedBytes);
-        String exnSign = sign(signedBytes, loadCredentials().secret);
+        String exnSign = sign(signedBytes, creds.secret);
 
-        URL url = URI.create(host + path).toURL();
-        HttpURLConnection con = (HttpURLConnection) url.openConnection();
-        con.setConnectTimeout(9000);
-        con.setReadTimeout(9000);
-        con.setRequestMethod(method);
-        con.setRequestProperty("Accept", "application/json");
-        con.setRequestProperty("EXN-API-KEY", loadCredentials().apiKey);
-        con.setRequestProperty("EXN-IDEMPOTENCY-KEY", idem == null ? "" : idem);
-        con.setRequestProperty("EXN-TIMESTAMP", Long.toString(ts));
-        con.setRequestProperty("EXN-SIGN-VERSION", "1");
-        con.setRequestProperty("EXN-DATA", exnData);
-        con.setRequestProperty("EXN-SIGN", exnSign);
+        Request.Builder rb = new Request.Builder()
+                .url(host + path)
+                .header("Accept", "application/json")
+                .header("Accept-Encoding", "gzip")
+                .header("EXN-API-KEY", creds.apiKey)
+                .header("EXN-IDEMPOTENCY-KEY", idem == null ? "" : idem)
+                .header("EXN-TIMESTAMP", Long.toString(ts))
+                .header("EXN-SIGN-VERSION", "1")
+                .header("EXN-DATA", exnData)
+                .header("EXN-SIGN", exnSign);
 
         if ("POST".equals(method) || "PATCH".equals(method)) {
-            con.setDoOutput(true);
-            con.setRequestProperty("Content-Type", "application/json");
-            con.getOutputStream().write(body.getBytes(StandardCharsets.UTF_8));
+            rb.header("Content-Type", "application/json")
+              .method(method, okhttp3.RequestBody.create(
+                      body, okhttp3.MediaType.parse("application/json")));
+        } else {
+            rb.method(method, null);
         }
 
-        int code = con.getResponseCode();
-        InputStream stream = code >= 400 ? con.getErrorStream() : con.getInputStream();
-        String response = read(stream);
-        con.disconnect();
-        return new Response(code, response);
+        try (okhttp3.Response response = HTTP.newCall(rb.build()).execute()) {
+            String responseText = response.body() == null ? "" : response.body().string();
+            return new Response(response.code(), responseText);
+        } catch (SocketTimeoutException e) {
+            throw new IOException("Exness TIMEOUT • host tidak merespons: " + host);
+        } catch (UnknownHostException e) {
+            throw new IOException("Exness DNS ERROR • host tidak ditemukan: " + host);
+        } catch (IOException e) {
+            throw new IOException("Exness NETWORK ERROR • " + e.getMessage(), e);
+        }
     }
 
     private String sign(byte[] data, String secret) throws Exception {
