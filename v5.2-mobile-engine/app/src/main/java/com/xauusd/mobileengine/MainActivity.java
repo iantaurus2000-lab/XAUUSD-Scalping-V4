@@ -313,7 +313,7 @@ public class MainActivity extends Activity {
                     if(!i.ok())throw new IllegalStateException("Instrument "+orderSymbol()+" "+i.code+": "+trim(i.body));
                 }
                 store.rawPrefs().edit().putBoolean("auto",true).apply();
-                requestBatteryOptimizationExemption();
+                runOnUiThread(()->requestBatteryOptimizationExemption());
                 runOnUiThread(()->{
                     botState.setText(useFxOpen()?"AUTO: ON • FXOPEN DEMO":"AUTO: ON • guarded execution");
                     botState.setTextColor(Color.rgb(0,230,118));
