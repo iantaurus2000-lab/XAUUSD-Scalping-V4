@@ -51,6 +51,20 @@ public class TradingService extends Service {
 
     @Override public int onStartCommand(Intent i,int flags,int id){return START_REDELIVER_INTENT;}
 
+    @Override public void onTaskRemoved(Intent rootIntent){
+        try{
+            if(store!=null && store.rawPrefs().getBoolean("auto",false)){
+                Intent i=new Intent(this,EngineRestartReceiver.class).setPackage(getPackageName());
+                PendingIntent pi=PendingIntent.getBroadcast(this,7766,i,
+                        PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT>=23?PendingIntent.FLAG_IMMUTABLE:0));
+                AlarmManager am=(AlarmManager)getSystemService(ALARM_SERVICE);
+                if(am!=null) am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        SystemClock.elapsedRealtime()+5000,pi);
+            }
+        }catch(Exception ignored){}
+        super.onTaskRemoved(rootIntent);
+    }
+
     @Override public void onDestroy(){h.removeCallbacksAndMessages(null);if(wakeLock!=null&&wakeLock.isHeld())wakeLock.release();stopForeground(true);super.onDestroy();}
     @Override public IBinder onBind(Intent i){return null;}
 
@@ -74,18 +88,9 @@ public class TradingService extends Service {
             try{
                 long now=System.currentTimeMillis();
                 resetDailyGuardsIfNeeded();
-                JSONObject tick=new JSONObject(get(BASE));
-                double mid=tick.optDouble("mid",0),spread=tick.optDouble("spread",0);
-                ArrayList<StrategyEngine.Candle> m1,m5;
-                if(cachedM1.size()<60||now-lastM1BarsAt>=3000){
-                    cachedM1=parse(get(BASE+"/ohlc?interval=1m&limit=120"));
-                    lastM1BarsAt=now;
-                }
-                if(cachedM5.size()<30||now-lastM5BarsAt>=10000){
-                    cachedM5=parse(get(BASE+"/ohlc?interval=5m&limit=80"));
-                    lastM5BarsAt=now;
-                }
-                m1=cloneWithLive(cachedM1,mid);m5=new ArrayList<>(cachedM5);
+                Market.Snapshot snap=Market.snapshot(-1);
+                double mid=snap.mid,spread=snap.spread;
+                ArrayList<StrategyEngine.Candle> m1=snap.m1,m5=snap.m5;
                 StrategyEngine.Decision d=StrategyEngine.analyze(m1,m5,mid);
 
                 double maxSpread=parseDouble(store.rawPrefs().getString("max_spread","0.50"),0.50);
@@ -102,34 +107,44 @@ public class TradingService extends Service {
                     double maxLoss=parseDouble(store.rawPrefs().getString("max_loss","2.0"),2.0);
                     if(dd>=maxLoss)return;
                 }
-                if(tick.optBoolean("stale",false)||spread>maxSpread||d.score<minScore||"WAIT".equals(d.side))return;
+                if(spread>maxSpread||d.score<minScore||"WAIT".equals(d.side))return;
                 if(d.side.startsWith("BUY")&&!store.rawPrefs().getBoolean("auto_buy",true))return;
                 if(d.side.startsWith("SELL")&&!store.rawPrefs().getBoolean("auto_sell",true))return;
                 if(dayCount>=maxTrades||System.currentTimeMillis()-lastOrderAt<cooldown)return;
+                if(m1.size()<2)return;
 
                 String key=d.side+"-"+m1.get(m1.size()-2).t;
                 if(key.equals(lastSignalKey))return;
 
                 String symbol=orderSymbol();
-                if(useFxOpen()){ try{ FxOpenTickTraderClient.Response fr=fxOpen.trades(); if(fr.ok() && fr.body.contains(symbol)) return; }catch(Exception ignored){} } else if(metaApi.configured()){ try{ MetaApiClient.Response mr=metaApi.orders(); if(mr.ok() && mr.body.contains(symbol)) return; }catch(Exception ignored){} } else if(hasActiveExposure(symbol))return;
+                if(useFxOpen()){
+                    try{ FxOpenTickTraderClient.Response fr=fxOpen.trades(); if(fr.ok() && fr.body.contains(symbol)) return; }catch(Exception ignored){}
+                } else if(metaApi.configured()){
+                    try{ MetaApiClient.Response mr=metaApi.orders(); if(mr.ok() && mr.body.contains(symbol)) return; }catch(Exception ignored){}
+                } else if(hasActiveExposure(symbol))return;
 
                 String lot=store.rawPrefs().getString("lot","0.01");
                 int digits=2;
                 try{
-                    ExnessClient.Response cr=exness.instrumentConditions(symbol);
-                    if(cr.ok()&&cr.body.length()>0)digits=new JSONObject(cr.body).optInt("point_digits",2);
+                    if("exness".equalsIgnoreCase(store.get("active_connector",""))){
+                        ExnessClient.Response cr=exness.instrumentConditions(symbol);
+                        if(cr.ok()&&cr.body.length()>0)digits=new JSONObject(cr.body).optInt("point_digits",2);
+                    }
                 }catch(Exception ignored){}
 
                 String side=d.side.startsWith("BUY")?"buy":"sell";
                 if(useFxOpen()){
-                    FxOpenTickTraderClient.Response fr=fxOpen.placeLimit(symbol,side,Double.parseDouble(lot),Double.parseDouble(fmt(d.entry,digits)),Double.parseDouble(fmt(d.sl,digits)),Double.parseDouble(fmt(d.tp2,digits)),"XAUUSD-V5.2-AUTO");
+                    FxOpenTickTraderClient.Response fr=fxOpen.placeLimit(symbol,side,Double.parseDouble(lot),
+                            Double.parseDouble(fmt(d.entry,digits)),Double.parseDouble(fmt(d.sl,digits)),
+                            Double.parseDouble(fmt(d.tp2,digits)),"XAUUSD-V5.2-AUTO");
                     if(fr.ok()){
                         lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;
-                        notifyUser("FXOPEN DEMO ORDER",d.summary()+"\\n"+trim(fr.body));
-                        if(telegram.enabled())try{telegram.send("🟢 XAUUSD SCALPING\\n"+d.side+"\\n"+d.summary()+"\\nFXOPEN DEMO: ORDER SUBMITTED");}catch(Exception ignored){}
+                        notifyUser("FXOPEN DEMO ORDER",d.summary()+"\n"+trim(fr.body));
+                        if(telegram.enabled())try{telegram.send("🟢 XAUUSD SCALPING\n"+d.side+"\n"+d.summary()+"\nFXOPEN DEMO: ORDER SUBMITTED");}catch(Exception ignored){}
                     }else notifyUser("FXOPEN ORDER REJECT "+fr.code,trim(fr.body));
                     return;
                 }
+
                 ExnessClient.Response r=exness.placeLimit(symbol,side,lot,fmt(d.entry,digits),fmt(d.sl,digits),fmt(d.tp2,digits),"XAUUSD-V5.2-AUTO");
                 if(r.ok()){
                     lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;
@@ -139,14 +154,10 @@ public class TradingService extends Service {
                     if(telegram.enabled())try{
                         telegram.send("🟢 XAUUSD SCALPING\n"+d.side+"\n"+d.summary()+"\nTF: M1 | Bias: M5\nSetup: Liquidity Sweep + Wick Rejection + BOS\nConfidence: "+d.score+"/100");
                     }catch(Exception ignored){}
-                }else{
-                    notifyUser("ORDER REJECT "+r.code,trim(r.body));
-                }
+                }else notifyUser("ORDER REJECT "+r.code,trim(r.body));
             }catch(Exception e){
-                notifyUser("AUTO ERROR",e.getMessage());
-            }finally{
-                busy=false;
-            }
+                notifyUser("AUTO ENGINE ERROR",e.getMessage());
+            }finally{busy=false;}
         }).start();
     }
 
