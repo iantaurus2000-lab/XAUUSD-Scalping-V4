@@ -2,6 +2,8 @@ package com.xauusd.mobileengine;
 
 import org.json.*;
 import java.io.*;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.InflaterInputStream;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -9,8 +11,8 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 public final class FxOpenTickTraderClient {
-    public static final String DEFAULT_DEMO_HOST="https://marginalttdemowebapi.fxopen.net:8443";
-    public static final String DEFAULT_LIVE_HOST="https://ttlivewebapi.fxopen.net:8443";
+    public static final String DEFAULT_DEMO_HOST="https://marginalttdemowebapi.fxopen.net";
+    public static final String DEFAULT_LIVE_HOST="https://ttlivewebapi.fxopen.net";
 
     public static final class Response {
         public final int code;
@@ -87,7 +89,7 @@ public final class FxOpenTickTraderClient {
         c.setRequestProperty("Accept","application/json");
         int code=c.getResponseCode();
         InputStream in=code>=400?c.getErrorStream():c.getInputStream();
-        String body=read(in);c.disconnect();
+        String body=readResponse(c,in);c.disconnect();
         return new Response(code,body);
     }
 
