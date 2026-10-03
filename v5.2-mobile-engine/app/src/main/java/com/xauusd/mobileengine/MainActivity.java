@@ -493,7 +493,7 @@ public class MainActivity extends Activity {
         d.show();
     }
 
-    String fxOpenHostForLog(){ try { java.lang.reflect.Method m=FxOpenTickTraderClient.class.getDeclaredMethod("host"); m.setAccessible(true); return String.valueOf(m.invoke(fxOpen)); } catch(Exception e){ return FxOpenTickTraderClient.DEFAULT_DEMO_HOST; } }\n\n    void testFxOpen(){
+    String fxOpenHostForLog(){ return fxOpen.host(); }\n\n    void testFxOpen(){
         if(!fxOpen.configured()){toast("Isi Web API ID + Key + Secret.");return;}
         new Thread(()->{
             try{
