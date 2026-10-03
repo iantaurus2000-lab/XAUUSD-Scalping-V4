@@ -61,6 +61,12 @@ public class TradingService extends Service {
         }
     }
 
+    boolean useFxOpen(){
+        String active=store.get("active_connector","");
+        if ("exness".equalsIgnoreCase(active)) return false;
+        return fxOpen!=null && fxOpen.configured();
+    }
+
     void tick(){
         if(!store.rawPrefs().getBoolean("auto",false)||busy)return;
         busy=true;
@@ -88,7 +94,7 @@ public class TradingService extends Service {
                 long cooldown=(long)parseDouble(store.rawPrefs().getString("cooldown","10"),10)*60_000L;
 
                 refreshSnapshot();
-                if(!fxOpen.configured()) manager.manage(lastSnapshotBody,mid);
+                if(!useFxOpen()) manager.manage(lastSnapshotBody,mid);
                 if(dayStartEquity<0)dayStartEquity=readEquity();
                 if(dayStartEquity>0){
                     double eq=readEquity();
@@ -105,7 +111,7 @@ public class TradingService extends Service {
                 if(key.equals(lastSignalKey))return;
 
                 String symbol=orderSymbol();
-                if(fxOpen.configured()){ try{ FxOpenTickTraderClient.Response fr=fxOpen.trades(); if(fr.ok() && fr.body.contains(symbol)) return; }catch(Exception ignored){} } else if(metaApi.configured()){ try{ MetaApiClient.Response mr=metaApi.orders(); if(mr.ok() && mr.body.contains(symbol)) return; }catch(Exception ignored){} } else if(hasActiveExposure(symbol))return;
+                if(useFxOpen()){ try{ FxOpenTickTraderClient.Response fr=fxOpen.trades(); if(fr.ok() && fr.body.contains(symbol)) return; }catch(Exception ignored){} } else if(metaApi.configured()){ try{ MetaApiClient.Response mr=metaApi.orders(); if(mr.ok() && mr.body.contains(symbol)) return; }catch(Exception ignored){} } else if(hasActiveExposure(symbol))return;
 
                 String lot=store.rawPrefs().getString("lot","0.01");
                 int digits=2;
@@ -115,7 +121,7 @@ public class TradingService extends Service {
                 }catch(Exception ignored){}
 
                 String side=d.side.startsWith("BUY")?"buy":"sell";
-                if(fxOpen.configured()){
+                if(useFxOpen()){
                     FxOpenTickTraderClient.Response fr=fxOpen.placeLimit(symbol,side,Double.parseDouble(lot),Double.parseDouble(fmt(d.entry,digits)),Double.parseDouble(fmt(d.sl,digits)),Double.parseDouble(fmt(d.tp2,digits)),"XAUUSD-V5.2-AUTO");
                     if(fr.ok()){
                         lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;
@@ -205,7 +211,7 @@ public class TradingService extends Service {
     void refreshSnapshot(){
         if(System.currentTimeMillis()-lastSnapshotAt < 15000 && !lastSnapshotBody.isEmpty()) return;
         try{
-            if(fxOpen.configured()){
+            if(useFxOpen()){
                 FxOpenTickTraderClient.Response r=fxOpen.accountInfo();
                 if(r.ok()){ lastSnapshotBody=r.body; lastSnapshotAt=System.currentTimeMillis(); }
                 return;
@@ -252,9 +258,37 @@ public class TradingService extends Service {
         BufferedReader r=new BufferedReader(new InputStreamReader(c.getInputStream()));StringBuilder s=new StringBuilder();String x;while((x=r.readLine())!=null)s.append(x);r.close();c.disconnect();return s.toString();
     }
     ArrayList<StrategyEngine.Candle> parse(String s)throws Exception{
-        JSONArray ar=new JSONObject(s).getJSONArray("bars");ArrayList<StrategyEngine.Candle> out=new ArrayList<>();
-        for(int i=ar.length()-1;i>=0;i--){JSONObject o=ar.getJSONObject(i);out.add(new StrategyEngine.Candle(o.optLong("openTime",0),o.getDouble("open"),o.getDouble("high"),o.getDouble("low"),o.getDouble("close")));}return out;
+        String z=s==null?"":s.trim();
+        JSONArray ar=null;
+        if(z.startsWith("[")) ar=new JSONArray(z);
+        else {
+            JSONObject env=new JSONObject(z);
+            ar=env.optJSONArray("bars");
+            if(ar==null)ar=env.optJSONArray("data");
+            if(ar==null){
+                JSONObject result=env.optJSONObject("result");
+                if(result!=null)ar=result.optJSONArray("bars");
+            }
+        }
+        if(ar==null)throw new JSONException("OHLC bars missing");
+        ArrayList<StrategyEngine.Candle> out=new ArrayList<>();
+        for(int i=ar.length()-1;i>=0;i--){
+            JSONObject o=ar.getJSONObject(i);
+            long t=o.optLong("openTime",o.optLong("time",0));
+            if(t==0)t=o.optLong("timestamp",0);
+            if(t==0){
+                String iso=o.optString("openTime",o.optString("timestamp",""));
+                if(!iso.isEmpty())try{t=java.time.Instant.parse(iso).toEpochMilli();}catch(Exception ignored){}
+            }
+            if(t>0&&t<100000000000L)t*=1000L;
+            double open=o.optDouble("open",Double.NaN), high=o.optDouble("high",Double.NaN);
+            double low=o.optDouble("low",Double.NaN), close=o.optDouble("close",Double.NaN);
+            if(Double.isNaN(open)||Double.isNaN(high)||Double.isNaN(low)||Double.isNaN(close))continue;
+            out.add(new StrategyEngine.Candle(t,open,high,low,close));
+        }
+        return out;
     }
+
     double parseDouble(String s,double f){try{return Double.parseDouble(s);}catch(Exception e){return f;}}
     String fmt(double d){return String.format(Locale.US,"%.2f",d);}
     String fmt(double d,int digits){return String.format(Locale.US,"%."+Math.max(0,Math.min(8,digits))+"f",d);}
