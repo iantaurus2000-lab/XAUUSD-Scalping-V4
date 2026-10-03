@@ -299,7 +299,7 @@ public class MainActivity extends Activity {
     }
 
     void startAuto(){
-        if(!hasCredentials()){toast("Sambungkan FXOpen TickTrader atau Exness API dulu.");showFxOpenDialog();return;}
+        if(!hasCredentials()){toast("Sambungkan akun terlebih dahulu."); if ("exness".equalsIgnoreCase(store.get("active_connector",""))) showExnessDialog(); else showFxOpenDialog(); return;}
         log.setText(useFxOpen()?"AUTO PREFLIGHT • testing FXOpen TickTrader...":"AUTO PREFLIGHT • testing Exness API...");
         new Thread(()->{
             try{
@@ -334,8 +334,8 @@ public class MainActivity extends Activity {
 
     boolean useFxOpen(){
         String active=store.get("active_connector","");
-        if ("exness".equalsIgnoreCase(active)) return false;
-        return fxOpen!=null && fxOpen.configured();
+        if ("fxopen".equalsIgnoreCase(active)) return fxOpen!=null && fxOpen.configured();
+        return false;
     }
 
     void resumeBackgroundEngine(){
@@ -661,68 +661,41 @@ public class MainActivity extends Activity {
     }
 
     void loadMarket(){
-        if(marketBusy || System.currentTimeMillis()<feedBackoffUntil)return;
+        if(marketBusy)return;
         marketBusy=true;
         new Thread(()->{
             try{
-                long now=System.currentTimeMillis();
-                JSONObject t=new JSONObject(get(BASE+"?allowStale=true"));
-                double mm=t.optDouble("mid",0),sp=t.optDouble("spread",0);
-                if(mm<=0)throw new IOException("Biquote returned no mid price");
-
-                ArrayList<StrategyEngine.Candle> a=null;
-                ArrayList<StrategyEngine.Candle> b=m5.isEmpty()?null:new ArrayList<>(m5);
-                ArrayList<StrategyEngine.Candle> c15=m15.isEmpty()?null:new ArrayList<>(m15);
-
-                if(m1.size()<60 || now-lastM1BarsLoad>=3000){
-                    try{ArrayList<StrategyEngine.Candle> x=parse(get(BASE+"/ohlc?interval=1m&limit=120"));if(x.size()>=20){a=x;lastM1BarsLoad=now;}}catch(Exception ignored){}
-                }
-                if(a==null&&!m1.isEmpty())a=new ArrayList<>(m1);
-
-                if(b==null || now-lastM5BarsLoad>=10000){
-                    try{ArrayList<StrategyEngine.Candle> x=parse(get(BASE+"/ohlc?interval=5m&limit=80"));if(x.size()>=20){b=x;lastM5BarsLoad=now;}}catch(Exception ignored){}
-                }
-                if(c15==null || now-lastM15BarsLoad>=15000){
-                    try{ArrayList<StrategyEngine.Candle> x=parse(get(BASE+"/ohlc?interval=15m&limit=80"));if(x.size()>=20){c15=x;lastM15BarsLoad=now;}}catch(Exception ignored){}
-                }
-
-                if(a==null||a.isEmpty()){
-                    a=new ArrayList<>();
-                    a.add(new StrategyEngine.Candle(System.currentTimeMillis(),mm,mm,mm,mm));
-                }
-                if(b==null||b.isEmpty())b=new ArrayList<>(a);
-                if(c15==null||c15.isEmpty())c15=new ArrayList<>(a);
-
-                a=cloneWithLive(a,mm);
-                b=cloneWithLive(b,mm);
-                c15=cloneWithLive(c15,mm);
-
-                ArrayList<StrategyEngine.Candle> analysisM1=a.size()>=60?a:m1;
-                ArrayList<StrategyEngine.Candle> analysisM5=b.size()>=30?b:m5;
-                StrategyEngine.Decision dd=(analysisM1.size()>=60&&analysisM5.size()>=30)
-                        ?StrategyEngine.analyze(analysisM1,analysisM5,mm):new StrategyEngine.Decision();
-
-                final boolean stale=t.optBoolean("stale",false);
-                final String state=t.optString("marketState","open");
-                updateHistoryResults(mm);
-                final ArrayList<StrategyEngine.Candle> fa=a,fb=b,fc=c15;
+                Market.Snapshot s=Market.snapshot(lastPrice);
+                final ArrayList<StrategyEngine.Candle> fa=s.m1, fb=s.m5, fc=s.m15;
+                final double mm=s.mid, sp=s.spread;
+                StrategyEngine.Decision dd=(fa.size()>=60&&fb.size()>=30)
+                        ?StrategyEngine.analyze(fa,fb,mm):new StrategyEngine.Decision();
                 runOnUiThread(()->{
-                    mid=mm;spread=sp;m1=fa;m5=fb;m15=fc;decision=dd;lastLoad=now;
+                    long now=System.currentTimeMillis();
+                    mid=mm;spread=sp;m1=fa;m5=fb;m15=fc;lastLoad=now;
                     price.setText(fmt(mid));
                     double prev=lastPrice;lastPrice=mid;
-                    if(prev>0){priceChange.setText((mid>=prev?"+":"")+fmt(mid-prev));priceChange.setTextColor(mid>=prev?Color.rgb(0,230,118):Color.rgb(255,82,82));}
+                    if(prev>0){
+                        priceChange.setText((mid>=prev?"+":"")+fmt(mid-prev));
+                        priceChange.setTextColor(mid>=prev?Color.rgb(0,230,118):Color.rgb(255,82,82));
+                    }
                     spreadLine.setText("Spread "+fmt(spread));
                     ArrayList<StrategyEngine.Candle> hd="M5".equals(chartTf)?fb:"M15".equals(chartTf)?fc:fa;
-                    if(!hd.isEmpty())highLow.setText("H "+fmt(hd.stream().mapToDouble(x->x.high).max().orElse(mm))+"   L "+fmt(hd.stream().mapToDouble(x->x.low).min().orElse(mm)));
+                    if(!hd.isEmpty()){
+                        double hh=-Double.MAX_VALUE,ll=Double.MAX_VALUE;
+                        for(StrategyEngine.Candle c:hd){hh=Math.max(hh,c.high);ll=Math.min(ll,c.low);}
+                        highLow.setText("H "+fmt(hh)+"   L "+fmt(ll));
+                    }
                     ticker.setText("BIQUOTE • XAUUSD • LIVE 1s");
-                    connection.setText("● BIQUOTE 1s • "+("closed".equalsIgnoreCase(state)?"MARKET CLOSED":stale?"STALE":"LIVE")+" • Spread "+fmt(spread));
+                    connection.setText("● BIQUOTE 1s • LIVE • Spread "+fmt(spread));
                     renderChart();renderDecision();renderResultsBar();
                     if(now-lastAccountUiAt>=15000){lastAccountUiAt=now;refreshAccountUi();}
                 });
-                feedBackoffUntil=0;
             }catch(Exception e){
-                feedBackoffUntil=System.currentTimeMillis()+2000;
-                runOnUiThread(()->connection.setText("● BIQUOTE FEED ERROR • retry 2s"));
+                runOnUiThread(()->{
+                    connection.setText("● BIQUOTE ERROR • "+trim(e.getMessage()));
+                    if(log!=null)log.setText("MARKET FEED ERROR • "+trim(e.getMessage()));
+                });
             }finally{marketBusy=false;}
         }).start();
     }
