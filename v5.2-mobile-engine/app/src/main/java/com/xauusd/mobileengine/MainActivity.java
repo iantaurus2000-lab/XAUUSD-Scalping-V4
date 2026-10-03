@@ -26,6 +26,7 @@ public class MainActivity extends Activity {
     SecurityStore store;
     ExnessClient exness;
     MetaApiClient metaApi;
+    FxOpenTickTraderClient fxOpen;
     Handler handler = new Handler(Looper.getMainLooper());
     ArrayList<StrategyEngine.Candle> m1 = new ArrayList<>(), m5 = new ArrayList<>(), m15 = new ArrayList<>();
     StrategyEngine.Decision lastReady = new StrategyEngine.Decision();
@@ -53,6 +54,7 @@ public class MainActivity extends Activity {
         store=new SecurityStore(this);
         exness=new ExnessClient(store);
         metaApi=new MetaApiClient(store);
+        fxOpen=new FxOpenTickTraderClient(store);
         buildUi();
         requestNotificationPermission();
         createNotificationChannel();
@@ -134,7 +136,7 @@ public class MainActivity extends Activity {
             "💰 Risk & Strategy",
             "📋 Orders / Account",
             "📋 Signal History",
-            "🔗 MT5 DIRECT • HP ONLY",
+            "🔗 FXOPEN TICKTRADER • HP ONLY",
             "📲 Telegram",
             "🛑 Cancel Auto Pending",
             "🔔 Notification",
@@ -151,7 +153,7 @@ public class MainActivity extends Activity {
                 case 5: showRiskDialog();break;
                 case 6: showOrderManagerDialog();break;
                 case 7: showHistoryDialog();break;
-                case 8: showMt5Dialog();break;
+                case 8: showFxOpenDialog();break;
                 case 9: showTelegramDialog();break;
                 case 10: showCancelAutoDialog();break;
                 case 11: requestNotificationPermission();testAlarm();break;
@@ -188,6 +190,11 @@ public class MainActivity extends Activity {
     void loadAccount(){
         new Thread(()->{
             try{
+                if(fxOpen.configured()){
+                    FxOpenTickTraderClient.Response r=fxOpen.accountInfo();
+                    runOnUiThread(()->account.setText(r.ok()?"FXOpen Account: "+trim(r.body):"FXOpen Account API: "+r.code));
+                    return;
+                }
                 ExnessClient.Response r=exness.accountInfo();
                 runOnUiThread(()->{
                     if(r.ok()) account.setText("Account: "+trim(r.body));
@@ -232,12 +239,19 @@ public class MainActivity extends Activity {
         }catch(Exception e){toast(e.getMessage());return;}
         new Thread(()->{
             try{
-                if(metaApi.configured()){
-                    MetaApiClient.Response mr=metaApi.placeLimit(orderSymbol(),side,Double.parseDouble(lot),Double.parseDouble(entry),Double.parseDouble(sl),Double.parseDouble(tp),"XAUUSD-V5.2-"+tag);
-                    runOnUiThread(()->{if(mr.ok()){log.setText("MT5 ORDER CONFIRMED • "+side.toUpperCase(Locale.US)+" LIMIT • "+trim(mr.body));toast("MT5 DEMO ORDER DITERIMA");}else{log.setText("MT5 ORDER REJECT "+mr.code+" • "+trim(mr.body));toast("MT5 order ditolak "+mr.code);}});
+                if(fxOpen.configured()){
+                    FxOpenTickTraderClient.Response fr=fxOpen.placeLimit(orderSymbol(),side,Double.parseDouble(lot),Double.parseDouble(entry),Double.parseDouble(sl),Double.parseDouble(tp),"XAUUSD-V5.2-"+tag);
+                    runOnUiThread(()->{
+                        if(fr.ok()){
+                            log.setText("FXOPEN ORDER ACCEPTED • "+side.toUpperCase(Locale.US)+" LIMIT • "+trim(fr.body));
+                            toast("FXOpen DEMO ORDER DITERIMA");
+                        }else{
+                            log.setText("FXOPEN ORDER REJECT "+fr.code+" • "+trim(fr.body));
+                            toast("FXOpen order ditolak "+fr.code);
+                        }
+                    });
                     return;
                 }
-                if(metaApi.configured()){ MetaApiClient.Response mr=metaApi.placeLimit(orderSymbol(),side,Double.parseDouble(lot),Double.parseDouble(entry),Double.parseDouble(sl),Double.parseDouble(tp),"XAUUSD-V5.2-"+tag); runOnUiThread(()->{if(mr.ok()){log.setText("MT5 ORDER CONFIRMED • "+side.toUpperCase(Locale.US)+" LIMIT • "+trim(mr.body));toast("MT5 DEMO ORDER DITERIMA");}else{log.setText("MT5 ORDER REJECT "+mr.code+" • "+trim(mr.body));toast("MT5 order ditolak "+mr.code);}}); return; }
                 ExnessClient.Response r=exness.placeLimit(orderSymbol(),side,lot,entry,sl,tp,"XAUUSD-V5.2-"+tag);
                 runOnUiThread(()->{
                     if(r.ok()){
@@ -283,13 +297,13 @@ public class MainActivity extends Activity {
     }
 
     void startAuto(){
-        if(!hasCredentials()){toast("Sambungkan MT5 Connector atau Exness API dulu.");showMt5Dialog();return;}
-        log.setText(metaApi.configured()?"AUTO PREFLIGHT • testing MT5 MetaApi...":"AUTO PREFLIGHT • testing Exness API...");
+        if(!hasCredentials()){toast("Sambungkan FXOpen TickTrader atau Exness API dulu.");showFxOpenDialog();return;}
+        log.setText(fxOpen.configured()?"AUTO PREFLIGHT • testing FXOpen TickTrader...":"AUTO PREFLIGHT • testing Exness API...");
         new Thread(()->{
             try{
-                if(metaApi.configured()){
-                    MetaApiClient.Response a=metaApi.accountInfo();
-                    if(!a.ok())throw new IllegalStateException("MT5 MetaApi "+a.code+": "+trim(a.body));
+                if(fxOpen.configured()){
+                    FxOpenTickTraderClient.Response a=fxOpen.accountInfo();
+                    if(!a.ok())throw new IllegalStateException("FXOpen "+a.code+": "+trim(a.body));
                 }else{
                     ExnessClient.Response a=exness.connectAndResolve();
                     if(!a.ok())throw new IllegalStateException("API connection "+a.code+": "+trim(a.body));
@@ -298,11 +312,11 @@ public class MainActivity extends Activity {
                 }
                 store.rawPrefs().edit().putBoolean("auto",true).apply();
                 runOnUiThread(()->{
-                    botState.setText(metaApi.configured()?"AUTO: ON • MT5 CLOUD":"AUTO: ON • guarded execution");
+                    botState.setText(fxOpen.configured()?"AUTO: ON • FXOPEN DEMO":"AUTO: ON • guarded execution");
                     botState.setTextColor(Color.rgb(0,230,118));
                     Intent intent=new Intent(this,TradingService.class);
                     if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
-                    log.setText(metaApi.configured()?"AUTO ON • MT5 MetaApi preflight OK":"AUTO ON • Exness API preflight OK");
+                    log.setText(fxOpen.configured()?"AUTO ON • FXOpen TickTrader preflight OK":"AUTO ON • Exness API preflight OK");
                 });
             }catch(Exception e){runOnUiThread(()->{store.rawPrefs().edit().putBoolean("auto",false).apply();botState.setText("AUTO: OFF • CONNECTOR ERROR");log.setText("AUTO PREFLIGHT ERROR • "+e.getMessage());toast("Auto gagal: "+e.getMessage());});}
         }).start();
@@ -316,7 +330,7 @@ public class MainActivity extends Activity {
     }
 
     boolean hasCredentials(){
-        if(metaApi!=null&&metaApi.configured())return true;
+        if(fxOpen!=null&&fxOpen.configured())return true;
         ExnessClient.Credentials c=exness.loadCredentials();
         return !c.accountId.isEmpty()&&!c.apiKey.isEmpty()&&!c.secret.isEmpty();
     }
@@ -359,6 +373,10 @@ public class MainActivity extends Activity {
     }
 
     void showAccountDialog(){
+        if(fxOpen.configured()){
+            new Thread(()->{try{FxOpenTickTraderClient.Response r=fxOpen.accountInfo();runOnUiThread(()->new AlertDialog.Builder(this).setTitle("FXOpen Trading Snapshot").setMessage(r.ok()?r.body:"Error "+r.code+" "+r.body).setPositiveButton("OK",null).show());}catch(Exception e){runOnUiThread(()->toast(e.getMessage()));}}).start();
+            return;
+        }
         new Thread(()->{
             try{
                 ExnessClient.Response r=exness.snapshot();
@@ -371,6 +389,7 @@ public class MainActivity extends Activity {
     }
 
     void showOrderManagerDialog(){
+        if(fxOpen.configured()){showFxOpenOrderManagerDialog();return;}
         if(!hasCredentials()){toast("Sambungkan Exness API dulu.");return;}
         new Thread(()->{
             try{
@@ -422,6 +441,7 @@ public class MainActivity extends Activity {
     }
 
     void confirmCancelOrder(String id){
+        if(fxOpen.configured()){confirmCancelFxOpenOrder(id);return;}
         new AlertDialog.Builder(this).setTitle("Cancel order").setMessage("Batalkan order ID "+id+"?")
             .setNegativeButton("Tidak",null).setPositiveButton("Ya", (d,w)->{
                 new Thread(()->{try{ExnessClient.Response r=exness.cancelOrder(id);String op=exness.operationId(r);runOnUiThread(()->{log.setText(r.ok()?"CANCEL REQUEST • "+id:"CANCEL FAILED • "+r.code);toast(r.ok()?"Cancel request diterima":"Cancel gagal: "+trim(r.body));});if(r.ok()&&!op.isEmpty())waitForCancelOperation(op,id,"");}catch(Exception e){runOnUiThread(()->toast("Cancel error: "+e.getMessage()));}}).start();
@@ -434,6 +454,7 @@ public class MainActivity extends Activity {
     }
 
     void showClosePositionDialog(String id,String currentVolume){
+        if(fxOpen.configured()){showCloseFxOpenTradeDialog(id,currentVolume);return;}
         EditText vol=input("Volume (kosong = full close)","");
         vol.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
         new AlertDialog.Builder(this).setTitle("Close / Partial Close").setView(vol).setNegativeButton("Tutup",null).setPositiveButton("CLOSE", (d,w)->{
@@ -443,6 +464,7 @@ public class MainActivity extends Activity {
     }
 
     void showModifyOrderDialog(String id){
+        if(fxOpen.configured()){showModifyFxOpenTradeDialog(id);return;}
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(12,4,12,4);
         EditText price=input("Modify Entry","");EditText sl=input("Modify SL","");EditText tp=input("Modify TP","");
         box.addView(price);box.addView(sl);box.addView(tp);
@@ -450,6 +472,134 @@ public class MainActivity extends Activity {
             new Thread(()->{try{ExnessClient.Response r=exness.modifyOrder(id,price.getText().toString(),sl.getText().toString(),tp.getText().toString());runOnUiThread(()->{log.setText(r.ok()?"MODIFY REQUEST • "+id:"MODIFY FAILED • "+r.code);toast(r.ok()?"Modify request diterima":"Modify gagal: "+trim(r.body));});}catch(Exception e){runOnUiThread(()->toast("Modify error: "+e.getMessage()));}}).start();
         }).show();
     }
+
+    void showFxOpenDialog(){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(18,4,18,4);
+        EditText id=input("Web API ID",store.get("fx_id",""));id.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+        EditText key=input("Web API Key",store.get("fx_key",""));key.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+        EditText secret=input("Web API Secret",store.get("fx_secret",""));secret.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        EditText host=input("FXOpen Demo API Host",store.get("fx_host",FxOpenTickTraderClient.DEFAULT_DEMO_HOST));host.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+        box.addView(tv("FXOPEN TICKTRADER • FREE API • DEMO\nHP → APK → FXOpen TickTrader Web API.",11));
+        box.addView(id,new LinearLayout.LayoutParams(-1,55));
+        box.addView(key,new LinearLayout.LayoutParams(-1,55));
+        box.addView(secret,new LinearLayout.LayoutParams(-1,55));
+        box.addView(host,new LinearLayout.LayoutParams(-1,55));
+        AlertDialog d=new AlertDialog.Builder(this).setTitle("🔗 FXOPEN TICKTRADER API").setView(box)
+            .setNegativeButton("Tutup",null).setPositiveButton("SAVE + TEST",null).create();
+        d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            fxOpen.save(id.getText().toString(),key.getText().toString(),secret.getText().toString(),host.getText().toString());
+            d.dismiss();testFxOpen();
+        }));
+        d.show();
+    }
+
+    void testFxOpen(){
+        if(!fxOpen.configured()){toast("Isi Web API ID + Key + Secret.");return;}
+        new Thread(()->{
+            try{
+                FxOpenTickTraderClient.Response r=fxOpen.accountInfo();
+                runOnUiThread(()->{
+                    if(r.ok()){
+                        log.setText("FXOPEN CONNECTED • TickTrader account OK\n"+trim(r.body));
+                        toast("FXOpen CONNECTED • siap test pending order");
+                    }else{
+                        log.setText("FXOPEN CONNECT ERROR "+r.code+" • "+trim(r.body));
+                        toast("FXOpen connector error "+r.code);
+                    }
+                });
+            }catch(Exception e){runOnUiThread(()->toast("FXOpen connector: "+e.getMessage()));}
+        }).start();
+    }
+
+    JSONArray fxOpenTradesArray(String body){
+        try{
+            if(body==null||body.trim().isEmpty())return new JSONArray();
+            String z=body.trim();
+            if(z.startsWith("["))return new JSONArray(z);
+            JSONObject o=new JSONObject(z);
+            JSONArray a=o.optJSONArray("Trades"); if(a!=null)return a;
+            a=o.optJSONArray("trades"); if(a!=null)return a;
+            a=o.optJSONArray("Result"); if(a!=null)return a;
+            JSONObject rr=o.optJSONObject("Result");
+            if(rr!=null){
+                a=rr.optJSONArray("Trades");if(a!=null)return a;
+                a=rr.optJSONArray("trades");if(a!=null)return a;
+            }
+        }catch(Exception ignored){}
+        return new JSONArray();
+    }
+
+    void showFxOpenOrderManagerDialog(){
+        new Thread(()->{
+            try{
+                FxOpenTickTraderClient.Response r=fxOpen.trades();
+                if(!r.ok())throw new IllegalStateException("FXOpen Trades "+r.code+": "+trim(r.body));
+                JSONArray a=fxOpenTradesArray(r.body);
+                runOnUiThread(()->{
+                    LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(12,4,12,4);
+                    box.addView(tv("FXOPEN TICKTRADER • ORDERS / TRADES",12));
+                    if(a.length()==0)box.addView(tv("Tidak ada order/trade.",11));
+                    for(int i=0;i<a.length();i++)addFxOpenTradeRow(box,a.optJSONObject(i));
+                    AlertDialog d=new AlertDialog.Builder(this).setTitle("📋 FXOPEN ORDER MANAGER").setView(box)
+                        .setNegativeButton("Tutup",null).setNeutralButton("CANCEL ID",null).create();
+                    d.setOnShowListener(v->d.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(x->{d.dismiss();showCancelByIdDialog();}));
+                    d.show();
+                });
+            }catch(Exception e){runOnUiThread(()->toast("FXOpen Order Manager: "+e.getMessage()));}
+        }).start();
+    }
+
+    void addFxOpenTradeRow(LinearLayout box,JSONObject o){
+        if(o==null)return;
+        String id=o.optString("Id",o.optString("id","--"));
+        String side=o.optString("Side",o.optString("side","--"));
+        String type=o.optString("Type",o.optString("type","--"));
+        String sym=o.optString("Symbol",o.optString("symbol",orderSymbol()));
+        String priceV=o.optString("Price",o.optString("price","--"));
+        String amount=o.optString("Amount",o.optString("amount","--"));
+        String status=o.optString("Status",o.optString("status","--"));
+        LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);
+        TextView t=tv(side.toUpperCase(Locale.US)+" "+type+" "+sym+" @ "+priceV+" • "+amount+" • "+status+" • ID "+id,10);
+        row.addView(t,new LinearLayout.LayoutParams(0,64,1));
+        Button b=btn("CANCEL");b.setOnClickListener(v->confirmCancelFxOpenOrder(id));row.addView(b,new LinearLayout.LayoutParams(82,64));
+        box.addView(row);
+    }
+
+    void confirmCancelFxOpenOrder(String id){
+        new AlertDialog.Builder(this).setTitle("Cancel FXOpen order").setMessage("Batalkan order ID "+id+"?")
+            .setNegativeButton("Tidak",null).setPositiveButton("Ya",(d,w)->new Thread(()->{
+                try{
+                    FxOpenTickTraderClient.Response r=fxOpen.cancel(id);
+                    runOnUiThread(()->{log.setText(r.ok()?"FXOPEN CANCEL CONFIRMED • "+id:"FXOPEN CANCEL FAILED • "+r.code+" • "+trim(r.body));toast(r.ok()?"Order FXOpen dibatalkan":"Cancel gagal: "+r.code);});
+                }catch(Exception e){runOnUiThread(()->toast("FXOpen cancel: "+e.getMessage()));}
+            }).start()).show();
+    }
+
+    void showCloseFxOpenTradeDialog(String id,String currentVolume){
+        EditText vol=input("Amount (kosong = full close)","");
+        new AlertDialog.Builder(this).setTitle("FXOpen Close / Partial").setView(vol)
+            .setNegativeButton("Tutup",null).setPositiveButton("CLOSE",(d,w)->new Thread(()->{
+                try{
+                    FxOpenTickTraderClient.Response r=fxOpen.close(id,vol.getText().toString().trim());
+                    runOnUiThread(()->toast(r.ok()?"FXOpen close request diterima":"Close gagal: "+r.code));
+                }catch(Exception e){runOnUiThread(()->toast("FXOpen close: "+e.getMessage()));}
+            }).start()).show();
+    }
+
+    void showModifyFxOpenTradeDialog(String id){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(12,4,12,4);
+        EditText price=input("Modify Entry","");EditText sl=input("Modify SL","");EditText tp=input("Modify TP","");
+        box.addView(price);box.addView(sl);box.addView(tp);
+        new AlertDialog.Builder(this).setTitle("Modify FXOpen Order "+id).setView(box).setNegativeButton("Tutup",null).setPositiveButton("SAVE",(d,w)->new Thread(()->{
+            try{
+                double p=toDouble(price.getText().toString()),ss=toDouble(sl.getText().toString()),tt=toDouble(tp.getText().toString());
+                FxOpenTickTraderClient.Response r=fxOpen.modify(id,p,ss,tt,"XAUUSD-V5.2-MODIFY");
+                runOnUiThread(()->toast(r.ok()?"FXOpen modify diterima":"Modify gagal: "+r.code));
+            }catch(Exception e){runOnUiThread(()->toast("FXOpen modify: "+e.getMessage()));}
+        }).start()).show();
+    }
+
+    double toDouble(String x){try{return x==null||x.trim().isEmpty()?0:Double.parseDouble(x.trim());}catch(Exception e){return 0;}}
 
     void showMt5Dialog(){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(18,4,18,4);
