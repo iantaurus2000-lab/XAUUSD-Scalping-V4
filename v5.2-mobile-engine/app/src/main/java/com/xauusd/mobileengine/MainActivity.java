@@ -297,6 +297,20 @@ public class MainActivity extends Activity {
     }
 
     void startAuto(){
+        if(store.rawPrefs().getBoolean("mt5_bridge",false)){
+            TelegramClient tg=new TelegramClient(store);
+            if(!tg.enabled() || store.get("mt5_bridge_chat","").trim().isEmpty()){
+                toast("Isi Telegram Bot Token + MT5 Bridge Group Chat ID dulu.");
+                showTelegramDialog();return;
+            }
+            store.rawPrefs().edit().putBoolean("auto",true).apply();
+            botState.setText("AUTO: ON • MT5 BRIDGE");
+            botState.setTextColor(Color.rgb(0,230,118));
+            Intent intent=new Intent(this,TradingService.class);
+            if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
+            log.setText("AUTO ON • MT5 Bridge armed • APK → Telegram → MT5 EA");
+            return;
+        }
         if(!hasCredentials()){toast("Sambungkan FXOpen TickTrader atau Exness API dulu.");showFxOpenDialog();return;}
         log.setText(fxOpen.configured()?"AUTO PREFLIGHT • testing FXOpen TickTrader...":"AUTO PREFLIGHT • testing Exness API...");
         new Thread(()->{
@@ -618,11 +632,20 @@ public class MainActivity extends Activity {
 
     void showTelegramDialog(){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(18,4,18,4);
-        EditText token=input("Bot token",store.get("tg_token",""));EditText chat=input("Chat ID",store.get("tg_chat",""));
+        EditText token=input("Telegram Bot Token (APK sender)",store.get("tg_token",""));
+        EditText chat=input("Telegram Alert Chat ID",store.get("tg_chat",""));
+        EditText bridgeChat=input("MT5 Bridge Group Chat ID",store.get("mt5_bridge_chat",store.get("tg_chat","")));
+        CheckBox bridge=new CheckBox(this);bridge.setText("Enable MT5 Bridge → FXOpen MT5");bridge.setTextColor(Color.WHITE);bridge.setChecked(store.rawPrefs().getBoolean("mt5_bridge",false));
         box.addView(token,new LinearLayout.LayoutParams(-1,55));box.addView(chat,new LinearLayout.LayoutParams(-1,55));
-        AlertDialog d=new AlertDialog.Builder(this).setTitle("Telegram Alerts").setView(box).setNegativeButton("Cancel",null).setPositiveButton("SAVE",null).create();
+        box.addView(bridgeChat,new LinearLayout.LayoutParams(-1,55));box.addView(bridge);
+        box.addView(tv("Bridge uses Telegram as a command relay. MT5 uses a separate receiver bot.",10));
+        AlertDialog d=new AlertDialog.Builder(this).setTitle("Telegram + MT5 Bridge").setView(box).setNegativeButton("Cancel",null).setPositiveButton("SAVE",null).create();
         d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
-            store.put("tg_token",token.getText().toString());store.put("tg_chat",chat.getText().toString());d.dismiss();toast("Telegram tersimpan.");
+            store.put("tg_token",token.getText().toString().trim());
+            store.put("tg_chat",chat.getText().toString().trim());
+            store.put("mt5_bridge_chat",bridgeChat.getText().toString().trim());
+            store.rawPrefs().edit().putBoolean("mt5_bridge",bridge.isChecked()).apply();
+            d.dismiss();toast(bridge.isChecked()?"Telegram + MT5 Bridge tersimpan.":"Telegram tersimpan.");
         }));d.show();
     }
 
@@ -729,7 +752,7 @@ public class MainActivity extends Activity {
         m1State.setText("M1 "+(shown.side.equals("WAIT")?"WATCH":shown.side));
         boxEntry.setText("ENTRY   ⧉\n"+fmt(shown.entry)); boxSl.setText("SL   ⧉\n"+fmt(shown.sl));
         boxTp1.setText("TP1   ⧉\n"+fmt(shown.tp1)); boxTp2.setText("TP2   ⧉\n"+fmt(shown.tp2));
-        if(botState!=null)botState.setText(store.rawPrefs().getBoolean("auto",false)?"AUTO: ON • GUARDED":"AUTO: OFF • MANUAL");
+        if(botState!=null){ boolean mt5b=store.rawPrefs().getBoolean("mt5_bridge",false); botState.setText(store.rawPrefs().getBoolean("auto",false)?(mt5b?"AUTO: ON • MT5 BRIDGE":"AUTO: ON • GUARDED"):"AUTO: OFF • MANUAL"); }
         if(account!=null && !hasCredentials())account.setText("Account: not connected");
         if(ready){String hk=decision.side+"-"+decision.candleTime;if(!hk.equals(lastHistoryKey)){lastHistoryKey=hk;saveSignalHistory(decision);}}
         if(chart!=null)renderChart();
