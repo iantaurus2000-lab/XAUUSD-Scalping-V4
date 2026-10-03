@@ -26,7 +26,7 @@ public class TradingService extends Service {
     String lastSnapshotBody="";
     String lastSignalKey="";
     int dayCount=0;
-    long lastBarsAt=0;
+    long lastM1BarsAt=0, lastM5BarsAt=0;
     PowerManager.WakeLock wakeLock;
     volatile boolean busy=false;
     ArrayList<StrategyEngine.Candle> cachedM1=new ArrayList<>(),cachedM5=new ArrayList<>();
@@ -49,7 +49,7 @@ public class TradingService extends Service {
         h.postDelayed(loop,1000);
     }
 
-    @Override public int onStartCommand(Intent i,int flags,int id){return START_STICKY;}
+    @Override public int onStartCommand(Intent i,int flags,int id){return START_REDELIVER_INTENT;}
 
     @Override public void onDestroy(){h.removeCallbacksAndMessages(null);if(wakeLock!=null&&wakeLock.isHeld())wakeLock.release();stopForeground(true);super.onDestroy();}
     @Override public IBinder onBind(Intent i){return null;}
@@ -71,10 +71,13 @@ public class TradingService extends Service {
                 JSONObject tick=new JSONObject(get(BASE));
                 double mid=tick.optDouble("mid",0),spread=tick.optDouble("spread",0);
                 ArrayList<StrategyEngine.Candle> m1,m5;
-                if(cachedM1.size()<60||now-lastBarsAt>=5000){
-                    cachedM1=parse(get(BASE+"/ohlc?interval=1m&limit=100"));
-                    cachedM5=parse(get(BASE+"/ohlc?interval=5m&limit=60"));
-                    lastBarsAt=now;
+                if(cachedM1.size()<60||now-lastM1BarsAt>=3000){
+                    cachedM1=parse(get(BASE+"/ohlc?interval=1m&limit=120"));
+                    lastM1BarsAt=now;
+                }
+                if(cachedM5.size()<30||now-lastM5BarsAt>=10000){
+                    cachedM5=parse(get(BASE+"/ohlc?interval=5m&limit=80"));
+                    lastM5BarsAt=now;
                 }
                 m1=cloneWithLive(cachedM1,mid);m5=new ArrayList<>(cachedM5);
                 StrategyEngine.Decision d=StrategyEngine.analyze(m1,m5,mid);
