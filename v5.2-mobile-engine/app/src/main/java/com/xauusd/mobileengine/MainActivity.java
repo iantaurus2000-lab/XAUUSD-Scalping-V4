@@ -37,7 +37,7 @@ public class MainActivity extends Activity {
     double mid=0, spread=0;
     String chartTf="M1";
     double lastPrice=0;
-    long lastLoad=0, lastBarsLoad=0;
+    long lastLoad=0, lastM1BarsLoad=0, lastM5BarsLoad=0, lastM15BarsLoad=0;
     volatile boolean marketBusy=false;
     long feedBackoffUntil=0;
     static final String FEED="XAUUSD";
@@ -501,6 +501,7 @@ public class MainActivity extends Activity {
                 runOnUiThread(()->{
                     if(r.ok()){
                         log.setText("FXOPEN CONNECTED • TickTrader account OK\n"+trim(r.body));
+                        refreshAccountUi();
                         toast("FXOpen CONNECTED • siap test pending order");
                     }else{
                         log.setText("FXOPEN CONNECT ERROR "+r.code+" • "+trim(r.body));
@@ -640,16 +641,16 @@ public class MainActivity extends Activity {
                 ArrayList<StrategyEngine.Candle> b=m5.isEmpty()?null:new ArrayList<>(m5);
                 ArrayList<StrategyEngine.Candle> c15=m15.isEmpty()?null:new ArrayList<>(m15);
 
-                if(m1.size()<60 || now-lastBarsLoad>=5000){
-                    try{ArrayList<StrategyEngine.Candle> x=parse(get(BASE+"/ohlc?interval=1m&limit=120"));if(x.size()>=20){a=x;lastBarsLoad=now;}}catch(Exception ignored){}
+                if(m1.size()<60 || now-lastM1BarsLoad>=3000){
+                    try{ArrayList<StrategyEngine.Candle> x=parse(get(BASE+"/ohlc?interval=1m&limit=120"));if(x.size()>=20){a=x;lastM1BarsLoad=now;}}catch(Exception ignored){}
                 }
                 if(a==null&&!m1.isEmpty())a=new ArrayList<>(m1);
 
-                if(b==null || now-lastBarsLoad>=15000){
-                    try{ArrayList<StrategyEngine.Candle> x=parse(get(BASE+"/ohlc?interval=5m&limit=80"));if(x.size()>=20)b=x;}catch(Exception ignored){}
+                if(b==null || now-lastM5BarsLoad>=10000){
+                    try{ArrayList<StrategyEngine.Candle> x=parse(get(BASE+"/ohlc?interval=5m&limit=80"));if(x.size()>=20){b=x;lastM5BarsLoad=now;}}catch(Exception ignored){}
                 }
-                if(c15==null || now-lastBarsLoad>=15000){
-                    try{ArrayList<StrategyEngine.Candle> x=parse(get(BASE+"/ohlc?interval=15m&limit=80"));if(x.size()>=20)c15=x;}catch(Exception ignored){}
+                if(c15==null || now-lastM15BarsLoad>=15000){
+                    try{ArrayList<StrategyEngine.Candle> x=parse(get(BASE+"/ohlc?interval=15m&limit=80"));if(x.size()>=20){c15=x;lastM15BarsLoad=now;}}catch(Exception ignored){}
                 }
 
                 if(a==null||a.isEmpty()){
@@ -739,6 +740,26 @@ public class MainActivity extends Activity {
         if(!hasCredentials())return;
         new Thread(()->{
             try{
+                if(fxOpen.configured()){
+                    FxOpenTickTraderClient.Response r=fxOpen.accountInfo();
+                    if(!r.ok()){
+                        runOnUiThread(()->account.setText("FXOpen Account: API "+r.code));
+                        return;
+                    }
+                    String body=r.body==null?"":r.body;
+                    String login="";
+                    try{
+                        JSONObject j=new JSONObject(body);
+                        login=j.optString("Login",j.optString("login",j.optString("AccountId",j.optString("accountId",""))));
+                        if(login.isEmpty()){
+                            JSONObject a=j.optJSONObject("Account");
+                            if(a!=null)login=a.optString("Login",a.optString("login",a.optString("Id","")));
+                        }
+                    }catch(Exception ignored){}
+                    final String shown=login.isEmpty()?"FXOpen Account: CONNECTED":"FXOpen Account: "+login+" • CONNECTED";
+                    runOnUiThread(()->account.setText(shown));
+                    return;
+                }
                 ExnessClient.Response r=exness.snapshot();
                 if(!r.ok())return;
                 JSONObject j=new JSONObject(r.body);
@@ -750,7 +771,9 @@ public class MainActivity extends Activity {
                 int orders=countArray(j,"orders","open_orders"), positions=countArray(j,"positions","open_positions");
                 final String s=String.format(Locale.US,"B %.2f • E %.2f • M %.2f • P %d • O %d",balance,equity,margin,positions,orders);
                 runOnUiThread(()->account.setText(s));
-            }catch(Exception ignored){}
+            }catch(Exception e){
+                runOnUiThread(()->account.setText("Account connector error"));
+            }
         }).start();
     }
 
@@ -1036,13 +1059,21 @@ public class MainActivity extends Activity {
     }
 
     ArrayList<StrategyEngine.Candle> parse(String s)throws Exception{
-        JSONArray ar=new JSONObject(s).getJSONArray("bars");
+        JSONObject env=new JSONObject(s);
+        JSONArray ar=env.optJSONArray("bars");
+        if(ar==null)ar=env.optJSONArray("data");
+        if(ar==null)throw new JSONException("OHLC bars missing");
         ArrayList<StrategyEngine.Candle> out=new ArrayList<>();
         for(int i=ar.length()-1;i>=0;i--){
             JSONObject o=ar.getJSONObject(i);
             long t=o.optLong("openTime",0);
             if(t==0)t=o.optLong("time",0);
-            out.add(new StrategyEngine.Candle(t,o.getDouble("open"),o.getDouble("high"),o.getDouble("low"),o.getDouble("close")));
+            if(t==0){
+                String iso=o.optString("openTime",o.optString("timestamp",""));
+                if(!iso.isEmpty())try{t=java.time.Instant.parse(iso).toEpochMilli();}catch(Exception ignored){}
+            }
+            if(t>0&&t<100000000000L)t*=1000L;
+            out.add(new StrategyEngine.Candle(t,o.optDouble("open"),o.optDouble("high"),o.optDouble("low"),o.optDouble("close")));
         }
         return out;
     }
