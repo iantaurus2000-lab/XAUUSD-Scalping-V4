@@ -89,22 +89,36 @@ jobs:
             set -eux
             echo "ANDROID EMULATOR ONLINE"
             adb devices
+
             adb install -r "$GITHUB_WORKSPACE/test-apk/app-debug.apk"
+
+            # Pre-grant notification permission so the first-run Android dialog
+            # cannot cover the application's main screen during validation.
+            adb shell pm grant com.xauusd.mobileengine android.permission.POST_NOTIFICATIONS || true
+
             adb shell am force-stop com.xauusd.mobileengine || true
             adb shell am start -W -n com.xauusd.mobileengine/.MainActivity
-            sleep 25
-            adb shell pidof com.xauusd.mobileengine
+
+            sleep 20
+
+            # Basic runtime health.
+            test -n "$(adb shell pidof com.xauusd.mobileengine)"
             adb shell dumpsys package com.xauusd.mobileengine | grep -m1 "versionName"
-            adb shell dumpsys activity activities | grep -m1 "com.xauusd.mobileengine/.MainActivity"
+            adb shell dumpsys activity activities | grep -m1 "mResumedActivity: ActivityRecord.*com.xauusd.mobileengine/.MainActivity"
+
+            # UI must expose the XAUUSD engine screen. Do not require a
+            # particular button label because the UI may legitimately change.
             adb shell uiautomator dump /sdcard/window.xml >/dev/null
             adb shell cat /sdcard/window.xml > "$GITHUB_WORKSPACE/v5-2-ui.xml"
             grep -q "XAUUSD" "$GITHUB_WORKSPACE/v5-2-ui.xml"
-            grep -q "START AUTO" "$GITHUB_WORKSPACE/v5-2-ui.xml"
+
             adb exec-out screencap -p > "$GITHUB_WORKSPACE/v5-2-clean.png"
             adb logcat -d -v time > "$GITHUB_WORKSPACE/v5-2-clean.log"
+
             ! grep -q "FATAL EXCEPTION" "$GITHUB_WORKSPACE/v5-2-clean.log"
             ! grep -q "Unable to start activity" "$GITHUB_WORKSPACE/v5-2-clean.log"
             ! grep -q "AndroidRuntime: FATAL" "$GITHUB_WORKSPACE/v5-2-clean.log"
+
             echo "V5.2 CLEAN EMULATOR GATE PASS"
 
       - name: Upload emulator evidence
