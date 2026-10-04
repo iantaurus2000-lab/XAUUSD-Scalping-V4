@@ -185,6 +185,19 @@ public final class Market {
         return out;
     }
 
+    private static double num(JSONObject o,String... keys){
+        if(o==null) return Double.NaN;
+        for(String k:keys){
+            if(k==null) continue;
+            Object v=o.opt(k);
+            if(v instanceof Number) return ((Number)v).doubleValue();
+            if(v!=null){
+                try{return Double.parseDouble(String.valueOf(v));}catch(Exception ignored){}
+            }
+        }
+        return Double.NaN;
+    }
+
     private static ArrayList<StrategyEngine.Candle> liveCopy(List<StrategyEngine.Candle> src,double mid){
         ArrayList<StrategyEngine.Candle> out=new ArrayList<>();
         for(StrategyEngine.Candle c:src)
