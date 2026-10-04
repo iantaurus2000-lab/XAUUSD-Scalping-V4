@@ -1,7 +1,7 @@
 {
   "product": "XAUUSD Mobile Trading Engine",
-  "currentVersion": "5.2.1",
-  "versionCode": 541,
+  "currentVersion": "5.2.8-REBUILT",
+  "versionCode": 551,
   "uiBaseline": "V5.1.3-simple-professional",
   "applicationId": "com.xauusd.mobileengine",
   "channel": "final",
