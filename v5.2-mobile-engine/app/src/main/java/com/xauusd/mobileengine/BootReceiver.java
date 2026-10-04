@@ -7,7 +7,7 @@ import android.os.Build;
 
 public class BootReceiver extends BroadcastReceiver {
     @Override public void onReceive(Context context, Intent intent) {
-        if (Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())
+        if ((Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction()) || Intent.ACTION_MY_PACKAGE_REPLACED.equals(intent.getAction()))
                 && context.getSharedPreferences("xauusd_secure", Context.MODE_PRIVATE)
                     .getBoolean("auto", false)) {
             Intent service = new Intent(context, TradingService.class);
