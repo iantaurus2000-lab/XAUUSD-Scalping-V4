@@ -1,4 +1,4 @@
-name: XAUUSD Mobile Trading Engine V5.2.7
+name: XAUUSD Mobile Trading Engine V5.2.9
 
 on:
   workflow_dispatch:
@@ -48,6 +48,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: XAUUSD-Mobile-Trading-Engine-V5.2.7-STABLE
+          name: XAUUSD-Mobile-Trading-Engine-V5.2.9-FXOPEN
           path: v5.2-mobile-engine/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
