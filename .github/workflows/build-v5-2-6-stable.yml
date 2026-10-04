@@ -26,6 +26,18 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      - name: FXOpen WebSocket endpoint probe
+        run: |
+          set +e
+          for path in "/" "/api/v1/feed" "/api/v1/feed/" "/api/v1" "/feed" "/ws" "/api/ws"; do
+            echo "=== WSS $path ==="
+            curl -sS -o /dev/null -D - --http1.1 --max-time 8 \
+              -H "Connection: Upgrade" \
+              -H "Upgrade: websocket" \
+              -H "Sec-WebSocket-Version: 13" \
+              -H "Sec-WebSocket-Key: SGVsbG9XU0tleQ==" \
+              "https://marginalttdemowebapi.fxopen.net:443$path" | sed -n '1,8p'
+          done
       - name: Install Gradle 8.10
         run: |
           wget -q https://services.gradle.org/distributions/gradle-8.10-bin.zip
@@ -38,7 +50,7 @@ jobs:
         working-directory: v5.2-mobile-engine
         run: |
           echo "FXOPEN V5.2.9 WebSocket build"
-          echo "BUILD_TRIGGER_2026_10_04=1"
+          echo "BUILD_TRIGGER_2026_10_04=2"
           gradle :app:assembleDebug --no-daemon --stacktrace
       - name: Verify APK
         run: |
