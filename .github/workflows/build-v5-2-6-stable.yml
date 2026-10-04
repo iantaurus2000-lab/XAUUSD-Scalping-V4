@@ -52,7 +52,7 @@ jobs:
         working-directory: v5.2-mobile-engine
         run: |
           echo "FXOPEN V5.2.10 market build"
-          echo "BUILD_TRIGGER_2026_10_04=3"
+          echo "BUILD_TRIGGER_2026_10_04=4"
           gradle :app:assembleDebug --no-daemon --stacktrace
       - name: Verify APK
         run: |
