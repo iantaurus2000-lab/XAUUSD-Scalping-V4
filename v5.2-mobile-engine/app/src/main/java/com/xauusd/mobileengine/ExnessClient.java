@@ -8,6 +8,7 @@ import org.bouncycastle.crypto.signers.Ed25519Signer;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.SocketTimeoutException;
@@ -72,20 +73,52 @@ public final class ExnessClient {
     public Response connectAndResolve() throws Exception {
         Credentials c = loadCredentials();
         requireCredentials(c);
-        String path = "/v1/trading/access-point?account_id=" + c.accountId;
-        Response r = request(c.host, "GET", path, "", "");
-        if (r.ok()) {
+
+        String original = normalizeHost(c.host);
+        Exception last = null;
+
+        // First try the configured host. If its access-point is stale/unreachable,
+        // fall back to the official base host instead of persisting a dead endpoint.
+        String[] candidates = original.equals(DEFAULT_HOST)
+                ? new String[]{DEFAULT_HOST}
+                : new String[]{original, DEFAULT_HOST};
+
+        for (String base : candidates) {
             try {
-                JSONObject j = new JSONObject(r.body);
-                String access = j.optString("access_point", "");
-                if (!access.isEmpty()) {
-                    String host = normalizeHost(access);
-                    store.put("exn_host", host);
-                    c.host = host;
+                String path = "/v1/trading/access-point?account_id=" + c.accountId;
+                Response r = request(base, "GET", path, "", "");
+                if (!r.ok()) { last = new IOException("HTTP " + r.code + " " + trim(r.body)); continue; }
+
+                String access = "";
+                try { access = normalizeHost(new JSONObject(r.body).optString("access_point","")); }
+                catch (Exception ignored) {}
+
+                // Validate the returned access point before saving it.
+                if (!access.isEmpty() && !access.equals(base)) {
+                    try {
+                        Response test = request(access, "GET",
+                                "/v1/configuration/accounts/" + c.accountId + "/account", "", "");
+                        if (test.ok()) {
+                            store.put("exn_host", access);
+                            return test;
+                        }
+                    } catch (Exception ignored) {}
                 }
-            } catch (Exception ignored) {}
+
+                Response account = request(base, "GET",
+                        "/v1/configuration/accounts/" + c.accountId + "/account", "", "");
+                if (account.ok()) {
+                    // Keep the working base host. Do not persist an untested access point.
+                    store.put("exn_host", base);
+                    return account;
+                }
+                last = new IOException("HTTP " + account.code + " " + trim(account.body));
+            } catch (Exception e) {
+                last = e;
+            }
         }
-        return accountInfo();
+        if (last != null) throw last;
+        throw new IOException("Exness API host tidak merespons");
     }
 
     public Response accountInfo() throws Exception {
@@ -281,6 +314,8 @@ public final class ExnessClient {
         r.close();
         return out.toString();
     }
+
+    private static String trim(String s) { return s==null?"":s.length()>400?s.substring(0,400)+"…":s; }
 
     public static String normalizeHost(String host) {
         String h = host.trim();
