@@ -61,7 +61,7 @@ public class MainActivity extends Activity {
         loadMarket();
         if (store.rawPrefs().getBoolean("auto", false) && hasCredentials()) handler.postDelayed(this::resumeBackgroundEngine, 1200);
         loadNewsTicker();
-        handler.postDelayed(marketPoll,2500);
+        handler.postDelayed(marketPoll,3000);
         handler.postDelayed(newsPoll,60000);
     }
 
@@ -665,7 +665,7 @@ public class MainActivity extends Activity {
         marketBusy=true;
         new Thread(()->{
             try{
-                Market.Snapshot s=Market.snapshot(lastPrice,fxOpen);
+                Market.Snapshot s=Market.snapshot(lastPrice,useFxOpen()?fxOpen:null);
                 final ArrayList<StrategyEngine.Candle> fa=s.m1, fb=s.m5, fc=s.m15;
                 final double mm=s.mid, sp=s.spread;
                 StrategyEngine.Decision dd=(fa.size()>=60&&fb.size()>=30)
