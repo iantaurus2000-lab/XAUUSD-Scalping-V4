@@ -88,7 +88,7 @@ public class TradingService extends Service {
             try{
                 long now=System.currentTimeMillis();
                 resetDailyGuardsIfNeeded();
-                Market.Snapshot snap=Market.snapshot(-1,fxOpen);
+                Market.Snapshot snap=Market.snapshot(-1,useFxOpen()?fxOpen:null);
                 double mid=snap.mid,spread=snap.spread;
                 ArrayList<StrategyEngine.Candle> m1=snap.m1,m5=snap.m5;
                 StrategyEngine.Decision d=StrategyEngine.analyze(m1,m5,mid);
