@@ -72,7 +72,7 @@ public final class Market {
 
     public static synchronized Snapshot snapshot(double lastPrice, FxOpenTickTraderClient fx) throws Exception {
         if (fx != null && fx.configured()) {
-            try { lastError=""; Snapshot s=fxSnapshot(fx, lastPrice); lastSource="FXOPEN WS"; return s; } catch (Exception ex) { lastSource="FXOPEN WS ERROR"; lastError=ex.getClass().getSimpleName()+": "+String.valueOf(ex.getMessage()); throw ex; }
+            try { lastError=""; Snapshot s=fxSnapshot(fx, lastPrice); lastSource="FXOPEN REST"; return s; } catch (Exception ex) { lastSource="FXOPEN REST ERROR"; lastError=ex.getClass().getSimpleName()+": "+String.valueOf(ex.getMessage()); throw ex; }
         }
         if (lastSource.startsWith("FXOPEN")) lastSource="FXOPEN WS ERROR"; else lastSource="BIQUOTE";
         Tick t = tick();
@@ -99,38 +99,56 @@ public final class Market {
     }
 
     private static Snapshot fxSnapshot(FxOpenTickTraderClient fx,double lastPrice) throws Exception {
-        String probe=fx.wsFeedProbe();
-        JSONObject po=new JSONObject(probe);
-        JSONObject pr=po.optJSONObject("Result");
-        double bid=Double.NaN,ask=Double.NaN,mid=Double.NaN;
-        if(pr!=null){
-            JSONObject bb=pr.optJSONObject("BestBid"),ba=pr.optJSONObject("BestAsk");
-            if(bb!=null) bid=num(bb,"Price","price");
-            if(ba!=null) ask=num(ba,"Price","price");
-        }
+        // FXOpen's current v2 User Web API exposes public tick and quote-history
+        // endpoints on the same host. Use them for the market renderer so a
+        // WebSocket handshake failure cannot blank the chart.
+        long now=System.currentTimeMillis();
+        FxOpenTickTraderClient.Response tr=fx.publicTickV2("XAUUSD");
+        if(!tr.ok()) throw new IOException("FXOpen REST tick HTTP "+tr.code);
+        JSONObject to=new JSONObject(tr.body);
+        double bid=Double.NaN,ask=Double.NaN;
+        JSONObject bb=to.optJSONObject("BestBid"),ba=to.optJSONObject("BestAsk");
+        if(bb!=null)bid=num(bb,"Price","price");
+        if(ba!=null)ask=num(ba,"Price","price");
         if(Double.isNaN(bid)||Double.isNaN(ask)){
-            JSONObject rr=po.optJSONObject("Result");
+            JSONObject rr=to.optJSONObject("Result");
             if(rr!=null){
-                JSONArray snap=rr.optJSONArray("Snapshot");
-                if(snap!=null&&snap.length()>0){
-                    JSONObject s=snap.optJSONObject(0);
-                    if(s!=null){
-                        JSONObject bb=s.optJSONObject("BestBid"),ba=s.optJSONObject("BestAsk");
-                        if(bb!=null)bid=num(bb,"Price","price");
-                        if(ba!=null)ask=num(ba,"Price","price");
-                    }
-                }
+                bb=rr.optJSONObject("BestBid");ba=rr.optJSONObject("BestAsk");
+                if(bb!=null)bid=num(bb,"Price","price");
+                if(ba!=null)ask=num(ba,"Price","price");
             }
         }
-        if(!Double.isNaN(bid)&&!Double.isNaN(ask)) mid=(bid+ask)/2.0;
-        if(Double.isNaN(mid)) throw new IOException("FXOpen WebSocket no XAUUSD price");
-        long now=System.currentTimeMillis();
-        ArrayList<StrategyEngine.Candle> a1=fxBarsWs(fx,"M1",150,now);
-        ArrayList<StrategyEngine.Candle> a5=fxBarsWs(fx,"M5",120,now);
-        ArrayList<StrategyEngine.Candle> a15=fxBarsWs(fx,"M15",100,now);
-        if(a1.isEmpty()) throw new IOException("FXOpen WebSocket M1 history empty");
+        if(Double.isNaN(bid)||Double.isNaN(ask))
+            throw new IOException("FXOpen REST tick no Bid/Ask");
+        double mid=(bid+ask)/2.0;
+        ArrayList<StrategyEngine.Candle> a1=fxBarsRest(fx,"M1",150,now);
+        ArrayList<StrategyEngine.Candle> a5=fxBarsRest(fx,"M5",120,now);
+        ArrayList<StrategyEngine.Candle> a15=fxBarsRest(fx,"M15",100,now);
+        if(a1.isEmpty()) throw new IOException("FXOpen REST M1 history empty");
+        lastError="";
         return new Snapshot(mid,bid,ask,Math.max(0,ask-bid),
                 liveCopy(a1,mid),liveCopy(a5.isEmpty()?a1:a5,mid),liveCopy(a15.isEmpty()?a1:a15,mid));
+    }
+
+    private static ArrayList<StrategyEngine.Candle> fxBarsRest(FxOpenTickTraderClient fx,String tf,int count,long now) throws Exception {
+        FxOpenTickTraderClient.Response r=fx.publicQuoteHistory("XAUUSD",tf,"Bid",now,-Math.abs(count));
+        if(!r.ok()) throw new IOException("FXOpen REST "+tf+" HTTP "+r.code);
+        JSONObject root=new JSONObject(r.body);
+        JSONArray ar=root.optJSONArray("Bars");
+        if(ar==null) ar=root.optJSONArray("bars");
+        if(ar==null && root.opt("Result") instanceof JSONArray) ar=root.optJSONArray("Result");
+        if(ar==null) throw new IOException("FXOpen REST "+tf+" Bars missing");
+        ArrayList<StrategyEngine.Candle> out=new ArrayList<>();
+        for(int i=0;i<ar.length();i++){
+            JSONObject b=ar.optJSONObject(i); if(b==null)continue;
+            long t=(long)num(b,"Timestamp","timestamp","Time","time","OpenTime","openTime");
+            if(t>0&&t<100000000000L)t*=1000L;
+            double o=num(b,"Open","open"),h=num(b,"High","high"),l=num(b,"Low","low"),cl=num(b,"Close","close");
+            if(t>0&&!Double.isNaN(o)&&!Double.isNaN(h)&&!Double.isNaN(l)&&!Double.isNaN(cl))
+                out.add(new StrategyEngine.Candle(t,o,h,l,cl));
+        }
+        Collections.sort(out,Comparator.comparingLong(a->a.t));
+        return out;
     }
 
     private static ArrayList<StrategyEngine.Candle> fxBarsWs(FxOpenTickTraderClient fx,String tf,int count,long now) throws Exception {
