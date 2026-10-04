@@ -163,4 +163,124 @@ public final class FxOpenTickTraderClient {
         }
         return lot*100000.0;
     }
+
+    public String feedWsUrl(){
+        String h=host();
+        if(h.startsWith("https://")) h="wss://"+h.substring(8);
+        else if(h.startsWith("http://")) h="ws://"+h.substring(7);
+        h=h.replace("webapi","feed");
+        return h;
+    }
+
+    public String feedWsUrlLiveFallback(){
+        return "wss://ttlivewebapi.fxopen.com:443";
+    }
+
+    public Response wsQuoteHistory(String symbol,String periodicity,String priceType,long timestampMs,int count) throws Exception{
+        org.json.JSONArray rows = wsRequestQuoteHistory(symbol,periodicity,priceType,timestampMs,count);
+        return new Response(200, rows.toString());
+    }
+
+    private org.json.JSONArray wsRequestQuoteHistory(final String symbol,final String periodicity,final String priceType,final long timestampMs,final int count) throws Exception{
+        final java.util.concurrent.CountDownLatch done=new java.util.concurrent.CountDownLatch(1);
+        final java.util.concurrent.atomic.AtomicReference<String> result=new java.util.concurrent.atomic.AtomicReference<>("");
+        final java.util.concurrent.atomic.AtomicReference<String> error=new java.util.concurrent.atomic.AtomicReference<>("");
+        final String requestId=java.util.UUID.randomUUID().toString();
+        okhttp3.OkHttpClient client=new okhttp3.OkHttpClient.Builder()
+                .connectTimeout(8,java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(15,java.util.concurrent.TimeUnit.SECONDS)
+                .writeTimeout(8,java.util.concurrent.TimeUnit.SECONDS).build();
+
+        okhttp3.Request req=new okhttp3.Request.Builder().url(feedWsUrl()).build();
+        okhttp3.WebSocket ws=client.newWebSocket(req,new okhttp3.WebSocketListener(){
+            private boolean logged=false;
+            private void sendLogin(okhttp3.WebSocket s){
+                try{
+                    long ts=System.currentTimeMillis();
+                    org.json.JSONObject p=new org.json.JSONObject();
+                    p.put("AuthType","HMAC");p.put("WebApiId",id());p.put("WebApiKey",key());
+                    p.put("Timestamp",ts);p.put("Signature",hmacBase64(secret(),ts+id()+key()));
+                    p.put("DeviceId","XAUUSD-Mobile-Trading-Engine");
+                    p.put("AppSessionId",requestId);
+                    org.json.JSONObject x=new org.json.JSONObject();
+                    x.put("Id",requestId);x.put("Request","Login");x.put("Params",p);
+                    s.send(x.toString());
+                }catch(Exception e){error.set(e.toString());done.countDown();}
+            }
+            public void onOpen(okhttp3.WebSocket s,okhttp3.Response r){sendLogin(s);}
+            public void onMessage(okhttp3.WebSocket s,String text){
+                try{
+                    org.json.JSONObject o=new org.json.JSONObject(text);
+                    String response=o.optString("Response","");
+                    if("Login".equals(response)){
+                        logged=true;
+                        org.json.JSONObject p=new org.json.JSONObject();
+                        p.put("Symbol",symbol);p.put("Periodicity",periodicity);p.put("PriceType",priceType);
+                        p.put("Timestamp",timestampMs);p.put("Count",Math.max(-1000,Math.min(1000,count)));
+                        org.json.JSONObject x=new org.json.JSONObject();
+                        x.put("Id",requestId);x.put("Request","QuoteHistoryBars");x.put("Params",p);
+                        s.send(x.toString());
+                    }else if("QuoteHistoryBars".equals(response)){
+                        org.json.JSONObject r=o.optJSONObject("Result");
+                        org.json.JSONArray bars=null;
+                        if(r!=null){
+                            bars=r.optJSONArray("Bars");
+                            if(bars==null)bars=r.optJSONArray("bars");
+                            if(bars==null)bars=r.optJSONArray("Data");
+                        }
+                        if(bars==null && o.has("Result") && o.opt("Result") instanceof org.json.JSONArray)
+                            bars=o.optJSONArray("Result");
+                        if(bars==null) throw new Exception("FXOpen QuoteHistoryBars: bars kosong");
+                        result.set(bars.toString());done.countDown();s.close(1000,"done");
+                    }else if("Error".equals(response)){
+                        error.set(o.optString("Error","FXOpen websocket error"));done.countDown();s.close(1000,"error");
+                    }else if("TwoFactor".equals(response)){
+                        error.set("FXOpen API membutuhkan TwoFactor");done.countDown();s.close(1000,"2fa");
+                    }
+                }catch(Exception e){error.set(e.toString());done.countDown();s.close(1000,"parse");}
+            }
+            public void onFailure(okhttp3.WebSocket s,Throwable t,okhttp3.Response r){
+                error.set(t==null?"WebSocket failure":String.valueOf(t.getMessage()));done.countDown();
+            }
+        });
+        if(!done.await(20,java.util.concurrent.TimeUnit.SECONDS)){ws.cancel();throw new IOException("FXOpen WebSocket timeout");}
+        client.dispatcher().executorService().shutdown();
+        if(result.get().isEmpty())throw new IOException(error.get().isEmpty()?"FXOpen WebSocket no data":error.get());
+        return new org.json.JSONArray(result.get());
+    }
+
+    public String wsFeedProbe() throws Exception{
+        final java.util.concurrent.CountDownLatch done=new java.util.concurrent.CountDownLatch(1);
+        final java.util.concurrent.atomic.AtomicReference<String> result=new java.util.concurrent.atomic.AtomicReference<>("");
+        final java.util.concurrent.atomic.AtomicReference<String> error=new java.util.concurrent.atomic.AtomicReference<>("");
+        final String rid=java.util.UUID.randomUUID().toString();
+        okhttp3.OkHttpClient client=new okhttp3.OkHttpClient();
+        okhttp3.Request req=new okhttp3.Request.Builder().url(feedWsUrl()).build();
+        okhttp3.WebSocket ws=client.newWebSocket(req,new okhttp3.WebSocketListener(){
+            public void onOpen(okhttp3.WebSocket s,okhttp3.Response r){
+                try{
+                    long ts=System.currentTimeMillis();org.json.JSONObject p=new org.json.JSONObject();
+                    p.put("AuthType","HMAC");p.put("WebApiId",id());p.put("WebApiKey",key());p.put("Timestamp",ts);
+                    p.put("Signature",hmacBase64(secret(),ts+id()+key()));p.put("DeviceId","XAUUSD-Mobile-Trading-Engine");p.put("AppSessionId",rid);
+                    org.json.JSONObject x=new org.json.JSONObject();x.put("Id",rid);x.put("Request","Login");x.put("Params",p);s.send(x.toString());
+                }catch(Exception e){error.set(e.toString());done.countDown();}
+            }
+            public void onMessage(okhttp3.WebSocket s,String text){
+                try{
+                    org.json.JSONObject o=new org.json.JSONObject(text);String rr=o.optString("Response","");
+                    if("Login".equals(rr)){
+                        org.json.JSONObject p=new org.json.JSONObject();p.put("Subscribe",new org.json.JSONArray().put(new org.json.JSONObject().put("Symbol","XAUUSD").put("BookDepth",1).put("FrequencyPriority",0)));
+                        org.json.JSONObject x=new org.json.JSONObject();x.put("Id",rid);x.put("Request","FeedSubscribe");x.put("Params",p);s.send(x.toString());
+                    }else if("FeedSubscribe".equals(rr)||"FeedTick".equals(rr)){result.set(text);done.countDown();s.close(1000,"probe");}
+                    else if("Error".equals(rr)){error.set(o.optString("Error","FXOpen feed error"));done.countDown();s.close(1000,"error");}
+                }catch(Exception e){error.set(e.toString());done.countDown();s.close(1000,"parse");}
+            }
+            public void onFailure(okhttp3.WebSocket s,Throwable t,okhttp3.Response r){error.set(String.valueOf(t));done.countDown();}
+        });
+        if(!done.await(15,java.util.concurrent.TimeUnit.SECONDS)){ws.cancel();throw new IOException("FXOpen feed timeout");}
+        client.dispatcher().executorService().shutdown();
+        if(result.get().isEmpty())throw new IOException(error.get().isEmpty()?"FXOpen feed no response":error.get());
+        return result.get();
+    }
+
 }
