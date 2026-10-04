@@ -99,28 +99,56 @@ public final class Market {
     }
 
     private static Snapshot fxSnapshot(FxOpenTickTraderClient fx,double lastPrice) throws Exception {
-        FxOpenTickTraderClient.Response tr=fx.publicTickV2("XAUUSD");
-        if(!tr.ok()) throw new IOException("FXOpen tick HTTP "+tr.code);
-        JSONObject q=new JSONObject(tr.body); double mid=num(q,"Mid","mid","Last","last","Price","price");
-        double bid=num(q,"Bid","bid"), ask=num(q,"Ask","ask");
-        if(Double.isNaN(mid)){if(!Double.isNaN(bid)&&!Double.isNaN(ask))mid=(bid+ask)/2.0;else throw new IOException("FXOpen no price");}
-        if(Double.isNaN(bid))bid=mid;if(Double.isNaN(ask))ask=mid;
+        String probe=fx.wsFeedProbe();
+        JSONObject po=new JSONObject(probe);
+        JSONObject pr=po.optJSONObject("Result");
+        double bid=Double.NaN,ask=Double.NaN,mid=Double.NaN;
+        if(pr!=null){
+            JSONObject bb=pr.optJSONObject("BestBid"),ba=pr.optJSONObject("BestAsk");
+            if(bb!=null) bid=num(bb,"Price","price");
+            if(ba!=null) ask=num(ba,"Price","price");
+        }
+        if(Double.isNaN(bid)||Double.isNaN(ask)){
+            JSONObject rr=po.optJSONObject("Result");
+            if(rr!=null){
+                JSONArray snap=rr.optJSONArray("Snapshot");
+                if(snap!=null&&snap.length()>0){
+                    JSONObject s=snap.optJSONObject(0);
+                    if(s!=null){
+                        JSONObject bb=s.optJSONObject("BestBid"),ba=s.optJSONObject("BestAsk");
+                        if(bb!=null)bid=num(bb,"Price","price");
+                        if(ba!=null)ask=num(ba,"Price","price");
+                    }
+                }
+            }
+        }
+        if(!Double.isNaN(bid)&&!Double.isNaN(ask)) mid=(bid+ask)/2.0;
+        if(Double.isNaN(mid)) throw new IOException("FXOpen WebSocket no XAUUSD price");
         long now=System.currentTimeMillis();
-        ArrayList<StrategyEngine.Candle> a1=fxBars(fx,"M1",150,now),a5=fxBars(fx,"M5",120,now),a15=fxBars(fx,"M15",100,now);
-        if(a1.isEmpty())throw new IOException("FXOpen M1 history empty");
-        return new Snapshot(mid,bid,ask,Math.max(0,ask-bid),liveCopy(a1,mid),liveCopy(a5.isEmpty()?a1:a5,mid),liveCopy(a15.isEmpty()?a1:a15,mid));
+        ArrayList<StrategyEngine.Candle> a1=fxBarsWs(fx,"M1",150,now);
+        ArrayList<StrategyEngine.Candle> a5=fxBarsWs(fx,"M5",120,now);
+        ArrayList<StrategyEngine.Candle> a15=fxBarsWs(fx,"M15",100,now);
+        if(a1.isEmpty()) throw new IOException("FXOpen WebSocket M1 history empty");
+        return new Snapshot(mid,bid,ask,Math.max(0,ask-bid),
+                liveCopy(a1,mid),liveCopy(a5.isEmpty()?a1:a5,mid),liveCopy(a15.isEmpty()?a1:a15,mid));
     }
-    private static ArrayList<StrategyEngine.Candle> fxBars(FxOpenTickTraderClient fx,String tf,int count,long now) throws Exception {
-        FxOpenTickTraderClient.Response r=fx.quoteHistory("XAUUSD",tf,"Bid",now,count);
-        if(!r.ok()) r=fx.publicQuoteHistory("XAUUSD",tf,"Bid",now,count);
-        if(!r.ok()) throw new IOException("FXOpen "+tf+" HTTP "+r.code);
-        String z=r.body.trim(); JSONArray ar=null;
-        if(z.startsWith("[")) ar=new JSONArray(z); else {JSONObject root=new JSONObject(z);ar=root.optJSONArray("Bars");if(ar==null)ar=root.optJSONArray("bars");}
-        if(ar==null)return new ArrayList<>(); ArrayList<StrategyEngine.Candle> out=new ArrayList<>();
-        for(int i=0;i<ar.length();i++){JSONObject b=ar.optJSONObject(i);if(b==null)continue;long t=(long)num(b,"Timestamp","timestamp","Time","time");double o=num(b,"Open","open"),h=num(b,"High","high"),l=num(b,"Low","low"),c=num(b,"Close","close");if(t>0&&t<100000000000L)t*=1000L;if(t>0&&!Double.isNaN(o)&&!Double.isNaN(h)&&!Double.isNaN(l)&&!Double.isNaN(c))out.add(new StrategyEngine.Candle(t,o,h,l,c));}
-        Collections.sort(out,Comparator.comparingLong(a->a.t));return out;
+
+    private static ArrayList<StrategyEngine.Candle> fxBarsWs(FxOpenTickTraderClient fx,String tf,int count,long now) throws Exception {
+        FxOpenTickTraderClient.Response r=fx.wsQuoteHistory("XAUUSD",tf,"Bid",now,-Math.abs(count));
+        if(!r.ok()) throw new IOException("FXOpen WebSocket "+tf+" HTTP "+r.code);
+        JSONArray ar=new JSONArray(r.body);
+        ArrayList<StrategyEngine.Candle> out=new ArrayList<>();
+        for(int i=0;i<ar.length();i++){
+            JSONObject b=ar.optJSONObject(i); if(b==null)continue;
+            long t=(long)num(b,"Timestamp","timestamp","Time","time","OpenTime","openTime");
+            if(t>0&&t<100000000000L)t*=1000L;
+            double o=num(b,"Open","open"),h=num(b,"High","high"),l=num(b,"Low","low"),cl=num(b,"Close","close");
+            if(t>0&&!Double.isNaN(o)&&!Double.isNaN(h)&&!Double.isNaN(l)&&!Double.isNaN(cl))
+                out.add(new StrategyEngine.Candle(t,o,h,l,cl));
+        }
+        Collections.sort(out,Comparator.comparingLong(a->a.t));
+        return out;
     }
-    private static double num(JSONObject o,String...keys){for(String k:keys){if(o.has(k)){double v=o.optDouble(k,Double.NaN);if(!Double.isNaN(v))return v;}}return Double.NaN;}
 
     private static List<StrategyEngine.Candle> fetchOhlc(String interval,int limit) throws Exception {
         String body=get(BASE+"/api/XAUUSD/ohlc?interval="+interval+"&limit="+limit);
@@ -170,7 +198,7 @@ public final class Market {
 
     private static String get(String url)throws Exception{
         Request request=new Request.Builder().url(url)
-                .header("User-Agent","XAUUSD-Mobile-Trading-Engine/5.2.7")
+                .header("User-Agent","XAUUSD-Mobile-Trading-Engine/5.2.9-FXOPEN")
                 .header("Accept","application/json").build();
         try(Response response=CLIENT.newCall(request).execute()){
             if(!response.isSuccessful()) throw new IOException("HTTP "+response.code());
