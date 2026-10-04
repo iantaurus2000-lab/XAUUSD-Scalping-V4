@@ -56,7 +56,10 @@ jobs:
           disable-animations: true
           script: |
             set -eux
-            APK="$GITHUB_WORKSPACE/v5.2-mobile-engine/app/build/outputs/apk/debug/app-debug.apk"
+            echo "PWD=$(pwd)"
+            echo "WORKSPACE=$GITHUB_WORKSPACE"
+            APK=$(find /home/runner/work -type f -name "app-debug.apk" -size +0c 2>/dev/null | head -1)
+            test -n "$APK"
             test -s "$APK"
             adb install -r "$APK"
             adb shell am force-stop com.xauusd.mobileengine
