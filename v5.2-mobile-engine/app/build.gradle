@@ -22,7 +22,8 @@ android {
     buildTypes {
         debug { signingConfig signingConfigs.stable }
         release { signingConfig signingConfigs.stable; minifyEnabled false }
-    }\n    defaultConfig {
+    }
+    defaultConfig {
         applicationId 'com.xauusd.mobileengine'
         minSdk 26
         targetSdk 34
