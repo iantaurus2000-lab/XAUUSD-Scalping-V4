@@ -4,6 +4,14 @@ plugins {
 }
 
 android {
+    signingConfigs {
+        stable {
+            storeFile file("../xauusd-stable.jks")
+            storePassword "xauusd2026"
+            keyAlias "xauusd"
+            keyPassword "xauusd2026"
+        }
+    }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -11,12 +19,12 @@ android {
     kotlinOptions { jvmTarget = '17' }
     namespace 'com.xauusd.mobileengine'
     compileSdk 35
-    defaultConfig {
+    buildTypes {\n        debug { signingConfig signingConfigs.stable }\n        release { signingConfig signingConfigs.stable; minifyEnabled false }\n    }\n    defaultConfig {
         applicationId 'com.xauusd.mobileengine'
         minSdk 26
         targetSdk 34
-        versionCode 550
-        versionName '5.2.7-STABLE'
+        versionCode 551
+        versionName '5.2.8-REBUILT'
     }
 }
 
