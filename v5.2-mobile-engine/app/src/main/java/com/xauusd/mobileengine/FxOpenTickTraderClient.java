@@ -127,7 +127,7 @@ public final class FxOpenTickTraderClient {
         c.setRequestProperty("Accept-Encoding","gzip, deflate");
         c.setRequestProperty("Content-Type","application/json");
         long ts=System.currentTimeMillis();
-        String signatureText=String.valueOf(ts)+id()+key()+method+absolute+b;
+        String signatureText=String.valueOf(ts)+id()+key()+method+path+b;
         String sig=hmacBase64(secret(),signatureText);
         c.setRequestProperty("Authorization","HMAC "+id()+":"+key()+":"+ts+":"+sig);
         if("POST".equals(method)||"PUT".equals(method)){
