@@ -665,7 +665,7 @@ public class MainActivity extends Activity {
         marketBusy=true;
         new Thread(()->{
             try{
-                Market.Snapshot s=Market.snapshot(lastPrice);
+                Market.Snapshot s=Market.snapshot(lastPrice,fxOpen);
                 final ArrayList<StrategyEngine.Candle> fa=s.m1, fb=s.m5, fc=s.m15;
                 final double mm=s.mid, sp=s.spread;
                 StrategyEngine.Decision dd=(fa.size()>=60&&fb.size()>=30)
