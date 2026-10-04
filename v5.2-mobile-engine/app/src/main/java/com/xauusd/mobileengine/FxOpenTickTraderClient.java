@@ -41,6 +41,32 @@ public final class FxOpenTickTraderClient {
         store.put("fx_host",(apiHost==null||apiHost.trim().isEmpty())?DEFAULT_DEMO_HOST:apiHost.trim());
     }
 
+    public Response quoteHistory(String symbol,String periodicity,String priceType,long timestampMs,int count) throws Exception{
+        String s=symbol==null||symbol.trim().isEmpty()?"XAUUSD":symbol.trim();
+        String p=periodicity==null||periodicity.trim().isEmpty()?"M1":periodicity.trim();
+        String pt=priceType==null||priceType.trim().isEmpty()?"Bid":priceType.trim();
+        String path="/api/v2/quotehistory/"+URLEncoder.encode(s,"UTF-8")+"/"+URLEncoder.encode(p,"UTF-8")+"/bars/"+URLEncoder.encode(pt,"UTF-8")+"?timestamp="+timestampMs+"&count="+Math.max(-1000,Math.min(1000,count));
+        return request("GET",path,"");
+    }
+    public Response publicQuoteHistory(String symbol,String periodicity,String priceType,long timestampMs,int count) throws Exception{
+        String s=symbol==null||symbol.trim().isEmpty()?"XAUUSD":symbol.trim();
+        String p=periodicity==null||periodicity.trim().isEmpty()?"M1":periodicity.trim();
+        String pt=priceType==null||priceType.trim().isEmpty()?"Bid":priceType.trim();
+        String path="/api/v2/public/quotehistory/"+URLEncoder.encode(s,"UTF-8")+"/"+URLEncoder.encode(p,"UTF-8")+"/bars/"+URLEncoder.encode(pt,"UTF-8")+"?timestamp="+timestampMs+"&count="+Math.max(-1000,Math.min(1000,count));
+        return requestPublic(path);
+    }
+    public Response publicTickV2(String symbol) throws Exception{
+        String s=symbol==null||symbol.trim().isEmpty()?"XAUUSD":symbol.trim();
+        return requestPublic("/api/v2/public/tick/"+URLEncoder.encode(s,"UTF-8"));
+    }
+    private Response requestPublic(String path)throws Exception{
+        URL u=new URL(host()+path); HttpURLConnection c=(HttpURLConnection)u.openConnection();
+        c.setConnectTimeout(8000);c.setReadTimeout(10000);c.setRequestMethod("GET");
+        c.setRequestProperty("Accept","application/json");c.setRequestProperty("Accept-Encoding","gzip, deflate");
+        int code=c.getResponseCode();InputStream in=code>=400?c.getErrorStream():c.getInputStream();String body=read(in);c.disconnect();
+        return new Response(code,body);
+    }
+
     public Response accountInfo() throws Exception { return request("GET","/api/v1/account",""); }
     public Response trades() throws Exception { return request("GET","/api/v1/trade",""); }
     public Response tradeSession() throws Exception { return request("GET","/api/v1/tradesession",""); }
