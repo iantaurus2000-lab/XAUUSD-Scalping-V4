@@ -48,7 +48,8 @@ jobs:
           force-avd-creation: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
-          script: bash -c 'set -euxo pipefail
+          script: |
+            set -eux
             APK=$(find v5.2-mobile-engine/app/build/outputs/apk -type f -name "*.apk" | head -1)
             test -s "$APK"
             adb install -r "$APK"
@@ -63,7 +64,7 @@ jobs:
             adb logcat -d -v time > "$GITHUB_WORKSPACE/v5-2-final.log"
             ! grep -q "FATAL EXCEPTION" "$GITHUB_WORKSPACE/v5-2-final.log"
             ! grep -q "Unable to start activity" "$GITHUB_WORKSPACE/v5-2-final.log"
-            echo "V5.2 EMULATOR GATE PASS"'
+            echo "V5.2 EMULATOR GATE PASS"
 
       - name: Publish APK and evidence
         if: success()
