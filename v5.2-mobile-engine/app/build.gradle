@@ -27,8 +27,8 @@ android {
         applicationId 'com.xauusd.mobileengine'
         minSdk 26
         targetSdk 34
-        versionCode 551
-        versionName '5.2.8-REBUILT'
+        versionCode 552
+        versionName '5.2.9-FXOPEN'
     }
 }
 
