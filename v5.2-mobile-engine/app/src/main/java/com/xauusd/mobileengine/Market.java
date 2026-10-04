@@ -72,7 +72,7 @@ public final class Market {
 
     public static synchronized Snapshot snapshot(double lastPrice, FxOpenTickTraderClient fx) throws Exception {
         if (fx != null && fx.configured()) {
-            try { lastError=""; Snapshot s=fxSnapshot(fx, lastPrice); lastSource="FXOPEN WS"; return s; } catch (Exception ex) { lastError=ex.getClass().getSimpleName()+": "+String.valueOf(ex.getMessage()); }
+            try { lastError=""; Snapshot s=fxSnapshot(fx, lastPrice); lastSource="FXOPEN WS"; return s; } catch (Exception ex) { lastSource="FXOPEN WS ERROR"; lastError=ex.getClass().getSimpleName()+": "+String.valueOf(ex.getMessage()); throw ex; }
         }
         if (lastSource.startsWith("FXOPEN")) lastSource="FXOPEN WS ERROR"; else lastSource="BIQUOTE";
         Tick t = tick();
