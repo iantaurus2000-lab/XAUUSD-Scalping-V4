@@ -27,6 +27,8 @@ public final class Market {
     private static List<StrategyEngine.Candle> cacheM5 = new ArrayList<>();
     private static List<StrategyEngine.Candle> cacheM15 = new ArrayList<>();
     private static long lastM1 = 0, lastM5 = 0, lastM15 = 0;
+    private static volatile String lastSource = "NONE";
+    private static volatile String lastError = "";
 
     public static final class Tick {
         public final double mid, bid, ask, spread, dayDiff;
@@ -49,6 +51,8 @@ public final class Market {
 
     private Market(){}
 
+    public static String sourceStatus(){ return lastSource + (lastError.isEmpty() ? "" : " • "+lastError); }
+
     public static Tick tick() throws Exception {
         String body = get(BASE + "/api/XAUUSD");
         JSONObject o = new JSONObject(body);
@@ -68,8 +72,9 @@ public final class Market {
 
     public static synchronized Snapshot snapshot(double lastPrice, FxOpenTickTraderClient fx) throws Exception {
         if (fx != null && fx.configured()) {
-            try { return fxSnapshot(fx, lastPrice); } catch (Exception ignored) { }
+            try { lastError=""; Snapshot s=fxSnapshot(fx, lastPrice); lastSource="FXOPEN"; return s; } catch (Exception ex) { lastError=ex.getClass().getSimpleName()+": "+String.valueOf(ex.getMessage()); }
         }
+        lastSource="BIQUOTE";
         Tick t = tick();
         long now = System.currentTimeMillis();
 
