@@ -1,0 +1,75 @@
+name: V5.2 Mobile Engine - Emulator Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - "v5.2-mobile-engine/**"
+      - ".github/workflows/emulator-v5-2.yml"
+
+jobs:
+  emulator-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Gradle 8.10
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.10-bin.zip
+          unzip -q gradle-8.10-bin.zip
+          echo "$PWD/gradle-8.10/bin" >> "$GITHUB_PATH"
+      - name: Build APK
+        working-directory: v5.2-mobile-engine
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run Android emulator gate
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          script: |
+            set -euxo pipefail
+            APK=$(find v5.2-mobile-engine/app/build/outputs/apk -type f -name "*.apk" | head -1)
+            adb install -r "$APK"
+            adb shell pm clear com.xauusd.mobileengine || true
+            adb install -r "$APK"
+            adb shell am start -n com.xauusd.mobileengine/.MainActivity
+            sleep 20
+            adb shell dumpsys package com.xauusd.mobileengine | grep -m1 "versionName"
+            adb shell uiautomator dump /sdcard/window.xml >/dev/null
+            adb shell cat /sdcard/window.xml | head -c 30000
+            adb exec-out screencap -p > "$GITHUB_WORKSPACE/v5.2-emulator.png"
+            adb logcat -d -v time > "$GITHUB_WORKSPACE/v5.2-emulator.log"
+            if grep -q "FATAL EXCEPTION" "$GITHUB_WORKSPACE/v5.2-emulator.log"; then
+              echo "FATAL EXCEPTION ditemukan"
+              exit 1
+            fi
+            if grep -q "Unable to start activity" "$GITHUB_WORKSPACE/v5.2-emulator.log"; then
+              echo "Activity gagal start"
+              exit 1
+            fi
+            echo "EMULATOR GATE BERHASIL"
+      - name: Upload emulator evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: V5.2-emulator-evidence
+          path: |
+            v5.2-emulator.png
+            v5.2-emulator.log
