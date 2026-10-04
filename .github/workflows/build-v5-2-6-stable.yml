@@ -1,4 +1,4 @@
-name: XAUUSD Mobile Trading Engine V5.2.9
+name: XAUUSD Mobile Trading Engine V5.2.9 - FXOpen WebSocket
 
 on:
   workflow_dispatch:
@@ -36,7 +36,9 @@ jobs:
         run: gradle clean --no-daemon
       - name: Build Debug APK
         working-directory: v5.2-mobile-engine
-        run: gradle :app:assembleDebug --no-daemon --stacktrace
+        run: |
+          echo "FXOPEN V5.2.9 WebSocket build"
+          gradle :app:assembleDebug --no-daemon --stacktrace
       - name: Verify APK
         run: |
           set -e
