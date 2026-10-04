@@ -686,14 +686,14 @@ public class MainActivity extends Activity {
                         for(StrategyEngine.Candle c:hd){hh=Math.max(hh,c.high);ll=Math.min(ll,c.low);}
                         highLow.setText("H "+fmt(hh)+"   L "+fmt(ll));
                     }
-                    ticker.setText("BIQUOTE • XAUUSD • LIVE 1s");
-                    connection.setText("● BIQUOTE 1s • LIVE • Spread "+fmt(spread));
+                    ticker.setText(Market.sourceStatus()+" • XAUUSD • LIVE");
+                    connection.setText("● "+Market.sourceStatus()+" • LIVE • Spread "+fmt(spread));
                     renderChart();renderDecision();renderResultsBar();
                     if(now-lastAccountUiAt>=15000){lastAccountUiAt=now;refreshAccountUi();}
                 });
             }catch(Exception e){
                 runOnUiThread(()->{
-                    connection.setText("● BIQUOTE ERROR • "+trim(e.getMessage()));
+                    connection.setText("● MARKET ERROR • "+trim(e.getMessage()));
                     if(log!=null)log.setText("MARKET FEED ERROR • "+trim(e.getMessage()));
                 });
             }finally{marketBusy=false;}
