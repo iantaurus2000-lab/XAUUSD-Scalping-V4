@@ -168,11 +168,14 @@ public final class FxOpenTickTraderClient {
         String h=host();
         if(h.startsWith("https://")) h="wss://"+h.substring(8);
         else if(h.startsWith("http://")) h="ws://"+h.substring(7);
+        if(h.endsWith("/")) h=h.substring(0,h.length()-1);
+        // FXOpen TickTrader Feed WebSocket is exposed on /feed, not at the REST root.
+        if(!h.endsWith("/feed")) h += "/feed";
         return h;
     }
 
     public String feedWsUrlLiveFallback(){
-        return "wss://ttlivewebapi.fxopen.com:443";
+        return "wss://marginalttlivewebapi.fxopen.net:443/feed";
     }
 
     public Response wsQuoteHistory(String symbol,String periodicity,String priceType,long timestampMs,int count) throws Exception{
