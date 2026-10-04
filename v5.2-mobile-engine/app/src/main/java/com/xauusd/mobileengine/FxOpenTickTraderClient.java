@@ -9,8 +9,8 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 public final class FxOpenTickTraderClient {
-    public static final String DEFAULT_DEMO_HOST="https://marginalttdemowebapi.fxopen.net:8443";
-    public static final String DEFAULT_LIVE_HOST="https://ttlivewebapi.fxopen.net:8443";
+    public static final String DEFAULT_DEMO_HOST="https://marginalttdemowebapi.fxopen.net:443";
+    public static final String DEFAULT_LIVE_HOST="https://marginalttlivewebapi.fxopen.net:443";
 
     public static final class Response {
         public final int code;
@@ -168,7 +168,6 @@ public final class FxOpenTickTraderClient {
         String h=host();
         if(h.startsWith("https://")) h="wss://"+h.substring(8);
         else if(h.startsWith("http://")) h="ws://"+h.substring(7);
-        h=h.replace("webapi","feed");
         return h;
     }
 
