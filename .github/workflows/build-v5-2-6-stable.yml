@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
     paths:
       - "v5.2-mobile-engine/**"
       - ".github/workflows/build-v5-2-6-stable.yml"
