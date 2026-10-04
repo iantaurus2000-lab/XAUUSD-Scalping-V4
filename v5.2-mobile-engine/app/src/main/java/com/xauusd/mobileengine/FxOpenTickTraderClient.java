@@ -127,7 +127,7 @@ public final class FxOpenTickTraderClient {
         c.setRequestProperty("Accept-Encoding","gzip, deflate");
         c.setRequestProperty("Content-Type","application/json");
         long ts=System.currentTimeMillis();
-        String signatureText=String.valueOf(ts)+id()+key()+method+path+b;
+        String signatureText=String.valueOf(ts)+id()+key()+method+absolute+b;
         String sig=hmacBase64(secret(),signatureText);
         c.setRequestProperty("Authorization","HMAC "+id()+":"+key()+":"+ts+":"+sig);
         if("POST".equals(method)||"PUT".equals(method)){
@@ -144,7 +144,7 @@ public final class FxOpenTickTraderClient {
     static String hmacBase64(String secret,String message)throws Exception{
         Mac mac=Mac.getInstance("HmacSHA256");
         mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8),"HmacSHA256"));
-        return Base64.getEncoder().encodeToString(mac.doFinal(message.getBytes(StandardCharsets.UTF_8)));
+        return Base64.getEncoder().encodeToString(mac.doFinal(message.getBytes(StandardCharsets.US_ASCII)));
     }
 
     static String read(InputStream in)throws Exception{
