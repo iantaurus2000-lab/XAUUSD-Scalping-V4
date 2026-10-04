@@ -38,6 +38,7 @@ jobs:
         working-directory: v5.2-mobile-engine
         run: |
           echo "FXOPEN V5.2.9 WebSocket build"
+          echo "BUILD_TRIGGER_2026_10_04=1"
           gradle :app:assembleDebug --no-daemon --stacktrace
       - name: Verify APK
         run: |
