@@ -24,6 +24,8 @@ class CandleChartView @JvmOverloads constructor(
     private var showLevels = true
     private var showFib = true
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val candleBodyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val candleWickPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var offset = 0
     private var autoScroll = true
     private var dragX = 0f
@@ -105,8 +107,16 @@ class CandleChartView @JvmOverloads constructor(
         paint.textSize=10f
         for(i in 0..6){val gy=top+h*i/6f;paint.color=Color.rgb(28,34,44);paint.strokeWidth=1f;canvas.drawLine(left,gy,right,gy,paint);val pv=maxP-(maxP-minP)*i/6.0;paint.color=Color.rgb(170,180,190);canvas.drawText(String.format(Locale.US,"%.2f",pv),right+4f,gy+3f,paint)}
         val n=visible.size;val step=w/(n+1f);val bw=max(6.0f,step*.72f)
-        paint.style=Paint.Style.FILL
-        visible.forEachIndexed{i,c->{val x=left+step*i+step/2;val up=c.close>=c.open;paint.color=if(up)Color.rgb(38,198,120) else Color.rgb(239,83,80);paint.strokeWidth=1.4f;canvas.drawLine(x,y(c.high),x,y(c.low),paint);val a=y(max(c.open,c.close));val b=y(min(c.open,c.close));canvas.drawRect(x-bw/2,a,x+bw/2,max(b,a+6f),paint)}}
+        visible.forEachIndexed{i,c->{
+            val x=left+step*i+step/2
+            val up=c.close>=c.open
+            val bodyColor=if(up)Color.rgb(38,198,120) else Color.rgb(239,83,80)
+            candleWickPaint.style=Paint.Style.STROKE; candleWickPaint.strokeWidth=2.2f; candleWickPaint.color=bodyColor
+            canvas.drawLine(x,y(c.high),x,y(c.low),candleWickPaint)
+            val a=y(max(c.open,c.close)); val b=y(min(c.open,c.close))
+            candleBodyPaint.style=Paint.Style.FILL; candleBodyPaint.color=bodyColor
+            canvas.drawRect(x-bw/2,a,x+bw/2,max(b,a+7f),candleBodyPaint)
+        }}
 
         if(showEma){drawEma(canvas,visible,9,Color.rgb(255,193,7),left,step,::y);drawEma(canvas,visible,21,Color.rgb(66,165,245),left,step,::y);drawEma(canvas,visible,50,Color.rgb(186,104,200),left,step,::y)}
         if(showLevels){
@@ -114,6 +124,16 @@ class CandleChartView @JvmOverloads constructor(
             level(canvas,sr,::y,"R",Color.rgb(239,83,80),left,right);level(canvas,ss,::y,"S",Color.rgb(66,165,245),left,right)
             if(showFib){val fh=visible.maxOf{it.high};val fl=visible.minOf{it.low};val d=fh-fl;listOf("38.2" to fh-d*.382,"50.0" to fh-d*.50,"61.8" to fh-d*.618).forEach{q->paint.color=Color.argb(150,186,104,200);paint.strokeWidth=1f;canvas.drawLine(left,y(q.second),right,y(q.second),paint);paint.textSize=8f;canvas.drawText(q.first,right-28f,y(q.second)-2f,paint)}}
         }
+        // Dedicated foreground candle pass: real green/red bodies remain visible
+        // even when EMA/Fibonacci layers overlap the price action.
+        visible.forEachIndexed{i,c->{
+            val x=left+step*i+step/2
+            val up=c.close>=c.open
+            val bodyColor=if(up)Color.rgb(38,198,120) else Color.rgb(239,83,80)
+            candleBodyPaint.style=Paint.Style.FILL; candleBodyPaint.color=bodyColor
+            val a=y(max(c.open,c.close)); val b=y(min(c.open,c.close))
+            canvas.drawRect(x-bw/2,a,x+bw/2,max(b,a+7f),candleBodyPaint)
+        }}
         currentPrice?.let{lineBadge(canvas,y(it),String.format(Locale.US,"LIVE %.2f",it),Color.rgb(38,50,56),right)}
         bid?.let{lineBadge(canvas,y(it),String.format(Locale.US,"B %.2f",it),Color.rgb(30,80,50),right)}
         ask?.let{lineBadge(canvas,y(it),String.format(Locale.US,"A %.2f",it),Color.rgb(90,40,40),right)}
