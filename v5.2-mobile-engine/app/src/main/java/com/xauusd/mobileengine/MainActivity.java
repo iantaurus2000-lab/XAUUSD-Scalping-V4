@@ -112,11 +112,11 @@ public class MainActivity extends Activity {
         findViewById(R.id.btnStart).setOnClickListener(v->startAuto());
         findViewById(R.id.btnStop).setOnClickListener(v->stopAuto());
         findViewById(R.id.btnMenu).setOnClickListener(v->showProfessionalMenu());
-        Button exBtn=findViewById(R.id.btnExness); exBtn.setText("🔗 EXNESS MT5");
+        Button exBtn=findViewById(R.id.btnExness); exBtn.setText("🎯 EXNESS MT5");
         exBtn.setOnClickListener(v->showExnessDialog());
         findViewById(R.id.btnManual).setOnClickListener(v->showManualOrderDialog());
         findViewById(R.id.btnCancelAuto).setOnClickListener(v->showCancelAutoDialog());
-        findViewById(R.id.btnLive).setOnClickListener(v->{chart.resetView();});
+        findViewById(R.id.btnLive).setOnClickListener(v->{chart.resetView();loadMarket();});
         findViewById(R.id.btnCopyEntry).setOnClickListener(v->copyPrice("ENTRY",decision.entry));
         findViewById(R.id.btnCopySl).setOnClickListener(v->copyPrice("SL",decision.sl));
         findViewById(R.id.btnCopyTp).setOnClickListener(v->copyPrice("TP1",decision.tp1));
@@ -124,6 +124,7 @@ public class MainActivity extends Activity {
         boxSl.setOnClickListener(v->copyPrice("SL",decision.sl));
         boxTp1.setOnClickListener(v->copyPrice("TP1",decision.tp1));
         boxTp2.setOnClickListener(v->copyPrice("TP2",decision.tp2));
+        ticker.setSelected(true); ticker.setHorizontallyScrolling(true); ticker.setMarqueeRepeatLimit(-1);
         renderDecision();
     }
 
@@ -134,6 +135,7 @@ public class MainActivity extends Activity {
             "🎯 Manual BUY/SELL LIMIT",
             "📊 Indicators / Fibonacci",
             "🔎 Scan Market • Entry Ready",
+            "⚡ Signal Min Score • "+store.rawPrefs().getInt("display_min_score",60),
             "🛡 Position Manager",
             "💰 Risk & Strategy",
             "📋 Orders / Account",
@@ -151,16 +153,17 @@ public class MainActivity extends Activity {
                 case 1: showManualOrderDialog();break;
                 case 2: showIndicatorDialog();break;
                 case 3: scanMarket();break;
-                case 4: showManagerDialog();break;
-                case 5: showRiskDialog();break;
-                case 6: showOrderManagerDialog();break;
-                case 7: showHistoryDialog();break;
-                case 8: showFxOpenDialog();break;
-                case 9: showTelegramDialog();break;
-                case 10: showCancelAutoDialog();break;
-                case 11: requestNotificationPermission();testAlarm();break;
-                case 12: new AlertDialog.Builder(this).setTitle("ENGINE LOG").setMessage(log.getText()).setPositiveButton("OK",null).show();break;
-                case 13: if(store.rawPrefs().getBoolean("auto",false))stopAuto(); else startAuto();break;
+                case 4: showSignalThresholdDialog();break;
+                case 5: showManagerDialog();break;
+                case 6: showRiskDialog();break;
+                case 7: showOrderManagerDialog();break;
+                case 8: showHistoryDialog();break;
+                case 9: showFxOpenDialog();break;
+                case 10: showTelegramDialog();break;
+                case 11: showCancelAutoDialog();break;
+                case 12: requestNotificationPermission();testAlarm();break;
+                case 13: new AlertDialog.Builder(this).setTitle("ENGINE LOG").setMessage(log.getText()).setPositiveButton("OK",null).show();break;
+                case 14: if(store.rawPrefs().getBoolean("auto",false))stopAuto(); else startAuto();break;
             }
         }).setNegativeButton("Tutup",null).show();
     }
@@ -392,6 +395,22 @@ public class MainActivity extends Activity {
             store.put("tp1_percent",pct.getText().toString());store.put("tp1_r",rr.getText().toString());
             d.dismiss();toast("Position Manager tersimpan.");
         }));d.show();
+    }
+
+    void showSignalThresholdDialog(){
+        int current=store.rawPrefs().getInt("display_min_score",60);
+        EditText e=input("Minimum signal score (45-90)",String.valueOf(current));
+        e.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        new AlertDialog.Builder(this).setTitle("⚡ Signal Minimum Score")
+            .setMessage("Ambang tampilan ENTRY WATCH. Auto execution tetap memakai Auto minimum score di Risk / Strategy.")
+            .setView(e).setNegativeButton("Tutup",null).setPositiveButton("SAVE",(d,w)->{
+                int v=current;
+                try{v=Integer.parseInt(e.getText().toString().trim());}catch(Exception ignored){}
+                v=Math.max(45,Math.min(90,v));
+                store.rawPrefs().edit().putInt("display_min_score",v).apply();
+                toast("Signal minimum score: "+v);
+                renderDecision();
+            }).show();
     }
 
     void showRiskDialog(){
@@ -675,7 +694,7 @@ public class MainActivity extends Activity {
         marketBusy=true;
         new Thread(()->{
             try{
-                Market.Snapshot s=Market.snapshot(lastPrice,useFxOpen()?fxOpen:null);
+                Market.Snapshot s=Market.snapshot(lastPrice);
                 final ArrayList<StrategyEngine.Candle> fa=s.m1, fb=s.m5, fc=s.m15;
                 final double mm=s.mid, sp=s.spread;
                 StrategyEngine.Decision dd=(fa.size()>=60&&fb.size()>=30)
