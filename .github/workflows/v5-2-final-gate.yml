@@ -113,7 +113,7 @@ jobs:
             test -n "${FXOPEN_WEB_API_KEY:-}"
             test -n "${FXOPEN_WEB_API_SECRET:-}"
             set +x
-            adb shell am broadcast -n com.xauusd.mobileengine/.FxOpenProbeReceiver --es fx_id "$FXOPEN_WEB_API_ID" --es fx_key "$FXOPEN_WEB_API_KEY" --es fx_secret "$FXOPEN_WEB_API_SECRET" --es fx_host "https://marginalttdemowebapi.fxopen.net:8443" >/tmp/fxopen-probe-broadcast.txt 2>&1
+            adb shell am broadcast -n com.xauusd.mobileengine/.FxOpenProbeReceiver --es fx_id "$FXOPEN_WEB_API_ID" --es fx_key "$FXOPEN_WEB_API_KEY" --es fx_secret "$FXOPEN_WEB_API_SECRET" --es fx_host "https://marginalttdemowebapi.fxopen.net" >/tmp/fxopen-probe-broadcast.txt 2>&1
             set -x
 
             sleep 8
