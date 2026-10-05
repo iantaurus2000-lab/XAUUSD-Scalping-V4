@@ -743,36 +743,47 @@ public class MainActivity extends Activity {
 
     void renderDecision(){
         if(signal==null)return;
-        boolean buy=decision.side.startsWith("BUY"),sell=decision.side.startsWith("SELL");
-        boolean ready=buy||sell;
-        if(ready){ lastReady=decision; lastReadyAt=System.currentTimeMillis(); }
-        StrategyEngine.Decision shown=decision;
-        if(!ready && (lastReady.side.startsWith("BUY")||lastReady.side.startsWith("SELL"))
-                && System.currentTimeMillis()-lastReadyAt<900000) shown=lastReady;
-        signal.setText(ready
-                ? decision.side+" • "+(decision.score>=85?"ENTRY READY":"LIMIT ZONE")
-                : shown.side.startsWith("BUY")||shown.side.startsWith("SELL")
-                    ? "LAST READY • "+shown.side+" • "+shown.score+"/100"
-                    : "WAIT • SCORE "+decision.score+"/100");
-        signal.setTextColor((shown.side.startsWith("BUY"))?Color.rgb(0,230,118):shown.side.startsWith("SELL")?Color.rgb(255,82,82):Color.WHITE);
-        if(lamp!=null){lamp.setText("●");lamp.setTextColor((shown.side.startsWith("BUY"))?Color.rgb(0,230,118):shown.side.startsWith("SELL")?Color.rgb(255,82,82):Color.rgb(120,144,156));}
-        String why=(shown.reason==null||shown.reason.isEmpty()?"M5 Bias → Liquidity Sweep → Wick Rejection → BOS":shown.reason)
-                +" • Pattern: "+(shown.pattern==null?"--":shown.pattern);
-        signalDetail.setText(why); signalDetail.setSelected(true); signalDetail.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE); signalDetail.setSingleLine(true);
-        int stars=Math.max(0,Math.min(5,shown.score/20));
-        confidence.setText("★★★★★".substring(0,stars)+"☆☆☆☆☆".substring(0,5-stars)+"  "+shown.score+"/100");
-        m5Bias.setText("M5 "+(shown.bias?"BIAS CONFIRMED":"WAIT")+(shown.earlyReady?" • EARLY":""));
-        m1State.setText("M1 "+(shown.side.equals("WAIT")?"WATCH":shown.side));
-        boxEntry.setText("ENTRY   ⧉\n"+fmt(shown.entry)); boxSl.setText("SL   ⧉\n"+fmt(shown.sl));
-        boxTp1.setText("TP1   ⧉\n"+fmt(shown.tp1)); boxTp2.setText("TP2   ⧉\n"+fmt(shown.tp2));
-        if(candleMomentum!=null){
-            candleMomentum.setText(shown.side.equals("WAIT")
-                    ? "CANDLE MOMENTUM • WAIT • "+(shown.pattern==null?"--":shown.pattern)
-                    : (shown.side.startsWith("BUY")?"BUY":"SELL")+" MOMENTUM • "+(shown.pattern==null?"--":shown.pattern)+(shown.earlyReady?" • FORMING":" • READY"));
-        }
-        if(botState!=null){ boolean on=store.rawPrefs().getBoolean("auto",false); botState.setText(on?"AUTO: ON • "+executionLabel():"AUTO: OFF • MANUAL"); }
-        if(account!=null && !hasCredentials())account.setText("Account: not connected");
-        if(ready){String hk=decision.side+"-"+decision.candleTime;if(!hk.equals(lastHistoryKey)){lastHistoryKey=hk;saveSignalHistory(decision);}}
+        int displayMin=store.rawPrefs().getInt("display_min_score",60);
+        boolean finalReady=decision.side.startsWith("BUY")||decision.side.startsWith("SELL");
+        boolean watch=!finalReady&&decision.entryWatch&&decision.candidateScore>=displayMin;
+        if(finalReady){lastReady=decision;lastReadyAt=System.currentTimeMillis();}
+        StrategyEngine.Decision shown=(watch||finalReady)?decision:
+                ((lastReady.side.startsWith("BUY")||lastReady.side.startsWith("SELL"))
+                &&System.currentTimeMillis()-lastReadyAt<900000?lastReady:decision);
+
+        if(finalReady)signal.setText(decision.side+" • "+(decision.score>=85?"ENTRY READY":"LIMIT ZONE"));
+        else if(watch)signal.setText("ENTRY WATCH • "+decision.candidateSide+" • "+decision.candidateScore+"/100");
+        else if(shown.side.startsWith("BUY")||shown.side.startsWith("SELL"))signal.setText("LAST READY • "+shown.side+" • "+shown.score+"/100");
+        else signal.setText("WAIT • SCORE "+decision.candidateScore+"/100");
+
+        String cs=shown.candidateSide==null?"WAIT":shown.candidateSide;
+        boolean buyShown=shown.side.startsWith("BUY")||cs.startsWith("BUY");
+        boolean sellShown=shown.side.startsWith("SELL")||cs.startsWith("SELL");
+        signal.setTextColor(buyShown?Color.rgb(0,230,118):sellShown?Color.rgb(255,82,82):Color.WHITE);
+        if(lamp!=null){lamp.setText("●");lamp.setTextColor(buyShown?Color.rgb(0,230,118):sellShown?Color.rgb(255,82,82):Color.rgb(120,144,156));}
+
+        signalDetail.setText((shown.reason==null||shown.reason.isEmpty()?"M5 Bias → Liquidity Sweep → Wick Rejection → BOS":shown.reason)
+                +" • Pattern: "+(shown.pattern==null?"--":shown.pattern));
+        signalDetail.setSelected(true);signalDetail.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);signalDetail.setSingleLine(true);
+
+        int stars=Math.max(0,Math.min(5,shown.candidateScore/20));
+        confidence.setText("★★★★★".substring(0,stars)+"☆☆☆☆☆".substring(0,5-stars)+"  "+shown.candidateScore+"/100");
+        m5Bias.setText((cs.startsWith("BUY")?"M5 BUY":cs.startsWith("SELL")?"M5 SELL":"M5 WAIT")
+                +(shown.bias?" • BIAS":"")+(shown.earlyReady?" • EARLY":""));
+        m1State.setText(finalReady?(shown.side.startsWith("BUY")?"M1 BUY READY":"M1 SELL READY"):(watch?"M1 ENTRY WATCH":"M1 WATCH"));
+
+        if(candleMomentum!=null)candleMomentum.setText("CANDLE MOMENTUM • "
+                +(cs.startsWith("BUY")?"BUY":cs.startsWith("SELL")?"SELL":"WAIT")
+                +" • "+(shown.pattern==null?"--":shown.pattern)+(shown.earlyReady?" • FORMING":""));
+
+        boxEntry.setText("ENTRY   ⧉\n"+fmt(shown.entry));
+        boxSl.setText("SL   ⧉\n"+fmt(shown.sl));
+        boxTp1.setText("TP1   ⧉\n"+fmt(shown.tp1));
+        boxTp2.setText("TP2   ⧉\n"+fmt(shown.tp2));
+
+        if(botState!=null){boolean on=store.rawPrefs().getBoolean("auto",false);botState.setText(on?"AUTO: ON • "+executionLabel():"AUTO: OFF • MANUAL");}
+        if(account!=null&&!hasCredentials())account.setText("Account: not connected");
+        if(finalReady){String hk=decision.side+"-"+decision.candleTime;if(!hk.equals(lastHistoryKey)){lastHistoryKey=hk;saveSignalHistory(decision);}}
         if(chart!=null)renderChart();
     }
 
