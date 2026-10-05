@@ -27,8 +27,8 @@ android {
         applicationId 'com.xauusd.mobileengine'
         minSdk 26
         targetSdk 34
-        versionCode 568
-        versionName '5.2.22-PERF-BIQUOTE'
+        versionCode 569
+        versionName '5.2.23-REAL-CANDLE'
     }
 }
 
