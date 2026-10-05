@@ -167,19 +167,9 @@ public final class Market {
     public static synchronized Snapshot snapshot(double lastPrice, FxOpenTickTraderClient fx) {
         final long now = System.currentTimeMillis();
 
-        // Broker market: only use the connector handed to us by the caller.
-        if (fx != null && fx.configured()) {
-            try {
-                Snapshot s = fxSnapshot(fx, now);
-                source = "FXOPEN REAL";
-                error = "";
-                return s;
-            } catch (Exception ex) {
-                error = "FXOpen " + compactError(ex);
-            }
-        }
-
-        // Public Biquote feed.
+        // Chart/strategy market source is Biquote REAL. FXOpen remains available
+        // for execution/demo account functions and is deliberately not allowed to
+        // replace the public market chart feed.
         Tick t = tick();
         boolean ohlcOk = true;
 
