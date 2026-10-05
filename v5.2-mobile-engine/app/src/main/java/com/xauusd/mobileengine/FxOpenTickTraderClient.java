@@ -67,9 +67,10 @@ public final class FxOpenTickTraderClient {
         return new Response(code,body);
     }
 
-    public Response accountInfo() throws Exception { return request("GET","/api/v1/account",""); }
-    public Response trades() throws Exception { return request("GET","/api/v1/trade",""); }
-    public Response tradeSession() throws Exception { return request("GET","/api/v1/tradesession",""); }
+    // TickTrader User Web API v2 documented endpoints.
+    public Response accountInfo() throws Exception { return request("GET","/api/v2/account",""); }
+    public Response trades() throws Exception { return request("GET","/api/v2/trade",""); }
+    public Response tradeSession() throws Exception { return request("GET","/api/v2/tradesession",""); }
 
     public Response placeLimit(String symbol,String side,double lot,double price,double sl,double tp,String comment) throws Exception{
         JSONObject j=new JSONObject();
@@ -82,12 +83,12 @@ public final class FxOpenTickTraderClient {
         if(tp>0)j.put("TakeProfit",tp);
         if(comment!=null&&!comment.isEmpty())j.put("Comment",comment);
         j.put("ClientId","xauusd-"+System.currentTimeMillis());
-        return request("POST","/api/v1/trade",j.toString());
+        return request("POST","/api/v2/trade",j.toString());
     }
 
     public Response cancel(String tradeId) throws Exception{
         if(tradeId==null||tradeId.trim().isEmpty())throw new IllegalArgumentException("Trade ID kosong");
-        return request("DELETE","/api/v1/trade?type=Cancel&id="+URLEncoder.encode(tradeId,"UTF-8"),"");
+        return request("DELETE","/api/v2/trade?type=Cancel&id="+URLEncoder.encode(tradeId,"UTF-8"),"");
     }
 
     public Response modify(String tradeId,double price,double sl,double tp,String comment) throws Exception{
@@ -97,17 +98,17 @@ public final class FxOpenTickTraderClient {
         if(sl>0)j.put("StopLoss",sl);
         if(tp>0)j.put("TakeProfit",tp);
         if(comment!=null&&!comment.isEmpty())j.put("Comment",comment);
-        return request("PUT","/api/v1/trade",j.toString());
+        return request("PUT","/api/v2/trade",j.toString());
     }
 
     public Response close(String tradeId,String amount) throws Exception{
-        String path="/api/v1/trade?type=Close&id="+URLEncoder.encode(tradeId,"UTF-8");
+        String path="/api/v2/trade?type=Close&id="+URLEncoder.encode(tradeId,"UTF-8");
         if(amount!=null&&!amount.trim().isEmpty())path+="&amount="+URLEncoder.encode(amount.trim(),"UTF-8");
         return request("DELETE",path,"");
     }
 
     public Response publicTick(String symbol) throws Exception{
-        URL u=new URL(host()+"/api/v1/public/tick/"+URLEncoder.encode(symbol,"UTF-8"));
+        URL u=new URL(host()+"/api/v2/public/tick/"+URLEncoder.encode(symbol,"UTF-8"));
         HttpURLConnection c=(HttpURLConnection)u.openConnection();
         c.setConnectTimeout(8000);c.setReadTimeout(8000);c.setRequestMethod("GET");
         c.setRequestProperty("Accept","application/json");
@@ -126,10 +127,14 @@ public final class FxOpenTickTraderClient {
         c.setRequestProperty("Accept","application/json");
         c.setRequestProperty("Accept-Encoding","gzip, deflate");
         c.setRequestProperty("Content-Type","application/json");
+
         long ts=System.currentTimeMillis();
+        // FXOpen TickTrader User Web API HMAC:
+        // timestamp + WebApiId + WebApiKey + HTTP method + full request URI + content.
         String signatureText=String.valueOf(ts)+id()+key()+method+absolute+b;
         String sig=hmacBase64(secret(),signatureText);
         c.setRequestProperty("Authorization","HMAC "+id()+":"+key()+":"+ts+":"+sig);
+
         if("POST".equals(method)||"PUT".equals(method)){
             c.setDoOutput(true);
             try(OutputStream out=c.getOutputStream()){out.write(b.getBytes(StandardCharsets.UTF_8));}
@@ -143,7 +148,7 @@ public final class FxOpenTickTraderClient {
 
     static String hmacBase64(String secret,String message)throws Exception{
         Mac mac=Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8),"HmacSHA256"));
+        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.US_ASCII),"HmacSHA256"));
         return Base64.getEncoder().encodeToString(mac.doFinal(message.getBytes(StandardCharsets.US_ASCII)));
     }
 
@@ -169,14 +174,11 @@ public final class FxOpenTickTraderClient {
         if(h.startsWith("https://")) h="wss://"+h.substring(8);
         else if(h.startsWith("http://")) h="ws://"+h.substring(7);
         if(h.endsWith("/")) h=h.substring(0,h.length()-1);
-        // FXOpen TickTrader Feed WebSocket is exposed on /feed, not at the REST root.
         if(!h.endsWith("/feed")) h += "/feed";
         return h;
     }
 
-    public String feedWsUrlLiveFallback(){
-        return "wss://marginalttlivewebapi.fxopen.net:443/feed";
-    }
+    public String feedWsUrlLiveFallback(){ return "wss://marginalttlivewebapi.fxopen.net:443/feed"; }
 
     public Response wsQuoteHistory(String symbol,String periodicity,String priceType,long timestampMs,int count) throws Exception{
         org.json.JSONArray rows = wsRequestQuoteHistory(symbol,periodicity,priceType,timestampMs,count);
@@ -189,61 +191,38 @@ public final class FxOpenTickTraderClient {
         final java.util.concurrent.atomic.AtomicReference<String> error=new java.util.concurrent.atomic.AtomicReference<>("");
         final String requestId=java.util.UUID.randomUUID().toString();
         okhttp3.OkHttpClient client=new okhttp3.OkHttpClient.Builder()
-                .connectTimeout(8,java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(15,java.util.concurrent.TimeUnit.SECONDS)
+                .connectTimeout(8,java.util.concurrent.TimeUnit.SECONDS).readTimeout(15,java.util.concurrent.TimeUnit.SECONDS)
                 .writeTimeout(8,java.util.concurrent.TimeUnit.SECONDS).build();
-
         okhttp3.Request req=new okhttp3.Request.Builder().url(feedWsUrl()).build();
         okhttp3.WebSocket ws=client.newWebSocket(req,new okhttp3.WebSocketListener(){
-            private boolean logged=false;
             private void sendLogin(okhttp3.WebSocket s){
                 try{
                     long ts=System.currentTimeMillis();
                     org.json.JSONObject p=new org.json.JSONObject();
                     p.put("AuthType","HMAC");p.put("WebApiId",id());p.put("WebApiKey",key());
                     p.put("Timestamp",ts);p.put("Signature",hmacBase64(secret(),ts+id()+key()));
-                    p.put("DeviceId","XAUUSD-Mobile-Trading-Engine");
-                    p.put("AppSessionId",requestId);
-                    org.json.JSONObject x=new org.json.JSONObject();
-                    x.put("Id",requestId);x.put("Request","Login");x.put("Params",p);
-                    s.send(x.toString());
+                    p.put("DeviceId","XAUUSD-Mobile-Trading-Engine");p.put("AppSessionId",requestId);
+                    org.json.JSONObject x=new org.json.JSONObject();x.put("Id",requestId);x.put("Request","Login");x.put("Params",p);s.send(x.toString());
                 }catch(Exception e){error.set(e.toString());done.countDown();}
             }
             public void onOpen(okhttp3.WebSocket s,okhttp3.Response r){sendLogin(s);}
             public void onMessage(okhttp3.WebSocket s,String text){
                 try{
-                    org.json.JSONObject o=new org.json.JSONObject(text);
-                    String response=o.optString("Response","");
+                    org.json.JSONObject o=new org.json.JSONObject(text);String response=o.optString("Response","");
                     if("Login".equals(response)){
-                        logged=true;
-                        org.json.JSONObject p=new org.json.JSONObject();
-                        p.put("Symbol",symbol);p.put("Periodicity",periodicity);p.put("PriceType",priceType);
-                        p.put("Timestamp",timestampMs);p.put("Count",Math.max(-1000,Math.min(1000,count)));
-                        org.json.JSONObject x=new org.json.JSONObject();
-                        x.put("Id",requestId);x.put("Request","QuoteHistoryBars");x.put("Params",p);
-                        s.send(x.toString());
+                        org.json.JSONObject p=new org.json.JSONObject();p.put("Symbol",symbol);p.put("Periodicity",periodicity);p.put("PriceType",priceType);p.put("Timestamp",timestampMs);p.put("Count",Math.max(-1000,Math.min(1000,count)));
+                        org.json.JSONObject x=new org.json.JSONObject();x.put("Id",requestId);x.put("Request","QuoteHistoryBars");x.put("Params",p);s.send(x.toString());
                     }else if("QuoteHistoryBars".equals(response)){
-                        org.json.JSONObject r=o.optJSONObject("Result");
-                        org.json.JSONArray bars=null;
-                        if(r!=null){
-                            bars=r.optJSONArray("Bars");
-                            if(bars==null)bars=r.optJSONArray("bars");
-                            if(bars==null)bars=r.optJSONArray("Data");
-                        }
-                        if(bars==null && o.has("Result") && o.opt("Result") instanceof org.json.JSONArray)
-                            bars=o.optJSONArray("Result");
-                        if(bars==null) throw new Exception("FXOpen QuoteHistoryBars: bars kosong");
+                        org.json.JSONObject r=o.optJSONObject("Result");org.json.JSONArray bars=null;
+                        if(r!=null){bars=r.optJSONArray("Bars");if(bars==null)bars=r.optJSONArray("bars");if(bars==null)bars=r.optJSONArray("Data");}
+                        if(bars==null && o.has("Result") && o.opt("Result") instanceof org.json.JSONArray)bars=o.optJSONArray("Result");
+                        if(bars==null)throw new Exception("FXOpen QuoteHistoryBars: bars kosong");
                         result.set(bars.toString());done.countDown();s.close(1000,"done");
-                    }else if("Error".equals(response)){
-                        error.set(o.optString("Error","FXOpen websocket error"));done.countDown();s.close(1000,"error");
-                    }else if("TwoFactor".equals(response)){
-                        error.set("FXOpen API membutuhkan TwoFactor");done.countDown();s.close(1000,"2fa");
-                    }
+                    }else if("Error".equals(response)){error.set(o.optString("Error","FXOpen websocket error"));done.countDown();s.close(1000,"error");
+                    }else if("TwoFactor".equals(response)){error.set("FXOpen API membutuhkan TwoFactor");done.countDown();s.close(1000,"2fa");}
                 }catch(Exception e){error.set(e.toString());done.countDown();s.close(1000,"parse");}
             }
-            public void onFailure(okhttp3.WebSocket s,Throwable t,okhttp3.Response r){
-                error.set(t==null?"WebSocket failure":String.valueOf(t.getMessage()));done.countDown();
-            }
+            public void onFailure(okhttp3.WebSocket s,Throwable t,okhttp3.Response r){error.set(t==null?"WebSocket failure":String.valueOf(t.getMessage()));done.countDown();}
         });
         if(!done.await(20,java.util.concurrent.TimeUnit.SECONDS)){ws.cancel();throw new IOException("FXOpen WebSocket timeout");}
         client.dispatcher().executorService().shutdown();
@@ -273,8 +252,8 @@ public final class FxOpenTickTraderClient {
                     if("Login".equals(rr)){
                         org.json.JSONObject p=new org.json.JSONObject();p.put("Subscribe",new org.json.JSONArray().put(new org.json.JSONObject().put("Symbol","XAUUSD").put("BookDepth",1).put("FrequencyPriority",0)));
                         org.json.JSONObject x=new org.json.JSONObject();x.put("Id",rid);x.put("Request","FeedSubscribe");x.put("Params",p);s.send(x.toString());
-                    }else if("FeedSubscribe".equals(rr)||"FeedTick".equals(rr)){result.set(text);done.countDown();s.close(1000,"probe");}
-                    else if("Error".equals(rr)){error.set(o.optString("Error","FXOpen feed error"));done.countDown();s.close(1000,"error");}
+                    }else if("FeedSubscribe".equals(rr)||"FeedTick".equals(rr)){result.set(text);done.countDown();s.close(1000,"probe");
+                    }else if("Error".equals(rr)){error.set(o.optString("Error","FXOpen feed error"));done.countDown();s.close(1000,"error");}
                 }catch(Exception e){error.set(e.toString());done.countDown();s.close(1000,"parse");}
             }
             public void onFailure(okhttp3.WebSocket s,Throwable t,okhttp3.Response r){error.set(String.valueOf(t));done.countDown();}
@@ -284,5 +263,4 @@ public final class FxOpenTickTraderClient {
         if(result.get().isEmpty())throw new IOException(error.get().isEmpty()?"FXOpen feed no response":error.get());
         return result.get();
     }
-
 }
