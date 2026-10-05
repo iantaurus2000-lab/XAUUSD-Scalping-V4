@@ -25,45 +25,58 @@ public final class StrategyEngine {
         Decision d=new Decision();
         if(m1.size()<60||m5.size()<30||mid<=0)return d;
         int n=m1.size(),m=m5.size();
-        Candle c=m1.get(n-1),p=m1.get(n-2);
-        Candle c5=m5.get(m-1),p5=m5.get(m-2);
-        double atr=atr(m1,14,n-1),ema9=ema(m1,9,n-1),ema21=ema(m1,21,n-1),ema50=ema(m1,50,n-1);
-        double rsi=rsi(m1,14,n-1); double[] macd=macd(m1,n-1); double[] bb=bollinger(m1,20,2,n-1);
-        double stoch=stochastic(m1,14,3,n-1),support=support(m1,20,n-1),resistance=resistance(m1,20,n-1);
+        Candle c=m1.get(n-1),p=m1.get(n-2),c5=m5.get(m-1);
+        double atr=Math.max(atr(m1,14,n-1),0.10);
+        double ema9=ema(m1,9,n-1),ema21=ema(m1,21,n-1),ema50=ema(m1,50,n-1);
+        double rsi=rsi(m1,14,n-1);
+        double[] mac=macd(m1,n-1),bb=bollinger(m1,20,2,n-1);
+        double macdLine=mac[0],macdSig=mac[1],stoch=stochastic(m1,14,3,n-1);
+        double support=support(m1,20,n-1),resistance=resistance(m1,20,n-1);
         double e59=ema(m5,9,m-1),e521=ema(m5,21,m-1);
-        boolean biasBuy=c5.close>e59&&c5.close>e521;
-        boolean biasSell=c5.close<e59&&c5.close<e521;
-        double body=Math.abs(c.close-c.open),upper=c.high-Math.max(c.open,c.close),lower=Math.min(c.open,c.close)-c.low,range=Math.max(c.high-c.low,1e-9);
-        boolean buyWick=lower>=Math.max(body*1.4,atr*.16)&&lower/range>=.32&&c.close>=c.open;
-        boolean sellWick=upper>=Math.max(body*1.4,atr*.16)&&upper/range>=.32&&c.close<=c.open;
-        boolean buySweep=c.low<p.low&&c.close>p.low, sellSweep=c.high>p.high&&c.close<p.high;
-        boolean buyBos=c.close>p.high||c.close>resistance, sellBos=c.close<p.low||c.close<support;
-        boolean trendBuy=ema9>ema21&&ema21>ema50,trendSell=ema9<ema21&&ema21<ema50;
-        boolean momentumBuy=rsi>=50&&rsi<=75&&macd[0]>=macd[1]&&stoch>45;
-        boolean momentumSell=rsi<=50&&rsi>=25&&macd[0]<=macd[1]&&stoch<55;
-        boolean locationBuy=c.low<=support+atr*.45||c.close<=bb[0],locationSell=c.high>=resistance-atr*.45||c.close>=bb[0];
 
-        int buy=(buyWick?22:0)+(buySweep?18:0)+(buyBos?14:0)+(biasBuy?16:0)+(trendBuy?10:0)+(momentumBuy?10:0)+(locationBuy?10:0);
-        int sell=(sellWick?22:0)+(sellSweep?18:0)+(sellBos?14:0)+(biasSell?16:0)+(trendSell?10:0)+(momentumSell?10:0)+(locationSell?10:0);
+        boolean biasBuy=c5.close>e59&&c5.close>e521,biasSell=c5.close<e59&&c5.close<e521;
+        double body=Math.abs(c.close-c.open),upper=c.high-Math.max(c.open,c.close);
+        double lower=Math.min(c.open,c.close)-c.low,range=Math.max(c.high-c.low,1e-9);
+        boolean buyWick=lower>=Math.max(body*1.25,atr*.12)&&lower/range>=.28&&c.close>=c.open;
+        boolean sellWick=upper>=Math.max(body*1.25,atr*.12)&&upper/range>=.28&&c.close<=c.open;
+        boolean buySweep=c.low<p.low&&c.close>p.low,sellSweep=c.high>p.high&&c.close<p.high;
+        boolean buyBos=c.close>p.high||c.close>resistance,sellBos=c.close<p.low||c.close<support;
 
-        d.atr=atr;d.ema9=ema9;d.ema21=ema21;d.ema50=ema50;d.rsi=rsi;d.macd=macd[0];d.macdSignal=macd[1];
+        double gap=(ema9-ema21)/atr;
+        double buyBiasQ=biasBuy?1.0:((c5.close>e59||c5.close>e521)?0.55:0.0);
+        double sellBiasQ=biasSell?1.0:((c5.close<e59||c5.close<e521)?0.55:0.0);
+        double buyTrendQ=clamp(.5+gap*.8,0,1),sellTrendQ=clamp(.5-gap*.8,0,1);
+        double md=macdLine-macdSig;
+        double buyMomQ=.55*clamp((rsi-40)/35.0,0,1)+.45*clamp(.5+md/(atr*.05),0,1);
+        double sellMomQ=.55*clamp((65-rsi)/35.0,0,1)+.45*clamp(.5-md/(atr*.05),0,1);
+        double buyLocQ=1.0-clamp((c.close-support)/(atr*3.0),0,1);
+        double sellLocQ=1.0-clamp((resistance-c.close)/(atr*3.0),0,1);
+        double buyWickQ=clamp((lower/range)/.60,0,1),sellWickQ=clamp((upper/range)/.60,0,1);
+
+        int buy=(int)Math.round(buyWickQ*20)+(buySweep?18:0)+(buyBos?14:0)+(int)Math.round(buyBiasQ*18)+(int)Math.round(buyTrendQ*10)+(int)Math.round(buyMomQ*10)+(int)Math.round(buyLocQ*10);
+        int sell=(int)Math.round(sellWickQ*20)+(sellSweep?18:0)+(sellBos?14:0)+(int)Math.round(sellBiasQ*18)+(int)Math.round(sellTrendQ*10)+(int)Math.round(sellMomQ*10)+(int)Math.round(sellLocQ*10);
+
+        d.atr=atr;d.ema9=ema9;d.ema21=ema21;d.ema50=ema50;d.rsi=rsi;d.macd=macdLine;d.macdSignal=macdSig;
         d.bbMid=bb[0];d.bbUpper=bb[1];d.bbLower=bb[2];d.support=support;d.resistance=resistance;
         d.wick=buyWick||sellWick;d.sweep=buySweep||sellSweep;d.bos=buyBos||sellBos;d.bias=biasBuy||biasSell;
         d.pattern=candlePattern(c,p);d.candleTime=c.t;d.secondsToClose=secondsToClose(c5.t,5);d.earlyReady=d.secondsToClose>0&&d.secondsToClose<=300;
+        d.score=Math.max(buy,sell);d.candidateScore=d.score;d.candidateSide=buy>=sell?"BUY LIMIT":"SELL LIMIT";d.entryWatch=d.score>=45;
 
-        if(buy>=75&&buy>sell&&biasBuy){
-            d.side="BUY LIMIT";d.score=buy;d.entry=Math.min(mid-atr*.20,c.low+atr*.18);d.entry=Math.max(d.entry,c.low+atr*.05);
-            if(d.entry>=mid)d.entry=mid-atr*.25;d.sl=Math.min(c.low-atr*.25,d.entry-atr*.9);
-            double risk=Math.max(d.entry-d.sl,atr*.7);d.tp1=d.entry+risk;d.tp2=d.entry+risk*2;
-            d.reason="M5 BUY + "+d.pattern+" + Liquidity Sweep + Wick Rejection + BOS";
-        } else if(sell>=75&&sell>buy&&biasSell){
-            d.side="SELL LIMIT";d.score=sell;d.entry=Math.max(mid+atr*.20,c.high-atr*.18);d.entry=Math.min(d.entry,c.high-atr*.05);
-            if(d.entry<=mid)d.entry=mid+atr*.25;d.sl=Math.max(c.high+atr*.25,d.entry+atr*.9);
-            double risk=Math.max(d.sl-d.entry,atr*.7);d.tp1=d.entry-risk;d.tp2=d.entry-risk*2;
-            d.reason="M5 SELL + "+d.pattern+" + Liquidity Sweep + Wick Rejection + BOS";
-        } else { d.side="WAIT";d.score=Math.max(buy,sell);d.reason="Tunggu konfirmasi: "+d.pattern+" • M5 Bias/Wick/Sweep/BOS belum lengkap."; }
+        if(buy>=sell){
+            d.entry=Math.min(mid-atr*.18,c.low+atr*.16);d.entry=Math.max(d.entry,c.low+atr*.05);if(d.entry>=mid)d.entry=mid-atr*.20;
+            d.sl=Math.min(c.low-atr*.35,d.entry-atr*.80);double risk=Math.max(d.entry-d.sl,atr*.70);d.tp1=d.entry+risk;d.tp2=d.entry+risk*2;
+        }else{
+            d.entry=Math.max(mid+atr*.18,c.high-atr*.16);d.entry=Math.min(d.entry,c.high-atr*.05);if(d.entry<=mid)d.entry=mid+atr*.20;
+            d.sl=Math.max(c.high+atr*.35,d.entry+atr*.80);double risk=Math.max(d.sl-d.entry,atr*.70);d.tp1=d.entry-risk;d.tp2=d.entry-risk*2;
+        }
+
+        if(buy>=75&&buy>sell&&biasBuy){d.side="BUY LIMIT";d.reason="M5 BUY + "+d.pattern+" + Liquidity Sweep + Wick Rejection + BOS";}
+        else if(sell>=75&&sell>buy&&biasSell){d.side="SELL LIMIT";d.reason="M5 SELL + "+d.pattern+" + Liquidity Sweep + Wick Rejection + BOS";}
+        else{d.side="WAIT";d.reason="Candidate "+d.candidateSide+" • "+d.candidateScore+"/100 • menunggu konfirmasi final.";}
         return d;
     }
+
+    private static double clamp(double v,double lo,double hi){return Math.max(lo,Math.min(hi,v));}
 
     public static String candlePattern(Candle c,Candle p){
         double body=Math.abs(c.close-c.open),range=Math.max(c.high-c.low,1e-9);
