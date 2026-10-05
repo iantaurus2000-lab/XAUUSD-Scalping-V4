@@ -9,12 +9,12 @@
         </LinearLayout>
         <Button android:id="@+id/btnMenu" android:layout_width="48dp" android:layout_height="44dp" android:text="☰" android:textSize="18sp" android:textColor="#FFFFFF" android:background="#16202B"/>
     </LinearLayout>
-    <TextView android:id="@+id/ticker" android:layout_width="match_parent" android:layout_height="22dp" android:text="BIQUOTE REAL • XAUUSD • LIVE 1s" android:textColor="#FFC107" android:textSize="10sp" android:singleLine="true" android:ellipsize="marquee" android:marqueeRepeatLimit="marquee_forever" android:focusable="true" android:focusableInTouchMode="true" android:scrollHorizontally="true"/>
+    <TextView android:id="@+id/ticker" android:layout_width="match_parent" android:layout_height="22dp" android:text="BIQUOTE REAL • XAUUSD • LIVE 1s" android:textColor="#FFD740" android:textSize="12sp" android:singleLine="true" android:ellipsize="marquee" android:marqueeRepeatLimit="marquee_forever" android:focusable="true" android:focusableInTouchMode="true" android:scrollHorizontally="true"/>
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="bottom">
         <TextView android:id="@+id/price" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="----.--" android:textColor="#FFFFFF" android:textSize="32sp" android:textStyle="bold"/>
         <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="vertical" android:gravity="right">
             <TextView android:id="@+id/priceChange" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="+0.00" android:textColor="#00E676" android:textSize="12sp" android:textStyle="bold"/>
-            <TextView android:id="@+id/spreadLine" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Spread --" android:textColor="#78909C" android:textSize="10sp"/>
+            <TextView android:id="@+id/spreadLine" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Spread --" android:textColor="#B0BEC5" android:textSize="11sp"/>
         </LinearLayout>
     </LinearLayout>
     <TextView android:id="@+id/highLow" android:layout_width="match_parent" android:layout_height="20dp" android:text="H --   L --" android:textColor="#B0BEC5" android:textSize="11sp"/>
@@ -23,7 +23,7 @@
         <TextView android:id="@+id/lamp" android:layout_width="42dp" android:layout_height="42dp" android:gravity="center" android:text="●" android:textColor="#78909C" android:textSize="28sp"/>
         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
             <TextView android:id="@+id/signalState" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="WAIT • SCORE 0/100" android:textColor="#FFFFFF" android:textSize="14sp" android:textStyle="bold"/>
-            <TextView android:id="@+id/confidence" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="☆☆☆☆☆ 0/100" android:textColor="#00E676" android:textSize="10sp"/>
+            <TextView android:id="@+id/confidence" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="☆☆☆☆☆ 0/100" android:textColor="#00E676" android:textSize="11sp"/>
         </LinearLayout>
     </LinearLayout>
     <TextView android:id="@+id/candleMomentum" android:layout_width="match_parent" android:layout_height="26dp" android:gravity="center" android:text="CANDLE MOMENTUM • WAIT" android:textColor="#FFD740" android:textSize="12sp" android:textStyle="bold"/>
@@ -55,9 +55,9 @@
     <LinearLayout android:layout_width="match_parent" android:layout_height="48dp">
         <Button android:id="@+id/btnStart" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="▶ START AUTO" android:textColor="#FFFFFF" android:background="#1B5E20" android:textSize="10sp"/>
         <Button android:id="@+id/btnStop" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="■ STOP" android:textColor="#FFFFFF" android:background="#B71C1C" android:textSize="10sp" android:layout_marginStart="5dp"/>
-        <Button android:id="@+id/btnCancelAuto" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="🛑 CANCEL AUTO" android:textColor="#FFFFFF" android:background="#4A171C" android:textSize="9sp" android:layout_marginStart="5dp"/>
+        <Button android:id="@+id/btnCancelAuto" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="🛑 CANCEL AUTO" android:textColor="#FFFFFF" android:background="#4A171C" android:textSize="11sp" android:layout_marginStart="5dp"/>
     </LinearLayout>
-    <TextView android:id="@+id/botState" android:layout_width="match_parent" android:layout_height="24dp" android:gravity="center" android:text="AUTO: OFF • MANUAL" android:textColor="#FFFFFF" android:textSize="9sp"/>
+    <TextView android:id="@+id/botState" android:layout_width="match_parent" android:layout_height="24dp" android:gravity="center" android:text="AUTO: OFF • MANUAL" android:textColor="#FFFFFF" android:textSize="11sp"/>
     <TextView android:id="@+id/account" android:layout_width="match_parent" android:layout_height="18dp" android:text="Account: not connected" android:textColor="#B0BEC5" android:textSize="11sp"/>
     <TextView android:id="@+id/log" android:layout_width="match_parent" android:layout_height="22dp" android:text="Ready • engine active • auto OFF" android:textColor="#90A4AE" android:textSize="11sp"/>
 </LinearLayout>
