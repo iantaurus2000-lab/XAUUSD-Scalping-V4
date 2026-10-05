@@ -27,13 +27,12 @@ android {
         applicationId 'com.xauusd.mobileengine'
         minSdk 26
         targetSdk 34
-        versionCode 569
-        versionName '5.2.23-REAL-CANDLE'
+        versionCode 570
+        versionName '5.2.24-FXOPEN-ENTRY'
     }
 }
 
 dependencies {
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
-    implementation 'com.squareup.okhttp3:okhttp-dnsoverhttps:4.12.0'
     implementation 'org.bouncycastle:bcprov-jdk18on:1.78.1'
 }
