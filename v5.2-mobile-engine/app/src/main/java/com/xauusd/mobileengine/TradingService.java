@@ -117,11 +117,18 @@ public class TradingService extends Service {
                 if(key.equals(lastSignalKey))return;
 
                 String symbol=orderSymbol();
-                if(useFxOpen()){
-                    try{ FxOpenTickTraderClient.Response fr=fxOpen.trades(); if(fr.ok() && fr.body.contains(symbol)) return; }catch(Exception ignored){}
-                } else if(metaApi.configured()){
+                // FXOpen is the ENTRY/authentication layer; Exness is the
+                // final execution account that must appear in MT5.
+                if(fxOpen!=null && fxOpen.configured()){
+                    try{ FxOpenTickTraderClient.Response fr=fxOpen.trades(); /* entry-layer health only */ }catch(Exception ignored){}
+                }
+                try{
+                    ExnessClient.Response er=exness.accountInfo();
+                    if(er.ok() && hasActiveExnessExposure(symbol)) return;
+                }catch(Exception ignored){}
+                if(metaApi.configured()){
                     try{ MetaApiClient.Response mr=metaApi.orders(); if(mr.ok() && mr.body.contains(symbol)) return; }catch(Exception ignored){}
-                } else if(hasActiveExposure(symbol))return;
+                }
 
                 String lot=store.rawPrefs().getString("lot","0.01");
                 int digits=2;
@@ -133,26 +140,17 @@ public class TradingService extends Service {
                 }catch(Exception ignored){}
 
                 String side=d.side.startsWith("BUY")?"buy":"sell";
-                if(useFxOpen()){
-                    FxOpenTickTraderClient.Response fr=fxOpen.placeLimit(symbol,side,Double.parseDouble(lot),
-                            Double.parseDouble(fmt(d.entry,digits)),Double.parseDouble(fmt(d.sl,digits)),
-                            Double.parseDouble(fmt(d.tp2,digits)),"XAUUSD-V5.2-AUTO");
-                    if(fr.ok()){
-                        lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;
-                        notifyUser("FXOPEN DEMO ORDER",d.summary()+"\n"+trim(fr.body));
-                        if(telegram.enabled())try{telegram.send("🟢 XAUUSD SCALPING\n"+d.side+"\n"+d.summary()+"\nFXOPEN DEMO: ORDER SUBMITTED");}catch(Exception ignored){}
-                    }else notifyUser("FXOPEN ORDER REJECT "+fr.code,trim(fr.body));
-                    return;
-                }
-
+                // IMPORTANT: never place the same signal as an FXOpen trade.
+                // FXOpen is the authenticated entry layer; Exness is the final
+                // execution destination, so the order is sent once to Exness.
                 ExnessClient.Response r=exness.placeLimit(symbol,side,lot,fmt(d.entry,digits),fmt(d.sl,digits),fmt(d.tp2,digits),"XAUUSD-V5.2-AUTO");
                 if(r.ok()){
                     lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;
                     String op=exness.operationId(r);
-                    notifyUser("ORDER ACK "+d.side,d.summary()+"\nOperation: "+(op.isEmpty()?"pending":op));
+                    notifyUser("FXOPEN ENTRY → EXNESS MT5 • ORDER ACK "+d.side,d.summary()+"\nOperation: "+(op.isEmpty()?"pending":op));
                     waitForOperation(op);
                     if(telegram.enabled())try{
-                        telegram.send("🟢 XAUUSD SCALPING\n"+d.side+"\n"+d.summary()+"\nTF: M1 | Bias: M5\nSetup: Liquidity Sweep + Wick Rejection + BOS\nConfidence: "+d.score+"/100");
+                        telegram.send("🟢 XAUUSD SCALPING\n"+d.side+"\n"+d.summary()+"\nFXOPEN ENTRY → EXNESS MT5\nTF: M1 | Bias: M5\nSetup: Liquidity Sweep + Wick Rejection + BOS\nConfidence: "+d.score+"/100");
                     }catch(Exception ignored){}
                 }else notifyUser("ORDER REJECT "+r.code,trim(r.body));
             }catch(Exception e){
