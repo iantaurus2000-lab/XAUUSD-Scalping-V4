@@ -719,7 +719,7 @@ public class MainActivity extends Activity {
                 }
                 runOnUiThread(()->{
                     long now=System.currentTimeMillis();
-                    mid=mm;spread=sp;m1=fa;m5=fb;m15=fc;lastLoad=now;
+                    mid=mm;spread=sp;m1=fa;m5=fb;m15=fc;decision=dd;lastLoad=now;
                     price.setText(fmt(mid));
                     double prev=lastPrice;lastPrice=mid;
                     if(prev>0){
