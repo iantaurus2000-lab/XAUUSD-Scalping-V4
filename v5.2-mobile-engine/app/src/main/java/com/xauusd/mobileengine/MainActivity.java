@@ -7,6 +7,7 @@ import android.app.*;
 import android.content.*;
 import android.content.pm.PackageManager;
 import android.graphics.*;
+import android.util.Log;
 import android.graphics.drawable.GradientDrawable;
 import android.os.*;
 import android.view.*;
@@ -710,6 +711,12 @@ public class MainActivity extends Activity {
                 final double mm=s.mid, sp=s.spread;
                 StrategyEngine.Decision dd=(fa.size()>=60&&fb.size()>=30)
                         ?StrategyEngine.analyze(fa,fb,mm):new StrategyEngine.Decision();
+                if(!fa.isEmpty()){
+                    StrategyEngine.Candle z=fa.get(fa.size()-1);
+                    Log.d("XAUUSD_REAL","M1="+fa.size()+" M5="+fb.size()+" M15="+fc.size()
+                            +" score="+dd.score+" candidate="+dd.candidateScore+" entry="+dd.entry
+                            +" O="+z.open+" H="+z.high+" L="+z.low+" C="+z.close);
+                }
                 runOnUiThread(()->{
                     long now=System.currentTimeMillis();
                     mid=mm;spread=sp;m1=fa;m5=fb;m15=fc;lastLoad=now;
