@@ -18,6 +18,7 @@ public class TradingService extends Service {
     ExnessClient exness;
     MetaApiClient metaApi;
     FxOpenTickTraderClient fxOpen;
+    EntryRouter entryRouter;
     TelegramClient telegram;
     TradeManager manager;
     static final String BASE="https://biquote.io/api/XAUUSD";
@@ -41,7 +42,7 @@ public class TradingService extends Service {
         wakeLock=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"XAUUSD:Engine");
         wakeLock.setReferenceCounted(false);
         wakeLock.acquire();
-        store=new SecurityStore(this);exness=new ExnessClient(store);metaApi=new MetaApiClient(store);telegram=new TelegramClient(store);manager=new TradeManager(store,exness);fxOpen=new FxOpenTickTraderClient(store);createChannel();
+        store=new SecurityStore(this);exness=new ExnessClient(store);metaApi=new MetaApiClient(store);telegram=new TelegramClient(store);manager=new TradeManager(store,exness);fxOpen=new FxOpenTickTraderClient(store);entryRouter=new EntryRouter(fxOpen,exness);createChannel();
         Notification n=new Notification.Builder(this,CH).setContentTitle("XAUUSD V5.2 Auto Engine")
             .setContentText("Auto execution armed with risk guards").setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true).setColor(Color.rgb(0,200,83)).build();
@@ -133,23 +134,12 @@ public class TradingService extends Service {
                 }catch(Exception ignored){}
 
                 String side=d.side.startsWith("BUY")?"buy":"sell";
-                if(useFxOpen()){
-                    FxOpenTickTraderClient.Response fr=fxOpen.placeLimit(symbol,side,Double.parseDouble(lot),
-                            Double.parseDouble(fmt(d.entry,digits)),Double.parseDouble(fmt(d.sl,digits)),
-                            Double.parseDouble(fmt(d.tp2,digits)),"XAUUSD-V5.2-AUTO");
-                    if(fr.ok()){
-                        lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;
-                        notifyUser("FXOPEN DEMO ORDER",d.summary()+"\n"+trim(fr.body));
-                        if(telegram.enabled())try{telegram.send("🟢 XAUUSD SCALPING\n"+d.side+"\n"+d.summary()+"\nFXOPEN DEMO: ORDER SUBMITTED");}catch(Exception ignored){}
-                    }else notifyUser("FXOPEN ORDER REJECT "+fr.code,trim(fr.body));
-                    return;
-                }
-
-                ExnessClient.Response r=exness.placeLimit(symbol,side,lot,fmt(d.entry,digits),fmt(d.sl,digits),fmt(d.tp2,digits),"XAUUSD-V5.2-AUTO");
+                EntryRouter.Result routed=entryRouter.placeLimit(symbol,side,lot,fmt(d.entry,digits),fmt(d.sl,digits),fmt(d.tp2,digits),"XAUUSD-V5.2-AUTO");
+                ExnessClient.Response r=routed.exness;
                 if(r.ok()){
                     lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;
                     String op=exness.operationId(r);
-                    notifyUser("ORDER ACK "+d.side,d.summary()+"\nOperation: "+(op.isEmpty()?"pending":op));
+                    notifyUser("FXOPEN ENTRY → EXNESS MT5 • ORDER ACK "+d.side,d.summary()+"\nOperation: "+(op.isEmpty()?"pending":op));
                     waitForOperation(op);
                     if(telegram.enabled())try{
                         telegram.send("🟢 XAUUSD SCALPING\n"+d.side+"\n"+d.summary()+"\nTF: M1 | Bias: M5\nSetup: Liquidity Sweep + Wick Rejection + BOS\nConfidence: "+d.score+"/100");
