@@ -55,7 +55,7 @@ public final class Market {
 
     public static synchronized String sourceStatus(){return status+(error.isEmpty()?"":" • "+error);}
     public static synchronized String monitorStatus(){return sourceStatus();}
-    public static String publicGet(String url)throws Exception{return url==null?null:url;}
+    public static String publicGet(String url)throws Exception{return BiquoteChartFeed.publicGet(url);}
 
     private static String compact(Exception e){
         String s=e.getClass().getSimpleName()+(e.getMessage()==null?"":": "+e.getMessage());
