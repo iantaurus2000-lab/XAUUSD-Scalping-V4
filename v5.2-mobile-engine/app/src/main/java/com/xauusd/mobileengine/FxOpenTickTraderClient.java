@@ -9,8 +9,8 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 public final class FxOpenTickTraderClient {
-    public static final String DEFAULT_DEMO_HOST="https://marginalttdemowebapi.fxopen.net:443";
-    public static final String DEFAULT_LIVE_HOST="https://marginalttlivewebapi.fxopen.net:443";
+    public static final String DEFAULT_DEMO_HOST="https://marginalttdemowebapi.fxopen.net:8443";
+    public static final String DEFAULT_LIVE_HOST="https://marginalttlivewebapi.fxopen.net:8443";
 
     public static final class Response {
         public final int code;
@@ -27,7 +27,8 @@ public final class FxOpenTickTraderClient {
     String secret(){return store.get("fx_secret","").trim();}
     String host(){
         String h=store.get("fx_host",DEFAULT_DEMO_HOST).trim();
-        if(h.isEmpty())h=DEFAULT_DEMO_HOST;
+        // Migrate the previous incorrect/default 443 endpoint to FXOpen TickTrader demo Web API port 8443.
+        if(h.isEmpty() || h.equals("https://marginalttdemowebapi.fxopen.net:443") || h.equals("marginalttdemowebapi.fxopen.net:443")) h=DEFAULT_DEMO_HOST;
         if(!h.startsWith("http://")&&!h.startsWith("https://"))h="https://"+h;
         while(h.endsWith("/"))h=h.substring(0,h.length()-1);
         return h;
