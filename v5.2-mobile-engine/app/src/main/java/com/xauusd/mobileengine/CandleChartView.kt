@@ -106,7 +106,7 @@ class CandleChartView @JvmOverloads constructor(
 
         paint.textSize=10f
         for(i in 0..6){val gy=top+h*i/6f;paint.color=Color.rgb(28,34,44);paint.strokeWidth=1f;canvas.drawLine(left,gy,right,gy,paint);val pv=maxP-(maxP-minP)*i/6.0;paint.color=Color.rgb(170,180,190);canvas.drawText(String.format(Locale.US,"%.2f",pv),right+4f,gy+3f,paint)}
-        val n=visible.size;val step=w/(n+1f);val bw=max(9.0f,step*.72f)
+        val n=visible.size;val step=w/(n+1f);val bw=max(6.0f,step*.62f)
         visible.forEachIndexed{i,c->{
             val x=left+step*i+step/2
             val up=c.close>=c.open
@@ -130,9 +130,9 @@ class CandleChartView @JvmOverloads constructor(
             val x=left+step*i+step/2
             val up=c.close>=c.open
             val bodyColor=if(up)Color.rgb(38,198,120) else Color.rgb(239,83,80)
-            candleBodyPaint.style=Paint.Style.FILL; candleBodyPaint.color=bodyColor
+            paint.style=Paint.Style.FILL; paint.color=bodyColor
             val a=y(max(c.open,c.close)); val b=y(min(c.open,c.close))
-            canvas.drawRect(x-bw/2,a,x+bw/2,max(b,a+12f),candleBodyPaint)
+            canvas.drawRect(x-bw/2,a,x+bw/2,max(b,a+8f),paint)
         }}
         currentPrice?.let{lineBadge(canvas,y(it),String.format(Locale.US,"LIVE %.2f",it),Color.rgb(38,50,56),right)}
         bid?.let{lineBadge(canvas,y(it),String.format(Locale.US,"B %.2f",it),Color.rgb(30,80,50),right)}
