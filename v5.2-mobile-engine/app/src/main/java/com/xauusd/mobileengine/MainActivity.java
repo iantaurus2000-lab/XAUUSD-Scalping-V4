@@ -1083,6 +1083,8 @@ public class MainActivity extends Activity {
 
     void setTickerText(String text){
         if(ticker==null||text==null)return;
+        if(text.equals(tickerRendered))return;
+        tickerRendered=text;
         if(tickerAnimator!=null){tickerAnimator.cancel();tickerAnimator=null;}
         ticker.setTranslationX(0f);
         ticker.setText(text+"     •     "+text);
