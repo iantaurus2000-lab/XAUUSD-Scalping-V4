@@ -185,7 +185,7 @@ public final class Market {
 
         try {
             if (m1Cache.size() < 60 || now - m1At >= 5000) {
-                List<StrategyEngine.Candle> x = fetchOhlc("1m", 180);
+                List<StrategyEngine.Candle> x = fetchOhlc("1m", 600);
                 if (x.size() >= 30) {
                     replace(m1Cache, x);
                     m1At = now;
@@ -198,32 +198,22 @@ public final class Market {
             error = compactError(ex);
         }
 
-        try {
-            if (m5Cache.size() < 30 || now - m5At >= 15000) {
-                List<StrategyEngine.Candle> x = fetchOhlc("5m", 150);
-                if (x.size() >= 20) {
-                    replace(m5Cache, x);
-                    m5At = now;
-                } else {
-                    ohlcOk = false;
-                }
+        // Derive M5/M15 from the real Biquote M1 stream. This keeps the
+        // first screen fast and guarantees that all three chart timeframes
+        // are based on the same real market feed.
+        if (m1Cache.size() >= 60) {
+            ArrayList<StrategyEngine.Candle> a5 = aggregate(m1Cache, 5);
+            ArrayList<StrategyEngine.Candle> a15 = aggregate(m1Cache, 15);
+            if (a5.size() >= 20) {
+                replace(m5Cache, a5);
+                m5At = now;
+            } else {
+                ohlcOk = false;
             }
-        } catch (Exception ex) {
-            ohlcOk = false;
-        }
-
-        try {
-            if (m15Cache.size() < 30 || now - m15At >= 30000) {
-                List<StrategyEngine.Candle> x = fetchOhlc("15m", 100);
-                if (x.size() >= 20) {
-                    replace(m15Cache, x);
-                    m15At = now;
-                } else {
-                    ohlcOk = false;
-                }
+            if (a15.size() >= 20) {
+                replace(m15Cache, a15);
+                m15At = now;
             }
-        } catch (Exception ex) {
-            ohlcOk = false;
         }
 
         // Never leave the chart empty. Build a stable local history when needed.
@@ -305,6 +295,34 @@ public final class Market {
         }
         Collections.sort(out, Comparator.comparingLong(a -> a.t));
         return out;
+    }
+
+    private static ArrayList<StrategyEngine.Candle> aggregate(
+            List<StrategyEngine.Candle> src, int minutes) {
+        ArrayList<StrategyEngine.Candle> out = new ArrayList<>();
+        if (src == null || src.isEmpty()) return out;
+        long step = minutes * 60_000L;
+        long bucket = Long.MIN_VALUE;
+        StrategyEngine.Candle cur = null;
+        for (StrategyEngine.Candle c : src) {
+            long t = c.t < 100000000000L ? c.t * 1000L : c.t;
+            long b = (t / step) * step;
+            if (cur == null || b != bucket) {
+                if (cur != null) out.add(cur);
+                bucket = b;
+                cur = new StrategyEngine.Candle(b, c.open, c.high, c.low, c.close);
+            } else {
+                cur.high = Math.max(cur.high, c.high);
+                cur.low = Math.min(cur.low, c.low);
+                cur.close = c.close;
+            }
+        }
+        if (cur != null) out.add(cur);
+        return out;
+    }
+
+    public static String publicGet(String url) throws Exception {
+        return get(url);
     }
 
     private static List<StrategyEngine.Candle> fetchOhlc(String interval, int limit) throws Exception {
