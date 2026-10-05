@@ -103,7 +103,7 @@ class CandleChartView @JvmOverloads constructor(
         paint.color=Color.GRAY;canvas.drawText(if(autoScroll)"AUTO" else "SCROLL",left+270f,16f,paint)
 
         paint.textSize=10f
-        for(i in 0..6{val gy=top+h*i/6f;paint.color=Color.rgb(28,34,44);paint.strokeWidth=1f;canvas.drawLine(left,gy,right,gy,paint);val pv=maxP-(maxP-minP)*i/6.0;paint.color=Color.rgb(170,180,190);canvas.drawText(String.format(Locale.US,"%.2f",pv),right+4f,gy+3f,paint)}
+        for(i in 0..6){val gy=top+h*i/6f;paint.color=Color.rgb(28,34,44);paint.strokeWidth=1f;canvas.drawLine(left,gy,right,gy,paint);val pv=maxP-(maxP-minP)*i/6.0;paint.color=Color.rgb(170,180,190);canvas.drawText(String.format(Locale.US,"%.2f",pv),right+4f,gy+3f,paint)}
         val n=visible.size;val step=w/(n+1f);val bw=max(3.5f,step*.62f)
         visible.forEachIndexed{i,c->{val x=left+step*i+step/2;val up=c.close>=c.open;paint.color=if(up)Color.rgb(38,198,120) else Color.rgb(239,83,80);paint.strokeWidth=1.4f;canvas.drawLine(x,y(c.high),x,y(c.low),paint);val a=y(max(c.open,c.close));val b=y(min(c.open,c.close));canvas.drawRect(x-bw/2,a,x+bw/2,max(b,a+1f),paint)}}
 
@@ -120,7 +120,7 @@ class CandleChartView @JvmOverloads constructor(
         if(showCross&&crossX in left..right&&crossY in top..bottom){paint.color=Color.argb(170,210,210,210);paint.strokeWidth=1f;canvas.drawLine(crossX,top,crossX,bottom,paint);canvas.drawLine(left,crossY,right,crossY,paint);val pv=minP+(1.0-((crossY-top)/h))*(maxP-minP);paint.color=Color.YELLOW;paint.textSize=10f;canvas.drawText(String.format(Locale.US,"%.2f",pv),crossX+6,crossY-6,paint)}
         // Time axis + small signal marker
         paint.color=Color.rgb(145,155,165);paint.textSize=10f
-        val labels=min(5,n
+        val labels=min(5,n)
         for(k in 0 until labels){
             val idx=if(labels==1)0 else k*(n-1)/(labels-1)
             val cc=visible[idx]
@@ -137,7 +137,7 @@ class CandleChartView @JvmOverloads constructor(
                 paint.textSize=9f;canvas.drawText(if(d.side.startsWith("BUY")) "▲ BUY" else "▼ SELL",x-20f,yy,paint)
             }
         }
-        paint.color=Color.GRAY;paint.textSize=8f;canvas.drawText("← drag →   ↑↓ move   pinch/zoom   tap RIGHT = LIVE",left,bottom+32f,paint)
+        paint.color=Color.GRAY;paint.textSize=10f;canvas.drawText("← drag →   ↑↓ move   pinch/zoom   tap RIGHT = LIVE",left,bottom+32f,paint)
     }
 
     private fun drawEma(c:Canvas,a:List<StrategyEngine.Candle>,period:Int,color:Int,left:Float,step:Float,y:(Double)->Float){if(a.size<period)return;val vals=ArrayList(a);var prev:PointF?=null;for(i in a.indices){val v=StrategyEngine.ema(vals,period,i);val pt=PointF(left+step*i+step/2,y(v));if(prev!=null){paint.color=color;paint.strokeWidth=1.7f;c.drawLine(prev!!.x,prev!!.y,pt.x,pt.y,paint)};prev=pt}}
