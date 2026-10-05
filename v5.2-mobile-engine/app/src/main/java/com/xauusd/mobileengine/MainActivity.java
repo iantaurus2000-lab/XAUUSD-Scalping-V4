@@ -1099,9 +1099,9 @@ public class MainActivity extends Activity {
     void loadNewsTicker(){
         new Thread(()->{
             String session=marketSession();
-            String news="NEWS: "+session+" • XAUUSD • Network "+(isNetworkOk()?"OK":"OFFLINE");
+            String news="NEWS: "+session+" • XAUUSD • Network "+(Market.sourceStatus().startsWith("BIQUOTE REAL")?"OK":"OFFLINE");
             try{
-                String body=get("https://biquote.io/api/calendar?countries=US&importance=high&limit=10");
+                String body=Market.publicGet("https://biquote.io/api/calendar/upcoming?countries=US&importance=high&limit=10");
                 JSONArray ar=new JSONArray(body);long now=System.currentTimeMillis();long best=Long.MAX_VALUE;String bestTitle="";
                 for(int i=0;i<ar.length();i++){
                     JSONObject o=ar.optJSONObject(i);if(o==null)continue;
@@ -1178,18 +1178,7 @@ public class MainActivity extends Activity {
     }
 
     String get(String url) throws Exception{
-        HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();
-        c.setConnectTimeout(7000); c.setReadTimeout(7000); c.setRequestMethod("GET");
-        c.setRequestProperty("Accept","application/json");
-        int code=c.getResponseCode();
-        InputStream in=code>=200&&code<300?c.getInputStream():c.getErrorStream();
-        if(in==null)throw new IOException("HTTP "+code);
-        BufferedReader br=new BufferedReader(new InputStreamReader(in));
-        StringBuilder b=new StringBuilder(); String line;
-        while((line=br.readLine())!=null)b.append(line);
-        br.close(); c.disconnect();
-        if(code<200||code>=300)throw new IOException("HTTP "+code+" "+b);
-        return b.toString();
+        return Market.publicGet(url);
     }
 
     String fmt(double d){return String.format(Locale.US,"%.2f",d);}
