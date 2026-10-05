@@ -9,7 +9,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 public final class FxOpenTickTraderClient {
-    public static final String DEFAULT_DEMO_HOST="https://marginalttdemowebapi.fxopen.net:8443";
+    public static final String DEFAULT_DEMO_HOST="https://marginalttdemowebapi.fxopen.net";
     public static final String DEFAULT_LIVE_HOST="https://marginalttlivewebapi.fxopen.net:8443";
 
     public static final class Response {
