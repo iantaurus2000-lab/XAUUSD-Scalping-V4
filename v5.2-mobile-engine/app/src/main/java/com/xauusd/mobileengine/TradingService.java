@@ -82,6 +82,7 @@ public class TradingService extends Service {
 
     void tick(){
         if(!store.rawPrefs().getBoolean("auto",false)||busy)return;
+        if(!"exness".equalsIgnoreCase(store.get("active_connector","")))return;
         busy=true;
         new Thread(()->{
             try{
