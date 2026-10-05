@@ -77,8 +77,7 @@ public class TradingService extends Service {
 
     boolean useFxOpen(){
         String active=store.get("active_connector","");
-        if ("exness".equalsIgnoreCase(active)) return false;
-        return fxOpen!=null && fxOpen.configured();
+        return "fxopen".equalsIgnoreCase(active) && fxOpen!=null && fxOpen.configured();
     }
 
     void tick(){
