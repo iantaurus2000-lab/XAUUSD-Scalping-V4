@@ -170,7 +170,18 @@ public final class Market {
         // Chart/strategy market source is Biquote REAL. FXOpen remains available
         // for execution/demo account functions and is deliberately not allowed to
         // replace the public market chart feed.
-        Tick t = tick();
+        // Read the live Biquote tick, but do not discard real OHLC if the
+        // single-tick endpoint is temporarily unavailable.
+        Tick t = null;
+        boolean tickOk = true;
+        try {
+            t = readBiquoteTick();
+            source = "BIQUOTE REAL";
+            error = "";
+        } catch (Exception ex) {
+            tickOk = false;
+            error = compactError(ex);
+        }
         boolean ohlcOk = true;
 
         try {
@@ -206,17 +217,30 @@ public final class Market {
             }
         }
 
-        // Never leave the chart empty. Build a stable local history when needed.
-        if (m1Cache.size() < 60 || m5Cache.size() < 30 || m15Cache.size() < 30) {
-            buildSyntheticHistory(Math.max(t.mid, 1.0), now);
+        // If the tick endpoint failed but real Biquote OHLC arrived, keep the
+        // real candles and use the latest real close as the live price anchor.
+        if (t == null && !m1Cache.isEmpty()) {
+            StrategyEngine.Candle last = m1Cache.get(m1Cache.size() - 1);
+            double p = last.close;
+            double sp = 0.18;
+            t = new Tick(p, p - sp / 2.0, p + sp / 2.0, sp, 0.0);
+            source = "BIQUOTE REAL OHLC";
+            error = tickOk ? "" : error;
         }
 
-        if ("BIQUOTE REAL".equals(source)) {
-            if (!ohlcOk) source = "BIQUOTE TICK + SIM OHLC";
-            error = "";
-        } else if (!source.startsWith("FXOPEN")) {
+        // Only use synthetic data when Biquote supplied neither a live tick nor
+        // usable OHLC history.
+        if (t == null) {
+            double base = lastPrice > 0 ? lastPrice : DEFAULT_PRICE;
+            t = syntheticTick(base);
+            buildSyntheticHistory(t.mid, now);
             source = "SIM FALLBACK";
+        } else if (m1Cache.size() < 60 || m5Cache.size() < 30 || m15Cache.size() < 30) {
+            // Keep a real price alive while waiting for enough history.
+            buildSyntheticHistory(t.mid, now);
         }
+
+        if (t == null) t = syntheticTick(DEFAULT_PRICE);
 
         return new Snapshot(
                 t.mid,
