@@ -38,7 +38,7 @@ public class MainActivity extends Activity {
     String lastHistoryKey = "";
     String newsTicker = "NEWS: loading...";
     ObjectAnimator tickerAnimator;
-    String tickerRendered = "";
+    String tickerRendered = "";\n    String lastTickerText = "";\n    long lastBugScanAt = 0;
     StrategyEngine.Decision decision = new StrategyEngine.Decision();
     double mid=0, spread=0;
     String chartTf="M1";
@@ -733,9 +733,9 @@ public class MainActivity extends Activity {
                         for(StrategyEngine.Candle c:hd){hh=Math.max(hh,c.high);ll=Math.min(ll,c.low);}
                         highLow.setText("H "+fmt(hh)+"   L "+fmt(ll));
                     }
-                    setTickerText(newsTicker+" • PRICE "+Market.sourceStatus());
+                    String liveTicker=newsTicker+" • PRICE "+Market.sourceStatus();\n                     if(!liveTicker.equals(lastTickerText)){ lastTickerText=liveTicker; setTickerText(liveTicker); }
                     connection.setText("● PRICE "+Market.sourceStatus()+" • EXEC "+executionLabel()+" • SPREAD "+fmt(spread));
-                    renderChart();renderDecision();renderResultsBar();
+                    renderChart();renderDecision();renderResultsBar();\n                     if(now-lastBugScanAt>=5000){ lastBugScanAt=now; final String bug=BugScanner.scan(fa,fb,fc,Market.sourceStatus(),mm,sp,now); if(!bug.isEmpty()) log.setText("AI BUG SCANNER • "+bug); }
                     if(now-lastAccountUiAt>=15000){lastAccountUiAt=now;refreshAccountUi();}
                 });
             }catch(Exception e){
@@ -1108,7 +1108,7 @@ public class MainActivity extends Activity {
                 }
                 if(!bestTitle.isEmpty())news+=" • HIGH USD: "+bestTitle+" in "+Math.max(0,(best-now)/60000)+"m";
             }catch(Exception ignored){news+=" • Calendar feed unavailable";}
-            final String out=news;runOnUiThread(()->{newsTicker=out;setTickerText(newsTicker+" • PRICE "+Market.sourceStatus());});
+            final String out=news;runOnUiThread(()->{newsTicker=out;String liveTicker=newsTicker+" • PRICE "+Market.sourceStatus();\n                if(!liveTicker.equals(lastTickerText)){lastTickerText=liveTicker;setTickerText(liveTicker);}});
         }).start();
     }
 
