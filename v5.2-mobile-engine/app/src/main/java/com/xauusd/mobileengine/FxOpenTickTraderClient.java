@@ -9,8 +9,8 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 public final class FxOpenTickTraderClient {
-    public static final String DEFAULT_DEMO_HOST="https://marginalttdemowebapi.fxopen.net";
-    public static final String DEFAULT_LIVE_HOST="https://marginalttlivewebapi.fxopen.net:8443";
+    public static final String DEFAULT_DEMO_HOST="https://ttdemomarginal.fxopen.net";
+    public static final String DEFAULT_LIVE_HOST="https://ttlivewebapi.fxopen.net";
 
     public static final class Response {
         public final int code;
@@ -27,8 +27,8 @@ public final class FxOpenTickTraderClient {
     String secret(){return store.get("fx_secret","").trim();}
     String host(){
         String h=store.get("fx_host",DEFAULT_DEMO_HOST).trim();
-        // Migrate the previous incorrect/default 443 endpoint to FXOpen TickTrader demo Web API port 8443.
-        if(h.isEmpty() || h.equals("https://marginalttdemowebapi.fxopen.net:443") || h.equals("marginalttdemowebapi.fxopen.net:443")) h=DEFAULT_DEMO_HOST;
+        // Use the exact FXOpen Marginal Demo Web API host supplied by the user.
+        if(h.isEmpty() || h.equals("https://marginalttdemowebapi.fxopen.net") || h.equals("https://marginalttdemowebapi.fxopen.net:443") || h.equals("marginalttdemowebapi.fxopen.net:443")) h=DEFAULT_DEMO_HOST;
         if(!h.startsWith("http://")&&!h.startsWith("https://"))h="https://"+h;
         while(h.endsWith("/"))h=h.substring(0,h.length()-1);
         return h;
@@ -179,7 +179,7 @@ public final class FxOpenTickTraderClient {
         return h;
     }
 
-    public String feedWsUrlLiveFallback(){ return "wss://marginalttlivewebapi.fxopen.net:443/feed"; }
+    public String feedWsUrlLiveFallback(){ return "wss://ttlivewebapi.fxopen.net/feed"; }
 
     public Response wsQuoteHistory(String symbol,String periodicity,String priceType,long timestampMs,int count) throws Exception{
         org.json.JSONArray rows = wsRequestQuoteHistory(symbol,periodicity,priceType,timestampMs,count);
