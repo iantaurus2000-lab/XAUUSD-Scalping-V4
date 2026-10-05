@@ -1115,7 +1115,7 @@ public class MainActivity extends Activity {
     void loadNewsTicker(){
         new Thread(()->{
             String session=marketSession();
-            String news="NEWS: "+session+" • XAUUSD • Network "+(Market.sourceStatus().startsWith("BIQUOTE REAL")?"OK":"OFFLINE");
+            String news="NEWS: "+session+" • XAUUSD • Biquote "+(Market.monitorStatus().startsWith("BIQUOTE REAL")?"OK":"OFFLINE");
             try{
                 String body=Market.publicGet("https://biquote.io/api/calendar/upcoming?countries=US&importance=high&limit=10");
                 JSONArray ar=new JSONArray(body);long now=System.currentTimeMillis();long best=Long.MAX_VALUE;String bestTitle="";
@@ -1130,7 +1130,7 @@ public class MainActivity extends Activity {
                 if(!bestTitle.isEmpty())news+=" • HIGH USD: "+bestTitle+" in "+Math.max(0,(best-now)/60000)+"m";
             }catch(Exception ignored){news+=" • Calendar feed unavailable";}
             final String out=news;runOnUiThread(()->{newsTicker=out;
-                String liveTicker=newsTicker+" • PRICE "+Market.sourceStatus();
+                String liveTicker=newsTicker+" • BIQUOTE "+Market.monitorStatus()+" • ENTRY "+Market.sourceStatus();
                 if(!liveTicker.equals(lastTickerText)){lastTickerText=liveTicker;setTickerText(liveTicker);}});
         }).start();
     }
