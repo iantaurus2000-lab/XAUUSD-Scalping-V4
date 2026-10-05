@@ -71,9 +71,30 @@ public final class StrategyEngine {
             d.sl=Math.max(c.high+atr*.35,d.entry+atr*.80);double risk=Math.max(d.sl-d.entry,atr*.70);d.tp1=d.entry-risk;d.tp2=d.entry-risk*2;
         }
 
-        if(buy>=75&&buy>sell&&biasBuy){d.side="BUY LIMIT";d.reason="M5 BUY + "+d.pattern+" + Liquidity Sweep + Wick Rejection + BOS";}
-        else if(sell>=75&&sell>buy&&biasSell){d.side="SELL LIMIT";d.reason="M5 SELL + "+d.pattern+" + Liquidity Sweep + Wick Rejection + BOS";}
-        else{d.side="WAIT";d.reason="Candidate "+d.candidateSide+" • "+d.candidateScore+"/100 • menunggu konfirmasi final.";}
+        if(buy>=75&&buy>sell&&biasBuy){
+            d.side="BUY LIMIT";
+            // Core rule: entry is placed near the rejected wick tip, not in the candle body.
+            double wickOffset=Math.max(atr*.06,range*.08);
+            d.entry=c.low+Math.min(wickOffset,Math.max(range*.18,atr*.12));
+            d.sl=c.low-atr*.35;
+            double risk=Math.max(d.entry-d.sl,atr*.70);
+            d.tp1=d.entry+risk; d.tp2=d.entry+risk*2;
+            d.reason="M5 BUY + Liquidity Sweep + Wick Rejection + BOS";
+        }else if(sell>=75&&sell>buy&&biasSell){
+            d.side="SELL LIMIT";
+            // Core rule: entry is placed near the rejected wick tip, not in the candle body.
+            double wickOffset=Math.max(atr*.06,range*.08);
+            d.entry=c.high-Math.min(wickOffset,Math.max(range*.18,atr*.12));
+            d.sl=c.high+atr*.35;
+            double risk=Math.max(d.sl-d.entry,atr*.70);
+            d.tp1=d.entry-risk; d.tp2=d.entry-risk*2;
+            d.reason="M5 SELL + Liquidity Sweep + Wick Rejection + BOS";
+        }else{
+            d.side="WAIT";
+            // No entry/SL/TP is exposed until a real ENTRY READY decision exists.
+            d.entry=0; d.sl=0; d.tp1=0; d.tp2=0;
+            d.reason="Menunggu konfirmasi: M5 Bias + Liquidity Sweep + Wick Rejection + BOS.";
+        }
         return d;
     }
 
