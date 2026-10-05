@@ -303,6 +303,11 @@ public class MainActivity extends Activity {
     }
 
     void startAuto(){
+        if(!"exness".equalsIgnoreCase(store.get("active_connector",""))){
+            toast("AUTO execution dikunci ke EXNESS MT5. FXOpen hanya untuk feed/test koneksi.");
+            showExnessDialog();
+            return;
+        }
         if(!hasCredentials()){toast("Sambungkan akun terlebih dahulu."); if ("exness".equalsIgnoreCase(store.get("active_connector",""))) showExnessDialog(); else showFxOpenDialog(); return;}
         log.setText(useFxOpen()?"AUTO PREFLIGHT • testing FXOpen TickTrader...":"AUTO PREFLIGHT • testing Exness API...");
         new Thread(()->{
