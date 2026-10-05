@@ -68,17 +68,42 @@ public final class BiquoteChartFeed {
     public synchronized Snapshot read() throws Exception{
         long now=System.currentTimeMillis();
 
-        // Load/refresh real Biquote OHLC first so price can still be shown
-        // when the separate tick endpoint is temporarily slow.
+        // IMPORTANT: read the proven Biquote tick endpoint FIRST so price is
+        // available even when an OHLC request is temporarily slow/unreachable.
+        Exception tickError=null;
+        try {
+            lastTick=readTick();
+            lastError="";
+        } catch(Exception ex) {
+            tickError=ex;
+        }
+
+        // Refresh the real Biquote M1 history. The first working build used
+        // 120 bars and then updated the last real bar with the live price.
         if(m1.size()<60 || now-lastM1>=5000) {
             try {
-                List<StrategyEngine.Candle> x=ohlc("1m",180);
+                List<StrategyEngine.Candle> x=ohlc("1m",120);
                 if(x.size()>=20){replace(m1,x);lastM1=now;}
             } catch(Exception ignored) {}
         }
+
+        // If tick failed, recover price from the latest REAL Biquote M1 close.
+        if(lastTick==null || lastTick.mid<=0) {
+            StrategyEngine.Candle last=m1.isEmpty()?null:m1.get(m1.size()-1);
+            if(last!=null && last.close>0) {
+                lastTick=new Tick(last.close,last.close,last.close,0,0,last.t);
+                lastError=tickError==null?"":"tick: "+compact(tickError);
+            } else if(tickError!=null) {
+                throw tickError;
+            } else {
+                throw new IOException("BIQUOTE price unavailable");
+            }
+        }
+
+        // M5/M15 are secondary to the immediate M1 price/chart.
         if(m5.size()<30 || now-lastM5>=15000) {
             try {
-                List<StrategyEngine.Candle> x=ohlc("5m",120);
+                List<StrategyEngine.Candle> x=ohlc("5m",80);
                 if(x.size()>=20){replace(m5,x);lastM5=now;}
             } catch(Exception ignored) {}
         }
@@ -89,39 +114,27 @@ public final class BiquoteChartFeed {
             } catch(Exception ignored) {}
         }
 
-        Exception tickError=null;
-        try {
-            lastTick=readTick();
-            lastError="";
-        } catch(Exception ex) {
-            tickError=ex;
+        // Never blank the Market/Chart just because history is temporarily
+        // unavailable. With a working Biquote tick, show one REAL forming
+        // candle until OHLC history arrives. No synthetic history is created.
+        ArrayList<StrategyEngine.Candle> a;
+        if(m1.isEmpty()) {
+            long t=lastTick.timeMs>0?lastTick.timeMs:System.currentTimeMillis();
+            a=new ArrayList<>();
+            a.add(new StrategyEngine.Candle(t,lastTick.mid,lastTick.mid,lastTick.mid,lastTick.mid));
+        } else {
+            a=cloneWithLive(m1,lastTick.mid);
         }
-
-        // If tick endpoint fails, use the latest REAL Biquote M1 close as the
-        // temporary market price. This is still Biquote data, not synthetic data.
-        if(lastTick==null || lastTick.mid<=0){
-            StrategyEngine.Candle last=m1.isEmpty()?null:m1.get(m1.size()-1);
-            if(last!=null && last.close>0){
-                lastTick=new Tick(last.close,last.close,last.close,0,0,last.t);
-                lastError=tickError==null?"":"tick: "+compact(tickError);
-            } else {
-                if(tickError!=null)throw tickError;
-                throw new IOException("BIQUOTE price unavailable");
-            }
-        }
-
-        // Use the real Biquote bars and only move the LAST real bar to the live
-        // price. Do not invent a new candle from device clock buckets.
-        ArrayList<StrategyEngine.Candle> a=cloneWithLive(m1,lastTick.mid);
         ArrayList<StrategyEngine.Candle> b=cloneWithLive(m5,lastTick.mid);
         ArrayList<StrategyEngine.Candle> c=cloneWithLive(m15,lastTick.mid);
 
-        if(a.isEmpty())throw new IOException("BIQUOTE M1 history empty");
-
         String status;
-        if(lastTick.spread>0 && lastError.isEmpty()) status="BIQUOTE REAL • CHART";
-        else if(!lastError.isEmpty()) status="BIQUOTE REAL • CHART • TICK FALLBACK";
-        else status="BIQUOTE REAL • CHART";
+        if(!m1.isEmpty() && lastError.isEmpty() && lastTick.spread>0)
+            status="BIQUOTE REAL • CHART";
+        else if(!m1.isEmpty())
+            status="BIQUOTE REAL • CHART • TICK FALLBACK";
+        else
+            status="BIQUOTE REAL • TICK ONLY";
 
         return new Snapshot(lastTick,a,b,c,status);
     }
