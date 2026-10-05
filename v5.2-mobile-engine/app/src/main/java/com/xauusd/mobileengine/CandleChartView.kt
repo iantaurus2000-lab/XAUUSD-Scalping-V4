@@ -96,7 +96,7 @@ class CandleChartView @JvmOverloads constructor(
         fun y(p:Double):Float { val t=((p-minP)/(maxP-minP)).coerceIn(.02,.98);return (bottom-t*h).toFloat() }
 
         paint.typeface=Typeface.DEFAULT_BOLD;paint.textSize=12f;paint.color=Color.WHITE
-        canvas.drawText("XAU/USD  "+timeframe,left,16f,paint)
+        canvas.drawText("XAU/USD  "+timeframe+" • LIVE 1s",left,16f,paint)
         paint.typeface=Typeface.DEFAULT;paint.textSize=10f;paint.color=Color.rgb(129,199,132)
         canvas.drawText(String.format(Locale.US,"H %.2f",hi),left+110f,16f,paint)
         paint.color=Color.rgb(239,83,80);canvas.drawText(String.format(Locale.US,"L %.2f",lo),left+190f,16f,paint)
