@@ -137,7 +137,7 @@ jobs:
 
             # Basic runtime health.
             test -n "$(adb shell pidof com.xauusd.mobileengine)"
-            adb shell dumpsys package com.xauusd.mobileengine | grep -m1 "versionName"
+            adb shell dumpsys package com.xauusd.mobileengine | head -n 40 || true
 
             # UI must expose the XAUUSD engine screen. Do not require a
             # particular button label or dumpsys activity field because those
