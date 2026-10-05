@@ -25,7 +25,7 @@ public class MainActivity extends Activity {
     static final int REQ_NOTIF=9001;
 
     LinearLayout root, content;
-    TextView price, priceChange, connection, signal, signalDetail, confidence, m5Bias, m1State, ticker, metrics, account, botState, log, spreadLine, highLow, resultsBar, boxEntry, boxSl, boxTp1, boxTp2, candleMomentum;
+    TextView price, priceChange, connection, signal, signalDetail, confidence, m5Bias, m1State, ticker, metrics, account, botState, log, spreadLine, highLow, resultsBar, boxEntry, boxSl, boxTp1, boxTp2;
     CandleChartView chart;
     SecurityStore store;
     ExnessClient exness;
@@ -107,7 +107,7 @@ public class MainActivity extends Activity {
         connection=findViewById(R.id.connection); ticker=findViewById(R.id.ticker); lamp=findViewById(R.id.lamp);
         signal=findViewById(R.id.signalState); signalDetail=findViewById(R.id.signalDetail);
         confidence=findViewById(R.id.confidence); m5Bias=findViewById(R.id.m5Bias); m1State=findViewById(R.id.m1State);
-        spreadLine=findViewById(R.id.spreadLine); highLow=findViewById(R.id.highLow); resultsBar=findViewById(R.id.resultsBar); candleMomentum=findViewById(R.id.candleMomentum);
+        spreadLine=findViewById(R.id.spreadLine); highLow=findViewById(R.id.highLow); resultsBar=findViewById(R.id.resultsBar);
         boxEntry=findViewById(R.id.boxEntry); boxSl=findViewById(R.id.boxSl); boxTp1=findViewById(R.id.boxTp1); boxTp2=findViewById(R.id.boxTp2);
         FrameLayout chartHost=findViewById(R.id.chartHost);
         chart=new CandleChartView(this);
@@ -708,15 +708,17 @@ public class MainActivity extends Activity {
         marketBusy=true;
         new Thread(()->{
             try{
-                Market.Snapshot s=Market.snapshot(lastPrice);
+                Market.Snapshot s=Market.snapshot(lastPrice, fxOpen);
                 final ArrayList<StrategyEngine.Candle> fa=s.m1, fb=s.m5, fc=s.m15;
                 final double mm=s.mid, sp=s.spread;
+                 final double monitorMid=s.monitorMid, monitorBid=s.monitorBid, monitorAsk=s.monitorAsk, monitorSpread=s.monitorSpread;
+                 final String monitorStatus=s.monitorStatus;
                 StrategyEngine.Decision dd=(fa.size()>=60&&fb.size()>=30)
                         ?StrategyEngine.analyze(fa,fb,mm):new StrategyEngine.Decision();
                 if(!fa.isEmpty()){
                     StrategyEngine.Candle z=fa.get(fa.size()-1);
                     Log.d("XAUUSD_REAL","M1="+fa.size()+" M5="+fb.size()+" M15="+fc.size()
-                            +" score="+dd.score+" candidate="+dd.candidateScore+" entry="+dd.entry
+                            +" source=FXOPEN monitor="+monitorStatus+" score="+dd.score+" candidate="+dd.candidateScore+" entry="+dd.entry
                             +" O="+z.open+" H="+z.high+" L="+z.low+" C="+z.close);
                 }
                 runOnUiThread(()->{
@@ -728,16 +730,16 @@ public class MainActivity extends Activity {
                         priceChange.setText((mid>=prev?"+":"")+fmt(mid-prev));
                         priceChange.setTextColor(mid>=prev?Color.rgb(0,230,118):Color.rgb(255,82,82));
                     }
-                    spreadLine.setText("Spread "+fmt(spread));
+                    spreadLine.setText(monitorMid>0 ? "BIQ B "+fmt(monitorBid)+"  A "+fmt(monitorAsk)+"  S "+fmt(monitorSpread) : "BIQ OFFLINE  •  FX S "+fmt(sp));
                     ArrayList<StrategyEngine.Candle> hd="M5".equals(chartTf)?fb:"M15".equals(chartTf)?fc:fa;
                     if(!hd.isEmpty()){
                         double hh=-Double.MAX_VALUE,ll=Double.MAX_VALUE;
                         for(StrategyEngine.Candle c:hd){hh=Math.max(hh,c.high);ll=Math.min(ll,c.low);}
                         highLow.setText("H "+fmt(hh)+"   L "+fmt(ll));
                     }
-                    String liveTicker=newsTicker+" • PRICE "+Market.sourceStatus();
+                    String liveTicker=newsTicker+" • BIQUOTE "+monitorStatus+" • ENTRY FXOPEN";
                      if(!liveTicker.equals(lastTickerText)){ lastTickerText=liveTicker; setTickerText(liveTicker); }
-                    connection.setText("● PRICE "+Market.sourceStatus()+" • EXEC "+executionLabel()+" • SPREAD "+fmt(spread));
+                    connection.setText("● MARKET BIQUOTE "+monitorStatus+" • ENTRY "+Market.sourceStatus()+" • FX SPREAD "+fmt(sp));
                     renderChart();renderDecision();renderResultsBar();
                      if(now-lastBugScanAt>=5000){ lastBugScanAt=now; final String bug=BugScanner.scan(fa,fb,fc,Market.sourceStatus(),mm,sp,now); if(!bug.isEmpty()) log.setText("AI BUG SCANNER • "+bug); }
                     if(now-lastAccountUiAt>=15000){lastAccountUiAt=now;refreshAccountUi();}
@@ -768,44 +770,57 @@ public class MainActivity extends Activity {
         int displayMin=store.rawPrefs().getInt("display_min_score",60);
         boolean finalReady=decision.side.startsWith("BUY")||decision.side.startsWith("SELL");
         boolean watch=!finalReady&&decision.entryWatch&&decision.candidateScore>=displayMin;
+
         if(finalReady){lastReady=decision;lastReadyAt=System.currentTimeMillis();}
-        StrategyEngine.Decision shown=(watch||finalReady)?decision:
-                ((lastReady.side.startsWith("BUY")||lastReady.side.startsWith("SELL"))
-                &&System.currentTimeMillis()-lastReadyAt<900000?lastReady:decision);
 
-        if(finalReady)signal.setText(decision.side+" • "+(decision.score>=85?"ENTRY READY":"LIMIT ZONE"));
-        else if(watch)signal.setText("ENTRY WATCH • "+decision.candidateSide+" • "+decision.candidateScore+"/100");
-        else if(shown.side.startsWith("BUY")||shown.side.startsWith("SELL"))signal.setText("LAST READY • "+shown.side+" • "+shown.score+"/100");
-        else signal.setText("WAIT • SCORE "+decision.candidateScore+"/100");
+        if(finalReady){
+            signal.setText(decision.side+" • ENTRY READY");
+            signal.setTextColor(decision.side.startsWith("BUY")?Color.rgb(0,230,118):Color.rgb(255,82,82));
+            if(lamp!=null){lamp.setText("●");lamp.setTextColor(decision.side.startsWith("BUY")?Color.rgb(0,230,118):Color.rgb(255,82,82));}
+            int stars=Math.max(1,Math.min(5,decision.score/20));
+            confidence.setText("Confidence "+stars+"/5");
+        }else{
+            signal.setText(watch?"ENTRY WATCH • "+decision.candidateSide:"WAIT");
+            signal.setTextColor(Color.WHITE);
+            if(lamp!=null){lamp.setText("●");lamp.setTextColor(Color.rgb(120,144,156));}
+            confidence.setText("Confidence --");
+        }
 
-        String cs=shown.candidateSide==null?"WAIT":shown.candidateSide;
-        boolean buyShown=shown.side.startsWith("BUY")||cs.startsWith("BUY");
-        boolean sellShown=shown.side.startsWith("SELL")||cs.startsWith("SELL");
-        signal.setTextColor(buyShown?Color.rgb(0,230,118):sellShown?Color.rgb(255,82,82):Color.WHITE);
-        if(lamp!=null){lamp.setText("●");lamp.setTextColor(buyShown?Color.rgb(0,230,118):sellShown?Color.rgb(255,82,82):Color.rgb(120,144,156));}
+        String cs=decision.candidateSide==null?"WAIT":decision.candidateSide;
+        signalDetail.setText((decision.reason==null||decision.reason.isEmpty()
+                ?"M5 Bias → Liquidity Sweep → Wick Rejection → BOS"
+                :decision.reason));
+        signalDetail.setSelected(true);
+        signalDetail.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
+        signalDetail.setSingleLine(true);
 
-        signalDetail.setText((shown.reason==null||shown.reason.isEmpty()?"M5 Bias → Liquidity Sweep → Wick Rejection → BOS":shown.reason)
-                +" • Pattern: "+(shown.pattern==null?"--":shown.pattern));
-        signalDetail.setSelected(true);signalDetail.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);signalDetail.setSingleLine(true);
-
-        int stars=Math.max(0,Math.min(5,shown.candidateScore/20));
-        confidence.setText("★★★★★".substring(0,stars)+"☆☆☆☆☆".substring(0,5-stars)+"  "+shown.candidateScore+"/100");
         m5Bias.setText((cs.startsWith("BUY")?"M5 BUY":cs.startsWith("SELL")?"M5 SELL":"M5 WAIT")
-                +(shown.bias?" • BIAS":"")+(shown.earlyReady?" • EARLY":""));
-        m1State.setText(finalReady?(shown.side.startsWith("BUY")?"M1 BUY READY":"M1 SELL READY"):(watch?"M1 ENTRY WATCH":"M1 WATCH"));
+                +(decision.bias?" • BIAS":"")+(decision.earlyReady?" • EARLY":""));
+        m1State.setText(finalReady
+                ?(decision.side.startsWith("BUY")?"M1 BUY READY":"M1 SELL READY")
+                :(watch?"M1 ENTRY WATCH":"M1 WATCH"));
 
-        if(candleMomentum!=null)candleMomentum.setText("CANDLE MOMENTUM • "
-                +(cs.startsWith("BUY")?"BUY":cs.startsWith("SELL")?"SELL":"WAIT")
-                +" • "+(shown.pattern==null?"--":shown.pattern)+(shown.earlyReady?" • FORMING":""));
+        if(finalReady){
+            boxEntry.setText("ENTRY   ⧉\n"+fmt(decision.entry));
+            boxSl.setText("SL   ⧉\n"+fmt(decision.sl));
+            boxTp1.setText("TP1   ⧉\n"+fmt(decision.tp1));
+            boxTp2.setText("TP2   ⧉\n"+fmt(decision.tp2));
+        }else{
+            boxEntry.setText("ENTRY   ⧉\n");
+            boxSl.setText("SL   ⧉\n");
+            boxTp1.setText("TP1   ⧉\n");
+            boxTp2.setText("TP2   ⧉\n");
+        }
 
-        boxEntry.setText("ENTRY   ⧉\n"+fmt(shown.entry));
-        boxSl.setText("SL   ⧉\n"+fmt(shown.sl));
-        boxTp1.setText("TP1   ⧉\n"+fmt(shown.tp1));
-        boxTp2.setText("TP2   ⧉\n"+fmt(shown.tp2));
-
-        if(botState!=null){boolean on=store.rawPrefs().getBoolean("auto",false);botState.setText(on?"AUTO: ON • "+executionLabel():"AUTO: OFF • MANUAL");}
+        if(botState!=null){
+            boolean on=store.rawPrefs().getBoolean("auto",false);
+            botState.setText(on?"AUTO: ON • "+executionLabel():"AUTO: OFF • MANUAL");
+        }
         if(account!=null&&!hasCredentials())account.setText("Account: not connected");
-        if(finalReady){String hk=decision.side+"-"+decision.candleTime;if(!hk.equals(lastHistoryKey)){lastHistoryKey=hk;saveSignalHistory(decision);}}
+        if(finalReady){
+            String hk=decision.side+"-"+decision.candleTime;
+            if(!hk.equals(lastHistoryKey)){lastHistoryKey=hk;saveSignalHistory(decision);}
+        }
     }
 
     void refreshAccountUi(){
