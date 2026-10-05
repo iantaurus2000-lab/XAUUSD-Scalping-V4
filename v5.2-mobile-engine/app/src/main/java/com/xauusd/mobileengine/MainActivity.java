@@ -1080,27 +1080,15 @@ public class MainActivity extends Activity {
 
     void setTickerText(String text){
         if(ticker==null||text==null)return;
-        if(text.equals(tickerRendered)&&tickerAnimator!=null&&tickerAnimator.isRunning())return;
-        tickerRendered=text;
         if(tickerAnimator!=null){tickerAnimator.cancel();tickerAnimator=null;}
-        ticker.setText(text);
-        ticker.setSelected(false);
-        ticker.setEllipsize(null);
+        ticker.setTranslationX(0f);
+        ticker.setText(text+"     •     "+text);
         ticker.setSingleLine(true);
-        ticker.post(()->{
-            if(ticker.getWidth()<=0)return;
-            float textWidth=ticker.getPaint().measureText(text);
-            float start=ticker.getWidth();
-            float end=-(textWidth+24f);
-            ticker.setTranslationX(start);
-            long duration=(long)Math.max(7000,Math.min(30000,((start+textWidth)/55f)*1000f));
-            tickerAnimator=ObjectAnimator.ofFloat(ticker,"translationX",start,end);
-            tickerAnimator.setDuration(duration);
-            tickerAnimator.setInterpolator(new LinearInterpolator());
-            tickerAnimator.setRepeatCount(ValueAnimator.INFINITE);
-            tickerAnimator.setRepeatMode(ValueAnimator.RESTART);
-            tickerAnimator.start();
-        });
+        ticker.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
+        ticker.setMarqueeRepeatLimit(-1);
+        ticker.setHorizontallyScrolling(true);
+        ticker.setSelected(true);
+        ticker.requestFocus();
     }
 
     void loadNewsTicker(){
