@@ -368,6 +368,26 @@ public final class Market {
         return out;
     }
 
+    private static double readNestedPrice(JSONObject root,String key){
+        JSONObject p=root.optJSONObject(key);
+        return p==null?Double.NaN:num(p,"Price","price");
+    }
+
+    private static boolean valid(double o,double h,double l,double c){
+        return !Double.isNaN(o)&&!Double.isNaN(h)&&!Double.isNaN(l)&&!Double.isNaN(c)
+                &&o>0&&h>0&&l>0&&c>0;
+    }
+
+    private static double num(JSONObject o,String... keys){
+        if(o==null)return Double.NaN;
+        for(String k:keys){
+            Object v=o.opt(k);
+            if(v instanceof Number)return ((Number)v).doubleValue();
+            if(v!=null)try{return Double.parseDouble(String.valueOf(v));}catch(Exception ignored){}
+        }
+        return Double.NaN;
+    }
+
     private static void replace(ArrayList<StrategyEngine.Candle> target, List<StrategyEngine.Candle> source) {
         target.clear();
         target.addAll(source);
