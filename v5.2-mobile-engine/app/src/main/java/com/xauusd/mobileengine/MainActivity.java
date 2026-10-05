@@ -724,11 +724,12 @@ public class MainActivity extends Activity {
                 runOnUiThread(()->{
                     long now=System.currentTimeMillis();
                     mid=mm;spread=sp;m1=fa;m5=fb;m15=fc;decision=dd;lastLoad=now;
-                    price.setText(fmt(mid));
-                    double prev=lastPrice;lastPrice=mid;
+                    double displayMid=monitorMid>0?monitorMid:mm;
+                    price.setText(fmt(displayMid));
+                    double prev=lastPrice;lastPrice=displayMid;
                     if(prev>0){
-                        priceChange.setText((mid>=prev?"+":"")+fmt(mid-prev));
-                        priceChange.setTextColor(mid>=prev?Color.rgb(0,230,118):Color.rgb(255,82,82));
+                        priceChange.setText((displayMid>=prev?"+":"")+fmt(displayMid-prev));
+                        priceChange.setTextColor(displayMid>=prev?Color.rgb(0,230,118):Color.rgb(255,82,82));
                     }
                     spreadLine.setText(monitorMid>0 ? "BIQ B "+fmt(monitorBid)+"  A "+fmt(monitorAsk)+"  S "+fmt(monitorSpread) : "BIQ OFFLINE  •  FX S "+fmt(sp));
                     ArrayList<StrategyEngine.Candle> hd="M5".equals(chartTf)?fb:"M15".equals(chartTf)?fc:fa;
