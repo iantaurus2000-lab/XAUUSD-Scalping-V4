@@ -11,9 +11,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
+import okhttp3.Dns;
+import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import okhttp3.dnsoverhttps.DnsOverHttps;
+
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 
 /**
  * Single market gateway.
@@ -30,12 +36,63 @@ public final class Market {
     private static final String BIQUOTE = "https://biquote.io";
     private static final double DEFAULT_PRICE = 4140.00;
 
-    private static final OkHttpClient CLIENT = new OkHttpClient.Builder()
-            .connectTimeout(5, TimeUnit.SECONDS)
-            .readTimeout(7, TimeUnit.SECONDS)
-            .writeTimeout(5, TimeUnit.SECONDS)
-            .retryOnConnectionFailure(true)
-            .build();
+    private static final OkHttpClient CLIENT = buildClient();
+
+    /**
+     * Some Android/emulator networks in testing were returning UnknownHostException
+     * for biquote.io while HTTPS traffic itself was available. Use normal Android DNS
+     * first, then DNS-over-HTTPS, without hard-coding Biquote's changing IP address.
+     */
+    private static OkHttpClient buildClient() {
+        OkHttpClient bootstrap = new OkHttpClient.Builder()
+                .connectTimeout(4, TimeUnit.SECONDS)
+                .readTimeout(5, TimeUnit.SECONDS)
+                .writeTimeout(4, TimeUnit.SECONDS)
+                .retryOnConnectionFailure(true)
+                .build();
+
+        DnsOverHttps cloudflare = new DnsOverHttps.Builder()
+                .client(bootstrap)
+                .url(HttpUrl.get("https://1.1.1.1/dns-query"))
+                .bootstrapDnsHosts(
+                        InetAddress.getByName("1.1.1.1"),
+                        InetAddress.getByName("1.0.0.1"))
+                .includeIPv6(false)
+                .build();
+
+        DnsOverHttps google = new DnsOverHttps.Builder()
+                .client(bootstrap)
+                .url(HttpUrl.get("https://8.8.8.8/dns-query"))
+                .bootstrapDnsHosts(
+                        InetAddress.getByName("8.8.8.8"),
+                        InetAddress.getByName("8.8.4.4"))
+                .includeIPv6(false)
+                .build();
+
+        Dns fallbackDns = hostname -> {
+            try {
+                return Dns.SYSTEM.lookup(hostname);
+            } catch (UnknownHostException systemFailure) {
+                try {
+                    return cloudflare.lookup(hostname);
+                } catch (Exception ignored) {
+                    try {
+                        return google.lookup(hostname);
+                    } catch (Exception ignored2) {
+                        throw systemFailure;
+                    }
+                }
+            }
+        };
+
+        return bootstrap.newBuilder()
+                .dns(fallbackDns)
+                .connectTimeout(5, TimeUnit.SECONDS)
+                .readTimeout(8, TimeUnit.SECONDS)
+                .writeTimeout(5, TimeUnit.SECONDS)
+                .retryOnConnectionFailure(true)
+                .build();
+    }
 
     private static final ArrayList<StrategyEngine.Candle> m1Cache = new ArrayList<>();
     private static final ArrayList<StrategyEngine.Candle> m5Cache = new ArrayList<>();
