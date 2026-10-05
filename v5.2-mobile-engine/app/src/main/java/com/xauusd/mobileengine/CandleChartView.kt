@@ -105,6 +105,7 @@ class CandleChartView @JvmOverloads constructor(
         paint.textSize=10f
         for(i in 0..6){val gy=top+h*i/6f;paint.color=Color.rgb(28,34,44);paint.strokeWidth=1f;canvas.drawLine(left,gy,right,gy,paint);val pv=maxP-(maxP-minP)*i/6.0;paint.color=Color.rgb(170,180,190);canvas.drawText(String.format(Locale.US,"%.2f",pv),right+4f,gy+3f,paint)}
         val n=visible.size;val step=w/(n+1f);val bw=max(6.0f,step*.72f)
+        paint.style=Paint.Style.FILL
         visible.forEachIndexed{i,c->{val x=left+step*i+step/2;val up=c.close>=c.open;paint.color=if(up)Color.rgb(38,198,120) else Color.rgb(239,83,80);paint.strokeWidth=1.4f;canvas.drawLine(x,y(c.high),x,y(c.low),paint);val a=y(max(c.open,c.close));val b=y(min(c.open,c.close));canvas.drawRect(x-bw/2,a,x+bw/2,max(b,a+6f),paint)}}
 
         if(showEma){drawEma(canvas,visible,9,Color.rgb(255,193,7),left,step,::y);drawEma(canvas,visible,21,Color.rgb(66,165,245),left,step,::y);drawEma(canvas,visible,50,Color.rgb(186,104,200),left,step,::y)}
