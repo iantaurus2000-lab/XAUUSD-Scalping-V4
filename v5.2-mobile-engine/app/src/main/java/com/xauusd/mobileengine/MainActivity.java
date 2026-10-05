@@ -112,7 +112,8 @@ public class MainActivity extends Activity {
         findViewById(R.id.btnStart).setOnClickListener(v->startAuto());
         findViewById(R.id.btnStop).setOnClickListener(v->stopAuto());
         findViewById(R.id.btnMenu).setOnClickListener(v->showProfessionalMenu());
-        findViewById(R.id.btnExness).setOnClickListener(v->showExnessDialog());
+        Button exBtn=findViewById(R.id.btnExness); exBtn.setText("🔗 EXNESS MT5");
+        exBtn.setOnClickListener(v->showExnessDialog());
         findViewById(R.id.btnManual).setOnClickListener(v->showManualOrderDialog());
         findViewById(R.id.btnCancelAuto).setOnClickListener(v->showCancelAutoDialog());
         findViewById(R.id.btnLive).setOnClickListener(v->{chart.resetView();});
@@ -176,7 +177,7 @@ public class MainActivity extends Activity {
         EditText symbol=input("Instrument (MT5)",store.get("symbol","XAUUSD"));symbol.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
         CheckBox direct=new CheckBox(this);direct.setText("Direct Exness API (eligible accounts only)");direct.setTextColor(Color.WHITE);direct.setChecked(true);
         box.addView(id,new LinearLayout.LayoutParams(-1,55));box.addView(key,new LinearLayout.LayoutParams(-1,55));box.addView(secret,new LinearLayout.LayoutParams(-1,55));box.addView(host,new LinearLayout.LayoutParams(-1,55));box.addView(symbol,new LinearLayout.LayoutParams(-1,55));box.addView(direct);
-        AlertDialog d=new AlertDialog.Builder(this).setTitle("Exness API Connection").setView(box)
+        AlertDialog d=new AlertDialog.Builder(this).setTitle("EXNESS MT5 • Public Trader API").setView(box)
             .setNegativeButton("Cancel",null).setPositiveButton("SAVE + TEST",null).create();
         d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
             String hostValue=host.getText().toString().trim();
@@ -334,8 +335,17 @@ public class MainActivity extends Activity {
 
     boolean useFxOpen(){
         String active=store.get("active_connector","");
-        if ("fxopen".equalsIgnoreCase(active)) return fxOpen!=null && fxOpen.configured();
-        return false;
+        return "fxopen".equalsIgnoreCase(active) && fxOpen!=null && fxOpen.configured();
+    }
+
+    String executionLabel(){
+        String active=store.get("active_connector","").trim();
+        if("fxopen".equalsIgnoreCase(active) && fxOpen!=null && fxOpen.configured()) return "FXOPEN DEMO";
+        if("exness".equalsIgnoreCase(active) && exness!=null){
+            ExnessClient.Credentials c=exness.loadCredentials();
+            if(!c.accountId.isEmpty() && !c.apiKey.isEmpty() && !c.secret.isEmpty()) return "EXNESS MT5 API";
+        }
+        return "NOT CONNECTED";
     }
 
     void resumeBackgroundEngine(){
@@ -687,7 +697,7 @@ public class MainActivity extends Activity {
                         highLow.setText("H "+fmt(hh)+"   L "+fmt(ll));
                     }
                     ticker.setText(Market.sourceStatus()+" • XAUUSD • LIVE");
-                    connection.setText("● "+Market.sourceStatus()+" • LIVE • Spread "+fmt(spread));
+                    connection.setText("● PRICE "+Market.sourceStatus()+" • EXEC "+executionLabel()+" • SPREAD "+fmt(spread));
                     renderChart();renderDecision();renderResultsBar();
                     if(now-lastAccountUiAt>=15000){lastAccountUiAt=now;refreshAccountUi();}
                 });
@@ -729,14 +739,14 @@ public class MainActivity extends Activity {
         if(lamp!=null){lamp.setText("●");lamp.setTextColor((shown.side.startsWith("BUY"))?Color.rgb(0,230,118):shown.side.startsWith("SELL")?Color.rgb(255,82,82):Color.rgb(120,144,156));}
         String why=(shown.reason==null||shown.reason.isEmpty()?"M5 Bias → Liquidity Sweep → Wick Rejection → BOS":shown.reason)
                 +" • Pattern: "+(shown.pattern==null?"--":shown.pattern);
-        signalDetail.setText(newsTicker); signalDetail.setSelected(true); signalDetail.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE); signalDetail.setSingleLine(true);
+        signalDetail.setText(why); signalDetail.setSelected(true); signalDetail.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE); signalDetail.setSingleLine(true);
         int stars=Math.max(0,Math.min(5,shown.score/20));
         confidence.setText("★★★★★".substring(0,stars)+"☆☆☆☆☆".substring(0,5-stars)+"  "+shown.score+"/100");
         m5Bias.setText("M5 "+(shown.bias?"BIAS CONFIRMED":"WAIT")+(shown.earlyReady?" • EARLY":""));
         m1State.setText("M1 "+(shown.side.equals("WAIT")?"WATCH":shown.side));
         boxEntry.setText("ENTRY   ⧉\n"+fmt(shown.entry)); boxSl.setText("SL   ⧉\n"+fmt(shown.sl));
         boxTp1.setText("TP1   ⧉\n"+fmt(shown.tp1)); boxTp2.setText("TP2   ⧉\n"+fmt(shown.tp2));
-        if(botState!=null)botState.setText(store.rawPrefs().getBoolean("auto",false)?"AUTO: ON • GUARDED":"AUTO: OFF • MANUAL");
+        if(botState!=null){ boolean on=store.rawPrefs().getBoolean("auto",false); botState.setText(on?"AUTO: ON • "+executionLabel():"AUTO: OFF • MANUAL"); }
         if(account!=null && !hasCredentials())account.setText("Account: not connected");
         if(ready){String hk=decision.side+"-"+decision.candleTime;if(!hk.equals(lastHistoryKey)){lastHistoryKey=hk;saveSignalHistory(decision);}}
         if(chart!=null)renderChart();
@@ -762,7 +772,7 @@ public class MainActivity extends Activity {
                             if(a!=null)login=a.optString("Login",a.optString("login",a.optString("Id","")));
                         }
                     }catch(Exception ignored){}
-                    final String shown=login.isEmpty()?"FXOpen Account: CONNECTED":"FXOpen Account: "+login+" • CONNECTED";
+                    final String shown=login.isEmpty()?"EXEC FXOPEN DEMO • CONNECTED":"EXEC FXOPEN DEMO • "+login+" • CONNECTED";
                     runOnUiThread(()->account.setText(shown));
                     return;
                 }
