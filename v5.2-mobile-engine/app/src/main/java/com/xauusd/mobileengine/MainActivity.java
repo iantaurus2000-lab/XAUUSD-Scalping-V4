@@ -1,6 +1,8 @@
 package com.xauusd.mobileengine;
 
 import android.Manifest;
+import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
 import android.app.*;
 import android.content.*;
 import android.content.pm.PackageManager;
@@ -8,6 +10,7 @@ import android.graphics.*;
 import android.graphics.drawable.GradientDrawable;
 import android.os.*;
 import android.view.*;
+import android.view.animation.LinearInterpolator;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.*;
 
@@ -33,6 +36,8 @@ public class MainActivity extends Activity {
     long lastReadyAt = 0, lastAlertAt = 0, lastAccountUiAt = 0;
     String lastHistoryKey = "";
     String newsTicker = "NEWS: loading...";
+    ObjectAnimator tickerAnimator;
+    String tickerRendered = "";
     StrategyEngine.Decision decision = new StrategyEngine.Decision();
     double mid=0, spread=0;
     String chartTf="M1";
@@ -61,12 +66,13 @@ public class MainActivity extends Activity {
         loadMarket();
         if (store.rawPrefs().getBoolean("auto", false) && hasCredentials()) handler.postDelayed(this::resumeBackgroundEngine, 1200);
         loadNewsTicker();
-        handler.postDelayed(marketPoll,3000);
+        handler.postDelayed(marketPoll,1000);
         handler.postDelayed(newsPoll,60000);
     }
 
     @Override protected void onDestroy() {
         handler.removeCallbacksAndMessages(null);
+        if(tickerAnimator!=null){tickerAnimator.cancel();tickerAnimator=null;}
         super.onDestroy();
     }
 
@@ -720,7 +726,7 @@ public class MainActivity extends Activity {
                         for(StrategyEngine.Candle c:hd){hh=Math.max(hh,c.high);ll=Math.min(ll,c.low);}
                         highLow.setText("H "+fmt(hh)+"   L "+fmt(ll));
                     }
-                    ticker.setText(newsTicker+" • PRICE "+Market.sourceStatus());
+                    setTickerText(newsTicker+" • PRICE "+Market.sourceStatus());
                     connection.setText("● PRICE "+Market.sourceStatus()+" • EXEC "+executionLabel()+" • SPREAD "+fmt(spread));
                     renderChart();renderDecision();renderResultsBar();
                     if(now-lastAccountUiAt>=15000){lastAccountUiAt=now;refreshAccountUi();}
@@ -1065,12 +1071,37 @@ public class MainActivity extends Activity {
 
     Runnable newsPoll=new Runnable(){@Override public void run(){loadNewsTicker();handler.postDelayed(this,60000);}};
 
+    void setTickerText(String text){
+        if(ticker==null||text==null)return;
+        if(text.equals(tickerRendered)&&tickerAnimator!=null&&tickerAnimator.isRunning())return;
+        tickerRendered=text;
+        if(tickerAnimator!=null){tickerAnimator.cancel();tickerAnimator=null;}
+        ticker.setText(text);
+        ticker.setSelected(false);
+        ticker.setEllipsize(null);
+        ticker.setSingleLine(true);
+        ticker.post(()->{
+            if(ticker.getWidth()<=0)return;
+            float textWidth=ticker.getPaint().measureText(text);
+            float start=ticker.getWidth();
+            float end=-(textWidth+24f);
+            ticker.setTranslationX(start);
+            long duration=(long)Math.max(7000,Math.min(30000,((start+textWidth)/55f)*1000f));
+            tickerAnimator=ObjectAnimator.ofFloat(ticker,"translationX",start,end);
+            tickerAnimator.setDuration(duration);
+            tickerAnimator.setInterpolator(new LinearInterpolator());
+            tickerAnimator.setRepeatCount(ValueAnimator.INFINITE);
+            tickerAnimator.setRepeatMode(ValueAnimator.RESTART);
+            tickerAnimator.start();
+        });
+    }
+
     void loadNewsTicker(){
         new Thread(()->{
             String session=marketSession();
             String news="NEWS: "+session+" • XAUUSD • Network "+(isNetworkOk()?"OK":"OFFLINE");
             try{
-                String body=get("https://biquote.io/api/calendar/upcoming?countries=US&importance=high&limit=10");
+                String body=get("https://biquote.io/api/calendar?countries=US&importance=high&limit=10");
                 JSONArray ar=new JSONArray(body);long now=System.currentTimeMillis();long best=Long.MAX_VALUE;String bestTitle="";
                 for(int i=0;i<ar.length();i++){
                     JSONObject o=ar.optJSONObject(i);if(o==null)continue;
@@ -1082,7 +1113,7 @@ public class MainActivity extends Activity {
                 }
                 if(!bestTitle.isEmpty())news+=" • HIGH USD: "+bestTitle+" in "+Math.max(0,(best-now)/60000)+"m";
             }catch(Exception ignored){news+=" • Calendar feed unavailable";}
-            final String out=news;runOnUiThread(()->{newsTicker=out;if(ticker!=null){ticker.setText(newsTicker+" • PRICE "+Market.sourceStatus());ticker.setSelected(true);ticker.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);ticker.setSingleLine(true);}});
+            final String out=news;runOnUiThread(()->{newsTicker=out;setTickerText(newsTicker+" • PRICE "+Market.sourceStatus());});
         }).start();
     }
 
