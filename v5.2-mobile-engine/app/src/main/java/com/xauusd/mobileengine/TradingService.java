@@ -79,10 +79,15 @@ public class TradingService extends Service {
         String active=store.get("active_connector","");
         return "fxopen".equalsIgnoreCase(active) && fxOpen!=null && fxOpen.configured();
     }
+    boolean useMetaApi(){
+        String active=store.get("active_connector","");
+        return "metaapi".equalsIgnoreCase(active) && metaApi!=null && metaApi.configured();
+    }
 
     void tick(){
         if(!store.rawPrefs().getBoolean("auto",false)||busy)return;
-        if(!"exness".equalsIgnoreCase(store.get("active_connector","")))return;
+        String activeConnector=store.get("active_connector","");
+        if(!("exness".equalsIgnoreCase(activeConnector)||useMetaApi()))return;
         busy=true;
         new Thread(()->{
             try{
@@ -99,7 +104,7 @@ public class TradingService extends Service {
                 long cooldown=(long)parseDouble(store.rawPrefs().getString("cooldown","10"),10)*60_000L;
 
                 refreshSnapshot();
-                if(!useFxOpen()) manager.manage(lastSnapshotBody,mid);
+                if(!useFxOpen() && !useMetaApi()) manager.manage(lastSnapshotBody,mid);
                 if(dayStartEquity<0)dayStartEquity=readEquity();
                 if(dayStartEquity>0){
                     double eq=readEquity();
@@ -122,12 +127,10 @@ public class TradingService extends Service {
                 if(fxOpen!=null && fxOpen.configured()){
                     try{ FxOpenTickTraderClient.Response fr=fxOpen.trades(); /* entry-layer health only */ }catch(Exception ignored){}
                 }
-                try{
-                    ExnessClient.Response er=exness.accountInfo();
-                    if(er.ok() && hasActiveExposure(symbol)) return;
-                }catch(Exception ignored){}
-                if(metaApi.configured()){
+                if(useMetaApi()){
                     try{ MetaApiClient.Response mr=metaApi.orders(); if(mr.ok() && mr.body.contains(symbol)) return; }catch(Exception ignored){}
+                }else{
+                    try{ ExnessClient.Response er=exness.accountInfo(); if(er.ok() && hasActiveExposure(symbol)) return; }catch(Exception ignored){}
                 }
 
                 String lot=store.rawPrefs().getString("lot","0.01");
@@ -140,19 +143,24 @@ public class TradingService extends Service {
                 }catch(Exception ignored){}
 
                 String side=d.side.startsWith("BUY")?"buy":"sell";
-                // IMPORTANT: never place the same signal as an FXOpen trade.
-                // FXOpen is the authenticated entry layer; Exness is the final
-                // execution destination, so the order is sent once to Exness.
-                ExnessClient.Response r=exness.placeLimit(symbol,side,lot,fmt(d.entry,digits),fmt(d.sl,digits),fmt(d.tp2,digits),"XAUUSD-V5.2-AUTO");
-                if(r.ok()){
-                    lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;
-                    String op=exness.operationId(r);
-                    notifyUser("FXOPEN ENTRY → EXNESS MT5 • ORDER ACK "+d.side,d.summary()+"\nOperation: "+(op.isEmpty()?"pending":op));
-                    waitForOperation(op);
-                    if(telegram.enabled())try{
-                        telegram.send("🟢 XAUUSD SCALPING\n"+d.side+"\n"+d.summary()+"\nFXOPEN ENTRY → EXNESS MT5\nTF: M1 | Bias: M5\nSetup: Liquidity Sweep + Wick Rejection + BOS\nConfidence: "+d.score+"/100");
-                    }catch(Exception ignored){}
-                }else notifyUser("ORDER REJECT "+r.code,trim(r.body));
+                if(useMetaApi()){
+                    double vol=Double.parseDouble(lot);
+                    MetaApiClient.Response mr=metaApi.placeLimit(symbol,side,vol,d.entry,d.sl,d.tp2,"XAUUSD-V5.2-AUTO");
+                    if(mr.ok()){
+                        lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;
+                        notifyUser("MT5 CLOUD • ORDER ACK "+d.side,d.summary()+"\\nMetaApi order: "+trim(mr.body));
+                        if(telegram.enabled())try{ telegram.send("🟢 XAUUSD SCALPING\\n"+d.side+"\\n"+d.summary()+"\\nMT5 CLOUD (MetaApi) → EXNESS MT5\\nTF: M1 | Bias: M5\\nSetup: Liquidity Sweep + Wick Rejection + BOS\\nConfidence: "+d.score+"/100"); }catch(Exception ignored){}
+                    }else notifyUser("MT5 ORDER REJECT "+mr.code,trim(mr.body));
+                }else{
+                    ExnessClient.Response r=exness.placeLimit(symbol,side,lot,fmt(d.entry,digits),fmt(d.sl,digits),fmt(d.tp2,digits),"XAUUSD-V5.2-AUTO");
+                    if(r.ok()){
+                        lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;
+                        String op=exness.operationId(r);
+                        notifyUser("EXNESS MT5 • ORDER ACK "+d.side,d.summary()+"\\nOperation: "+(op.isEmpty()?"pending":op));
+                        waitForOperation(op);
+                        if(telegram.enabled())try{ telegram.send("🟢 XAUUSD SCALPING\\n"+d.side+"\\n"+d.summary()+"\\nEXNESS MT5 API\\nTF: M1 | Bias: M5\\nSetup: Liquidity Sweep + Wick Rejection + BOS\\nConfidence: "+d.score+"/100"); }catch(Exception ignored){}
+                    }else notifyUser("ORDER REJECT "+r.code,trim(r.body));
+                }
             }catch(Exception e){
                 notifyUser("AUTO ENGINE ERROR",e.getMessage());
             }finally{busy=false;}
@@ -222,6 +230,11 @@ public class TradingService extends Service {
         try{
             if(useFxOpen()){
                 FxOpenTickTraderClient.Response r=fxOpen.accountInfo();
+                if(r.ok()){ lastSnapshotBody=r.body; lastSnapshotAt=System.currentTimeMillis(); }
+                return;
+            }
+            if(useMetaApi()){
+                MetaApiClient.Response r=metaApi.accountInfo();
                 if(r.ok()){ lastSnapshotBody=r.body; lastSnapshotAt=System.currentTimeMillis(); }
                 return;
             }
