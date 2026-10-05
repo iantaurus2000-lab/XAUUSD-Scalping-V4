@@ -161,7 +161,19 @@ class CandleChartView @JvmOverloads constructor(
         paint.color=Color.GRAY;paint.textSize=10f;canvas.drawText("← drag →   ↑↓ move   pinch/zoom   tap RIGHT = LIVE",left,bottom+32f,paint)
     }
 
-    private fun drawEma(c:Canvas,a:List<StrategyEngine.Candle>,period:Int,color:Int,left:Float,step:Float,y:(Double)->Float){if(a.size<period)return;val vals=ArrayList(a);var prev:PointF?=null;for(i in a.indices){val v=StrategyEngine.ema(vals,period,i);val pt=PointF(left+step*i+step/2,y(v));if(prev!=null){paint.color=color;paint.strokeWidth=1.7f;c.drawLine(prev!!.x,prev!!.y,pt.x,pt.y,paint)};prev=pt}}
+    private fun drawEma(c:Canvas,a:List<StrategyEngine.Candle>,period:Int,color:Int,left:Float,step:Float,y:(Double)->Float){
+        if(a.size<period)return
+        val alpha=2.0/(period+1.0)
+        var ema=0.0
+        var prev:PointF?=null
+        for(i in a.indices){
+            val close=a[i].close
+            ema=if(i==0) close else (close-ema)*alpha+ema
+            val pt=PointF(left+step*i+step/2,y(ema))
+            if(prev!=null){paint.color=color;paint.strokeWidth=1.7f;c.drawLine(prev!!.x,prev!!.y,pt.x,pt.y,paint)}
+            prev=pt
+        }
+    }
     private fun level(c:Canvas,v:Double,y:(Double)->Float,label:String,color:Int,left:Float,right:Float){val py=y(v);if(py<28||py>height-22)return;paint.color=color;paint.strokeWidth=1.3f;c.drawLine(left,py,right,py,paint);paint.textSize=9f;c.drawText(label+" "+String.format(Locale.US,"%.2f",v),right-70f,py-3f,paint)}
     private fun lineBadge(c:Canvas,py:Float,label:String,bg:Int,right:Float){paint.textSize=10f;val tw=paint.measureText(label)+10f;paint.color=bg;c.drawRoundRect(right+2f,py-9f,right+2f+tw,py+9f,3f,3f,paint);paint.color=Color.WHITE;c.drawText(label,right+6f,py+3f,paint)}
 }
