@@ -109,10 +109,6 @@ jobs:
 
       - name: Android emulator validation
         uses: reactivecircus/android-emulator-runner@v2
-        env:
-          FXOPEN_WEB_API_ID: ${{ secrets.FXOPEN_WEB_API_ID }}
-          FXOPEN_WEB_API_KEY: ${{ secrets.FXOPEN_WEB_API_KEY }}
-          FXOPEN_WEB_API_SECRET: ${{ secrets.FXOPEN_WEB_API_SECRET }}
         with:
           api-level: 35
           target: google_apis
@@ -137,16 +133,6 @@ jobs:
             adb shell am start -W -n com.xauusd.mobileengine/.MainActivity
 
             sleep 10
-
-            # Android runtime smoke test. FXOpen HMAC authentication was
-            # already verified against the exact Marginal Demo host in the
-            # build job above. The debug receiver is intentionally non-blocking
-            # so a logcat/receiver quirk cannot invalidate a valid APK.
-            set +x
-            adb shell am broadcast --receiver-foreground -n com.xauusd.mobileengine/.FxOpenProbeReceiver --es fx_id "$FXOPEN_WEB_API_ID" --es fx_key "$FXOPEN_WEB_API_KEY" --es fx_secret "$FXOPEN_WEB_API_SECRET" --es fx_host "https://ttdemomarginal.fxopen.net" >/tmp/fxopen-probe-broadcast.txt 2>&1 || true
-            set -x
-            sleep 5
-            adb logcat -d -v time -s FXOPEN_PROBE:I FXOPEN_PROBE:E "*:S" > "$GITHUB_WORKSPACE/fxopen-probe.log" || true
 
             # Basic runtime health.
             test -n "$(adb shell pidof com.xauusd.mobileengine)"
@@ -177,7 +163,6 @@ jobs:
             v5-2-clean.png
             v5-2-clean.log
             v5-2-ui.xml
-            fxopen-probe.log
 
       - name: Publish final candidate
         if: success()
