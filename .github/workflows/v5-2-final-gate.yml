@@ -30,63 +30,63 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: FXOpen direct HMAC probe
+      - name: FXOpen authentication matrix
         env:
           FXOPEN_WEB_API_ID: ${{ secrets.FXOPEN_WEB_API_ID }}
           FXOPEN_WEB_API_KEY: ${{ secrets.FXOPEN_WEB_API_KEY }}
           FXOPEN_WEB_API_SECRET: ${{ secrets.FXOPEN_WEB_API_SECRET }}
         run: |
           python3 - <<'PY'
-          import base64
-          import gzip
-          import hashlib
-          import hmac
-          import os
-          import ssl
-          import urllib.error
-          import urllib.request
+          import base64, gzip, hashlib, hmac, os, ssl, time, urllib.error, urllib.request
 
-          base = "https://marginalttdemowebapi.fxopen.net"
-          path = "/api/v2/account"
-          ts = int(__import__("time").time() * 1000)
-          ident = os.environ["FXOPEN_WEB_API_ID"].strip()
-          key = os.environ["FXOPEN_WEB_API_KEY"].strip()
-          secret = os.environ["FXOPEN_WEB_API_SECRET"].strip()
+          ident=os.environ["FXOPEN_WEB_API_ID"].strip()
+          key=os.environ["FXOPEN_WEB_API_KEY"].strip()
+          secret=os.environ["FXOPEN_WEB_API_SECRET"].strip()
 
-          text = str(ts) + ident + key + "GET" + base + path
-          sig = base64.b64encode(
-              hmac.new(secret.encode("ascii"), text.encode("ascii"), hashlib.sha256).digest()
-          ).decode("ascii")
+          def call(label, base, path, signed_base=None, auth_colon=False):
+              ts=int(time.time()*1000)
+              signed_base=signed_base or base
+              uri=signed_base+path
+              text=str(ts)+ident+key+"GET"+uri
+              sig=base64.b64encode(hmac.new(secret.encode("ascii"),text.encode("ascii"),hashlib.sha256).digest()).decode("ascii")
+              prefix="HMAC " if not auth_colon else "HMAC:"
+              auth=prefix+ident+":"+key+":"+str(ts)+":"+sig
+              req=urllib.request.Request(base+path,method="GET",headers={
+                  "Accept":"application/json",
+                  "Accept-Encoding":"gzip, deflate",
+                  "Content-Type":"application/json",
+                  "Authorization":auth})
+              try:
+                  with urllib.request.urlopen(req,timeout=12,context=ssl.create_default_context()) as r:
+                      raw=r.read(); code=r.status; enc=(r.headers.get("Content-Encoding") or "").lower()
+              except urllib.error.HTTPError as e:
+                  raw=e.read(); code=e.code; enc=(e.headers.get("Content-Encoding") or "").lower()
+              if enc=="gzip":
+                  try: raw=gzip.decompress(raw)
+                  except Exception: pass
+              body=raw.decode("utf-8","replace").replace("\n"," ")
+              print(label, "HTTP", code, "BODY", body[:180].strip())
+              return code
 
-          req = urllib.request.Request(
-              base + path,
-              method="GET",
-              headers={
-                  "Accept": "application/json",
-                  "Accept-Encoding": "gzip, deflate",
-                  "Authorization": f"HMAC {ident}:{key}:{ts}:{sig}",
-              },
-          )
+          tests=[
+            ("DEMO_V2_STANDARD", "https://marginalttdemowebapi.fxopen.net", "/api/v2/account", None, False),
+            ("DEMO_V1_STANDARD", "https://marginalttdemowebapi.fxopen.net", "/api/v1/account", None, False),
+            ("DEMO_V2_PORT443_SIGNED", "https://marginalttdemowebapi.fxopen.net", "/api/v2/account", "https://marginalttdemowebapi.fxopen.net:443", False),
+            ("DEMO_V2_AUTH_COLON", "https://marginalttdemowebapi.fxopen.net", "/api/v2/account", None, True),
+            ("LIVE_V2_STANDARD", "https://ttlivewebapi.fxopen.net", "/api/v2/account", None, False),
+          ]
+          codes={}
+          for t in tests:
+              try:
+                  codes[t[0]]=call(*t)
+              except Exception as e:
+                  print(t[0], "CLIENT_ERROR", type(e).__name__, str(e)[:180])
 
-          try:
-              with urllib.request.urlopen(req, timeout=15, context=ssl.create_default_context()) as r:
-                  raw = r.read()
-                  code = r.status
-                  enc = (r.headers.get("Content-Encoding") or "").lower()
-          except urllib.error.HTTPError as e:
-              raw = e.read()
-              code = e.code
-              enc = (e.headers.get("Content-Encoding") or "").lower()
-
-          if enc == "gzip":
-              raw = gzip.decompress(raw)
-          body = raw.decode("utf-8", "replace").replace("\n", " ")
-          print("DIRECT_FXOPEN_HTTP", code)
-          print("DIRECT_FXOPEN_BODY", body[:2500])
-
-          if not (200 <= code < 300):
+          if any(v>=200 and v<300 for v in codes.values()):
+              print("FXOPEN_AUTH_MATRIX_HAS_SUCCESS")
+          else:
+              print("FXOPEN_AUTH_MATRIX_NO_SUCCESS")
               raise SystemExit(1)
-          print("DIRECT_FXOPEN_AUTHORIZED")
           PY
 
       - name: Gradle 8.10
