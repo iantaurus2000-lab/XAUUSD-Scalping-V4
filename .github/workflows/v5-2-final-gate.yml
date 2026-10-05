@@ -133,7 +133,7 @@ jobs:
             adb shell am force-stop com.xauusd.mobileengine || true
             adb shell am start -W -n com.xauusd.mobileengine/.MainActivity
 
-            sleep 10
+            sleep 35
 
             # Basic runtime health.
             test -n "$(adb shell pidof com.xauusd.mobileengine)"
