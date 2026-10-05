@@ -30,63 +30,36 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: FXOpen authentication matrix
+      - name: FXOpen Marginal Demo authentication
         env:
           FXOPEN_WEB_API_ID: ${{ secrets.FXOPEN_WEB_API_ID }}
           FXOPEN_WEB_API_KEY: ${{ secrets.FXOPEN_WEB_API_KEY }}
           FXOPEN_WEB_API_SECRET: ${{ secrets.FXOPEN_WEB_API_SECRET }}
         run: |
           python3 - <<'PY'
-          import base64, gzip, hashlib, hmac, os, ssl, time, urllib.error, urllib.request
-
+          import base64, hashlib, hmac, os, ssl, time, urllib.error, urllib.request
           ident=os.environ["FXOPEN_WEB_API_ID"].strip()
           key=os.environ["FXOPEN_WEB_API_KEY"].strip()
           secret=os.environ["FXOPEN_WEB_API_SECRET"].strip()
-
-          def call(label, base, path, signed_base=None, auth_colon=False):
-              ts=int(time.time()*1000)
-              signed_base=signed_base or base
-              uri=signed_base+path
-              text=str(ts)+ident+key+"GET"+uri
-              sig=base64.b64encode(hmac.new(secret.encode("ascii"),text.encode("ascii"),hashlib.sha256).digest()).decode("ascii")
-              prefix="HMAC " if not auth_colon else "HMAC:"
-              auth=prefix+ident+":"+key+":"+str(ts)+":"+sig
-              req=urllib.request.Request(base+path,method="GET",headers={
-                  "Accept":"application/json",
-                  "Accept-Encoding":"gzip, deflate",
-                  "Content-Type":"application/json",
-                  "Authorization":auth})
-              try:
-                  with urllib.request.urlopen(req,timeout=12,context=ssl.create_default_context()) as r:
-                      raw=r.read(); code=r.status; enc=(r.headers.get("Content-Encoding") or "").lower()
-              except urllib.error.HTTPError as e:
-                  raw=e.read(); code=e.code; enc=(e.headers.get("Content-Encoding") or "").lower()
-              if enc=="gzip":
-                  try: raw=gzip.decompress(raw)
-                  except Exception: pass
-              body=raw.decode("utf-8","replace").replace("\n"," ")
-              print(label, "HTTP", code, "BODY", body[:180].strip())
-              return code
-
-          tests=[
-            ("DEMO_V2_STANDARD", "https://marginalttdemowebapi.fxopen.net", "/api/v2/account", None, False),
-            ("DEMO_V1_STANDARD", "https://marginalttdemowebapi.fxopen.net", "/api/v1/account", None, False),
-            ("DEMO_V2_PORT443_SIGNED", "https://marginalttdemowebapi.fxopen.net", "/api/v2/account", "https://marginalttdemowebapi.fxopen.net:443", False),
-            ("DEMO_V2_AUTH_COLON", "https://marginalttdemowebapi.fxopen.net", "/api/v2/account", None, True),
-            ("LIVE_V2_STANDARD", "https://ttlivewebapi.fxopen.net", "/api/v2/account", None, False),
-          ]
-          codes={}
-          for t in tests:
-              try:
-                  codes[t[0]]=call(*t)
-              except Exception as e:
-                  print(t[0], "CLIENT_ERROR", type(e).__name__, str(e)[:180])
-
-          if any(v>=200 and v<300 for v in codes.values()):
-              print("FXOPEN_AUTH_MATRIX_HAS_SUCCESS")
-          else:
-              print("FXOPEN_AUTH_MATRIX_NO_SUCCESS")
-              raise SystemExit(1)
+          base="https://ttdemomarginal.fxopen.net"
+          path="/api/v2/account"
+          ts=int(time.time()*1000)
+          uri=base+path
+          signature=str(ts)+ident+key+"GET"+uri
+          sig=base64.b64encode(hmac.new(secret.encode("ascii"),signature.encode("ascii"),hashlib.sha256).digest()).decode("ascii")
+          auth="HMAC "+ident+":"+key+":"+str(ts)+":"+sig
+          req=urllib.request.Request(uri,method="GET",headers={"Accept":"application/json","Accept-Encoding":"gzip, deflate","Content-Type":"application/json","Authorization":auth})
+          try:
+              with urllib.request.urlopen(req,timeout=15,context=ssl.create_default_context()) as r:
+                  raw=r.read(); code=r.status
+          except urllib.error.HTTPError as e:
+              raw=e.read(); code=e.code
+          body=raw.decode("utf-8","replace").replace("\n"," ")
+          print("FXOPEN_MARGINAL_DEMO_HTTP",code)
+          print("FXOPEN_MARGINAL_DEMO_BODY",body[:500])
+          if not 200 <= code < 300:
+              raise SystemExit("FXOpen Marginal Demo authentication failed")
+          print("FXOPEN_MARGINAL_DEMO_AUTHORIZED")
           PY
 
       - name: Gradle 8.10
@@ -172,7 +145,7 @@ jobs:
             test -n "${FXOPEN_WEB_API_KEY:-}"
             test -n "${FXOPEN_WEB_API_SECRET:-}"
             set +x
-            adb shell am broadcast -n com.xauusd.mobileengine/.FxOpenProbeReceiver --es fx_id "$FXOPEN_WEB_API_ID" --es fx_key "$FXOPEN_WEB_API_KEY" --es fx_secret "$FXOPEN_WEB_API_SECRET" --es fx_host "https://marginalttdemowebapi.fxopen.net" >/tmp/fxopen-probe-broadcast.txt 2>&1
+            adb shell am broadcast -n com.xauusd.mobileengine/.FxOpenProbeReceiver --es fx_id "$FXOPEN_WEB_API_ID" --es fx_key "$FXOPEN_WEB_API_KEY" --es fx_secret "$FXOPEN_WEB_API_SECRET" --es fx_host "https://ttdemomarginal.fxopen.net" >/tmp/fxopen-probe-broadcast.txt 2>&1
             set -x
 
             sleep 8
