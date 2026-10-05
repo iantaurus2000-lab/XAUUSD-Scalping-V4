@@ -124,7 +124,7 @@ public class TradingService extends Service {
                 }
                 try{
                     ExnessClient.Response er=exness.accountInfo();
-                    if(er.ok() && hasActiveExnessExposure(symbol)) return;
+                    if(er.ok() && hasActiveExposure(symbol)) return;
                 }catch(Exception ignored){}
                 if(metaApi.configured()){
                     try{ MetaApiClient.Response mr=metaApi.orders(); if(mr.ok() && mr.body.contains(symbol)) return; }catch(Exception ignored){}
