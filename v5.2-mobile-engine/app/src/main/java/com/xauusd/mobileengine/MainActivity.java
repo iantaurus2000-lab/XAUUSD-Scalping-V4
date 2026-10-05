@@ -740,7 +740,7 @@ public class MainActivity extends Activity {
                     }
                     String liveTicker=newsTicker+" • BIQUOTE "+monitorStatus+" • ENTRY FXOPEN";
                      if(!liveTicker.equals(lastTickerText)){ lastTickerText=liveTicker; setTickerText(liveTicker); }
-                    connection.setText("● MARKET BIQUOTE "+monitorStatus+" • ENTRY "+Market.sourceStatus()+" • FX SPREAD "+fmt(sp));
+                    connection.setText("● MARKET BIQUOTE "+monitorStatus+" • ENTRY FXOPEN "+executionLabel()+" • FX SPREAD "+fmt(sp));
                     renderChart();renderDecision();renderResultsBar();
                      if(now-lastBugScanAt>=5000){ lastBugScanAt=now; final String bug=BugScanner.scan(fa,fb,fc,Market.sourceStatus(),mm,sp,now); if(!bug.isEmpty()) log.setText("AI BUG SCANNER • "+bug); }
                     if(now-lastAccountUiAt>=15000){lastAccountUiAt=now;refreshAccountUi();}
@@ -1130,7 +1130,7 @@ public class MainActivity extends Activity {
                 if(!bestTitle.isEmpty())news+=" • HIGH USD: "+bestTitle+" in "+Math.max(0,(best-now)/60000)+"m";
             }catch(Exception ignored){news+=" • Calendar feed unavailable";}
             final String out=news;runOnUiThread(()->{newsTicker=out;
-                String liveTicker=newsTicker+" • BIQUOTE "+Market.monitorStatus()+" • ENTRY "+Market.sourceStatus();
+                String liveTicker=newsTicker+" • BIQUOTE "+Market.monitorStatus()+" • ENTRY FXOPEN "+executionLabel();
                 if(!liveTicker.equals(lastTickerText)){lastTickerText=liveTicker;setTickerText(liveTicker);}});
         }).start();
     }
