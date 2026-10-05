@@ -11,7 +11,8 @@ public final class StrategyEngine {
 
     public static final class Decision {
         public String side="WAIT", reason="", pattern="WAIT";
-        public int score; public boolean wick,sweep,bos,bias,earlyReady;
+        public int score,candidateScore; public boolean wick,sweep,bos,bias,earlyReady,entryWatch;
+        public String candidateSide="WAIT";
         public double entry,sl,tp1,tp2,atr,ema9,ema21,ema50,rsi,macd,macdSignal,bbMid,bbUpper,bbLower,support,resistance;
         public long candleTime,secondsToClose;
         public String key(){return side+"-"+score+"-"+Long.toString(entry==0?0:(long)(entry*100));}
