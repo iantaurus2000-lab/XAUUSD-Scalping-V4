@@ -805,7 +805,6 @@ public class MainActivity extends Activity {
         if(botState!=null){boolean on=store.rawPrefs().getBoolean("auto",false);botState.setText(on?"AUTO: ON • "+executionLabel():"AUTO: OFF • MANUAL");}
         if(account!=null&&!hasCredentials())account.setText("Account: not connected");
         if(finalReady){String hk=decision.side+"-"+decision.candleTime;if(!hk.equals(lastHistoryKey)){lastHistoryKey=hk;saveSignalHistory(decision);}}
-        if(chart!=null)renderChart();
     }
 
     void refreshAccountUi(){
