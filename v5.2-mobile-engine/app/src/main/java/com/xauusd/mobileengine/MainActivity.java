@@ -735,7 +735,8 @@ public class MainActivity extends Activity {
                         for(StrategyEngine.Candle c:hd){hh=Math.max(hh,c.high);ll=Math.min(ll,c.low);}
                         highLow.setText("H "+fmt(hh)+"   L "+fmt(ll));
                     }
-                    String liveTicker=newsTicker+" • PRICE "+Market.sourceStatus();\n                     if(!liveTicker.equals(lastTickerText)){ lastTickerText=liveTicker; setTickerText(liveTicker); }
+                    String liveTicker=newsTicker+" • PRICE "+Market.sourceStatus();
+                     if(!liveTicker.equals(lastTickerText)){ lastTickerText=liveTicker; setTickerText(liveTicker); }
                     connection.setText("● PRICE "+Market.sourceStatus()+" • EXEC "+executionLabel()+" • SPREAD "+fmt(spread));
                     renderChart();renderDecision();renderResultsBar();
                      if(now-lastBugScanAt>=5000){ lastBugScanAt=now; final String bug=BugScanner.scan(fa,fb,fc,Market.sourceStatus(),mm,sp,now); if(!bug.isEmpty()) log.setText("AI BUG SCANNER • "+bug); }
