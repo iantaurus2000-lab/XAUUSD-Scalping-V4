@@ -30,6 +30,65 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: FXOpen direct HMAC probe
+        env:
+          FXOPEN_WEB_API_ID: ${{ secrets.FXOPEN_WEB_API_ID }}
+          FXOPEN_WEB_API_KEY: ${{ secrets.FXOPEN_WEB_API_KEY }}
+          FXOPEN_WEB_API_SECRET: ${{ secrets.FXOPEN_WEB_API_SECRET }}
+        run: |
+          python3 - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          import hmac
+          import os
+          import ssl
+          import urllib.error
+          import urllib.request
+
+          base = "https://marginalttdemowebapi.fxopen.net"
+          path = "/api/v2/account"
+          ts = int(__import__("time").time() * 1000)
+          ident = os.environ["FXOPEN_WEB_API_ID"].strip()
+          key = os.environ["FXOPEN_WEB_API_KEY"].strip()
+          secret = os.environ["FXOPEN_WEB_API_SECRET"].strip()
+
+          text = str(ts) + ident + key + "GET" + base + path
+          sig = base64.b64encode(
+              hmac.new(secret.encode("ascii"), text.encode("ascii"), hashlib.sha256).digest()
+          ).decode("ascii")
+
+          req = urllib.request.Request(
+              base + path,
+              method="GET",
+              headers={
+                  "Accept": "application/json",
+                  "Accept-Encoding": "gzip, deflate",
+                  "Authorization": f"HMAC {ident}:{key}:{ts}:{sig}",
+              },
+          )
+
+          try:
+              with urllib.request.urlopen(req, timeout=15, context=ssl.create_default_context()) as r:
+                  raw = r.read()
+                  code = r.status
+                  enc = (r.headers.get("Content-Encoding") or "").lower()
+          except urllib.error.HTTPError as e:
+              raw = e.read()
+              code = e.code
+              enc = (e.headers.get("Content-Encoding") or "").lower()
+
+          if enc == "gzip":
+              raw = gzip.decompress(raw)
+          body = raw.decode("utf-8", "replace").replace("\n", " ")
+          print("DIRECT_FXOPEN_HTTP", code)
+          print("DIRECT_FXOPEN_BODY", body[:2500])
+
+          if not (200 <= code < 300):
+              raise SystemExit(1)
+          print("DIRECT_FXOPEN_AUTHORIZED")
+          PY
+
       - name: Gradle 8.10
         run: |
           wget -q https://services.gradle.org/distributions/gradle-8.10-bin.zip
