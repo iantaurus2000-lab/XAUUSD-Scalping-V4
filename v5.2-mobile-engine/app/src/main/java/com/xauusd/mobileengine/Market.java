@@ -342,39 +342,30 @@ public final class Market {
     }
 
     private static ArrayList<StrategyEngine.Candle> liveCopy(List<StrategyEngine.Candle> src, double mid) {
-        ArrayList<StrategyEngine.Candle> out = new ArrayList<>();
-        for (StrategyEngine.Candle c : src)
-            out.add(new StrategyEngine.Candle(c.t, c.open, c.high, c.low, c.close));
-
-        if (!out.isEmpty() && mid > 0) {
-            StrategyEngine.Candle c = out.get(out.size() - 1);
-            c.close = mid;
-            c.high = Math.max(c.high, Math.max(c.open, mid));
-            c.low = Math.min(c.low, Math.min(c.open, mid));
-        }
-        return out;
-    }
-
-    private static double readNestedPrice(JSONObject root, String key) {
-        JSONObject p = root.optJSONObject(key);
-        return p == null ? Double.NaN : num(p, "Price", "price");
-    }
-
-    private static boolean valid(double o, double h, double l, double c) {
-        return !Double.isNaN(o) && !Double.isNaN(h) && !Double.isNaN(l) && !Double.isNaN(c)
-                && o > 0 && h > 0 && l > 0 && c > 0;
-    }
-
-    private static double num(JSONObject o, String... keys) {
-        if (o == null) return Double.NaN;
-        for (String k : keys) {
-            Object v = o.opt(k);
-            if (v instanceof Number) return ((Number) v).doubleValue();
-            if (v != null) {
-                try { return Double.parseDouble(String.valueOf(v)); } catch (Exception ignored) {}
+        ArrayList<StrategyEngine.Candle> out=new ArrayList<>();
+        for(StrategyEngine.Candle c:src)
+            out.add(new StrategyEngine.Candle(c.t,c.open,c.high,c.low,c.close));
+        if(!out.isEmpty()&&mid>0){
+            long step=60_000L;
+            if(out.size()>=2){
+                long d=out.get(out.size()-1).t-out.get(out.size()-2).t;
+                if(d>=1_000L&&d<=3_600_000L)step=d;
+            }
+            long now=System.currentTimeMillis();
+            long bucket=now-(now%step);
+            StrategyEngine.Candle last=out.get(out.size()-1);
+            long lastMs=last.t<100000000000L?last.t*1000L:last.t;
+            if(lastMs<bucket-step/2){
+                double open=last.close;
+                out.add(new StrategyEngine.Candle(bucket,open,Math.max(open,mid),Math.min(open,mid),mid));
+            }else{
+                last.high=Math.max(last.high,mid);
+                last.low=Math.min(last.low,mid);
+                last.close=mid;
+                last.t=bucket;
             }
         }
-        return Double.NaN;
+        return out;
     }
 
     private static void replace(ArrayList<StrategyEngine.Candle> target, List<StrategyEngine.Candle> source) {
