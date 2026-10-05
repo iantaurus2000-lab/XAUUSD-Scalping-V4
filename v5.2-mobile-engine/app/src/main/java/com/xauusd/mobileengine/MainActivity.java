@@ -21,7 +21,7 @@ public class MainActivity extends Activity {
     static final int REQ_NOTIF=9001;
 
     LinearLayout root, content;
-    TextView price, priceChange, connection, signal, signalDetail, confidence, m5Bias, m1State, ticker, metrics, account, botState, log, spreadLine, highLow, resultsBar, boxEntry, boxSl, boxTp1, boxTp2;
+    TextView price, priceChange, connection, signal, signalDetail, confidence, m5Bias, m1State, ticker, metrics, account, botState, log, spreadLine, highLow, resultsBar, boxEntry, boxSl, boxTp1, boxTp2, candleMomentum;
     CandleChartView chart;
     SecurityStore store;
     ExnessClient exness;
@@ -98,7 +98,7 @@ public class MainActivity extends Activity {
         connection=findViewById(R.id.connection); ticker=findViewById(R.id.ticker); lamp=findViewById(R.id.lamp);
         signal=findViewById(R.id.signalState); signalDetail=findViewById(R.id.signalDetail);
         confidence=findViewById(R.id.confidence); m5Bias=findViewById(R.id.m5Bias); m1State=findViewById(R.id.m1State);
-        spreadLine=findViewById(R.id.spreadLine); highLow=findViewById(R.id.highLow); resultsBar=findViewById(R.id.resultsBar);
+        spreadLine=findViewById(R.id.spreadLine); highLow=findViewById(R.id.highLow); resultsBar=findViewById(R.id.resultsBar); candleMomentum=findViewById(R.id.candleMomentum);
         boxEntry=findViewById(R.id.boxEntry); boxSl=findViewById(R.id.boxSl); boxTp1=findViewById(R.id.boxTp1); boxTp2=findViewById(R.id.boxTp2);
         FrameLayout chartHost=findViewById(R.id.chartHost);
         chart=new CandleChartView(this);
@@ -696,7 +696,7 @@ public class MainActivity extends Activity {
                         for(StrategyEngine.Candle c:hd){hh=Math.max(hh,c.high);ll=Math.min(ll,c.low);}
                         highLow.setText("H "+fmt(hh)+"   L "+fmt(ll));
                     }
-                    ticker.setText(Market.sourceStatus()+" • XAUUSD • LIVE");
+                    ticker.setText(newsTicker+" • PRICE "+Market.sourceStatus());
                     connection.setText("● PRICE "+Market.sourceStatus()+" • EXEC "+executionLabel()+" • SPREAD "+fmt(spread));
                     renderChart();renderDecision();renderResultsBar();
                     if(now-lastAccountUiAt>=15000){lastAccountUiAt=now;refreshAccountUi();}
@@ -746,6 +746,11 @@ public class MainActivity extends Activity {
         m1State.setText("M1 "+(shown.side.equals("WAIT")?"WATCH":shown.side));
         boxEntry.setText("ENTRY   ⧉\n"+fmt(shown.entry)); boxSl.setText("SL   ⧉\n"+fmt(shown.sl));
         boxTp1.setText("TP1   ⧉\n"+fmt(shown.tp1)); boxTp2.setText("TP2   ⧉\n"+fmt(shown.tp2));
+        if(candleMomentum!=null){
+            candleMomentum.setText(shown.side.equals("WAIT")
+                    ? "CANDLE MOMENTUM • WAIT • "+(shown.pattern==null?"--":shown.pattern)
+                    : (shown.side.startsWith("BUY")?"BUY":"SELL")+" MOMENTUM • "+(shown.pattern==null?"--":shown.pattern)+(shown.earlyReady?" • FORMING":" • READY"));
+        }
         if(botState!=null){ boolean on=store.rawPrefs().getBoolean("auto",false); botState.setText(on?"AUTO: ON • "+executionLabel():"AUTO: OFF • MANUAL"); }
         if(account!=null && !hasCredentials())account.setText("Account: not connected");
         if(ready){String hk=decision.side+"-"+decision.candleTime;if(!hk.equals(lastHistoryKey)){lastHistoryKey=hk;saveSignalHistory(decision);}}
@@ -1042,7 +1047,7 @@ public class MainActivity extends Activity {
                 }
                 if(!bestTitle.isEmpty())news+=" • HIGH USD: "+bestTitle+" in "+Math.max(0,(best-now)/60000)+"m";
             }catch(Exception ignored){news+=" • Calendar feed unavailable";}
-            final String out=news;runOnUiThread(()->{newsTicker=out;if(signalDetail!=null){signalDetail.setText(newsTicker);signalDetail.setSelected(true);signalDetail.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);signalDetail.setSingleLine(true);}});
+            final String out=news;runOnUiThread(()->{newsTicker=out;if(ticker!=null){ticker.setText(newsTicker+" • PRICE "+Market.sourceStatus());ticker.setSelected(true);ticker.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);ticker.setSingleLine(true);}});
         }).start();
     }
 
