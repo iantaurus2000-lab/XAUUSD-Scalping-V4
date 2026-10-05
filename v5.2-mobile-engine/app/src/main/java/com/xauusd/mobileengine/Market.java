@@ -44,6 +44,7 @@ public final class Market {
      * first, then DNS-over-HTTPS, without hard-coding Biquote's changing IP address.
      */
     private static OkHttpClient buildClient() {
+        try {
         OkHttpClient bootstrap = new OkHttpClient.Builder()
                 .connectTimeout(4, TimeUnit.SECONDS)
                 .readTimeout(5, TimeUnit.SECONDS)
@@ -92,6 +93,14 @@ public final class Market {
                 .writeTimeout(5, TimeUnit.SECONDS)
                 .retryOnConnectionFailure(true)
                 .build();
+        } catch (Exception ignored) {
+            return new OkHttpClient.Builder()
+                    .connectTimeout(5, TimeUnit.SECONDS)
+                    .readTimeout(8, TimeUnit.SECONDS)
+                    .writeTimeout(5, TimeUnit.SECONDS)
+                    .retryOnConnectionFailure(true)
+                    .build();
+        }
     }
 
     private static final ArrayList<StrategyEngine.Candle> m1Cache = new ArrayList<>();
