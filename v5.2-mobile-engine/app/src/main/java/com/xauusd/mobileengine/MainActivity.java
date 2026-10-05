@@ -254,16 +254,19 @@ public class MainActivity extends Activity {
         }catch(Exception e){toast(e.getMessage());return;}
         new Thread(()->{
             try{
+                if(useMetaApi()){
+                    MetaApiClient.Response mr=metaApi.placeLimit(orderSymbol(),side,Double.parseDouble(lot),Double.parseDouble(entry),Double.parseDouble(sl),Double.parseDouble(tp),"XAUUSD-V5.2-"+tag);
+                    runOnUiThread(()->{
+                        if(mr.ok()){ log.setText("MT5 CLOUD ORDER ACCEPTED • "+side.toUpperCase(Locale.US)+" LIMIT • "+trim(mr.body)); toast("MT5 PENDING ORDER DITERIMA"); }
+                        else { log.setText("MT5 CLOUD ORDER REJECT "+mr.code+" • "+trim(mr.body)); toast("MT5 order ditolak "+mr.code); }
+                    });
+                    return;
+                }
                 if(useFxOpen()){
                     FxOpenTickTraderClient.Response fr=fxOpen.placeLimit(orderSymbol(),side,Double.parseDouble(lot),Double.parseDouble(entry),Double.parseDouble(sl),Double.parseDouble(tp),"XAUUSD-V5.2-"+tag);
                     runOnUiThread(()->{
-                        if(fr.ok()){
-                            log.setText("FXOPEN ORDER ACCEPTED • "+side.toUpperCase(Locale.US)+" LIMIT • "+trim(fr.body));
-                            toast("FXOpen DEMO ORDER DITERIMA");
-                        }else{
-                            log.setText("FXOPEN ORDER REJECT "+fr.code+" • "+trim(fr.body));
-                            toast("FXOpen order ditolak "+fr.code);
-                        }
+                        if(fr.ok()){ log.setText("FXOPEN ORDER ACCEPTED • "+side.toUpperCase(Locale.US)+" LIMIT • "+trim(fr.body)); toast("FXOpen DEMO ORDER DITERIMA"); }
+                        else { log.setText("FXOPEN ORDER REJECT "+fr.code+" • "+trim(fr.body)); toast("FXOpen order ditolak "+fr.code); }
                     });
                     return;
                 }
@@ -312,34 +315,32 @@ public class MainActivity extends Activity {
     }
 
     void startAuto(){
-        if(!"exness".equalsIgnoreCase(store.get("active_connector",""))){
-            toast("AUTO execution dikunci ke EXNESS MT5. FXOpen hanya untuk feed/test koneksi.");
-            showExnessDialog();
-            return;
-        }
-        if(!hasCredentials()){toast("Sambungkan akun terlebih dahulu."); if ("exness".equalsIgnoreCase(store.get("active_connector",""))) showExnessDialog(); else showFxOpenDialog(); return;}
-        log.setText("AUTO PREFLIGHT • FXOPEN ENTRY + EXNESS MT5...");
+        if(!hasCredentials()){toast("Sambungkan MT5 Cloud terlebih dahulu.");showMt5Dialog();return;}
+        final boolean cloud=useMetaApi();
+        final boolean direct="exness".equalsIgnoreCase(store.get("active_connector",""));
+        if(!cloud&&!direct){toast("Pilih MT5 Cloud (MetaApi) atau Exness API.");showMt5Dialog();return;}
+        log.setText(cloud?"AUTO PREFLIGHT • MT5 CLOUD → EXNESS MT5...":"AUTO PREFLIGHT • EXNESS API...");
         new Thread(()->{
             try{
-                // FXOpen remains the authenticated ENTRY layer.
-                if(!fxOpen.configured()) throw new IllegalStateException("FXOpen Entry belum terhubung");
-                FxOpenTickTraderClient.Response fa=fxOpen.accountInfo();
-                if(!fa.ok()) throw new IllegalStateException("FXOpen Entry "+fa.code+": "+trim(fa.body));
-
-                // Exness is the ONLY final execution destination for MT5.
-                ExnessClient.Response a=exness.connectAndResolve();
-                if(!a.ok())throw new IllegalStateException("Exness API "+a.code+": "+trim(a.body));
-                ExnessClient.Response i=exness.instrumentConditions(orderSymbol());
-                if(!i.ok())throw new IllegalStateException("Instrument "+orderSymbol()+" "+i.code+": "+trim(i.body));
-
+                if(cloud){
+                    MetaApiClient.Response a=metaApi.accountInfo();
+                    if(!a.ok())throw new IllegalStateException("MetaApi "+a.code+": "+trim(a.body));
+                    MetaApiClient.Response o=metaApi.orders();
+                    if(!o.ok())throw new IllegalStateException("MT5 Orders "+o.code+": "+trim(o.body));
+                }else{
+                    ExnessClient.Response a=exness.connectAndResolve();
+                    if(!a.ok())throw new IllegalStateException("Exness API "+a.code+": "+trim(a.body));
+                    ExnessClient.Response i=exness.instrumentConditions(orderSymbol());
+                    if(!i.ok())throw new IllegalStateException("Instrument "+orderSymbol()+" "+i.code+": "+trim(i.body));
+                }
                 store.rawPrefs().edit().putBoolean("auto",true).apply();
                 runOnUiThread(()->requestBatteryOptimizationExemption());
                 runOnUiThread(()->{
-                    botState.setText("AUTO: ON • FXOPEN ENTRY → EXNESS MT5");
+                    botState.setText(cloud?"AUTO: ON • MT5 CLOUD → EXNESS MT5":"AUTO: ON • EXNESS MT5 API");
                     botState.setTextColor(Color.rgb(0,230,118));
                     Intent intent=new Intent(this,TradingService.class);
                     if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
-                    log.setText("AUTO ON • FXOpen ENTRY + Exness MT5 READY");
+                    log.setText(cloud?"AUTO ON • MetaApi cloud connected • Exness MT5 execution ready":"AUTO ON • Exness API connected");
                 });
             }catch(Exception e){runOnUiThread(()->{store.rawPrefs().edit().putBoolean("auto",false).apply();botState.setText("AUTO: OFF • CONNECTOR ERROR");log.setText("AUTO PREFLIGHT ERROR • "+e.getMessage());toast("Auto gagal: "+e.getMessage());});}
         }).start();
@@ -356,9 +357,14 @@ public class MainActivity extends Activity {
         String active=store.get("active_connector","");
         return "fxopen".equalsIgnoreCase(active) && fxOpen!=null && fxOpen.configured();
     }
+    boolean useMetaApi(){
+        String active=store.get("active_connector","");
+        return "metaapi".equalsIgnoreCase(active) && metaApi!=null && metaApi.configured();
+    }
 
     String executionLabel(){
         String active=store.get("active_connector","").trim();
+        if("metaapi".equalsIgnoreCase(active) && metaApi!=null && metaApi.configured()) return "MT5 CLOUD • EXNESS";
         if("fxopen".equalsIgnoreCase(active) && fxOpen!=null && fxOpen.configured()) return "FXOPEN DEMO";
         if("exness".equalsIgnoreCase(active) && exness!=null){
             ExnessClient.Credentials c=exness.loadCredentials();
@@ -391,6 +397,7 @@ public class MainActivity extends Activity {
     }
 
     boolean hasCredentials(){
+        if(metaApi!=null&&useMetaApi())return true;
         if(fxOpen!=null&&useFxOpen())return true;
         ExnessClient.Credentials c=exness.loadCredentials();
         return !c.accountId.isEmpty()&&!c.apiKey.isEmpty()&&!c.secret.isEmpty();
@@ -688,7 +695,7 @@ public class MainActivity extends Activity {
         box.addView(tv("MT5 CLOUD CONNECTOR • DEMO TEST\nHP → MetaApi Cloud → akun MT5 demo.",11));
         box.addView(token,new LinearLayout.LayoutParams(-1,55));box.addView(aid,new LinearLayout.LayoutParams(-1,55));box.addView(host,new LinearLayout.LayoutParams(-1,55));
         AlertDialog d=new AlertDialog.Builder(this).setTitle("🔗 MT5 CONNECTOR • MetaApi").setView(box).setNegativeButton("Tutup",null).setPositiveButton("SAVE + TEST",null).create();
-        d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{store.put("meta_token",token.getText().toString().trim());store.put("meta_account",aid.getText().toString().trim());store.put("meta_host",host.getText().toString().trim());d.dismiss();testMetaApi();}));d.show();
+        d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{store.put("meta_token",token.getText().toString().trim());store.put("meta_account",aid.getText().toString().trim());store.put("meta_host",host.getText().toString().trim());store.put("active_connector","metaapi");d.dismiss();testMetaApi();}));d.show();
     }
     void testMetaApi(){
         if(!metaApi.configured()){toast("Isi MetaApi token + account ID.");return;}
