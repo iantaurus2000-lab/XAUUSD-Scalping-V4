@@ -217,8 +217,7 @@ public final class Market {
         }
 
         // Never leave the chart empty. Build a stable local history when needed.
-        if (m1Cache.size() < 60 || m5Cache.size() < 30 || m15Cache.size() < 30
-                || now - lastSyntheticBuild > 120000) {
+        if (m1Cache.size() < 60 || m5Cache.size() < 30 || m15Cache.size() < 30) {
             buildSyntheticHistory(Math.max(t.mid, 1.0), now);
         }
 
