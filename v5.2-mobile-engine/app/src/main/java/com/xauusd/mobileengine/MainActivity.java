@@ -318,26 +318,28 @@ public class MainActivity extends Activity {
             return;
         }
         if(!hasCredentials()){toast("Sambungkan akun terlebih dahulu."); if ("exness".equalsIgnoreCase(store.get("active_connector",""))) showExnessDialog(); else showFxOpenDialog(); return;}
-        log.setText(useFxOpen()?"AUTO PREFLIGHT • testing FXOpen TickTrader...":"AUTO PREFLIGHT • testing Exness API...");
+        log.setText("AUTO PREFLIGHT • FXOPEN ENTRY + EXNESS MT5...");
         new Thread(()->{
             try{
-                if(useFxOpen()){
-                    FxOpenTickTraderClient.Response a=fxOpen.accountInfo();
-                    if(!a.ok())throw new IllegalStateException("FXOpen "+a.code+": "+trim(a.body));
-                }else{
-                    ExnessClient.Response a=exness.connectAndResolve();
-                    if(!a.ok())throw new IllegalStateException("API connection "+a.code+": "+trim(a.body));
-                    ExnessClient.Response i=exness.instrumentConditions(orderSymbol());
-                    if(!i.ok())throw new IllegalStateException("Instrument "+orderSymbol()+" "+i.code+": "+trim(i.body));
-                }
+                // FXOpen remains the authenticated ENTRY layer.
+                if(!fxOpen.configured()) throw new IllegalStateException("FXOpen Entry belum terhubung");
+                FxOpenTickTraderClient.Response fa=fxOpen.accountInfo();
+                if(!fa.ok()) throw new IllegalStateException("FXOpen Entry "+fa.code+": "+trim(fa.body));
+
+                // Exness is the ONLY final execution destination for MT5.
+                ExnessClient.Response a=exness.connectAndResolve();
+                if(!a.ok())throw new IllegalStateException("Exness API "+a.code+": "+trim(a.body));
+                ExnessClient.Response i=exness.instrumentConditions(orderSymbol());
+                if(!i.ok())throw new IllegalStateException("Instrument "+orderSymbol()+" "+i.code+": "+trim(i.body));
+
                 store.rawPrefs().edit().putBoolean("auto",true).apply();
                 runOnUiThread(()->requestBatteryOptimizationExemption());
                 runOnUiThread(()->{
-                    botState.setText(useFxOpen()?"AUTO: ON • FXOPEN DEMO":"AUTO: ON • guarded execution");
+                    botState.setText("AUTO: ON • FXOPEN ENTRY → EXNESS MT5");
                     botState.setTextColor(Color.rgb(0,230,118));
                     Intent intent=new Intent(this,TradingService.class);
                     if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
-                    log.setText(useFxOpen()?"AUTO ON • FXOpen TickTrader preflight OK":"AUTO ON • Exness API preflight OK");
+                    log.setText("AUTO ON • FXOpen ENTRY + Exness MT5 READY");
                 });
             }catch(Exception e){runOnUiThread(()->{store.rawPrefs().edit().putBoolean("auto",false).apply();botState.setText("AUTO: OFF • CONNECTOR ERROR");log.setText("AUTO PREFLIGHT ERROR • "+e.getMessage());toast("Auto gagal: "+e.getMessage());});}
         }).start();
