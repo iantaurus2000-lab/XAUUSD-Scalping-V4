@@ -87,7 +87,10 @@ class CandleChartView @JvmOverloads constructor(
         if(visible.isEmpty())return
         var hi=visible.maxOf{it.high};var lo=visible.minOf{it.low}
         currentPrice?.let{hi=max(hi,it);lo=min(lo,it)};bid?.let{hi=max(hi,it);lo=min(lo,it)};ask?.let{hi=max(hi,it);lo=min(lo,it)}
-        decision?.let{hi=maxOf(hi,it.entry,it.tp1,it.tp2);lo=minOf(lo,it.entry,it.sl)}
+        decision?.let{
+            if(it.entry>0) hi=max(hi,it.entry); if(it.tp1>0) hi=max(hi,it.tp1); if(it.tp2>0) hi=max(hi,it.tp2)
+            if(it.sl>0) lo=min(lo,it.sl)
+        }
         val pad=max((hi-lo)*.12,.5);val mid=(hi+lo)/2.0;val range=max(((hi-lo)+pad*2)/scaleY,1.0)
         val maxP=mid+range/2;val minP=mid-range/2
         fun y(p:Double):Float { val t=((p-minP)/(maxP-minP)).coerceIn(.02,.98);return (bottom-t*h).toFloat() }
