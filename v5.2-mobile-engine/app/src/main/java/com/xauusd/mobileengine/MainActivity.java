@@ -141,6 +141,7 @@ public class MainActivity extends Activity {
         String auto=store.rawPrefs().getBoolean("auto",false)?"ON":"OFF";
         String[] items={
             "🔐 Exness API / Instrument",
+            "☁️ MetaApi • MT5 CLOUD → EXNESS",
             "🎯 Manual BUY/SELL LIMIT",
             "📊 Indicators / Fibonacci",
             "🔎 Scan Market • Entry Ready",
@@ -159,25 +160,102 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("XAUUSD ENGINE • CONTROL").setItems(items,(d,w)->{
             switch(w){
                 case 0: showExnessDialog();break;
-                case 1: showManualOrderDialog();break;
-                case 2: showIndicatorDialog();break;
-                case 3: scanMarket();break;
-                case 4: showSignalThresholdDialog();break;
-                case 5: showManagerDialog();break;
-                case 6: showRiskDialog();break;
-                case 7: showOrderManagerDialog();break;
-                case 8: showHistoryDialog();break;
-                case 9: showFxOpenDialog();break;
-                case 10: showTelegramDialog();break;
-                case 11: showCancelAutoDialog();break;
-                case 12: requestNotificationPermission();testAlarm();break;
-                case 13: new AlertDialog.Builder(this).setTitle("ENGINE LOG").setMessage(log.getText()).setPositiveButton("OK",null).show();break;
-                case 14: if(store.rawPrefs().getBoolean("auto",false))stopAuto(); else startAuto();break;
+                case 1: showMetaApiDialog();break;
+                case 15: showManualOrderDialog();break;
+                case 15: showIndicatorDialog();break;
+                case 15: scanMarket();break;
+                case 15: showSignalThresholdDialog();break;
+                case 15: showManagerDialog();break;
+                case 15: showRiskDialog();break;
+                case 15: showOrderManagerDialog();break;
+                case 15: showHistoryDialog();break;
+                case 15: showFxOpenDialog();break;
+                case 15: showTelegramDialog();break;
+                case 15: showCancelAutoDialog();break;
+                case 15: requestNotificationPermission();testAlarm();break;
+                case 15: new AlertDialog.Builder(this).setTitle("ENGINE LOG").setMessage(log.getText()).setPositiveButton("OK",null).show();break;
+                case 15: if(store.rawPrefs().getBoolean("auto",false))stopAuto(); else startAuto();break;
             }
         }).setNegativeButton("Tutup",null).show();
     }
 
     void addCard(View v,int h){v.setBackground(bg("#0E131A",18));content.addView(v,new LinearLayout.LayoutParams(-1,h));}
+
+    void showMetaApiDialog(){
+        LinearLayout box=new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(18,6,18,6);
+
+        EditText token=input("MetaApi API Token",store.get("meta_token",""));
+        token.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+
+        EditText account=input("MetaApi Account ID",store.get("meta_account",""));
+        account.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+
+        EditText host=input("MetaApi Host (default resmi)",store.get("meta_host",MetaApiClient.DEFAULT_HOST));
+        host.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+
+        EditText symbol=input("Instrument",store.get("symbol","XAUUSD"));
+        symbol.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+
+        TextView info=tv("Jalur: HP APK → MetaApi Cloud → Exness MT5\nToken dibuat dari MetaApi Web App. Account ID adalah ID akun yang sudah ditambahkan di MetaApi.",11);
+        info.setTextColor(Color.LTGRAY);
+
+        box.addView(info,new LinearLayout.LayoutParams(-1,72));
+        box.addView(token,new LinearLayout.LayoutParams(-1,58));
+        box.addView(account,new LinearLayout.LayoutParams(-1,58));
+        box.addView(host,new LinearLayout.LayoutParams(-1,58));
+        box.addView(symbol,new LinearLayout.LayoutParams(-1,58));
+
+        AlertDialog d=new AlertDialog.Builder(this)
+            .setTitle("☁️ METAAPI • MT5 CLOUD")
+            .setView(box)
+            .setNegativeButton("Tutup",null)
+            .setPositiveButton("SAVE + TEST",null).create();
+
+        d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            String tok=token.getText().toString().trim();
+            String acc=account.getText().toString().trim();
+            String h=host.getText().toString().trim();
+            String sym=symbol.getText().toString().trim();
+            if(tok.isEmpty()){toast("MetaApi Token belum diisi");return;}
+            if(acc.isEmpty()){toast("MetaApi Account ID belum diisi");return;}
+            if(h.isEmpty())h=MetaApiClient.DEFAULT_HOST;
+            if(sym.isEmpty())sym="XAUUSD";
+            store.put("meta_token",tok);
+            store.put("meta_account",acc);
+            store.put("meta_host",h);
+            store.put("symbol",sym);
+            store.put("active_connector","metaapi");
+            d.dismiss();
+            connection.setText("● CONNECTING METAAPI...");
+            new Thread(()->{
+                try{
+                    MetaApiClient.Response a=metaApi.accountInfo();
+                    MetaApiClient.Response o=a.ok()?metaApi.orders():a;
+                    runOnUiThread(()->{
+                        if(a.ok()&&o.ok()){
+                            connection.setText("● MT5 CLOUD CONNECTED");
+                            log.setText("MetaApi OK • Exness MT5 account connected • Orders API OK");
+                            toast("METAAPI CONNECTED");
+                            loadAccount();
+                        }else{
+                            connection.setText("● METAAPI ERROR");
+                            log.setText("MetaApi error • "+(a.ok()?o.code:a.code)+" • "+trim(a.ok()?o.body:a.body));
+                            toast("MetaApi gagal. Cek Token / Account ID.");
+                        }
+                    });
+                }catch(Exception e){
+                    runOnUiThread(()->{
+                        connection.setText("● METAAPI ERROR");
+                        log.setText("MetaApi error • "+e.getMessage());
+                        toast("MetaApi error: "+e.getMessage());
+                    });
+                }
+            }).start();
+        }));
+        d.show();
+    }
 
     void showExnessDialog(){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(18,6,18,6);
