@@ -1,0 +1,14 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.xauusd.tradinggateway'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.xauusd.tradinggateway'
+        minSdk 26
+        targetSdk 33
+        versionCode 1
+        versionName '1.0.0-GATEWAY-V1'
+    }
+}
