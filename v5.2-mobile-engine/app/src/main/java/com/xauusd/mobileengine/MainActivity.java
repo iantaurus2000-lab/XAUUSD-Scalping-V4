@@ -161,19 +161,19 @@ public class MainActivity extends Activity {
             switch(w){
                 case 0: showExnessDialog();break;
                 case 1: showMetaApiDialog();break;
-                case 15: showManualOrderDialog();break;
-                case 15: showIndicatorDialog();break;
-                case 15: scanMarket();break;
-                case 15: showSignalThresholdDialog();break;
-                case 15: showManagerDialog();break;
-                case 15: showRiskDialog();break;
-                case 15: showOrderManagerDialog();break;
-                case 15: showHistoryDialog();break;
-                case 15: showFxOpenDialog();break;
-                case 15: showTelegramDialog();break;
-                case 15: showCancelAutoDialog();break;
-                case 15: requestNotificationPermission();testAlarm();break;
-                case 15: new AlertDialog.Builder(this).setTitle("ENGINE LOG").setMessage(log.getText()).setPositiveButton("OK",null).show();break;
+                case 2: showManualOrderDialog();break;
+                case 3: showIndicatorDialog();break;
+                case 4: scanMarket();break;
+                case 5: showSignalThresholdDialog();break;
+                case 6: showManagerDialog();break;
+                case 7: showRiskDialog();break;
+                case 8: showOrderManagerDialog();break;
+                case 9: showHistoryDialog();break;
+                case 10: showFxOpenDialog();break;
+                case 11: showTelegramDialog();break;
+                case 12: showCancelAutoDialog();break;
+                case 13: requestNotificationPermission();testAlarm();break;
+                case 14: new AlertDialog.Builder(this).setTitle("ENGINE LOG").setMessage(log.getText()).setPositiveButton("OK",null).show();break;
                 case 15: if(store.rawPrefs().getBoolean("auto",false))stopAuto(); else startAuto();break;
             }
         }).setNegativeButton("Tutup",null).show();
