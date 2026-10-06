@@ -2,6 +2,10 @@ name: Build XAUUSD Trading Gateway V1
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'xauusd-trading-gateway/**'
+      - '.github/workflows/build-gateway-v1.yml'
 
 jobs:
   build:
