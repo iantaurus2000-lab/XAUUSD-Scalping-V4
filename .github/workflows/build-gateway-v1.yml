@@ -52,8 +52,18 @@ jobs:
           adb version
       - name: Create AVD
         run: echo "no" | avdmanager create avd -n gateway-test -k "system-images;android-30;google_apis;x86_64" --force
+      - name: Enable KVM access
+        run: |
+          echo "runner=$(id -un) groups=$(id -Gn)"
+          ls -l /dev/kvm || true
+          if [ -e /dev/kvm ]; then
+            sudo chmod 666 /dev/kvm
+            ls -l /dev/kvm
+          fi
       - name: Check emulator acceleration
-        run: emulator -accel-check || true
+        run: |
+          export PATH="$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
+          emulator -accel-check
       - name: Start emulator
         run: |
           export PATH="$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
