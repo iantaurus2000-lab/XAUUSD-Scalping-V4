@@ -30,6 +30,7 @@ public class MainActivity extends Activity {
     SecurityStore store;
     ExnessClient exness;
     MetaApiClient metaApi;
+    GatewayClient gateway;
     FxOpenTickTraderClient fxOpen;
     Handler handler = new Handler(Looper.getMainLooper());
     ArrayList<StrategyEngine.Candle> m1 = new ArrayList<>(), m5 = new ArrayList<>(), m15 = new ArrayList<>();
@@ -62,6 +63,7 @@ public class MainActivity extends Activity {
         store=new SecurityStore(this);
         exness=new ExnessClient(store);
         metaApi=new MetaApiClient(store);
+        gateway=new GatewayClient(this);
         fxOpen=new FxOpenTickTraderClient(store);
         buildUi();
         requestNotificationPermission();
@@ -142,6 +144,7 @@ public class MainActivity extends Activity {
         String[] items={
             "🔐 Exness API / Instrument",
             "☁️ MetaApi • MT5 CLOUD → EXNESS",
+            "📱 HP B Gateway → MT5 CLOUD",
             "🎯 Manual BUY/SELL LIMIT",
             "📊 Indicators / Fibonacci",
             "🔎 Scan Market • Entry Ready",
@@ -161,7 +164,8 @@ public class MainActivity extends Activity {
             switch(w){
                 case 0: showExnessDialog();break;
                 case 1: showMetaApiDialog();break;
-                case 2: showManualOrderDialog();break;
+                case 2: showGatewayDialog();break;
+                case 3: showManualOrderDialog();break;
                 case 3: showIndicatorDialog();break;
                 case 4: scanMarket();break;
                 case 5: showSignalThresholdDialog();break;
@@ -180,6 +184,17 @@ public class MainActivity extends Activity {
     }
 
     void addCard(View v,int h){v.setBackground(bg("#0E131A",18));content.addView(v,new LinearLayout.LayoutParams(-1,h));}
+
+    void showGatewayDialog(){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(18,6,18,6);
+        EditText host=input("HP B address: http://192.168.x.x:8787",gateway.p.getString("host",""));
+        EditText tok=input("Gateway token",gateway.p.getString("token",""));tok.setInputType(129);
+        TextView info=tv("HP A dan HP B harus satu Wi‑Fi/hotspot. Gateway V4 di HP B meneruskan order ke MetaKit → Exness MT5.",11);
+        box.addView(info,new LinearLayout.LayoutParams(-1,72));box.addView(host,new LinearLayout.LayoutParams(-1,58));box.addView(tok,new LinearLayout.LayoutParams(-1,58));
+        new AlertDialog.Builder(this).setTitle("📱 HP B TRADING GATEWAY").setView(box).setNegativeButton("Tutup",null).setPositiveButton("SAVE + TEST",null).create().setOnShowListener(x->{});
+        AlertDialog d=new AlertDialog.Builder(this).setTitle("📱 HP B TRADING GATEWAY").setView(box).setNegativeButton("Tutup",null).setPositiveButton("SAVE + TEST",null).create();
+        d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{String h=host.getText().toString().trim();String t=tok.getText().toString().trim();if(h.isEmpty()||t.isEmpty()){toast("Host dan token wajib diisi");return;}gateway.save(h,t);d.dismiss();new Thread(()->{try{String q=gateway.request("GET","/health",null);runOnUiThread(()->{log.setText("HP B GATEWAY • "+q);toast(q.startsWith("200|")?"GATEWAY CONNECTED":"GATEWAY ERROR");});}catch(Exception e){runOnUiThread(()->toast("Gateway: "+e.getMessage()));}}).start();}));d.show();
+    }
 
     void showMetaApiDialog(){
         LinearLayout box=new LinearLayout(this);
@@ -332,6 +347,11 @@ public class MainActivity extends Activity {
         }catch(Exception e){toast(e.getMessage());return;}
         new Thread(()->{
             try{
+                if(gateway.configured()){
+                    String gr=gateway.command("BUY".equalsIgnoreCase(side)?"BUY_LIMIT":"SELL_LIMIT",side,Double.parseDouble(lot),Double.parseDouble(entry),Double.parseDouble(sl),Double.parseDouble(tp),null,"hpA-"+System.currentTimeMillis());
+                    runOnUiThread(()->{if(gr.startsWith("200|")){log.setText("HP B GATEWAY • ORDER ACCEPTED • "+trim(gr.substring(4)));toast("GATEWAY ORDER DITERIMA");}else{log.setText("GATEWAY ORDER REJECT • "+trim(gr));toast("Gateway order gagal");}});
+                    return;
+                }
                 if(useMetaApi()){
                     MetaApiClient.Response mr=metaApi.placeLimit(orderSymbol(),side,Double.parseDouble(lot),Double.parseDouble(entry),Double.parseDouble(sl),Double.parseDouble(tp),"XAUUSD-V5.2-"+tag);
                     runOnUiThread(()->{
