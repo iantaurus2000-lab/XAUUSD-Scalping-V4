@@ -415,11 +415,13 @@ public class MainActivity extends Activity {
         if(!hasCredentials()){toast("Sambungkan MT5 Cloud terlebih dahulu.");showMt5Dialog();return;}
         final boolean cloud=useMetaApi();
         final boolean direct="exness".equalsIgnoreCase(store.get("active_connector",""));
-        if(!cloud&&!direct){toast("Pilih MT5 Cloud (MetaApi) atau Exness API.");showMt5Dialog();return;}
-        log.setText(cloud?"AUTO PREFLIGHT • MT5 CLOUD → EXNESS MT5...":"AUTO PREFLIGHT • EXNESS API...");
+        if(!cloud&&!direct&&!gateway.configured()){toast("Hubungkan HP B Gateway, MetaApi, atau Exness API.");showMt5Dialog();return;}
+        log.setText(gateway.configured()?"AUTO PREFLIGHT • HP B GATEWAY → MT5 CLOUD → EXNESS...":(cloud?"AUTO PREFLIGHT • MT5 CLOUD → EXNESS MT5...":"AUTO PREFLIGHT • EXNESS API..."));
         new Thread(()->{
             try{
-                if(cloud){
+                if(gateway.configured()){
+                    String g=gateway.request("GET","/health",null); if(!g.startsWith("200|")) throw new IllegalStateException("Gateway "+g);
+                }else if(cloud){
                     MetaApiClient.Response a=metaApi.accountInfo();
                     if(!a.ok())throw new IllegalStateException("MetaApi "+a.code+": "+trim(a.body));
                     MetaApiClient.Response o=metaApi.orders();
@@ -433,11 +435,11 @@ public class MainActivity extends Activity {
                 store.rawPrefs().edit().putBoolean("auto",true).apply();
                 runOnUiThread(()->requestBatteryOptimizationExemption());
                 runOnUiThread(()->{
-                    botState.setText(cloud?"AUTO: ON • MT5 CLOUD → EXNESS MT5":"AUTO: ON • EXNESS MT5 API");
+                    botState.setText(gateway.configured()?"AUTO: ON • HP B → MT5 CLOUD → EXNESS":(cloud?"AUTO: ON • MT5 CLOUD → EXNESS MT5":"AUTO: ON • EXNESS MT5 API"));
                     botState.setTextColor(Color.rgb(0,230,118));
                     Intent intent=new Intent(this,TradingService.class);
                     if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
-                    log.setText(cloud?"AUTO ON • MetaApi cloud connected • Exness MT5 execution ready":"AUTO ON • Exness API connected");
+                    log.setText(gateway.configured()?"AUTO ON • HP B Gateway connected • MT5 execution ready":(cloud?"AUTO ON • MetaApi cloud connected • Exness MT5 execution ready":"AUTO ON • Exness API connected"));
                 });
             }catch(Exception e){runOnUiThread(()->{store.rawPrefs().edit().putBoolean("auto",false).apply();botState.setText("AUTO: OFF • CONNECTOR ERROR");log.setText("AUTO PREFLIGHT ERROR • "+e.getMessage());toast("Auto gagal: "+e.getMessage());});}
         }).start();
@@ -495,6 +497,7 @@ public class MainActivity extends Activity {
 
     boolean hasCredentials(){
         if(metaApi!=null&&useMetaApi())return true;
+        if(gateway!=null&&gateway.configured())return true;
         if(fxOpen!=null&&useFxOpen())return true;
         ExnessClient.Credentials c=exness.loadCredentials();
         return !c.accountId.isEmpty()&&!c.apiKey.isEmpty()&&!c.secret.isEmpty();
