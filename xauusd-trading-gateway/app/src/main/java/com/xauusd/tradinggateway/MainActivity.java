@@ -26,7 +26,8 @@ public class MainActivity extends Activity{
         r.setPadding(24,24,24,24);
 
         TextView title=new TextView(this);
-        title.setText("XAUUSD Mini Trading Server\nHP B • LAN Gateway");
+        title.setText("XAUUSD Mini Trading Server
+HP B • LAN Gateway");
         title.setTextSize(22);
         title.setTextColor(Color.WHITE);
         r.addView(title);
@@ -44,7 +45,9 @@ public class MainActivity extends Activity{
         Button bridge=new Button(this);
         bridge.setText("☁ MT5 BRIDGE • MRPC");
         bridge.setOnClickListener(v->bridgeConfig());
-        r.addView(bridge);\n\n        Button token=new Button(this);
+        r.addView(bridge);
+
+        Button token=new Button(this);
         token.setText("⚙ SET HP A GATEWAY TOKEN");
         token.setOnClickListener(v->config());
         r.addView(token);
@@ -65,7 +68,10 @@ public class MainActivity extends Activity{
         r.addView(statusBtn);
 
         TextView note=new TextView(this);
-        note.setText("\nJalur: HP A → Wi‑Fi/LAN → HP B → MRPC MT5 → Exness MT5 Demo\n\nMRPC connector dipakai untuk koneksi cloud MT5. Masukkan APIKey MRPC + akun MT5 demo.");
+        note.setText("
+Jalur: HP A → Wi‑Fi/LAN → HP B → MRPC MT5 → Exness MT5 Demo
+
+MRPC connector dipakai untuk koneksi cloud MT5. Masukkan APIKey MRPC + akun MT5 demo.");
         note.setTextSize(13);
         r.addView(note);
 
@@ -88,7 +94,11 @@ public class MainActivity extends Activity{
               p.edit().putString("mrpc_api_key",key.getText().toString().trim()).putString("mrpc_account",acc.getText().toString().trim())
                .putString("mrpc_password",pass.getText().toString()).putString("mrpc_cluster",cluster.getText().toString().trim())
                .putString("symbol",sym.getText().toString().trim().isEmpty()?"XAUUSD":sym.getText().toString().trim()).apply();
-              new Thread(()->{try{String a=mrpc.connect(),b=mrpc.account();p.edit().putString("mrpc_last_test",a+"\n"+b).apply();runOnUiThread(()->{status.setText("MRPC TEST: "+(a.startsWith("200|")?"CONNECTED":"ERROR")+"\n"+trim(a)+"\nACCOUNT\n"+trim(b));});}catch(Exception e){runOnUiThread(()->status.setText("MRPC ERROR: "+e.getMessage()));}}).start();
+              new Thread(()->{try{String a=mrpc.connect(),b=mrpc.account();p.edit().putString("mrpc_last_test",a+"
+"+b).apply();runOnUiThread(()->{status.setText("MRPC TEST: "+(a.startsWith("200|")?"CONNECTED":"ERROR")+"
+"+trim(a)+"
+ACCOUNT
+"+trim(b));});}catch(Exception e){runOnUiThread(()->status.setText("MRPC ERROR: "+e.getMessage()));}}).start();
           }).show();
     }
 
@@ -143,7 +153,9 @@ public class MainActivity extends Activity{
         String ip=localIp();
         address.setText("LAN: http://"+ip+":8787");
         status.setText("STATUS: "+(cfg?"READY":"SET TOKEN")+
-            "\nSERVER: 8787\nMODE: HP B MINI SERVER");
+            "
+SERVER: 8787
+MODE: HP B MINI SERVER");
     }
 
     void showStatus(){
@@ -151,8 +163,12 @@ public class MainActivity extends Activity{
         String last=p.getString("last_command","");
         new android.app.AlertDialog.Builder(this)
             .setTitle("HP B SERVER STATUS")
-            .setMessage("LAN: http://"+localIp()+":8787\nToken: "+(p.getString("gateway_token","").isEmpty()?"NOT SET":"SET")
-                +"\n\nLast command:\n"+(last.isEmpty()?"--":last))
+            .setMessage("LAN: http://"+localIp()+":8787
+Token: "+(p.getString("gateway_token","").isEmpty()?"NOT SET":"SET")
+                +"
+
+Last command:
+"+(last.isEmpty()?"--":last))
             .setPositiveButton("OK",null).show();
     }
 
