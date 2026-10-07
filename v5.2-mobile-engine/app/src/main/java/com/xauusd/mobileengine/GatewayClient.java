@@ -1,0 +1,11 @@
+package com.xauusd.mobileengine;
+import android.content.Context;import java.io.*;import java.net.*;import java.nio.charset.StandardCharsets;import org.json.*;
+public class GatewayClient{
+ final android.content.SharedPreferences p;
+ public GatewayClient(Context c){p=c.getSharedPreferences("gateway_link",Context.MODE_PRIVATE);}
+ public boolean configured(){return !p.getString("host","").trim().isEmpty()&&!p.getString("token","").trim().isEmpty();}
+ public void save(String host,String token){p.edit().putString("host",host).putString("token",token).apply();}
+ String url(String path){String h=p.getString("host","").trim();if(!h.startsWith("http://")&&!h.startsWith("https://"))h="http://"+h;while(h.endsWith("/"))h=h.substring(0,h.length()-1);return h+path;}
+ public String request(String method,String path,String body)throws Exception{HttpURLConnection c=(HttpURLConnection)new URL(url(path)).openConnection();c.setConnectTimeout(7000);c.setReadTimeout(12000);c.setRequestMethod(method);c.setRequestProperty("Accept","application/json");c.setRequestProperty("X-Gateway-Token",p.getString("token",""));if(body!=null){c.setDoOutput(true);c.setRequestProperty("Content-Type","application/json");byte[] b=body.getBytes(StandardCharsets.UTF_8);c.getOutputStream().write(b);}int code=c.getResponseCode();InputStream is=code>=400?c.getErrorStream():c.getInputStream();String out="";if(is!=null){BufferedReader r=new BufferedReader(new InputStreamReader(is,StandardCharsets.UTF_8));String s;StringBuilder z=new StringBuilder();while((s=r.readLine())!=null)z.append(s);r.close();out=z.toString();}c.disconnect();return code+"|"+out;}
+ public String command(String action,String side,double vol,double entry,double sl,double tp,String ticket,String signal)throws Exception{JSONObject j=new JSONObject();j.put("action",action);if(side!=null)j.put("side",side);if(vol>0)j.put("volume",vol);if(entry>0)j.put("entry",entry);if(sl>0)j.put("sl",sl);if(tp>0)j.put("tp",tp);if(ticket!=null&&!ticket.isEmpty())j.put("ticket",ticket);j.put("signal_id",signal);return request("POST","/command",j.toString());}
+}
