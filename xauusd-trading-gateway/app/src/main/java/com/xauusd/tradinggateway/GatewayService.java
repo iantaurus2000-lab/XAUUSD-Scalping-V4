@@ -11,7 +11,7 @@ import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 
-public class GatewayService extends Service {
+public class GatewayService extends Service {\n    private MrpcClient mrpc;
     private static final String CHANNEL_ID="gateway_status";
     private static final int PORT=8787;
     private volatile boolean running=false;
@@ -20,7 +20,7 @@ public class GatewayService extends Service {
     private volatile long startedAt=0L;
 
     @Override public void onCreate(){
-        super.onCreate();
+        super.onCreate();\n        mrpc=new MrpcClient(this);
         NotificationManager nm=getSystemService(NotificationManager.class);
         if(nm!=null)nm.createNotificationChannel(new NotificationChannel(
             CHANNEL_ID,"Gateway Status",NotificationManager.IMPORTANCE_LOW));
@@ -121,7 +121,7 @@ public class GatewayService extends Service {
                 .put("service","xauusd-mini-trading-server")
                 .put("version","5.0")
                 .put("connector","LOCAL_HP_B")
-                .put("execution","MT5_CONNECTOR_PENDING")
+                .put("execution",mrpc.configured()?"MRPC_MT5":"MRPC_NOT_CONFIGURED")
                 .put("serverRunning",running)
                 .put("port",PORT)
                 .put("lastError",getSharedPreferences("gateway",0).getString("last_error",""));
@@ -140,14 +140,19 @@ public class GatewayService extends Service {
         if("STATUS".equals(action)||"HEALTH".equals(action))
             return route("GET /status","");
 
-        if("BUY_LIMIT".equals(action)||"SELL_LIMIT".equals(action)||"CANCEL".equals(action)
-                ||"ORDERS".equals(action)||"POSITIONS".equals(action)){
+        if("STATUS".equals(action)||"HEALTH".equals(action)) return route("GET /status","");
+        if("ORDERS".equals(action)){ getSharedPreferences("gateway",0).edit().putString("last_command",j.toString()).apply(); String r=mrpc.orders(); return new JSONObject().put("ok",r.startsWith("200|")).put("action",action).put("bridge",r); }
+        if("POSITIONS".equals(action)){ getSharedPreferences("gateway",0).edit().putString("last_command",j.toString()).apply(); String r=mrpc.positions(); return new JSONObject().put("ok",r.startsWith("200|")).put("action",action).put("bridge",r); }
+        if("BUY_LIMIT".equals(action)||"SELL_LIMIT".equals(action)){
             getSharedPreferences("gateway",0).edit().putString("last_command",j.toString()).apply();
-            return new JSONObject().put("ok",true)
-                .put("accepted",true)
-                .put("action",action)
-                .put("message","Command accepted by HP B mini server")
-                .put("execution","MT5_CONNECTOR_PENDING");
+            if(!mrpc.configured())return new JSONObject().put("ok",false).put("error","MRPC_NOT_CONFIGURED").put("message","Set MRPC bridge on HP B first");
+            String symbol=j.optString("symbol","XAUUSD"); double volume=j.optDouble("volume",0.01),entry=j.optDouble("entry",0),sl=j.optDouble("sl",0),tp=j.optDouble("tp",0);
+            String side="BUY_LIMIT".equals(action)?"buy":"sell"; String r=mrpc.placeLimit(symbol,side,volume,entry,sl,tp,j.optString("signal","XAUUSD-V5.2"));
+            return new JSONObject().put("ok",r.startsWith("200|")).put("accepted",r.startsWith("200|")).put("action",action).put("execution","MRPC_MT5").put("bridge",r);
+        }
+        if("CANCEL".equals(action)){
+            getSharedPreferences("gateway",0).edit().putString("last_command",j.toString()).apply();
+            return new JSONObject().put("ok",false).put("error","CANCEL_NOT_IMPLEMENTED").put("message","Order cancel will be enabled after ticket mapping");
         }
 
         return new JSONObject().put("ok",false).put("error","unsupported_action").put("action",action);
