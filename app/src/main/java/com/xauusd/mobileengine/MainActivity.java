@@ -7,7 +7,6 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.view.*;
 import android.widget.*;
-import androidx.core.app.NotificationCompat;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -460,8 +459,8 @@ public class MainActivity extends Activity {
         String id="rayyan4_alerts";
         if(Build.VERSION.SDK_INT>=26) nm.createNotificationChannel(new NotificationChannel(id,"Rayyan4 Alerts",NotificationManager.IMPORTANCE_HIGH));
         nm.notify((int)(System.currentTimeMillis() & 0x7fffffff),
-            new NotificationCompat.Builder(this,id).setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(title).setContentText(msg).setAutoCancel(true).setPriority(NotificationCompat.PRIORITY_HIGH).build());
+            new Notification.Builder(this,id).setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(title).setContentText(msg).setAutoCancel(true).setPriority(Notification.PRIORITY_HIGH).build());
     }
     void showTelegramDialog() {
         LinearLayout box=new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL); box.setPadding(22,8,22,4);
