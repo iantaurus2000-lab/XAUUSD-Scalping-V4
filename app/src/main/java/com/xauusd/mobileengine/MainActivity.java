@@ -13,6 +13,8 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public class MainActivity extends Activity {
+    private static volatile boolean visible = false;
+    public static boolean isAppVisible(){ return visible; }
     private CandleChartView chart;
     private TextView bidView, askView, spreadView, status, signalSummary, scoreView, entryView, slView, tp1View, tp2View;
     private ScheduledExecutorService ex;
@@ -134,6 +136,8 @@ public class MainActivity extends Activity {
         root.addView(nav,new LinearLayout.LayoutParams(-1,61));
 
         setContentView(root);
+        requestNotificationPermission();
+        startGateway();
         selectTimeframe("M1",false);load("1m","M1");
     }
 
@@ -225,6 +229,14 @@ public class MainActivity extends Activity {
 
     String stars(int n){StringBuilder s=new StringBuilder();for(int i=0;i<5;i++)s.append(i<n?"★":"☆");return s.toString();}
     String price(double v){return v>0?String.format(Locale.US,"%.2f",v):"--";}
+
+    private void requestNotificationPermission(){
+        if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=getPackageManager().PERMISSION_GRANTED)
+            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},1001);
+    }
+
+    @Override protected void onResume(){ super.onResume(); visible=true; }
+    @Override protected void onPause(){ visible=false; super.onPause(); }
 
     void showMenu(View anchor){
         String[] items={"Market","Chart","Indicators","Signal","Orders","Strategy","Risk Management","Telegram","MT5 / EA","Settings"};
