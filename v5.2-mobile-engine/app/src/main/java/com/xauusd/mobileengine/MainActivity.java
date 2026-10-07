@@ -31,6 +31,7 @@ public class MainActivity extends Activity {
     ExnessClient exness;
     MetaApiClient metaApi;
     GatewayClient gateway;
+    GatewayClient gateway;
     FxOpenTickTraderClient fxOpen;
     Handler handler = new Handler(Looper.getMainLooper());
     ArrayList<StrategyEngine.Candle> m1 = new ArrayList<>(), m5 = new ArrayList<>(), m15 = new ArrayList<>();
@@ -62,7 +63,7 @@ public class MainActivity extends Activity {
         super.onCreate(b);
         store=new SecurityStore(this);
         exness=new ExnessClient(store);
-        metaApi=new MetaApiClient(store);gateway=new GatewayClient(store);
+        metaApi=new MetaApiClient(store);gateway=new GatewayClient(store);gateway=new GatewayClient(store);
         fxOpen=new FxOpenTickTraderClient(store);
         buildUi();
         requestNotificationPermission();
