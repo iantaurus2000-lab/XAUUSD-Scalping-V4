@@ -336,6 +336,15 @@ public class MainActivity extends Activity {
     }
 
     void startAuto(){
+        if(useGateway()){
+            store.rawPrefs().edit().putBoolean("auto",true).apply();
+            botState.setText("AUTO: ON • HP B GATEWAY");
+            botState.setTextColor(Color.rgb(0,230,118));
+            Intent intent=new Intent(this,TradingService.class);
+            if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
+            log.setText("AUTO ON • HP B gateway transport");
+            return;
+        }
         if(!hasCredentials()){toast("Hubungkan HP B Mini Server terlebih dahulu.");showGatewayDialog();return;}
         final boolean gw=useGateway(); final boolean direct="exness".equalsIgnoreCase(store.get("active_connector",""));
         if(!gw&&!direct){toast("Pilih HP B Mini Server atau Exness API.");showGatewayDialog();return;}
