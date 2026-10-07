@@ -1,51 +1,150 @@
 package com.xauusd.tradinggateway;
 
-import android.content.Context;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.Service;
+import android.content.Intent;
+import android.os.IBinder;
+import org.json.JSONObject;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
-import org.json.*;
 
-public class GatewayService extends android.app.Service {
+public class GatewayService extends Service {
     private static final String CHANNEL_ID="gateway_status";
     private static final int PORT=8787;
-    private volatile boolean running; private ServerSocket serverSocket;
-    private final java.util.concurrent.atomic.AtomicReference<String> lastCommand=new java.util.concurrent.atomic.AtomicReference<>("");
-    private MetaKitClient meta;
-    @Override public void onCreate(){super.onCreate();meta=new MetaKitClient(this);
-        android.app.NotificationManager nm=getSystemService(android.app.NotificationManager.class);
-        if(nm!=null)nm.createNotificationChannel(new android.app.NotificationChannel(CHANNEL_ID,"Gateway Status",android.app.NotificationManager.IMPORTANCE_LOW));
+    private volatile boolean running=false;
+    private ServerSocket serverSocket;
+
+    @Override public void onCreate(){
+        super.onCreate();
+        NotificationManager nm=getSystemService(NotificationManager.class);
+        if(nm!=null)nm.createNotificationChannel(new NotificationChannel(
+            CHANNEL_ID,"Gateway Status",NotificationManager.IMPORTANCE_LOW));
     }
-    @Override public int onStartCommand(android.content.Intent i,int f,int id){startForeground(1001,notification());startServer();return START_STICKY;}
-    private android.app.Notification notification(){return new android.app.Notification.Builder(this,CHANNEL_ID).setContentTitle("XAUUSD Trading Gateway V4").setContentText("Gateway ACTIVE • MT5 connector ready").setSmallIcon(com.xauusd.tradinggateway.R.drawable.ic_gateway_foreground).setOngoing(true).build();}
-    private synchronized void startServer(){if(running)return;running=true;new Thread(()->{try{serverSocket=new ServerSocket(PORT);while(running){Socket s=serverSocket.accept();handle(s);}}catch(Exception ignored){}finally{running=false;closeServer();}},"gateway-api").start();}
-    private void handle(Socket socket){try(Socket s=socket;BufferedReader in=new BufferedReader(new InputStreamReader(s.getInputStream(),StandardCharsets.UTF_8));OutputStream out=s.getOutputStream()){
-        String req=in.readLine();if(req==null)return;int len=0;String auth="";String line;while((line=in.readLine())!=null&&!line.isEmpty()){String low=line.toLowerCase();if(low.startsWith("content-length:"))try{len=Integer.parseInt(line.substring(15).trim());}catch(Exception ignored){}if(low.startsWith("x-gateway-token:"))auth=line.substring(line.indexOf(":")+1).trim();}
-        char[] b=new char[Math.max(0,len)];int n=len>0?in.read(b):0;String body=n>0?new String(b,0,n):"";
-        String path=req.split(" ")[1], response;int code=200;
-        try{
+
+    @Override public int onStartCommand(Intent i,int f,int id){
+        startForeground(1001,notification());
+        startServer();
+        return START_STICKY;
+    }
+
+    private Notification notification(){
+        return new Notification.Builder(this,CHANNEL_ID)
+            .setContentTitle("XAUUSD Mini Trading Server")
+            .setContentText("HP B ACTIVE • LAN :8787")
+            .setSmallIcon(com.xauusd.tradinggateway.R.drawable.ic_gateway_foreground)
+            .setOngoing(true).build();
+    }
+
+    private synchronized void startServer(){
+        if(running)return;
+        running=true;
+        new Thread(()->{
+            try{
+                serverSocket=new ServerSocket(PORT);
+                while(running){
+                    Socket s=serverSocket.accept();
+                    new Thread(()->handle(s),"gateway-client").start();
+                }
+            }catch(Exception ignored){}
+            finally{running=false;closeServer();}
+        },"gateway-api").start();
+    }
+
+    private void closeServer(){
+        try{if(serverSocket!=null)serverSocket.close();}catch(Exception ignored){}
+        serverSocket=null;
+    }
+
+    private void handle(Socket socket){
+        try(Socket s=socket){
+            s.setSoTimeout(10000);
+            BufferedReader in=new BufferedReader(new InputStreamReader(s.getInputStream(),StandardCharsets.UTF_8));
+            OutputStream out=s.getOutputStream();
+
+            String request=in.readLine();
+            if(request==null)return;
+
+            int contentLength=0;
+            String auth="";
+            String line;
+            while((line=in.readLine())!=null && !line.isEmpty()){
+                String low=line.toLowerCase(java.util.Locale.US);
+                if(low.startsWith("content-length:")){
+                    try{contentLength=Integer.parseInt(line.substring(15).trim());}catch(Exception ignored){}
+                }
+                if(low.startsWith("x-gateway-token:"))auth=line.substring(line.indexOf(":")+1).trim();
+            }
+
+            String body="";
+            if(contentLength>0){
+                char[] buf=new char[contentLength];
+                int n=0,read;
+                while(n<contentLength&&(read=in.read(buf,n,contentLength-n))>0)n+=read;
+                body=new String(buf,0,n);
+            }
+
+            JSONObject result;
             String expected=getSharedPreferences("gateway",0).getString("gateway_token","");
-            if(expected.isEmpty()||!expected.equals(auth)){code=401;response="{\"ok\":false,\"error\":\"unauthorized\"}";}
-            else if(path.startsWith("/health"))response="{\"ok\":true,\"service\":\"xauusd-trading-gateway\",\"version\":\"4.0\",\"connector\":\"metakit\"}";
-            else if(path.startsWith("/status"))response=meta.accountInfo();
-            else if(path.startsWith("/last-command"))response="{\"ok\":true,\"command\":"+json(lastCommand.get())+"}";
-            else if(path.startsWith("/command")&&req.startsWith("POST")){lastCommand.set(body);response=execute(body);}
-            else {code=404;response="{\"ok\":false,\"error\":\"not_found\"}";}
-        }catch(Exception e){code=500;response="{\"ok\":false,\"error\":"+json(e.getMessage())+"}";}
-        byte[] outb=response.getBytes(StandardCharsets.UTF_8);String h="HTTP/1.1 "+code+" "+(code==200?"OK":"ERROR")+"\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: "+outb.length+"\r\nConnection: close\r\n\r\n";out.write(h.getBytes(StandardCharsets.UTF_8));out.write(outb);out.flush();
-    }catch(Exception ignored){}}
-    private String execute(String body)throws Exception{
-        JSONObject j=new JSONObject(body);String action=j.optString("action","").toUpperCase();String signal=j.optString("signal_id","gw-"+System.currentTimeMillis());
-        if(!meta.configured())return "{\"ok\":false,\"error\":\"metakit_not_configured\"}";
-        if(action.equals("BUY_LIMIT")||action.equals("SELL_LIMIT")){String side=action.startsWith("BUY")?"buy":"sell";return meta.placeLimit(side,j.getDouble("volume"),j.getDouble("entry"),j.getDouble("sl"),j.getDouble("tp"),signal);}
-        if(action.equals("CANCEL"))return meta.cancel(j.getString("ticket"),signal);
-        if(action.equals("STATUS"))return meta.accountInfo();
-        if(action.equals("ORDERS"))return meta.orders();
-        if(action.equals("POSITIONS"))return meta.positions();
-        return "{\"ok\":false,\"error\":\"unsupported_action\"}";
+            if(!expected.isEmpty() && !expected.equals(auth)){
+                result=new JSONObject().put("ok",false).put("error","unauthorized");
+            }else{
+                result=route(request,body);
+            }
+
+            String json=result.toString();
+            String resp="HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+                +json.getBytes(StandardCharsets.UTF_8).length+"\r\nConnection: close\r\n\r\n"+json;
+            out.write(resp.getBytes(StandardCharsets.UTF_8));
+            out.flush();
+        }catch(Exception ignored){}
     }
-    private String json(String s){return s==null||s.isEmpty()?"null":"\""+s.replace("\\","\\\\").replace("\"","\\\"").replace("\r","").replace("\n","\\n")+"\"";}
-    @Override public void onDestroy(){running=false;closeServer();super.onDestroy();}
-    private void closeServer(){try{if(serverSocket!=null)serverSocket.close();}catch(Exception ignored){}serverSocket=null;}
-    @Override public android.os.IBinder onBind(android.content.Intent i){return null;}
+
+    private JSONObject route(String request,String body)throws Exception{
+        String path=request.split(" ")[1];
+
+        if(path.equals("/health")||path.equals("/status")){
+            JSONObject r=new JSONObject()
+                .put("ok",true)
+                .put("service","xauusd-mini-trading-server")
+                .put("version","5.0")
+                .put("connector","LOCAL_HP_B")
+                .put("execution","MT5_CONNECTOR_PENDING");
+            String last=getSharedPreferences("gateway",0).getString("last_command","");
+            if(!last.isEmpty())r.put("lastCommand",new JSONObject(last));
+            return r;
+        }
+
+        if(!path.equals("/command"))
+            return new JSONObject().put("ok",false).put("error","not_found");
+
+        JSONObject j=body==null||body.trim().isEmpty()?new JSONObject():new JSONObject(body);
+        String action=j.optString("action","").toUpperCase(java.util.Locale.US);
+        if(action.isEmpty())return new JSONObject().put("ok",false).put("error","action_required");
+
+        if("STATUS".equals(action)||"HEALTH".equals(action))
+            return route("GET /status","");
+
+        if("BUY_LIMIT".equals(action)||"SELL_LIMIT".equals(action)||"CANCEL".equals(action)
+                ||"ORDERS".equals(action)||"POSITIONS".equals(action)){
+            getSharedPreferences("gateway",0).edit().putString("last_command",j.toString()).apply();
+            return new JSONObject().put("ok",true)
+                .put("accepted",true)
+                .put("action",action)
+                .put("message","Command accepted by HP B mini server")
+                .put("execution","MT5_CONNECTOR_PENDING");
+        }
+
+        return new JSONObject().put("ok",false).put("error","unsupported_action").put("action",action);
+    }
+
+    @Override public void onDestroy(){
+        running=false;
+        closeServer();
+        stopForeground(true);
+        super.onDestroy();
+    }
+    @Override public IBinder onBind(Intent i){return null;}
 }
