@@ -1,0 +1,30 @@
+name: Build XAUUSD Mobile Engine HP A Gateway
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'v5.2-mobile-engine/**'
+      - '.github/workflows/build-hpa-gateway.yml'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build HP A APK
+        working-directory: v5.2-mobile-engine
+        run: gradle --no-daemon --stacktrace assembleDebug
+      - name: Verify APK
+        run: |
+          test -s v5.2-mobile-engine/app/build/outputs/apk/debug/app-debug.apk
+          ls -lh v5.2-mobile-engine/app/build/outputs/apk/debug/app-debug.apk
+      - name: Upload HP A APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: XAUUSD-Mobile-Trading-Engine-HP-A-Gateway
+          path: v5.2-mobile-engine/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
