@@ -14,7 +14,7 @@ public class CandleChartView extends View {
     float leftPad = 54, rightAxis = 108, topPad = 36, bottomPad = 74, lastCandlePad = 52;
     boolean showEMA9 = true, showEMA21 = true, showEMA50 = true;
     boolean showSR = true, showFibo = true, showRSI = true, showMACD = true, showATR = true;
-    boolean showSignals = true, showTradeLevels = true, showPosition = true, showBidAsk = true;
+    boolean showSignals = true, showWickBos = true, showTradeLevels = true, showPosition = true, showBidAsk = true;
     boolean follow = true;
     String timeframe = "M1";
     SimpleDateFormat time = new SimpleDateFormat("HH:mm", Locale.US);
@@ -74,6 +74,7 @@ public class CandleChartView extends View {
     public void setShowMACD(boolean v) { showMACD = v; invalidate(); }
     public void setShowATR(boolean v) { showATR = v; invalidate(); }
     public void setShowSignals(boolean v) { showSignals = v; invalidate(); }
+    public void setShowWickBos(boolean v) { showWickBos = v; invalidate(); }
     public void setShowTradeLevels(boolean v) { showTradeLevels = v; invalidate(); }
     public void setShowPosition(boolean v) { showPosition = v; invalidate(); }
     public void setShowBidAsk(boolean v) { showBidAsk = v; invalidate(); }
@@ -305,8 +306,8 @@ public class CandleChartView extends View {
         if (showMACD) text(c, "MACD  " + f(macd12_26()), L + 115, B + 34, 11, Color.LTGRAY);
         if (showATR) text(c, "ATR 14  " + f(atr14()), L + 230, B + 34, 11, Color.LTGRAY);
         ln(c, L, B + 47, R, B + 47, Color.rgb(32, 38, 46), 1);
-        if (showSignals) text(c, "Wick • Sweep • BOS", L, B + 62, 9, Color.LTGRAY);
-        if (showPosition) text(c, "POSITION LAYER", R - 88, B + 62, 9, Color.LTGRAY);
+        if (showWickBos) text(c, "Wick • Sweep • BOS", L, B + 62, 9, Color.LTGRAY);
+        if (showPosition) text(c, "POSITION LAYER", R - 98, B + 62, 9, Color.LTGRAY);
 
         if (cx > 0) {
             ln(c, cx, T, cx, B, Color.GRAY, 1);

@@ -331,6 +331,7 @@ public class MainActivity extends Activity {
         chart.setShowMACD(ind("macd", true));
         chart.setShowATR(ind("atr", true));
         chart.setShowSignals(ind("signals", true));
+        chart.setShowWickBos(ind("wickbos", true));
         chart.setShowTradeLevels(ind("orders", true));
         chart.setShowPosition(ind("position", true));
         chart.setShowBidAsk(ind("bidask", true));
@@ -348,6 +349,7 @@ public class MainActivity extends Activity {
             case "macd": chart.setShowMACD(enabled); break;
             case "atr": chart.setShowATR(enabled); break;
             case "signals": chart.setShowSignals(enabled); break;
+            case "wickbos": chart.setShowWickBos(enabled); break;
             case "orders": chart.setShowTradeLevels(enabled); break;
             case "position": chart.setShowPosition(enabled); break;
             case "bidask": chart.setShowBidAsk(enabled); break;
@@ -395,12 +397,12 @@ public class MainActivity extends Activity {
         };
         final String[] keys = {
             "ema9", "ema21", "ema50", "sr", "fibo",
-            "rsi", "macd", "atr", "signals", "signals",
+            "rsi", "macd", "atr", "signals", "wickbos",
             "bidask", "orders"
         };
         boolean[] checked = {
             ind("ema9", true), ind("ema21", true), ind("ema50", true), ind("sr", true), ind("fibo", true),
-            ind("rsi", true), ind("macd", true), ind("atr", true), ind("signals", true), ind("signals", true),
+            ind("rsi", true), ind("macd", true), ind("atr", true), ind("signals", true), ind("wickbos", true),
             ind("bidask", true), ind("orders", true)
         };
         new AlertDialog.Builder(this)
