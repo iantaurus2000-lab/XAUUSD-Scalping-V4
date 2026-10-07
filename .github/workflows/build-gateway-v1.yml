@@ -7,6 +7,7 @@ on:
       - 'xauusd-trading-gateway/**'
       - '.github/workflows/build-gateway-v1.yml'
 
+# Gateway V3 emulator gate: build -> install -> launch -> foreground service -> notification
 jobs:
   build:
     runs-on: ubuntu-latest
