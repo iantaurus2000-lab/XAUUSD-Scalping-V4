@@ -313,6 +313,7 @@ public class MainActivity extends Activity {
                 if ("Indicators".equals(s)) showIndicatorDialog();
                 else if ("Signal".equals(s)) showSignalDialog();
                 else if ("Telegram".equals(s)) showTelegramDialog();
+                else if ("MT5 / EA".equals(s)) showMt5Dialog();
                 else if ("Orders".equals(s) || "Settings".equals(s)) showLogDialog(s);
                 else Toast.makeText(this, s, Toast.LENGTH_SHORT).show();
             });
@@ -484,6 +485,43 @@ public class MainActivity extends Activity {
             .setNeutralButton("HAPUS LOG",(d,w)->AppLog.clear(this)).show();
     }
 
+
+    void startGateway() {
+        try { startForegroundService(new android.content.Intent(this, GatewayService.class)); }
+        catch(Exception e) { startService(new android.content.Intent(this, GatewayService.class)); }
+        AppLog.add(this,"MT5","gateway started");
+        notifyLocal("MT5 Gateway","LAN gateway aktif di port 8787");
+    }
+    void queueLimit(String side, double volume, double entry, double sl, double tp) {
+        if(volume<=0||entry<=0||sl<=0||tp<=0){Toast.makeText(this,"Nilai order tidak valid",Toast.LENGTH_SHORT).show();return;}
+        if("BUY_LIMIT".equals(side) && entry>=chart.getAsk()){Toast.makeText(this,"BUY LIMIT harus di bawah ASK",Toast.LENGTH_SHORT).show();return;}
+        if("SELL_LIMIT".equals(side) && entry<=chart.getBid()){Toast.makeText(this,"SELL LIMIT harus di atas BID",Toast.LENGTH_SHORT).show();return;}
+        String id=Long.toString(System.currentTimeMillis());
+        String cmd="id="+id+";type=LIMIT;side="+side+";volume="+volume+";entry="+entry+";sl="+sl+";tp="+tp;
+        getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putString("next",cmd).apply();
+        HistoryStore.add(this,"PENDING",side,entry,sl,tp,tp, lastSignal==null?0:lastSignal.confidence);
+        AppLog.add(this,"ORDER","queued "+cmd);
+        notifyLocal("MT5 "+side,"Pending order queued");
+    }
+    void showMt5Dialog() {
+        startGateway();
+        LinearLayout box=new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL); box.setPadding(18,4,18,4);
+        Switch auto=new Switch(this); auto.setText("AUTO PENDING"); auto.setChecked(getSharedPreferences("rayyan4_gateway",0).getBoolean("auto",false));
+        EditText side=new EditText(this); side.setHint("BUY_LIMIT / SELL_LIMIT");
+        EditText vol=new EditText(this); vol.setHint("Lot, contoh 0.01"); vol.setInputType(2|8192);
+        EditText en=new EditText(this); en.setHint("Entry"); en.setInputType(2|8192);
+        EditText sl=new EditText(this); sl.setHint("SL"); sl.setInputType(2|8192);
+        EditText tp=new EditText(this); tp.setHint("TP"); tp.setInputType(2|8192);
+        box.addView(auto);box.addView(side);box.addView(vol);box.addView(en);box.addView(sl);box.addView(tp);
+        new AlertDialog.Builder(this).setTitle("MT5 / EA • DEMO")
+          .setView(box).setNegativeButton("TUTUP",null)
+          .setPositiveButton("QUEUE ORDER",(d,w)->{
+            getSharedPreferences("rayyan4_gateway",0).edit().putBoolean("auto",auto.isChecked()).apply();
+            queueLimit(side.getText().toString().trim().toUpperCase(Locale.US),
+              Double.parseDouble(vol.getText().toString()),Double.parseDouble(en.getText().toString()),
+              Double.parseDouble(sl.getText().toString()),Double.parseDouble(tp.getText().toString()));
+          }).show();
+    }
     @Override protected void onDestroy() {
         if (ex != null) ex.shutdownNow();
         super.onDestroy();
