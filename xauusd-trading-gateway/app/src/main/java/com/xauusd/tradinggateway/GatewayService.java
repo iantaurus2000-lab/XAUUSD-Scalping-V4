@@ -20,11 +20,13 @@ public class GatewayService extends android.app.Service {
     private android.app.Notification notification(){return new android.app.Notification.Builder(this,CHANNEL_ID).setContentTitle("XAUUSD Trading Gateway V4").setContentText("Gateway ACTIVE • MT5 connector ready").setSmallIcon(com.xauusd.tradinggateway.R.drawable.ic_gateway_foreground).setOngoing(true).build();}
     private synchronized void startServer(){if(running)return;running=true;new Thread(()->{try{serverSocket=new ServerSocket(PORT);while(running){Socket s=serverSocket.accept();handle(s);}}catch(Exception ignored){}finally{running=false;closeServer();}},"gateway-api").start();}
     private void handle(Socket socket){try(Socket s=socket;BufferedReader in=new BufferedReader(new InputStreamReader(s.getInputStream(),StandardCharsets.UTF_8));OutputStream out=s.getOutputStream()){
-        String req=in.readLine();if(req==null)return;int len=0;String line;while((line=in.readLine())!=null&&!line.isEmpty()){if(line.toLowerCase().startsWith("content-length:"))try{len=Integer.parseInt(line.substring(15).trim());}catch(Exception ignored){}}
+        String req=in.readLine();if(req==null)return;int len=0;String auth="";String line;while((line=in.readLine())!=null&&!line.isEmpty()){String low=line.toLowerCase();if(low.startsWith("content-length:"))try{len=Integer.parseInt(line.substring(15).trim());}catch(Exception ignored){}if(low.startsWith("x-gateway-token:"))auth=line.substring(line.indexOf(":")+1).trim();}
         char[] b=new char[Math.max(0,len)];int n=len>0?in.read(b):0;String body=n>0?new String(b,0,n):"";
         String path=req.split(" ")[1], response;int code=200;
         try{
-            if(path.startsWith("/health"))response="{\"ok\":true,\"service\":\"xauusd-trading-gateway\",\"version\":\"4.0\",\"connector\":\"metakit\"}";
+            String expected=getSharedPreferences("gateway",0).getString("gateway_token","");
+            if(expected.isEmpty()||!expected.equals(auth)){code=401;response="{\"ok\":false,\"error\":\"unauthorized\"}";}
+            else if(path.startsWith("/health"))response="{\"ok\":true,\"service\":\"xauusd-trading-gateway\",\"version\":\"4.0\",\"connector\":\"metakit\"}";
             else if(path.startsWith("/status"))response=meta.accountInfo();
             else if(path.startsWith("/last-command"))response="{\"ok\":true,\"command\":"+json(lastCommand.get())+"}";
             else if(path.startsWith("/command")&&req.startsWith("POST")){lastCommand.set(body);response=execute(body);}
