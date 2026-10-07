@@ -12,10 +12,12 @@ import java.net.NetworkInterface;
 import java.util.Collections;
 
 public class MainActivity extends Activity{
-    TextView status, address;\n    MrpcClient mrpc;
+    TextView status, address;
+    MrpcClient mrpc;
 
     @Override protected void onCreate(Bundle b){
-        super.onCreate(b);\n        mrpc=new MrpcClient(this);
+        super.onCreate(b);
+        mrpc=new MrpcClient(this);
         if(android.os.Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},100);
 
@@ -39,7 +41,10 @@ public class MainActivity extends Activity{
         status.setPadding(0,8,0,14);
         r.addView(status);
 
-        Button bridge=new Button(this);\n        bridge.setText("☁ MT5 BRIDGE • MRPC");\n        bridge.setOnClickListener(v->bridgeConfig());\n        r.addView(bridge);\n\n        Button token=new Button(this);
+        Button bridge=new Button(this);
+        bridge.setText("☁ MT5 BRIDGE • MRPC");
+        bridge.setOnClickListener(v->bridgeConfig());
+        r.addView(bridge);\n\n        Button token=new Button(this);
         token.setText("⚙ SET HP A GATEWAY TOKEN");
         token.setOnClickListener(v->config());
         r.addView(token);
