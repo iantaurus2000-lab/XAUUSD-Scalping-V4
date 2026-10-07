@@ -2,6 +2,7 @@ package com.xauusd.mobileengine;
 
 import android.app.*;
 import android.os.*;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.view.*;
@@ -13,6 +14,7 @@ public class MainActivity extends Activity {
     private CandleChartView chart;
     private TextView bidView, askView, spreadView, status, signalSummary, scoreView;
     private ScheduledExecutorService ex;
+    private SharedPreferences prefs;
     private String selectedTf = "M1";
     private final Map<String, Button> tfButtons = new HashMap<>();
     private final int bg = Color.rgb(4, 11, 20);
@@ -46,6 +48,7 @@ public class MainActivity extends Activity {
     @Override public void onCreate(Bundle b) {
         super.onCreate(b);
         getWindow().setStatusBarColor(Color.rgb(2, 8, 15));
+        prefs = getSharedPreferences("rayyan4_indicators", MODE_PRIVATE);
         buildUI();
     }
 
@@ -105,15 +108,17 @@ public class MainActivity extends Activity {
 
         chart = new CandleChartView(this);
         chart.setTimeframe(selectedTf);
+        loadIndicatorSettings();
         root.addView(chart, new LinearLayout.LayoutParams(-1, 0, 1));
 
-        // Quick chart layers, matching the reference UI.
+        // Quick chart layer controls. These now really toggle the chart layers.
         LinearLayout layers = new LinearLayout(this);
         layers.setPadding(5, 3, 5, 3);
         String[] ls = {"▥ S/R", "▤ Fibo", "〽 EMA", "↕ Buy/Sell", "▣ Order", "◎ Posisi"};
         for (String s : ls) {
             Button b = btn(s); b.setTextSize(10);
             layers.addView(b, new LinearLayout.LayoutParams(0, 42, 1));
+            bindQuickLayer(b, s);
         }
         root.addView(layers);
 
@@ -290,7 +295,7 @@ public class MainActivity extends Activity {
     }
 
     void showMenu(View anchor) {
-        String[] items = {"Market", "Chart", "Signal", "Orders", "Strategy",
+        String[] items = {"Market", "Chart", "Indicators", "Signal", "Orders", "Strategy",
             "Risk Management", "Telegram", "MT5 / EA", "Settings"};
         PopupWindow pop = new PopupWindow(this);
         LinearLayout box = new LinearLayout(this);
@@ -299,13 +304,110 @@ public class MainActivity extends Activity {
         for (String s : items) {
             Button b = btn(s); b.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             b.setTextSize(14); box.addView(b, new LinearLayout.LayoutParams(270, 54));
-            b.setOnClickListener(v -> { pop.dismiss(); Toast.makeText(this, s, Toast.LENGTH_SHORT).show(); });
+            b.setOnClickListener(v -> {
+                pop.dismiss();
+                if ("Indicators".equals(s)) showIndicatorDialog();
+                else Toast.makeText(this, s, Toast.LENGTH_SHORT).show();
+            });
         }
         pop.setContentView(box); pop.setWidth(278);
         pop.setHeight(WindowManager.LayoutParams.WRAP_CONTENT);
         pop.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
         pop.setOutsideTouchable(true); pop.setFocusable(true); pop.setElevation(16);
         pop.showAsDropDown(anchor, -204, 4);
+    }
+
+    boolean ind(String key, boolean def) {
+        return prefs.getBoolean(key, def);
+    }
+
+    void loadIndicatorSettings() {
+        chart.setShowEMA9(ind("ema9", true));
+        chart.setShowEMA21(ind("ema21", true));
+        chart.setShowEMA50(ind("ema50", true));
+        chart.setShowSR(ind("sr", true));
+        chart.setShowFibo(ind("fibo", true));
+        chart.setShowRSI(ind("rsi", true));
+        chart.setShowMACD(ind("macd", true));
+        chart.setShowATR(ind("atr", true));
+        chart.setShowSignals(ind("signals", true));
+        chart.setShowTradeLevels(ind("orders", true));
+        chart.setShowPosition(ind("position", true));
+        chart.setShowBidAsk(ind("bidask", true));
+    }
+
+    void setInd(String key, boolean enabled) {
+        prefs.edit().putBoolean(key, enabled).apply();
+        switch (key) {
+            case "ema9": chart.setShowEMA9(enabled); break;
+            case "ema21": chart.setShowEMA21(enabled); break;
+            case "ema50": chart.setShowEMA50(enabled); break;
+            case "sr": chart.setShowSR(enabled); break;
+            case "fibo": chart.setShowFibo(enabled); break;
+            case "rsi": chart.setShowRSI(enabled); break;
+            case "macd": chart.setShowMACD(enabled); break;
+            case "atr": chart.setShowATR(enabled); break;
+            case "signals": chart.setShowSignals(enabled); break;
+            case "orders": chart.setShowTradeLevels(enabled); break;
+            case "position": chart.setShowPosition(enabled); break;
+            case "bidask": chart.setShowBidAsk(enabled); break;
+        }
+    }
+
+    void bindQuickLayer(Button b, String label) {
+        b.setOnClickListener(v -> {
+            if (label.contains("S/R")) {
+                setInd("sr", !ind("sr", true));
+            } else if (label.contains("Fibo")) {
+                setInd("fibo", !ind("fibo", true));
+            } else if (label.contains("EMA")) {
+                boolean next = !(ind("ema9", true) && ind("ema21", true) && ind("ema50", true));
+                setInd("ema9", next); setInd("ema21", next); setInd("ema50", next);
+            } else if (label.contains("Buy/Sell")) {
+                setInd("signals", !ind("signals", true));
+            } else if (label.contains("Order")) {
+                setInd("orders", !ind("orders", true));
+            } else if (label.contains("Posisi")) {
+                setInd("position", !ind("position", true));
+            }
+            updateQuickLayerButton(b, label);
+        });
+        updateQuickLayerButton(b, label);
+    }
+
+    void updateQuickLayerButton(Button b, String label) {
+        boolean on;
+        if (label.contains("S/R")) on = ind("sr", true);
+        else if (label.contains("Fibo")) on = ind("fibo", true);
+        else if (label.contains("EMA")) on = ind("ema9", true) || ind("ema21", true) || ind("ema50", true);
+        else if (label.contains("Buy/Sell")) on = ind("signals", true);
+        else if (label.contains("Order")) on = ind("orders", true);
+        else on = ind("position", true);
+        b.setTextColor(on ? green : Color.LTGRAY);
+        b.setBackground(roundBg(on ? Color.rgb(8, 65, 48) : Color.rgb(9, 35, 61), 12));
+    }
+
+    void showIndicatorDialog() {
+        final String[] names = {
+            "EMA 9", "EMA 21", "EMA 50", "Support / Resistance", "Fibonacci",
+            "RSI 14", "MACD", "ATR", "Buy / Sell", "Wick / Sweep / BOS",
+            "Bid / Ask", "Entry / SL / TP"
+        };
+        final String[] keys = {
+            "ema9", "ema21", "ema50", "sr", "fibo",
+            "rsi", "macd", "atr", "signals", "signals",
+            "bidask", "orders"
+        };
+        boolean[] checked = {
+            ind("ema9", true), ind("ema21", true), ind("ema50", true), ind("sr", true), ind("fibo", true),
+            ind("rsi", true), ind("macd", true), ind("atr", true), ind("signals", true), ind("signals", true),
+            ind("bidask", true), ind("orders", true)
+        };
+        new AlertDialog.Builder(this)
+            .setTitle("INDICATORS • ON / OFF")
+            .setMultiChoiceItems(names, checked, (dialog, which, isChecked) -> setInd(keys[which], isChecked))
+            .setPositiveButton("TUTUP", null)
+            .show();
     }
 
     @Override protected void onDestroy() {
