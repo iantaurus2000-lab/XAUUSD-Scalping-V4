@@ -1,0 +1,1 @@
+package com.xauusd.mobileengine; public class Candle { public long t; public double o,h,l,c; public Candle(long t,double o,double h,double l,double c){this.t=t;this.o=o;this.h=h;this.l=l;this.c=c;} }
