@@ -18,6 +18,7 @@ public class TradingService extends Service {
     ExnessClient exness;
     MetaApiClient metaApi;
     FxOpenTickTraderClient fxOpen;
+    GatewayClient gateway;
     TelegramClient telegram;
     TradeManager manager;
     static final String BASE="https://biquote.io/api/XAUUSD";
@@ -41,7 +42,7 @@ public class TradingService extends Service {
         wakeLock=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"XAUUSD:Engine");
         wakeLock.setReferenceCounted(false);
         wakeLock.acquire();
-        store=new SecurityStore(this);exness=new ExnessClient(store);metaApi=new MetaApiClient(store);telegram=new TelegramClient(store);manager=new TradeManager(store,exness);fxOpen=new FxOpenTickTraderClient(store);createChannel();
+        store=new SecurityStore(this);exness=new ExnessClient(store);metaApi=new MetaApiClient(store);telegram=new TelegramClient(store);manager=new TradeManager(store,exness);fxOpen=new FxOpenTickTraderClient(store);gateway=new GatewayClient(this);createChannel();
         Notification n=new Notification.Builder(this,CH).setContentTitle("XAUUSD V5.2 Auto Engine")
             .setContentText("Auto execution armed with risk guards").setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true).setColor(Color.rgb(0,200,83)).build();
@@ -87,7 +88,7 @@ public class TradingService extends Service {
     void tick(){
         if(!store.rawPrefs().getBoolean("auto",false)||busy)return;
         String activeConnector=store.get("active_connector","");
-        if(!("exness".equalsIgnoreCase(activeConnector)||useMetaApi()))return;
+        if(!("exness".equalsIgnoreCase(activeConnector)||useMetaApi()||gateway.configured()))return;
         busy=true;
         new Thread(()->{
             try{
@@ -127,7 +128,9 @@ public class TradingService extends Service {
                 if(fxOpen!=null && fxOpen.configured()){
                     try{ FxOpenTickTraderClient.Response fr=fxOpen.trades(); /* entry-layer health only */ }catch(Exception ignored){}
                 }
-                if(useMetaApi()){
+                if(gateway.configured()){
+                    try{ gateway.request("GET","/status",null); }catch(Exception ignored){}
+                }else if(useMetaApi()){
                     try{ MetaApiClient.Response mr=metaApi.orders(); if(mr.ok() && mr.body.contains(symbol)) return; }catch(Exception ignored){}
                 }else{
                     try{ ExnessClient.Response er=exness.accountInfo(); if(er.ok() && hasActiveExposure(symbol)) return; }catch(Exception ignored){}
@@ -143,13 +146,18 @@ public class TradingService extends Service {
                 }catch(Exception ignored){}
 
                 String side=d.side.startsWith("BUY")?"buy":"sell";
-                if(useMetaApi()){
+                if(gateway.configured()){
+                    String gr=gateway.command("BUY".equals(side)?"BUY_LIMIT":"SELL_LIMIT",side,Double.parseDouble(lot),d.entry,d.sl,d.tp2,null,"auto-"+key);
+                    if(gr.startsWith("200|")){
+                        lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;
+                        notifyUser("HP B GATEWAY • ORDER ACK "+d.side,d.summary()+"\\nMT5 Cloud response: "+trim(gr.substring(4)));
+                    }else notifyUser("GATEWAY ORDER REJECT",trim(gr));
+                }else if(useMetaApi()){
                     double vol=Double.parseDouble(lot);
                     MetaApiClient.Response mr=metaApi.placeLimit(symbol,side,vol,d.entry,d.sl,d.tp2,"XAUUSD-V5.2-AUTO");
                     if(mr.ok()){
                         lastOrderAt=System.currentTimeMillis();lastSignalKey=key;dayCount++;
                         notifyUser("MT5 CLOUD • ORDER ACK "+d.side,d.summary()+"\\nMetaApi order: "+trim(mr.body));
-                        if(telegram.enabled())try{ telegram.send("🟢 XAUUSD SCALPING\\n"+d.side+"\\n"+d.summary()+"\\nMT5 CLOUD (MetaApi) → EXNESS MT5\\nTF: M1 | Bias: M5\\nSetup: Liquidity Sweep + Wick Rejection + BOS\\nConfidence: "+d.score+"/100"); }catch(Exception ignored){}
                     }else notifyUser("MT5 ORDER REJECT "+mr.code,trim(mr.body));
                 }else{
                     ExnessClient.Response r=exness.placeLimit(symbol,side,lot,fmt(d.entry,digits),fmt(d.sl,digits),fmt(d.tp2,digits),"XAUUSD-V5.2-AUTO");

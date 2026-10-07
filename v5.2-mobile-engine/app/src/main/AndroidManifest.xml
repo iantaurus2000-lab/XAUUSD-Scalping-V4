@@ -15,7 +15,7 @@
         android:label="XAUUSD Mobile Trading Engine V5.2"
         android:allowBackup="false"
         android:supportsRtl="true"
-        android:usesCleartextTraffic="false">
+        android:usesCleartextTraffic="true">
 
         <activity
             android:name=".MainActivity"

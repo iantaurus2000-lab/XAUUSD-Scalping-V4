@@ -1,0 +1,13 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.xauusd.tradinggateway'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.xauusd.tradinggateway'
+        minSdk 26
+        targetSdk 33
+        versionCode 5
+        versionName '5.0.0-HP-B-MINI-SERVER'
+    }
+}

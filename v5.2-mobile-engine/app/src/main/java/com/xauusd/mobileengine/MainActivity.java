@@ -30,6 +30,7 @@ public class MainActivity extends Activity {
     SecurityStore store;
     ExnessClient exness;
     MetaApiClient metaApi;
+    GatewayClient gateway;
     FxOpenTickTraderClient fxOpen;
     Handler handler = new Handler(Looper.getMainLooper());
     ArrayList<StrategyEngine.Candle> m1 = new ArrayList<>(), m5 = new ArrayList<>(), m15 = new ArrayList<>();
@@ -62,6 +63,7 @@ public class MainActivity extends Activity {
         store=new SecurityStore(this);
         exness=new ExnessClient(store);
         metaApi=new MetaApiClient(store);
+        gateway=new GatewayClient(this);
         fxOpen=new FxOpenTickTraderClient(store);
         buildUi();
         requestNotificationPermission();
@@ -142,6 +144,7 @@ public class MainActivity extends Activity {
         String[] items={
             "🔐 Exness API / Instrument",
             "☁️ MetaApi • MT5 CLOUD → EXNESS",
+            "📱 HP B Gateway → MT5 CLOUD",
             "🎯 Manual BUY/SELL LIMIT",
             "📊 Indicators / Fibonacci",
             "🔎 Scan Market • Entry Ready",
@@ -161,25 +164,36 @@ public class MainActivity extends Activity {
             switch(w){
                 case 0: showExnessDialog();break;
                 case 1: showMetaApiDialog();break;
-                case 2: showManualOrderDialog();break;
-                case 3: showIndicatorDialog();break;
-                case 4: scanMarket();break;
-                case 5: showSignalThresholdDialog();break;
-                case 6: showManagerDialog();break;
-                case 7: showRiskDialog();break;
-                case 8: showOrderManagerDialog();break;
-                case 9: showHistoryDialog();break;
-                case 10: showFxOpenDialog();break;
-                case 11: showTelegramDialog();break;
-                case 12: showCancelAutoDialog();break;
-                case 13: requestNotificationPermission();testAlarm();break;
-                case 14: new AlertDialog.Builder(this).setTitle("ENGINE LOG").setMessage(log.getText()).setPositiveButton("OK",null).show();break;
-                case 15: if(store.rawPrefs().getBoolean("auto",false))stopAuto(); else startAuto();break;
+                case 2: showGatewayDialog();break;
+                case 3: showManualOrderDialog();break;
+                case 4: showIndicatorDialog();break;
+                case 5: scanMarket();break;
+                case 6: showSignalThresholdDialog();break;
+                case 7: showManagerDialog();break;
+                case 8: showRiskDialog();break;
+                case 9: showOrderManagerDialog();break;
+                case 10: showHistoryDialog();break;
+                case 11: showFxOpenDialog();break;
+                case 12: showTelegramDialog();break;
+                case 13: showCancelAutoDialog();break;
+                case 14: requestNotificationPermission();testAlarm();break;
+                case 15: new AlertDialog.Builder(this).setTitle("ENGINE LOG").setMessage(log.getText()).setPositiveButton("OK",null).show();break;
+                case 16: if(store.rawPrefs().getBoolean("auto",false))stopAuto(); else startAuto();break;
             }
         }).setNegativeButton("Tutup",null).show();
     }
 
     void addCard(View v,int h){v.setBackground(bg("#0E131A",18));content.addView(v,new LinearLayout.LayoutParams(-1,h));}
+
+    void showGatewayDialog(){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(18,6,18,6);
+        EditText host=input("HP B address: http://192.168.x.x:8787",gateway.p.getString("host",""));
+        EditText tok=input("Gateway token",gateway.p.getString("token",""));tok.setInputType(129);
+        TextView info=tv("HP A dan HP B harus satu Wi‑Fi/hotspot. Gateway V4 di HP B meneruskan order ke MetaKit → Exness MT5.",11);
+        box.addView(info,new LinearLayout.LayoutParams(-1,72));box.addView(host,new LinearLayout.LayoutParams(-1,58));box.addView(tok,new LinearLayout.LayoutParams(-1,58));
+        AlertDialog d=new AlertDialog.Builder(this).setTitle("📱 HP B TRADING GATEWAY").setView(box).setNegativeButton("Tutup",null).setPositiveButton("SAVE + TEST",null).create();
+        d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{String h=host.getText().toString().trim();String t=tok.getText().toString().trim();if(h.isEmpty()||t.isEmpty()){toast("Host dan token wajib diisi");return;}gateway.save(h,t);d.dismiss();new Thread(()->{try{String q=gateway.request("GET","/health",null);runOnUiThread(()->{log.setText("HP B GATEWAY • "+q);toast(q.startsWith("200|")?"GATEWAY CONNECTED":"GATEWAY ERROR");});}catch(Exception e){runOnUiThread(()->toast("Gateway: "+e.getMessage()));}}).start();}));d.show();
+    }
 
     void showMetaApiDialog(){
         LinearLayout box=new LinearLayout(this);
@@ -332,6 +346,11 @@ public class MainActivity extends Activity {
         }catch(Exception e){toast(e.getMessage());return;}
         new Thread(()->{
             try{
+                if(gateway.configured()){
+                    String gr=gateway.command("BUY".equalsIgnoreCase(side)?"BUY_LIMIT":"SELL_LIMIT",side,Double.parseDouble(lot),Double.parseDouble(entry),Double.parseDouble(sl),Double.parseDouble(tp),null,"hpA-"+System.currentTimeMillis());
+                    runOnUiThread(()->{if(gr.startsWith("200|")){log.setText("HP B GATEWAY • ORDER ACCEPTED • "+trim(gr.substring(4)));toast("GATEWAY ORDER DITERIMA");}else{log.setText("GATEWAY ORDER REJECT • "+trim(gr));toast("Gateway order gagal");}});
+                    return;
+                }
                 if(useMetaApi()){
                     MetaApiClient.Response mr=metaApi.placeLimit(orderSymbol(),side,Double.parseDouble(lot),Double.parseDouble(entry),Double.parseDouble(sl),Double.parseDouble(tp),"XAUUSD-V5.2-"+tag);
                     runOnUiThread(()->{
@@ -396,11 +415,13 @@ public class MainActivity extends Activity {
         if(!hasCredentials()){toast("Sambungkan MT5 Cloud terlebih dahulu.");showMt5Dialog();return;}
         final boolean cloud=useMetaApi();
         final boolean direct="exness".equalsIgnoreCase(store.get("active_connector",""));
-        if(!cloud&&!direct){toast("Pilih MT5 Cloud (MetaApi) atau Exness API.");showMt5Dialog();return;}
-        log.setText(cloud?"AUTO PREFLIGHT • MT5 CLOUD → EXNESS MT5...":"AUTO PREFLIGHT • EXNESS API...");
+        if(!cloud&&!direct&&!gateway.configured()){toast("Hubungkan HP B Gateway, MetaApi, atau Exness API.");showMt5Dialog();return;}
+        log.setText(gateway.configured()?"AUTO PREFLIGHT • HP B GATEWAY → MT5 CLOUD → EXNESS...":(cloud?"AUTO PREFLIGHT • MT5 CLOUD → EXNESS MT5...":"AUTO PREFLIGHT • EXNESS API..."));
         new Thread(()->{
             try{
-                if(cloud){
+                if(gateway.configured()){
+                    String g=gateway.request("GET","/health",null); if(!g.startsWith("200|")) throw new IllegalStateException("Gateway "+g);
+                }else if(cloud){
                     MetaApiClient.Response a=metaApi.accountInfo();
                     if(!a.ok())throw new IllegalStateException("MetaApi "+a.code+": "+trim(a.body));
                     MetaApiClient.Response o=metaApi.orders();
@@ -414,11 +435,11 @@ public class MainActivity extends Activity {
                 store.rawPrefs().edit().putBoolean("auto",true).apply();
                 runOnUiThread(()->requestBatteryOptimizationExemption());
                 runOnUiThread(()->{
-                    botState.setText(cloud?"AUTO: ON • MT5 CLOUD → EXNESS MT5":"AUTO: ON • EXNESS MT5 API");
+                    botState.setText(gateway.configured()?"AUTO: ON • HP B → MT5 CLOUD → EXNESS":(cloud?"AUTO: ON • MT5 CLOUD → EXNESS MT5":"AUTO: ON • EXNESS MT5 API"));
                     botState.setTextColor(Color.rgb(0,230,118));
                     Intent intent=new Intent(this,TradingService.class);
                     if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
-                    log.setText(cloud?"AUTO ON • MetaApi cloud connected • Exness MT5 execution ready":"AUTO ON • Exness API connected");
+                    log.setText(gateway.configured()?"AUTO ON • HP B Gateway connected • MT5 execution ready":(cloud?"AUTO ON • MetaApi cloud connected • Exness MT5 execution ready":"AUTO ON • Exness API connected"));
                 });
             }catch(Exception e){runOnUiThread(()->{store.rawPrefs().edit().putBoolean("auto",false).apply();botState.setText("AUTO: OFF • CONNECTOR ERROR");log.setText("AUTO PREFLIGHT ERROR • "+e.getMessage());toast("Auto gagal: "+e.getMessage());});}
         }).start();
@@ -476,6 +497,7 @@ public class MainActivity extends Activity {
 
     boolean hasCredentials(){
         if(metaApi!=null&&useMetaApi())return true;
+        if(gateway!=null&&gateway.configured())return true;
         if(fxOpen!=null&&useFxOpen())return true;
         ExnessClient.Credentials c=exness.loadCredentials();
         return !c.accountId.isEmpty()&&!c.apiKey.isEmpty()&&!c.secret.isEmpty();

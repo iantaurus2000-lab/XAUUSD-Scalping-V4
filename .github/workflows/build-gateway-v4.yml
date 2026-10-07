@@ -1,0 +1,34 @@
+name: Build XAUUSD Trading Gateway V4
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'xauusd-trading-gateway/**'
+      - '.github/workflows/build-gateway-v4.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gateway-v1-foundation
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build Gateway V4 APK
+        working-directory: xauusd-trading-gateway
+        run: gradle --no-daemon --stacktrace assembleDebug
+      - name: Verify APK
+        run: |
+          test -s xauusd-trading-gateway/app/build/outputs/apk/debug/app-debug.apk
+          ls -lh xauusd-trading-gateway/app/build/outputs/apk/debug/app-debug.apk
+      - name: Upload Gateway V4 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: XAUUSD-Trading-Gateway-V4
+          path: xauusd-trading-gateway/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
