@@ -50,8 +50,18 @@ jobs:
           export PATH="$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
           emulator -version
           adb version
+      - name: Configure AVD directory
+        run: |
+          mkdir -p "$HOME/.android/avd"
+          echo "ANDROID_AVD_HOME=$HOME/.android/avd" >> "$GITHUB_ENV"
+          export ANDROID_AVD_HOME="$HOME/.android/avd"
+          echo "AVD directory: $ANDROID_AVD_HOME"
       - name: Create AVD
-        run: echo "no" | avdmanager create avd -n gateway-test -k "system-images;android-30;google_apis;x86_64" --force
+        run: |
+          export ANDROID_AVD_HOME="$HOME/.android/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo "no" | avdmanager create avd -n gateway-test -k "system-images;android-30;google_apis;x86_64" --force
+          ls -la "$ANDROID_AVD_HOME"
       - name: Enable KVM access
         run: |
           echo "runner=$(id -un) groups=$(id -Gn)"
@@ -62,7 +72,10 @@ jobs:
           fi
       - name: Check emulator acceleration
         run: |
+          export ANDROID_AVD_HOME="$HOME/.android/avd"
           export PATH="$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
+          echo "AVDs:"
+          emulator -list-avds
           emulator -accel-check
       - name: Start emulator
         run: |
