@@ -41,6 +41,8 @@ jobs:
           packages: platform-tools
       - name: Install emulator packages
         run: sdkmanager "platform-tools" "platforms;android-30" "build-tools;35.0.0" "emulator" "system-images;android-30;google_apis;x86_64"
+      - name: Install emulator runtime dependencies
+        run: sudo apt-get update && sudo apt-get install -y libpulse0
       - name: Add Android emulator tools to PATH
         run: |
           echo "$ANDROID_HOME/emulator" >> "$GITHUB_PATH"
