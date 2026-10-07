@@ -11,6 +11,7 @@ public class CandleChartView extends View {
     ArrayList<Candle> cs = new ArrayList<>();
     double bid, ask;
     float cw = 16, ox = 0, oy = 0, lx, ly, ld, cx, cy;
+    float leftPad = 54, rightAxis = 96, topPad = 10, bottomPad = 62, lastCandlePad = 52;
     boolean follow = true;
     String timeframe = "M1";
     SimpleDateFormat time = new SimpleDateFormat("HH:mm", Locale.US);
@@ -47,9 +48,16 @@ public class CandleChartView extends View {
 
     public void goLive() {
         follow = true;
-        ox = 0;
         oy = 0;
+        positionLatestCandle();
         invalidate();
+    }
+
+    void positionLatestCandle() {
+        if (cs.isEmpty()) { ox = 0; return; }
+        float L = leftPad, R = getWidth() - rightAxis, step = cw + 5;
+        float latest = L + (cs.size() - 1) * step + step / 2;
+        ox = R - lastCandlePad - latest;
     }
 
     public boolean isFollow() { return follow; }
@@ -107,13 +115,15 @@ public class CandleChartView extends View {
 
     @Override
     protected void onDraw(Canvas c) {
-        float L = 58, R = getWidth() - 82, T = 24, B = getHeight() - 92;
+        float L = leftPad, R = getWidth() - rightAxis, T = topPad, B = getHeight() - bottomPad;
+        if (follow) positionLatestCandle();
         c.drawColor(Color.rgb(9, 12, 16));
 
         p.setStyle(Paint.Style.FILL);
         p.setColor(Color.rgb(14, 19, 25));
-        c.drawRect(R, T, getWidth(), B + 1, p);
-        ln(c, R, T, R, B, Color.rgb(55, 64, 74), 2);
+        c.drawRect(R, 0, getWidth(), getHeight(), p);
+        ln(c, R, 0, R, getHeight(), Color.rgb(65, 78, 92), 2);
+        text(c, "PRICE", R + 8, 16, 9, Color.LTGRAY);
 
         for (int i = 0; i <= 6; i++) {
             float y = T + i * (B - T) / 6;
@@ -124,7 +134,9 @@ public class CandleChartView extends View {
             ln(c, x, T, x, B, Color.rgb(24, 29, 36), 1);
         }
 
-        text(c, timeframe, L + 8, T + 16, 13, Color.rgb(0, 230, 145));
+        p.setColor(Color.rgb(12, 20, 29));
+        c.drawRect(L, 0, R, T + 24, p);
+        text(c, "XAUUSD  •  " + timeframe, L + 8, T + 17, 13, Color.rgb(0, 230, 145));
 
         if (cs.isEmpty()) {
             text(c, "Menunggu candle XAUUSD...", L + 15, (T + B) / 2, 18, Color.LTGRAY);
@@ -142,7 +154,7 @@ public class CandleChartView extends View {
 
         float step = cw + 5;
         int n = cs.size();
-        int st = Math.max(0, (int)Math.floor((-ox) / step) - 2);
+        int st = Math.max(0, (int)Math.floor((-ox) / step) - 3);
         int en = Math.min(n, (int)Math.ceil((R - L - ox) / step) + 3);
 
         for (int i = st; i < en; i++) {
@@ -212,9 +224,10 @@ public class CandleChartView extends View {
             buy ? Color.rgb(0, 220, 130) : Color.rgb(255, 80, 90)
         );
 
-        for (int i = 0; i <= 6; i++) {
-            double q = hi - i * (hi - lo) / 6;
+        for (int i = 0; i <= 8; i++) {
+            double q = hi - i * (hi - lo) / 8;
             float y = py(q, lo, hi, T, B);
+            ln(c, R, y, getWidth(), y, Color.rgb(35, 45, 56), 1);
             text(c, f(q), R + 5, y + 4, 11, Color.WHITE);
         }
 
@@ -256,6 +269,7 @@ public class CandleChartView extends View {
                 }
                 float dx = e.getX() - lx, dy = e.getY() - ly;
                 ox += dx; oy += dy;
+                oy = Math.max(-120, Math.min(120, oy));
                 if (Math.abs(dx) > 1) follow = false;
                 lx = e.getX(); ly = e.getY(); cx = lx; cy = ly;
                 invalidate();
