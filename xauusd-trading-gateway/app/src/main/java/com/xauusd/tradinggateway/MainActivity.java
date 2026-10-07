@@ -71,25 +71,37 @@ public class MainActivity extends Activity{
     void config(){
         LinearLayout box=new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(10,4,10,4);
+        box.setPadding(18,8,18,8);
+
+        ScrollView scroll=new ScrollView(this);
+        scroll.setFillViewport(true);
 
         android.content.SharedPreferences p=getSharedPreferences("gateway",0);
         EditText tok=new EditText(this);
         tok.setHint("HP A Gateway Token");
+        tok.setTextSize(17);
+        tok.setSingleLine(true);
+        tok.setPadding(16,10,16,10);
         tok.setInputType(129);
         tok.setText(p.getString("gateway_token",""));
 
         EditText sym=new EditText(this);
         sym.setHint("MT5 Symbol");
+        sym.setTextSize(17);
+        sym.setSingleLine(true);
+        sym.setPadding(16,10,16,10);
         sym.setText(p.getString("symbol","XAUUSD"));
 
-        box.addView(tok,new LinearLayout.LayoutParams(-1,60));
-        box.addView(sym,new LinearLayout.LayoutParams(-1,60));
+        LinearLayout.LayoutParams fieldParams=new LinearLayout.LayoutParams(-1,LinearLayout.LayoutParams.WRAP_CONTENT);
+        fieldParams.setMargins(0,10,0,10);
+        box.addView(tok,fieldParams);
+        box.addView(sym,fieldParams);
+        scroll.addView(box);
 
         new android.app.AlertDialog.Builder(this)
-            .setTitle("HP B • MINI SERVER CONFIG")
-            .setMessage("Token ini hanya untuk komunikasi HP A ↔ HP B. Bukan MetaKit/API token.")
-            .setView(box)
+            .setTitle("HP B • SET HP A GATEWAY")
+            .setMessage("Masukkan token yang SAMA dengan HP A. Bukan MetaKit/API token.")
+            .setView(scroll)
             .setNegativeButton("CANCEL",null)
             .setPositiveButton("SAVE",(d,w)->{
                 p.edit().putString("gateway_token",tok.getText().toString().trim())
