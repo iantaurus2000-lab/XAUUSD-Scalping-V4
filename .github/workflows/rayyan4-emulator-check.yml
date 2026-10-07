@@ -1,6 +1,8 @@
 name: Rayyan4 Emulator Check
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
 jobs:
   emulator:
     runs-on: ubuntu-latest
