@@ -16,6 +16,8 @@ public class GatewayService extends Service {
     private static final int PORT=8787;
     private volatile boolean running=false;
     private ServerSocket serverSocket;
+    private volatile String lastError="";
+    private volatile long startedAt=0L;
 
     @Override public void onCreate(){
         super.onCreate();
@@ -27,6 +29,8 @@ public class GatewayService extends Service {
     @Override public int onStartCommand(Intent i,int f,int id){
         startForeground(1001,notification());
         startServer();
+        startedAt=System.currentTimeMillis();
+        getSharedPreferences("gateway",0).edit().putBoolean("server_running",true).putString("last_error","").apply();
         return START_STICKY;
     }
 
@@ -43,12 +47,15 @@ public class GatewayService extends Service {
         running=true;
         new Thread(()->{
             try{
-                serverSocket=new ServerSocket(PORT);
+                serverSocket=new ServerSocket(PORT,50,InetAddress.getByName("0.0.0.0"));
                 while(running){
                     Socket s=serverSocket.accept();
                     new Thread(()->handle(s),"gateway-client").start();
                 }
-            }catch(Exception ignored){}
+            }catch(Exception e){
+                lastError=e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage());
+                getSharedPreferences("gateway",0).edit().putString("last_error",lastError).putBoolean("server_running",false).apply();
+            }
             finally{running=false;closeServer();}
         },"gateway-api").start();
     }
@@ -99,7 +106,10 @@ public class GatewayService extends Service {
                 +json.getBytes(StandardCharsets.UTF_8).length+"\r\nConnection: close\r\n\r\n"+json;
             out.write(resp.getBytes(StandardCharsets.UTF_8));
             out.flush();
-        }catch(Exception ignored){}
+        }catch(Exception e){
+            lastError=e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage());
+            getSharedPreferences("gateway",0).edit().putString("last_error",lastError).apply();
+        }
     }
 
     private JSONObject route(String request,String body)throws Exception{
@@ -111,7 +121,10 @@ public class GatewayService extends Service {
                 .put("service","xauusd-mini-trading-server")
                 .put("version","5.0")
                 .put("connector","LOCAL_HP_B")
-                .put("execution","MT5_CONNECTOR_PENDING");
+                .put("execution","MT5_CONNECTOR_PENDING")
+                .put("serverRunning",running)
+                .put("port",PORT)
+                .put("lastError",getSharedPreferences("gateway",0).getString("last_error",""));
             String last=getSharedPreferences("gateway",0).getString("last_command","");
             if(!last.isEmpty())r.put("lastCommand",new JSONObject(last));
             return r;
@@ -142,6 +155,7 @@ public class GatewayService extends Service {
 
     @Override public void onDestroy(){
         running=false;
+        getSharedPreferences("gateway",0).edit().putBoolean("server_running",false).apply();
         closeServer();
         stopForeground(true);
         super.onDestroy();
