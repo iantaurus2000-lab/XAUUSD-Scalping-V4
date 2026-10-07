@@ -30,6 +30,7 @@ public class MainActivity extends Activity {
     SecurityStore store;
     ExnessClient exness;
     MetaApiClient metaApi;
+    GatewayClient gateway;
     FxOpenTickTraderClient fxOpen;
     Handler handler = new Handler(Looper.getMainLooper());
     ArrayList<StrategyEngine.Candle> m1 = new ArrayList<>(), m5 = new ArrayList<>(), m15 = new ArrayList<>();
@@ -61,7 +62,7 @@ public class MainActivity extends Activity {
         super.onCreate(b);
         store=new SecurityStore(this);
         exness=new ExnessClient(store);
-        metaApi=new MetaApiClient(store);
+        metaApi=new MetaApiClient(store);gateway=new GatewayClient(store);
         fxOpen=new FxOpenTickTraderClient(store);
         buildUi();
         requestNotificationPermission();
@@ -141,7 +142,7 @@ public class MainActivity extends Activity {
         String auto=store.rawPrefs().getBoolean("auto",false)?"ON":"OFF";
         String[] items={
             "🔐 Exness API / Instrument",
-            "☁️ MetaApi • MT5 CLOUD → EXNESS",
+            "📱 HP B Mini Trading Server • LAN",
             "🎯 Manual BUY/SELL LIMIT",
             "📊 Indicators / Fibonacci",
             "🔎 Scan Market • Entry Ready",
@@ -160,7 +161,7 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("XAUUSD ENGINE • CONTROL").setItems(items,(d,w)->{
             switch(w){
                 case 0: showExnessDialog();break;
-                case 1: showMetaApiDialog();break;
+                case 1: showGatewayDialog();break;
                 case 2: showManualOrderDialog();break;
                 case 3: showIndicatorDialog();break;
                 case 4: scanMarket();break;
@@ -181,80 +182,35 @@ public class MainActivity extends Activity {
 
     void addCard(View v,int h){v.setBackground(bg("#0E131A",18));content.addView(v,new LinearLayout.LayoutParams(-1,h));}
 
-    void showMetaApiDialog(){
-        LinearLayout box=new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(18,6,18,6);
-
-        EditText token=input("MetaApi API Token",store.get("meta_token",""));
+    void showGatewayDialog(){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(18,6,18,6);
+        EditText host=input("HP B address (contoh http://192.168.1.10:8787)",store.get("gateway_host",""));
+        EditText token=input("HP B Gateway Token",store.get("gateway_token",""));
         token.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-
-        EditText account=input("MetaApi Account ID",store.get("meta_account",""));
-        account.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
-
-        EditText host=input("MetaApi Host (default resmi)",store.get("meta_host",MetaApiClient.DEFAULT_HOST));
-        host.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
-
         EditText symbol=input("Instrument",store.get("symbol","XAUUSD"));
-        symbol.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
-
-        TextView info=tv("Jalur: HP APK → MetaApi Cloud → Exness MT5\nToken dibuat dari MetaApi Web App. Account ID adalah ID akun yang sudah ditambahkan di MetaApi.",11);
-        info.setTextColor(Color.LTGRAY);
-
-        box.addView(info,new LinearLayout.LayoutParams(-1,72));
-        box.addView(token,new LinearLayout.LayoutParams(-1,58));
-        box.addView(account,new LinearLayout.LayoutParams(-1,58));
-        box.addView(host,new LinearLayout.LayoutParams(-1,58));
-        box.addView(symbol,new LinearLayout.LayoutParams(-1,58));
-
-        AlertDialog d=new AlertDialog.Builder(this)
-            .setTitle("☁️ METAAPI • MT5 CLOUD")
-            .setView(box)
-            .setNegativeButton("Tutup",null)
-            .setPositiveButton("SAVE + TEST",null).create();
-
+        box.addView(tv("Jalur: HP A → Wi‑Fi/LAN → HP B Mini Server\nBukan MetaKit. Token hanya untuk HP A ↔ HP B.",11));
+        box.addView(host,new LinearLayout.LayoutParams(-1,58));box.addView(token,new LinearLayout.LayoutParams(-1,58));box.addView(symbol,new LinearLayout.LayoutParams(-1,58));
+        AlertDialog d=new AlertDialog.Builder(this).setTitle("📱 HP B • MINI TRADING SERVER").setView(box).setNegativeButton("Tutup",null).setPositiveButton("SAVE + TEST",null).create();
         d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
-            String tok=token.getText().toString().trim();
-            String acc=account.getText().toString().trim();
-            String h=host.getText().toString().trim();
-            String sym=symbol.getText().toString().trim();
-            if(tok.isEmpty()){toast("MetaApi Token belum diisi");return;}
-            if(acc.isEmpty()){toast("MetaApi Account ID belum diisi");return;}
-            if(h.isEmpty())h=MetaApiClient.DEFAULT_HOST;
-            if(sym.isEmpty())sym="XAUUSD";
-            store.put("meta_token",tok);
-            store.put("meta_account",acc);
-            store.put("meta_host",h);
-            store.put("symbol",sym);
-            store.put("active_connector","metaapi");
-            d.dismiss();
-            connection.setText("● CONNECTING METAAPI...");
-            new Thread(()->{
-                try{
-                    MetaApiClient.Response a=metaApi.accountInfo();
-                    MetaApiClient.Response o=a.ok()?metaApi.orders():a;
-                    runOnUiThread(()->{
-                        if(a.ok()&&o.ok()){
-                            connection.setText("● MT5 CLOUD CONNECTED");
-                            log.setText("MetaApi OK • Exness MT5 account connected • Orders API OK");
-                            toast("METAAPI CONNECTED");
-                            loadAccount();
-                        }else{
-                            connection.setText("● METAAPI ERROR");
-                            log.setText("MetaApi error • "+(a.ok()?o.code:a.code)+" • "+trim(a.ok()?o.body:a.body));
-                            toast("MetaApi gagal. Cek Token / Account ID.");
-                        }
-                    });
-                }catch(Exception e){
-                    runOnUiThread(()->{
-                        connection.setText("● METAAPI ERROR");
-                        log.setText("MetaApi error • "+e.getMessage());
-                        toast("MetaApi error: "+e.getMessage());
-                    });
-                }
-            }).start();
-        }));
-        d.show();
+            String h=host.getText().toString().trim(),t=token.getText().toString().trim(),s=symbol.getText().toString().trim();
+            if(h.isEmpty()){toast("Alamat HP B belum diisi");return;} if(s.isEmpty())s="XAUUSD";
+            store.put("gateway_host",h);store.put("gateway_token",t);store.put("symbol",s);store.put("active_connector","gateway");
+            d.dismiss();testGateway();
+        }));d.show();
+    }
+
+    void testGateway(){
+        if(gateway==null||!gateway.configured()){toast("Isi alamat HP B.");return;}
+        connection.setText("● CONNECTING HP B...");
+        new Thread(()->{try{
+            GatewayClient.Response r=gateway.health();
+            runOnUiThread(()->{if(r.ok()){
+                connection.setText("● HP B GATEWAY CONNECTED");
+                log.setText("HP B Mini Server OK • LAN transport ready\n"+trim(r.body));toast("HP B CONNECTED");
+            }else{
+                connection.setText("● HP B GATEWAY ERROR");log.setText("HP B error "+r.code+" • "+trim(r.body));toast("HP B error "+r.code);
+            }});
+        }catch(Exception e){runOnUiThread(()->{connection.setText("● HP B GATEWAY ERROR");log.setText("HP B error • "+e.getMessage());toast("HP B error: "+e.getMessage());});}}).start();
     }
 
     void showExnessDialog(){
@@ -324,41 +280,27 @@ public class MainActivity extends Activity {
 
     void placeLimit(String side,String entry,String sl,String tp,String lot,String tag){
         try{
-            double e=Double.parseDouble(entry), s=Double.parseDouble(sl), t=Double.parseDouble(tp), l=Double.parseDouble(lot);
+            double e=Double.parseDouble(entry),s=Double.parseDouble(sl),t=Double.parseDouble(tp),l=Double.parseDouble(lot);
             if(e<=0||s<=0||t<=0||l<=0)throw new IllegalArgumentException("Nilai order tidak valid");
             if(mid<=0)throw new IllegalStateException("Harga belum tersedia");
-            if("buy".equals(side) && !(e<mid && s<e && t>e))throw new IllegalArgumentException("BUY LIMIT harus Entry<Mid, SL<Entry, TP>Entry");
-            if("sell".equals(side) && !(e>mid && s>e && t<e))throw new IllegalArgumentException("SELL LIMIT harus Entry>Mid, SL>Entry, TP<Entry");
+            if("buy".equals(side)&&!(e<mid&&s<e&&t>e))throw new IllegalArgumentException("BUY LIMIT harus Entry<Mid, SL<Entry, TP>Entry");
+            if("sell".equals(side)&&!(e>mid&&s>e&&t<e))throw new IllegalArgumentException("SELL LIMIT harus Entry>Mid, SL>Entry, TP<Entry");
         }catch(Exception e){toast(e.getMessage());return;}
-        new Thread(()->{
-            try{
-                if(useMetaApi()){
-                    MetaApiClient.Response mr=metaApi.placeLimit(orderSymbol(),side,Double.parseDouble(lot),Double.parseDouble(entry),Double.parseDouble(sl),Double.parseDouble(tp),"XAUUSD-V5.2-"+tag);
-                    runOnUiThread(()->{
-                        if(mr.ok()){ log.setText("MT5 CLOUD ORDER ACCEPTED • "+side.toUpperCase(Locale.US)+" LIMIT • "+trim(mr.body)); toast("MT5 PENDING ORDER DITERIMA"); }
-                        else { log.setText("MT5 CLOUD ORDER REJECT "+mr.code+" • "+trim(mr.body)); toast("MT5 order ditolak "+mr.code); }
-                    });
-                    return;
-                }
-                if(useFxOpen()){
-                    FxOpenTickTraderClient.Response fr=fxOpen.placeLimit(orderSymbol(),side,Double.parseDouble(lot),Double.parseDouble(entry),Double.parseDouble(sl),Double.parseDouble(tp),"XAUUSD-V5.2-"+tag);
-                    runOnUiThread(()->{
-                        if(fr.ok()){ log.setText("FXOPEN ORDER ACCEPTED • "+side.toUpperCase(Locale.US)+" LIMIT • "+trim(fr.body)); toast("FXOpen DEMO ORDER DITERIMA"); }
-                        else { log.setText("FXOPEN ORDER REJECT "+fr.code+" • "+trim(fr.body)); toast("FXOpen order ditolak "+fr.code); }
-                    });
-                    return;
-                }
-                ExnessClient.Response r=exness.placeLimit(orderSymbol(),side,lot,entry,sl,tp,"XAUUSD-V5.2-"+tag);
-                runOnUiThread(()->{
-                    if(r.ok()){
-                        String op=exness.operationId(r);
-                        log.setText("ORDER ACK • "+("buy".equals(side)?"BUY LIMIT":"sell".equals(side)?"SELL LIMIT":"LIMIT")+" • operation "+(op.isEmpty()?"--":op));
-                        toast("ACK diterima. Memastikan order masuk akun MT5...");
-                        waitForManualOperation(op, side, entry);
-                    } else {log.setText("ORDER REJECT "+r.code+": "+trim(r.body));toast("Order ditolak: "+r.code);}
-                });
-            }catch(Exception e){runOnUiThread(()->toast(e.getMessage()));}
-        }).start();
+        new Thread(()->{try{
+            if(useGateway()){
+                GatewayClient.Response gr=gateway.placeLimit(orderSymbol(),side,Double.parseDouble(lot),Double.parseDouble(entry),Double.parseDouble(sl),Double.parseDouble(tp),"XAUUSD-V5.2-"+tag);
+                runOnUiThread(()->{if(gr.ok()){log.setText("HP B ACCEPTED • "+side.toUpperCase(Locale.US)+" LIMIT\n"+trim(gr.body));toast("Perintah diterima HP B");}
+                    else{log.setText("HP B REJECT "+gr.code+" • "+trim(gr.body));toast("HP B menolak "+gr.code);}});return;
+            }
+            if(useFxOpen()){
+                FxOpenTickTraderClient.Response fr=fxOpen.placeLimit(orderSymbol(),side,Double.parseDouble(lot),Double.parseDouble(entry),Double.parseDouble(sl),Double.parseDouble(tp),"XAUUSD-V5.2-"+tag);
+                runOnUiThread(()->{if(fr.ok()){log.setText("FXOPEN ORDER ACCEPTED • "+side.toUpperCase(Locale.US)+" LIMIT • "+trim(fr.body));toast("FXOpen DEMO ORDER DITERIMA");}
+                    else{log.setText("FXOPEN ORDER REJECT "+fr.code+" • "+trim(fr.body));toast("FXOpen order ditolak "+fr.code);}});return;
+            }
+            ExnessClient.Response r=exness.placeLimit(orderSymbol(),side,lot,entry,sl,tp,"XAUUSD-V5.2-"+tag);
+            runOnUiThread(()->{if(r.ok()){String op=exness.operationId(r);log.setText("ORDER ACK • LIMIT • operation "+(op.isEmpty()?"--":op));toast("ACK diterima. Memastikan order masuk akun MT5...");waitForManualOperation(op,side,entry);}
+                else{log.setText("ORDER REJECT "+r.code+": "+trim(r.body));toast("Order ditolak: "+r.code);}});
+        }catch(Exception e){runOnUiThread(()->toast(e.getMessage()));}}).start();
     }
 
     void waitForManualOperation(String operationId,String side,String entry){
@@ -393,35 +335,20 @@ public class MainActivity extends Activity {
     }
 
     void startAuto(){
-        if(!hasCredentials()){toast("Sambungkan MT5 Cloud terlebih dahulu.");showMt5Dialog();return;}
-        final boolean cloud=useMetaApi();
-        final boolean direct="exness".equalsIgnoreCase(store.get("active_connector",""));
-        if(!cloud&&!direct){toast("Pilih MT5 Cloud (MetaApi) atau Exness API.");showMt5Dialog();return;}
-        log.setText(cloud?"AUTO PREFLIGHT • MT5 CLOUD → EXNESS MT5...":"AUTO PREFLIGHT • EXNESS API...");
-        new Thread(()->{
-            try{
-                if(cloud){
-                    MetaApiClient.Response a=metaApi.accountInfo();
-                    if(!a.ok())throw new IllegalStateException("MetaApi "+a.code+": "+trim(a.body));
-                    MetaApiClient.Response o=metaApi.orders();
-                    if(!o.ok())throw new IllegalStateException("MT5 Orders "+o.code+": "+trim(o.body));
-                }else{
-                    ExnessClient.Response a=exness.connectAndResolve();
-                    if(!a.ok())throw new IllegalStateException("Exness API "+a.code+": "+trim(a.body));
-                    ExnessClient.Response i=exness.instrumentConditions(orderSymbol());
-                    if(!i.ok())throw new IllegalStateException("Instrument "+orderSymbol()+" "+i.code+": "+trim(i.body));
-                }
-                store.rawPrefs().edit().putBoolean("auto",true).apply();
-                runOnUiThread(()->requestBatteryOptimizationExemption());
-                runOnUiThread(()->{
-                    botState.setText(cloud?"AUTO: ON • MT5 CLOUD → EXNESS MT5":"AUTO: ON • EXNESS MT5 API");
-                    botState.setTextColor(Color.rgb(0,230,118));
-                    Intent intent=new Intent(this,TradingService.class);
-                    if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
-                    log.setText(cloud?"AUTO ON • MetaApi cloud connected • Exness MT5 execution ready":"AUTO ON • Exness API connected");
-                });
-            }catch(Exception e){runOnUiThread(()->{store.rawPrefs().edit().putBoolean("auto",false).apply();botState.setText("AUTO: OFF • CONNECTOR ERROR");log.setText("AUTO PREFLIGHT ERROR • "+e.getMessage());toast("Auto gagal: "+e.getMessage());});}
-        }).start();
+        if(!hasCredentials()){toast("Hubungkan HP B Mini Server terlebih dahulu.");showGatewayDialog();return;}
+        final boolean gw=useGateway(); final boolean direct="exness".equalsIgnoreCase(store.get("active_connector",""));
+        if(!gw&&!direct){toast("Pilih HP B Mini Server atau Exness API.");showGatewayDialog();return;}
+        log.setText(gw?"AUTO PREFLIGHT • HP B MINI SERVER...":"AUTO PREFLIGHT • EXNESS API...");
+        new Thread(()->{try{
+            if(gw){GatewayClient.Response r=gateway.health();if(!r.ok())throw new IllegalStateException("HP B "+r.code+": "+trim(r.body));}
+            else{ExnessClient.Response a=exness.connectAndResolve();if(!a.ok())throw new IllegalStateException("Exness API "+a.code+": "+trim(a.body));
+                ExnessClient.Response i=exness.instrumentConditions(orderSymbol());if(!i.ok())throw new IllegalStateException("Instrument "+orderSymbol()+" "+i.code+": "+trim(i.body));}
+            store.rawPrefs().edit().putBoolean("auto",true).apply();
+            runOnUiThread(()->requestBatteryOptimizationExemption());
+            runOnUiThread(()->{botState.setText(gw?"AUTO: ON • HP B GATEWAY":"AUTO: ON • EXNESS MT5 API");botState.setTextColor(Color.rgb(0,230,118));
+                Intent intent=new Intent(this,TradingService.class);if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
+                log.setText(gw?"AUTO ON • HP B gateway transport ready":"AUTO ON • Exness API connected");});
+        }catch(Exception e){runOnUiThread(()->{store.rawPrefs().edit().putBoolean("auto",false).apply();botState.setText("AUTO: OFF • CONNECTOR ERROR");log.setText("AUTO PREFLIGHT ERROR • "+e.getMessage());toast("Auto gagal: "+e.getMessage());});}}).start();
     }
 
     void stopAuto(){
@@ -430,6 +357,8 @@ public class MainActivity extends Activity {
         botState.setText("AUTO: OFF");botState.setTextColor(Color.WHITE);
         log.setText("Auto-engine stopped. No new orders will be submitted.");
     }
+
+    boolean useGateway(){return "gateway".equalsIgnoreCase(store.get("active_connector",""))&&gateway!=null&&gateway.configured();}
 
     boolean useFxOpen(){
         String active=store.get("active_connector","");
@@ -441,12 +370,12 @@ public class MainActivity extends Activity {
     }
 
     String executionLabel(){
+        if(useGateway())return "HP B MINI SERVER";
         String active=store.get("active_connector","").trim();
-        if("metaapi".equalsIgnoreCase(active) && metaApi!=null && metaApi.configured()) return "MT5 CLOUD • EXNESS";
-        if("fxopen".equalsIgnoreCase(active) && fxOpen!=null && fxOpen.configured()) return "FXOPEN DEMO";
-        if("exness".equalsIgnoreCase(active) && exness!=null){
+        if("fxopen".equalsIgnoreCase(active)&&fxOpen!=null&&fxOpen.configured())return "FXOPEN DEMO";
+        if("exness".equalsIgnoreCase(active)&&exness!=null){
             ExnessClient.Credentials c=exness.loadCredentials();
-            if(!c.accountId.isEmpty() && !c.apiKey.isEmpty() && !c.secret.isEmpty()) return "EXNESS MT5 API";
+            if(!c.accountId.isEmpty()&&!c.apiKey.isEmpty()&&!c.secret.isEmpty())return "EXNESS MT5 API";
         }
         return "NOT CONNECTED";
     }
@@ -475,7 +404,7 @@ public class MainActivity extends Activity {
     }
 
     boolean hasCredentials(){
-        if(metaApi!=null&&useMetaApi())return true;
+        if(useGateway())return true;
         if(fxOpen!=null&&useFxOpen())return true;
         ExnessClient.Credentials c=exness.loadCredentials();
         return !c.accountId.isEmpty()&&!c.apiKey.isEmpty()&&!c.secret.isEmpty();
@@ -765,20 +694,7 @@ public class MainActivity extends Activity {
 
     double toDouble(String x){try{return x==null||x.trim().isEmpty()?0:Double.parseDouble(x.trim());}catch(Exception e){return 0;}}
 
-    void showMt5Dialog(){
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(18,4,18,4);
-        EditText token=input("MetaApi auth token",store.get("meta_token","")); token.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        EditText aid=input("MetaApi account ID",store.get("meta_account",""));
-        EditText host=input("MetaApi trade host",store.get("meta_host",MetaApiClient.DEFAULT_HOST));
-        box.addView(tv("MT5 CLOUD CONNECTOR • DEMO TEST\nHP → MetaApi Cloud → akun MT5 demo.",11));
-        box.addView(token,new LinearLayout.LayoutParams(-1,55));box.addView(aid,new LinearLayout.LayoutParams(-1,55));box.addView(host,new LinearLayout.LayoutParams(-1,55));
-        AlertDialog d=new AlertDialog.Builder(this).setTitle("🔗 MT5 CONNECTOR • MetaApi").setView(box).setNegativeButton("Tutup",null).setPositiveButton("SAVE + TEST",null).create();
-        d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{store.put("meta_token",token.getText().toString().trim());store.put("meta_account",aid.getText().toString().trim());store.put("meta_host",host.getText().toString().trim());store.put("active_connector","metaapi");d.dismiss();testMetaApi();}));d.show();
-    }
-    void testMetaApi(){
-        if(!metaApi.configured()){toast("Isi MetaApi token + account ID.");return;}
-        new Thread(()->{try{MetaApiClient.Response r=metaApi.accountInfo();runOnUiThread(()->{if(r.ok()){log.setText("MT5 CONNECTED • MetaApi account OK\n"+trim(r.body));toast("MT5 CONNECTED • siap test pending order");}else{log.setText("MT5 CONNECT ERROR "+r.code+" • "+trim(r.body));toast("MT5 connector error "+r.code);}});}catch(Exception e){runOnUiThread(()->toast("MT5 connector: "+e.getMessage()));}}).start();
-    }
+    void showMt5Dialog(){ showGatewayDialog(); }
 
     void showTelegramDialog(){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(18,4,18,4);
