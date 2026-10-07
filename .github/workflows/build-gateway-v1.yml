@@ -56,9 +56,9 @@ jobs:
         run: emulator -accel-check || true
       - name: Start emulator
         run: |
-          nohup emulator -avd gateway-test -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -wipe-data -accel on >/tmp/emulator.log 2>&1 &
-          sleep 5
-          cat /tmp/emulator.log || true
+          export PATH="$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
+          emulator -accel-check
+          nohup "$ANDROID_HOME/emulator/emulator" -avd gateway-test -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -wipe-data -accel auto >/tmp/emulator.log 2>&1 &
           timeout 300 adb wait-for-device
           for i in $(seq 1 120); do
             if adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' | grep -q 1; then break; fi
