@@ -22,7 +22,7 @@ public final class TelegramClient {
                 int code=c.getResponseCode();
                 InputStream is=code>=200&&code<300?c.getInputStream():c.getErrorStream();
                 out=read(is);
-                ok=code>=200&&code<300&&out.contains(""ok":true");
+                ok=code>=200&&code<300&&out.contains("\"ok\":true");
                 if (!ok) throw new IOException("HTTP "+code);
             } catch(Exception e) { out=e.getMessage()==null?"Telegram error":e.getMessage(); }
             String result=out;
