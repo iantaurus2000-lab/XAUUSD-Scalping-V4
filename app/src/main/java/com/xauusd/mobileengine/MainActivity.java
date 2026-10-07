@@ -12,10 +12,12 @@ import java.util.concurrent.*;
 
 public class MainActivity extends Activity {
     private CandleChartView chart;
-    private TextView bidView, askView, spreadView, status, signalSummary, scoreView;
+    private TextView bidView, askView, spreadView, status, signalSummary, scoreView, entryView, slView, tp1View, tp2View;
     private ScheduledExecutorService ex;
     private SharedPreferences prefs;
     private String selectedTf = "M1";
+    private Candle[] m5Data = new Candle[0];
+    private SignalResult lastSignal;
     private final Map<String, Button> tfButtons = new HashMap<>();
     private final int bg = Color.rgb(4, 11, 20);
     private final int panel = Color.rgb(8, 22, 38);
@@ -142,6 +144,10 @@ public class MainActivity extends Activity {
         String[] names = {"Entry", "SL", "TP1", "TP2"};
         for (String n : names) {
             TextView v = tv(n + "\n--", 10); v.setGravity(Gravity.CENTER);
+            if ("Entry".equals(n)) entryView = v;
+            else if ("SL".equals(n)) slView = v;
+            else if ("TP1".equals(n)) tp1View = v;
+            else if ("TP2".equals(n)) tp2View = v;
             levels.addView(v, new LinearLayout.LayoutParams(0, 48, 1));
         }
         card.addView(levels);
@@ -204,10 +210,13 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             try {
                 Candle[] c = BiquoteClient.candles(interval);
+                Candle[] m5 = "M5".equals(tf) ? c : BiquoteClient.candles("5m");
                 runOnUiThread(() -> {
                     if (!tf.equals(selectedTf)) return;
                     chart.setData(c); chart.goLive();
-                    updateSignal(c);
+                    if ("M5".equals(tf)) m5Data = c;
+                    else m5Data = m5;
+                    updateSignal(c, m5Data);
                     status.setText("● LIVE • BIQUOTE • " + tf);
                 });
             } catch (Exception e) {
@@ -222,6 +231,7 @@ public class MainActivity extends Activity {
                     double[] t = BiquoteClient.tick();
                     runOnUiThread(() -> {
                         chart.setTick(t[0], t[1], selectedTf);
+                        if (!chart.isEmpty()) updateSignal(chart.getDataSnapshot(), m5Data);
                         bidView.setText(String.format(Locale.US, "%.2f", t[0]));
                         askView.setText(String.format(Locale.US, "%.2f", t[1]));
                         spreadView.setText(String.format(Locale.US, "SPREAD  %.2f", t[1] - t[0]));
@@ -234,58 +244,36 @@ public class MainActivity extends Activity {
         }
     }
 
-    // This is a signal-quality score, not a guaranteed historical win-rate.
-    // It combines measurable current-candle conditions to avoid presenting
-    // a fabricated "accuracy" percentage.
-    void updateSignal(Candle[] a) {
-        if (a == null || a.length < 25 || scoreView == null) return;
-        Candle z = a[a.length - 1], p = a[a.length - 2];
-        double body = Math.abs(z.c - z.o);
-        double range = Math.max(0.0001, z.h - z.l);
-        double upper = z.h - Math.max(z.o, z.c);
-        double lower = Math.min(z.o, z.c) - z.l;
-        double score = 45;
+    // Signal Engine: M5 bias + M1 entry confirmation.
+    void updateSignal(Candle[] m1, Candle[] m5) {
+        if (m1 == null || m1.length < 30 || m5 == null || m5.length < 30) return;
+        double[] tick = new double[]{chart == null ? 0 : chart.getBid(), chart == null ? 0 : chart.getAsk()};
+        lastSignal = SignalEngine.evaluate(m1, m5, tick[0], tick[1]);
+        SignalResult s = lastSignal;
 
-        boolean bullish = z.c > z.o;
-        boolean wickBuy = lower > body * 1.4 && lower > upper * 1.15;
-        boolean wickSell = upper > body * 1.4 && upper > lower * 1.15;
-        boolean bosBuy = z.c > p.h;
-        boolean bosSell = z.c < p.l;
+        scoreView.setText("ENTRY\n" + s.score + "%");
+        scoreView.setTextColor(s.score >= 75 ? green : s.score >= 60 ? Color.YELLOW : Color.WHITE);
 
-        double ema9 = ema(a, 9), ema21 = ema(a, 21), ema50 = ema(a, 50);
-        boolean trendBuy = ema9 > ema21 && ema21 > ema50;
-        boolean trendSell = ema9 < ema21 && ema21 < ema50;
-        double momentum = (z.c - a[Math.max(0, a.length - 6)].c) / range;
-        boolean momBuy = momentum > .20, momSell = momentum < -.20;
+        signalSummary.setText("M1 " + s.side + " • M5 " + s.m5Bias + "\n" + s.setup +
+                " • " + s.confidence + "/5");
 
-        if (bullish) score += 8;
-        if (wickBuy || wickSell) score += 15;
-        if ((bullish && bosBuy) || (!bullish && bosSell)) score += 12;
-        if ((bullish && trendBuy) || (!bullish && trendSell)) score += 12;
-        if ((bullish && momBuy) || (!bullish && momSell)) score += 8;
-        score = Math.max(0, Math.min(99, score));
+        entryView.setText("Entry\n" + price(s.entry));
+        slView.setText("SL\n" + price(s.sl));
+        tp1View.setText("TP1\n" + price(s.tp1));
+        tp2View.setText("TP2\n" + price(s.tp2));
 
-        boolean buy = (wickBuy || bosBuy || trendBuy) && bullish;
-        boolean sell = (wickSell || bosSell || trendSell) && !bullish;
-        String side = buy && !sell ? "BUY" : sell && !buy ? "SELL" : "WAIT";
-        int s = (int)Math.round(score);
-
-        scoreView.setText("ENTRY\n" + s + "%");
-        scoreView.setTextColor(s >= 75 ? green : s >= 60 ? Color.YELLOW : Color.WHITE);
-
-        String detail = "BUY".equals(side) ? "Wick Rejection + Sweep + BOS" :
-                        "SELL".equals(side) ? "Wick Rejection + Sweep + BOS" :
-                        "Menunggu konfirmasi";
-        signalSummary.setText("XAUUSD • " + selectedTf + "\n" + detail);
-
-        // Update side label without exposing fake profit/accuracy claims.
         View v = ((ViewGroup)scoreView.getParent()).getChildAt(0);
         if (v instanceof Button) {
-            Button b = (Button)v; b.setText(side);
-            b.setBackground(roundBg("BUY".equals(side) ? Color.rgb(0, 190, 105) :
-                                     "SELL".equals(side) ? Color.rgb(220, 45, 60) :
-                                     Color.rgb(76, 78, 85), 12));
+            Button b = (Button)v;
+            b.setText(s.side);
+            b.setBackground(roundBg("BUY".equals(s.side) ? Color.rgb(0,190,105) :
+                    "SELL".equals(s.side) ? Color.rgb(220,45,60) : Color.rgb(76,78,85), 12));
         }
+        chart.setSignalLevels(s.entry, s.sl, s.tp1, s.tp2, "BUY".equals(s.side) || "SELL".equals(s.side));
+    }
+
+    String price(double v) {
+        return v > 0 ? String.format(Locale.US, "%.2f", v) : "--";
     }
 
     double ema(Candle[] a, int n) {
@@ -307,6 +295,7 @@ public class MainActivity extends Activity {
             b.setOnClickListener(v -> {
                 pop.dismiss();
                 if ("Indicators".equals(s)) showIndicatorDialog();
+                else if ("Signal".equals(s)) showSignalDialog();
                 else Toast.makeText(this, s, Toast.LENGTH_SHORT).show();
             });
         }
@@ -316,6 +305,36 @@ public class MainActivity extends Activity {
         pop.setOutsideTouchable(true); pop.setFocusable(true); pop.setElevation(16);
         pop.showAsDropDown(anchor, -204, 4);
     }
+
+    void showSignalDialog() {
+        if (lastSignal == null) {
+            Toast.makeText(this, "Menunggu data Signal Engine...", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        SignalResult s = lastSignal;
+        String msg =
+            "SIDE        : " + s.side + "\n" +
+            "M5 BIAS     : " + s.m5Bias + "\n" +
+            "M1 ENTRY    : " + s.entry + "\n" +
+            "SL          : " + s.sl + "\n" +
+            "TP1         : " + s.tp1 + "\n" +
+            "TP2         : " + s.tp2 + "\n" +
+            "R:R         : " + String.format(Locale.US, "%.2f", s.rr) + "\n" +
+            "CONFIDENCE  : " + s.confidence + "/5\n" +
+            "ENTRY SCORE : " + s.score + "%\n\n" +
+            "Liquidity Sweep : " + onoff(s.liquiditySweep) + "\n" +
+            "Wick Rejection  : " + onoff(s.wickRejection) + "\n" +
+            "BOS             : " + onoff(s.bos) + "\n" +
+            "EMA Filter      : " + onoff(s.emaFilter) + "\n" +
+            "RSI Filter      : " + onoff(s.rsiFilter) + "\n" +
+            "MACD Filter     : " + onoff(s.macdFilter) + "\n" +
+            "ATR Filter      : " + onoff(s.atrFilter) + "\n" +
+            "Spread Filter   : " + onoff(s.spreadFilter);
+        new AlertDialog.Builder(this).setTitle("SIGNAL ENGINE")
+            .setMessage(msg).setPositiveButton("TUTUP", null).show();
+    }
+
+    String onoff(boolean v) { return v ? "ON" : "OFF"; }
 
     boolean ind(String key, boolean def) {
         return prefs.getBoolean(key, def);

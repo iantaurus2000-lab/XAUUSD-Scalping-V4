@@ -63,6 +63,19 @@ public class CandleChartView extends View {
         ox = R - lastCandlePad - latest;
     }
 
+    double signalEntry, signalSl, signalTp1, signalTp2;
+    boolean signalActive = false;
+
+    public boolean isEmpty() { return cs.isEmpty(); }
+    public double getBid() { return bid; }
+    public double getAsk() { return ask; }
+    public Candle[] getDataSnapshot() { return cs.toArray(new Candle[0]); }
+
+    public void setSignalLevels(double entry, double sl, double tp1, double tp2, boolean active) {
+        signalEntry = entry; signalSl = sl; signalTp1 = tp1; signalTp2 = tp2; signalActive = active;
+        invalidate();
+    }
+
     public boolean isFollow() { return follow; }
 
     public void setShowEMA9(boolean v) { showEMA9 = v; invalidate(); }
@@ -256,8 +269,8 @@ public class CandleChartView extends View {
             }
         }
 
-        if (showTradeLevels && mid > 0) {
-            double[] vals = {mid, mid - 2, mid + 2, mid + 4};
+        if (showTradeLevels && signalActive) {
+            double[] vals = {signalEntry, signalSl, signalTp1, signalTp2};
             String[] names = {"ENTRY", "SL", "TP1", "TP2"};
             int[] cols = {
                 Color.rgb(255, 193, 7), Color.rgb(244, 67, 54),
