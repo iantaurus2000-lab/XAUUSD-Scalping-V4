@@ -11,7 +11,8 @@ import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 
-public class GatewayService extends Service {\n    private MrpcClient mrpc;
+public class GatewayService extends Service {
+    private MrpcClient mrpc;
     private static final String CHANNEL_ID="gateway_status";
     private static final int PORT=8787;
     private volatile boolean running=false;
@@ -20,7 +21,8 @@ public class GatewayService extends Service {\n    private MrpcClient mrpc;
     private volatile long startedAt=0L;
 
     @Override public void onCreate(){
-        super.onCreate();\n        mrpc=new MrpcClient(this);
+        super.onCreate();
+        mrpc=new MrpcClient(this);
         NotificationManager nm=getSystemService(NotificationManager.class);
         if(nm!=null)nm.createNotificationChannel(new NotificationChannel(
             CHANNEL_ID,"Gateway Status",NotificationManager.IMPORTANCE_LOW));
