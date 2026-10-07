@@ -45,13 +45,15 @@ jobs:
         run: echo "no" | avdmanager create avd -n gateway-test -k "system-images;android-30;google_apis;x86_64" --force
       - name: Start emulator
         run: |
-          nohup emulator -avd gateway-test -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot >/tmp/emulator.log 2>&1 &
-          adb wait-for-device
-          for i in $(seq 1 90); do
+          nohup emulator -avd gateway-test -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -wipe-data -accel off >/tmp/emulator.log 2>&1 &
+          timeout 180 adb wait-for-device
+          for i in $(seq 1 120); do
             if adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' | grep -q 1; then break; fi
             sleep 2
           done
           test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1"
+          adb shell getprop ro.build.version.release
+          tail -n 40 /tmp/emulator.log || true
       - name: Build APK for emulator
         working-directory: xauusd-trading-gateway
         run: gradle --no-daemon assembleDebug
