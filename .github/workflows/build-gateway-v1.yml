@@ -68,7 +68,13 @@ jobs:
         run: |
           export PATH="$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
           emulator -accel-check
-          nohup "$ANDROID_HOME/emulator/emulator" -avd gateway-test -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -wipe-data -accel auto >/tmp/emulator.log 2>&1 &
+          nohup "$ANDROID_HOME/emulator/emulator" -avd gateway-test -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -wipe-data -accel on -no-metrics -camera-back none -camera-front none >/tmp/emulator.log 2>&1 &
+          EMU_PID=$!
+          sleep 10
+          echo "=== emulator process ==="
+          ps -p "$EMU_PID" -o pid,stat,cmd || true
+          echo "=== emulator log ==="
+          cat /tmp/emulator.log || true
           timeout 300 adb wait-for-device
           for i in $(seq 1 120); do
             if adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' | grep -q 1; then break; fi
