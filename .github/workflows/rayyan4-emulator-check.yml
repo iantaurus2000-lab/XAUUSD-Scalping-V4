@@ -6,6 +6,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10'
+
+      - name: Restore stable update signing key
+        run: base64 -d app/rayyan4-debug.keystore.b64 > app/rayyan4-debug.keystore
+
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -14,4 +27,4 @@ jobs:
           profile: pixel_5
           emulator-options: -no-window -no-audio -no-boot-anim
           disable-animations: true
-          script: echo "Rayyan4 GitHub Android emulator is running"
+          script: gradle :app:connectedDebugAndroidTest --no-daemon
