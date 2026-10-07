@@ -239,6 +239,11 @@ public class MainActivity extends Activity {
     void loadAccount(){
         new Thread(()->{
             try{
+                if(useGateway()){
+                    GatewayClient.Response r=gateway.status();
+                    runOnUiThread(()->account.setText(r.ok()?"HP B Gateway: CONNECTED • LAN READY":"HP B Gateway: "+r.code+" • "+trim(r.body)));
+                    return;
+                }
                 if(useFxOpen()){
                     FxOpenTickTraderClient.Response r=fxOpen.accountInfo();
                     runOnUiThread(()->account.setText(r.ok()?"FXOpen Account: CONNECTED":"FXOpen Account API: "+r.code+" • "+trim(r.body)));
