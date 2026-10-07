@@ -17,9 +17,9 @@ public class CandleChartView extends View{
    for(int i=0;i<cs.size();i++){e=cs.get(i).c*k+e*(1-k);float x=L+i*step+ox+step/2,y=py(e,lo,hi,T,B);if(x<L||x>R){px=x;py=y;continue;}if(!first)ln(c,px,py,x,y,col,2);px=x;py=y;first=false;}
  }
  @Override protected void onDraw(Canvas c){
-  float L=54,R=getWidth()-92,T=64,B=getHeight()-166;c.drawColor(Color.rgb(9,12,16));
+  float L=54,R=getWidth()-122,T=40,B=getHeight()-92;c.drawColor(Color.rgb(9,12,16));
   // header
-  text(c,"XAUUSD",16,25,18,Color.WHITE);text(c,"M1",88,25,14,Color.LTGRAY);text(c,"● LIVE",125,25,12,Color.rgb(0,220,130));
+  
   for(int i=0;i<=6;i++){float y=T+i*(B-T)/6;ln(c,L,y,R,y,Color.rgb(32,38,46),1);}
   for(int i=0;i<=8;i++){float x=L+i*(R-L)/8;ln(c,x,T,x,B,Color.rgb(24,29,36),1);}
   if(cs.isEmpty()){text(c,"Menunggu candle XAUUSD...",L+15,(T+B)/2,18,Color.LTGRAY);return;}
@@ -31,16 +31,16 @@ public class CandleChartView extends View{
   double res=hi-pad*.25,sup=lo+pad*.25;ln(c,L,py(res,lo,hi,T,B),R,py(res,lo,hi,T,B),Color.rgb(255,152,0),1);ln(c,L,py(sup,lo,hi,T,B),R,py(sup,lo,hi,T,B),Color.rgb(0,188,212),1);
   text(c,"RES",L+4,py(res,lo,hi,T,B)-4,9,Color.rgb(255,152,0));text(c,"SUP",L+4,py(sup,lo,hi,T,B)-4,9,Color.rgb(0,188,212));
   for(double q:new double[]{.236,.382,.5,.618,.786}){float y=py(hi-(hi-lo)*q,lo,hi,T,B);ln(c,L,y,R,y,Color.rgb(70,75,85),1);text(c,String.format(Locale.US,"%.0f%%",q*100),R-34,y-2,9,Color.GRAY);}
-  if(bid>0){float y=py(bid,lo,hi,T,B);ln(c,L,y,R,y,Color.rgb(0,230,118),2);tag(c,"BID "+f(bid),y,1,R+4);}
-  if(ask>0){float y=py(ask,lo,hi,T,B);ln(c,L,y,R,y,Color.rgb(255,82,82),2);tag(c,"ASK "+f(ask),y,1,R+4);}
-  double mid=(bid+ask)/2;if(mid>0){double[] vals={mid,mid-2,mid+2,mid+4};String[] names={"ENTRY","SL","TP1","TP2"};int[] cols={Color.rgb(255,193,7),Color.rgb(244,67,54),Color.rgb(76,175,80),Color.rgb(0,200,83)};for(int i=0;i<4;i++){float y=py(vals[i],lo,hi,T,B);if(y>=T&&y<=B){ln(c,L,y,R,y,cols[i],1);tag(c,names[i]+" "+f(vals[i]),y,1,R+4);}}}
+  if(bid>0){float y=py(bid,lo,hi,T,B);ln(c,L,y,R,y,Color.rgb(0,230,118),2);tag(c,"BID "+f(bid),y,1,R+3);}
+  if(ask>0){float y=py(ask,lo,hi,T,B);ln(c,L,y,R,y,Color.rgb(255,82,82),2);tag(c,"ASK "+f(ask),y,1,R+3);}
+  double mid=(bid+ask)/2;if(mid>0){double[] vals={mid,mid-2,mid+2,mid+4};String[] names={"ENTRY","SL","TP1","TP2"};int[] cols={Color.rgb(255,193,7),Color.rgb(244,67,54),Color.rgb(76,175,80),Color.rgb(0,200,83)};for(int i=0;i<4;i++){float y=py(vals[i],lo,hi,T,B);if(y>=T&&y<=B){ln(c,L,y,R,y,cols[i],1);tag(c,names[i]+" "+f(vals[i]),y,1,R+3);}}}
   Candle z=cs.get(n-1);float mx=L+(n-1)*step+ox+step/2;boolean buy=z.c>=z.o;text(c,buy?"▲ BUY":"▼ SELL",Math.max(L,mx-20),buy?py(z.l,lo,hi,T,B)+18:py(z.h,lo,hi,T,B)-12,11,buy?Color.rgb(0,220,130):Color.rgb(255,80,90));
   // price axis and time axis
   for(int i=0;i<=6;i++){double q=hi-i*(hi-lo)/6;float y=py(q,lo,hi,T,B);text(c,f(q),R+5,y+4,10,Color.LTGRAY);}
   for(int i=0;i<7;i++){int idx=Math.min(n-1,i*(n-1)/6);float x=L+idx*step+ox+step/2;if(x>=L&&x<=R)text(c,time.format(new Date(cs.get(idx).t)),x-14,B+18,9,Color.LTGRAY);}
   // lower indicator area
   text(c,"RSI 14",L,B+38,10,Color.LTGRAY);text(c,"MACD",L+115,B+38,10,Color.LTGRAY);text(c,"ATR",L+230,B+38,10,Color.LTGRAY);ln(c,L,B+50,R,B+50,Color.rgb(32,38,46),1);
-  text(c,"Signal layer: Wick Rejection • Liquidity Sweep • BOS",L,B+70,10,Color.LTGRAY);
+  text(c,"Wick • Sweep • BOS",L,B+55,9,Color.LTGRAY);
   if(cx>0){ln(c,cx,T,cx,B,Color.GRAY,1);ln(c,L,cy,R,cy,Color.GRAY,1);}
  }
  @Override public boolean onTouchEvent(MotionEvent e){switch(e.getActionMasked()){
