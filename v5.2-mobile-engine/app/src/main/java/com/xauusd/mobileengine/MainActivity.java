@@ -166,19 +166,19 @@ public class MainActivity extends Activity {
                 case 1: showMetaApiDialog();break;
                 case 2: showGatewayDialog();break;
                 case 3: showManualOrderDialog();break;
-                case 3: showIndicatorDialog();break;
-                case 4: scanMarket();break;
-                case 5: showSignalThresholdDialog();break;
-                case 6: showManagerDialog();break;
-                case 7: showRiskDialog();break;
-                case 8: showOrderManagerDialog();break;
-                case 9: showHistoryDialog();break;
-                case 10: showFxOpenDialog();break;
-                case 11: showTelegramDialog();break;
-                case 12: showCancelAutoDialog();break;
-                case 13: requestNotificationPermission();testAlarm();break;
-                case 14: new AlertDialog.Builder(this).setTitle("ENGINE LOG").setMessage(log.getText()).setPositiveButton("OK",null).show();break;
-                case 15: if(store.rawPrefs().getBoolean("auto",false))stopAuto(); else startAuto();break;
+                case 4: showIndicatorDialog();break;
+                case 5: scanMarket();break;
+                case 6: showSignalThresholdDialog();break;
+                case 7: showManagerDialog();break;
+                case 8: showRiskDialog();break;
+                case 9: showOrderManagerDialog();break;
+                case 10: showHistoryDialog();break;
+                case 11: showFxOpenDialog();break;
+                case 12: showTelegramDialog();break;
+                case 13: showCancelAutoDialog();break;
+                case 14: requestNotificationPermission();testAlarm();break;
+                case 15: new AlertDialog.Builder(this).setTitle("ENGINE LOG").setMessage(log.getText()).setPositiveButton("OK",null).show();break;
+                case 16: if(store.rawPrefs().getBoolean("auto",false))stopAuto(); else startAuto();break;
             }
         }).setNegativeButton("Tutup",null).show();
     }
@@ -191,7 +191,6 @@ public class MainActivity extends Activity {
         EditText tok=input("Gateway token",gateway.p.getString("token",""));tok.setInputType(129);
         TextView info=tv("HP A dan HP B harus satu Wi‑Fi/hotspot. Gateway V4 di HP B meneruskan order ke MetaKit → Exness MT5.",11);
         box.addView(info,new LinearLayout.LayoutParams(-1,72));box.addView(host,new LinearLayout.LayoutParams(-1,58));box.addView(tok,new LinearLayout.LayoutParams(-1,58));
-        new AlertDialog.Builder(this).setTitle("📱 HP B TRADING GATEWAY").setView(box).setNegativeButton("Tutup",null).setPositiveButton("SAVE + TEST",null).create().setOnShowListener(x->{});
         AlertDialog d=new AlertDialog.Builder(this).setTitle("📱 HP B TRADING GATEWAY").setView(box).setNegativeButton("Tutup",null).setPositiveButton("SAVE + TEST",null).create();
         d.setOnShowListener(x->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{String h=host.getText().toString().trim();String t=tok.getText().toString().trim();if(h.isEmpty()||t.isEmpty()){toast("Host dan token wajib diisi");return;}gateway.save(h,t);d.dismiss();new Thread(()->{try{String q=gateway.request("GET","/health",null);runOnUiThread(()->{log.setText("HP B GATEWAY • "+q);toast(q.startsWith("200|")?"GATEWAY CONNECTED":"GATEWAY ERROR");});}catch(Exception e){runOnUiThread(()->toast("Gateway: "+e.getMessage()));}}).start();}));d.show();
     }
