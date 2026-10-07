@@ -1,0 +1,39 @@
+name: Build XAUUSD Trading Gateway HP B
+
+on:
+  push:
+    branches: [ gateway-v1-foundation ]
+    paths:
+      - 'xauusd-trading-gateway/**'
+      - '.github/workflows/build-hpb-mini-server.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gateway-v1-foundation
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build HP B
+        working-directory: xauusd-trading-gateway
+        run: gradle --no-daemon --stacktrace assembleDebug
+      - name: Verify APK
+        run: |
+          test -s xauusd-trading-gateway/app/build/outputs/apk/debug/app-debug.apk
+          sha256sum xauusd-trading-gateway/app/build/outputs/apk/debug/app-debug.apk
+      - name: Upload HP B APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: XAUUSD-Trading-Gateway-HP-B-MINI-SERVER
+          path: xauusd-trading-gateway/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
