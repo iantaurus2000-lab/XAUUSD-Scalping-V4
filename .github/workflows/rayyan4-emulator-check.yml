@@ -1,0 +1,17 @@
+name: Rayyan4 Emulator Check
+on:
+  workflow_dispatch:
+jobs:
+  emulator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          emulator-options: -no-window -no-audio -no-boot-anim
+          disable-animations: true
+          script: echo "Rayyan4 GitHub Android emulator is running"
