@@ -1,4 +1,29 @@
 plugins { id 'com.android.application' }
-android { namespace 'com.xauusd.mobileengine'; compileSdk 35
- defaultConfig { applicationId 'com.xauusd.mobileengine'; minSdk 26; targetSdk 35; versionCode 3; versionName '1.2.0-RAYYAN4-PRO' }
+
+android {
+    namespace 'com.xauusd.mobileengine'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.xauusd.mobileengine'
+        minSdk 26
+        targetSdk 35
+        versionCode 4
+        versionName '1.3.0-RAYYAN4-PRO'
+    }
+
+    signingConfigs {
+        rayyanDebug {
+            storeFile file('rayyan4-debug.keystore')
+            storePassword System.getenv('RAYYAN4_KEY_PASSWORD') ?: 'rayyan4debug'
+            keyAlias 'rayyan4debug'
+            keyPassword System.getenv('RAYYAN4_KEY_PASSWORD') ?: 'rayyan4debug'
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.rayyanDebug
+        }
+    }
 }
