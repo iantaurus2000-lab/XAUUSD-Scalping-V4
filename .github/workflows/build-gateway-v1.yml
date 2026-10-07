@@ -43,10 +43,14 @@ jobs:
         run: sdkmanager "platform-tools" "platforms;android-30" "build-tools;35.0.0" "emulator" "system-images;android-30;google_apis;x86_64"
       - name: Create AVD
         run: echo "no" | avdmanager create avd -n gateway-test -k "system-images;android-30;google_apis;x86_64" --force
+      - name: Check emulator acceleration
+        run: emulator -accel-check || true
       - name: Start emulator
         run: |
-          nohup emulator -avd gateway-test -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -wipe-data -accel off >/tmp/emulator.log 2>&1 &
-          timeout 180 adb wait-for-device
+          nohup emulator -avd gateway-test -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -wipe-data -accel on >/tmp/emulator.log 2>&1 &
+          sleep 5
+          cat /tmp/emulator.log || true
+          timeout 300 adb wait-for-device
           for i in $(seq 1 120); do
             if adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' | grep -q 1; then break; fi
             sleep 2
