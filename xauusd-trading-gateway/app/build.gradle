@@ -7,7 +7,7 @@ android {
         applicationId 'com.xauusd.tradinggateway'
         minSdk 26
         targetSdk 33
-        versionCode 4
-        versionName '4.0.0-METAKIT-CONNECTOR'
+        versionCode 5
+        versionName '5.0.0-HP-B-MINI-SERVER'
     }
 }
