@@ -2,6 +2,7 @@ name: Build XAUUSD Trading Gateway V3
 
 on:
   workflow_dispatch:
+  pull_request:
   push:
     paths:
       - 'xauusd-trading-gateway/**'
