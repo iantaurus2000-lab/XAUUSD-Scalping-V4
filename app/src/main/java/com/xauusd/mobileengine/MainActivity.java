@@ -7,6 +7,7 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.view.*;
 import android.widget.*;
+import androidx.core.app.NotificationCompat;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -15,6 +16,8 @@ public class MainActivity extends Activity {
     private TextView bidView, askView, spreadView, status, signalSummary, scoreView, entryView, slView, tp1View, tp2View;
     private ScheduledExecutorService ex;
     private SharedPreferences prefs;
+    private SharedPreferences tgPrefs;
+    private boolean telegramEnabled;
     private String selectedTf = "M1";
     private Candle[] m5Data = new Candle[0];
     private SignalResult lastSignal;
@@ -51,6 +54,8 @@ public class MainActivity extends Activity {
         super.onCreate(b);
         getWindow().setStatusBarColor(Color.rgb(2, 8, 15));
         prefs = getSharedPreferences("rayyan4_indicators", MODE_PRIVATE);
+        tgPrefs = getSharedPreferences("rayyan4_telegram", MODE_PRIVATE);
+        telegramEnabled = tgPrefs.getBoolean("enabled", false);
         buildUI();
     }
 
@@ -248,6 +253,7 @@ public class MainActivity extends Activity {
     void updateSignal(Candle[] m1, Candle[] m5) {
         if (m1 == null || m1.length < 30 || m5 == null || m5.length < 30) return;
         double[] tick = new double[]{chart == null ? 0 : chart.getBid(), chart == null ? 0 : chart.getAsk()};
+        SignalResult previous = lastSignal;
         lastSignal = SignalEngine.evaluate(m1, m5, tick[0], tick[1]);
         SignalResult s = lastSignal;
 
@@ -270,6 +276,16 @@ public class MainActivity extends Activity {
                     "SELL".equals(s.side) ? Color.rgb(220,45,60) : Color.rgb(76,78,85), 12));
         }
         chart.setSignalLevels(s.entry, s.sl, s.tp1, s.tp2, "BUY".equals(s.side) || "SELL".equals(s.side));
+        boolean changed = previous == null || !s.side.equals(previous.side);
+        if (changed && ("BUY".equals(s.side) || "SELL".equals(s.side))) {
+            String msg = "XAUUSD SCALPING\\n\\n" + s.side + "\\nEntry: " + price(s.entry) +
+                    "\\nSL: " + price(s.sl) + "\\nTP1: " + price(s.tp1) + "\\nTP2: " + price(s.tp2) +
+                    "\\nTF: M1\\nBias: M5 " + s.m5Bias + "\\nSetup: " + s.setup +
+                    "\\nConfidence: " + s.confidence + "/5";
+            AppLog.add(this, "SIGNAL", s.side + " " + price(s.entry) + " score=" + s.score);
+            if (telegramEnabled) sendTelegram(msg);
+            notifyLocal("XAUUSD " + s.side, "Entry " + price(s.entry) + " | SL " + price(s.sl) + " | TP1 " + price(s.tp1));
+        }
     }
 
     String price(double v) {
@@ -296,6 +312,8 @@ public class MainActivity extends Activity {
                 pop.dismiss();
                 if ("Indicators".equals(s)) showIndicatorDialog();
                 else if ("Signal".equals(s)) showSignalDialog();
+                else if ("Telegram".equals(s)) showTelegramDialog();
+                else if ("Orders".equals(s) || "Settings".equals(s)) showLogDialog(s);
                 else Toast.makeText(this, s, Toast.LENGTH_SHORT).show();
             });
         }
@@ -429,6 +447,41 @@ public class MainActivity extends Activity {
             .setMultiChoiceItems(names, checked, (dialog, which, isChecked) -> setInd(keys[which], isChecked))
             .setPositiveButton("TUTUP", null)
             .show();
+    }
+
+
+    void sendTelegram(String msg) {
+        TelegramClient.send(tgPrefs.getString("token",""), tgPrefs.getString("chat",""), msg,
+            (ok, detail) -> AppLog.add(this, "TELEGRAM", ok ? "sent" : "error"));
+    }
+    void notifyLocal(String title, String msg) {
+        NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+        String id="rayyan4_alerts";
+        if(Build.VERSION.SDK_INT>=26) nm.createNotificationChannel(new NotificationChannel(id,"Rayyan4 Alerts",NotificationManager.IMPORTANCE_HIGH));
+        nm.notify((int)(System.currentTimeMillis() & 0x7fffffff),
+            new NotificationCompat.Builder(this,id).setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(title).setContentText(msg).setAutoCancel(true).setPriority(NotificationCompat.PRIORITY_HIGH).build());
+    }
+    void showTelegramDialog() {
+        LinearLayout box=new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL); box.setPadding(22,8,22,4);
+        EditText token=new EditText(this); token.setHint("Bot Token"); token.setText(tgPrefs.getString("token",""));
+        EditText chat=new EditText(this); chat.setHint("Chat ID"); chat.setInputType(2); chat.setText(tgPrefs.getString("chat",""));
+        Switch sw=new Switch(this); sw.setText("Telegram aktif"); sw.setChecked(telegramEnabled);
+        box.addView(token); box.addView(chat); box.addView(sw);
+        new AlertDialog.Builder(this).setTitle("TELEGRAM").setView(box)
+            .setNegativeButton("BATAL",null)
+            .setNeutralButton("TEST",(d,w)->TelegramClient.send(token.getText().toString(),chat.getText().toString(),"Rayyan4 Telegram TEST",(ok,x)->{}))
+            .setPositiveButton("SIMPAN",(d,w)->{
+                tgPrefs.edit().putString("token",token.getText().toString().trim()).putString("chat",chat.getText().toString().trim()).putBoolean("enabled",sw.isChecked()).apply();
+                telegramEnabled=sw.isChecked(); AppLog.add(this,"TELEGRAM",telegramEnabled?"enabled":"disabled");
+            }).show();
+    }
+    void showLogDialog(String title) {
+        String data=AppLog.all(this); if(data.isEmpty()) data="Belum ada log.";
+        TextView v=tv(data,10); v.setTextIsSelectable(true); v.setGravity(Gravity.TOP|Gravity.START);
+        ScrollView sc=new ScrollView(this); sc.addView(v);
+        new AlertDialog.Builder(this).setTitle(title).setView(sc).setNegativeButton("TUTUP",null)
+            .setNeutralButton("HAPUS LOG",(d,w)->AppLog.clear(this)).show();
     }
 
     @Override protected void onDestroy() {
