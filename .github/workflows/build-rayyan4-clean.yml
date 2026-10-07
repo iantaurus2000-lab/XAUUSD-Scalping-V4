@@ -15,6 +15,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10'
+      - name: Restore stable Rayyan4 signing key
+        run: base64 -d app/rayyan4-debug.keystore.b64 > app/rayyan4-debug.keystore
+
       - run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
