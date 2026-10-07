@@ -7,7 +7,7 @@ android {
         applicationId 'com.xauusd.tradinggateway'
         minSdk 26
         targetSdk 33
-        versionCode 6
-        versionName '4.1.0-HP-B-GATEWAY-FIX'
+        versionCode 7
+        versionName '5.0.0-HP-B-MRPC-MT5-BRIDGE'
     }
 }
