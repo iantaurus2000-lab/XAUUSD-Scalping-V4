@@ -41,6 +41,13 @@ jobs:
           packages: platform-tools
       - name: Install emulator packages
         run: sdkmanager "platform-tools" "platforms;android-30" "build-tools;35.0.0" "emulator" "system-images;android-30;google_apis;x86_64"
+      - name: Add Android emulator tools to PATH
+        run: |
+          echo "$ANDROID_HOME/emulator" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          export PATH="$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
+          emulator -version
+          adb version
       - name: Create AVD
         run: echo "no" | avdmanager create avd -n gateway-test -k "system-images;android-30;google_apis;x86_64" --force
       - name: Check emulator acceleration
