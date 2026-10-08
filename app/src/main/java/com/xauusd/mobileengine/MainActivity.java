@@ -345,6 +345,42 @@ public class MainActivity extends Activity {
         Toast.makeText(this,"TEST QUEUE dikirim",Toast.LENGTH_SHORT).show();
     }
 
+    void checkGatewayAck(){
+        new Thread(()->{
+            String msg;
+            try{
+                java.net.URL u=new java.net.URL("http://127.0.0.1:8787/status");
+                java.net.HttpURLConnection c=(java.net.HttpURLConnection)u.openConnection();
+                c.setRequestMethod("GET");c.setConnectTimeout(1500);c.setReadTimeout(2500);
+                int code=c.getResponseCode();
+                java.io.BufferedReader r=new java.io.BufferedReader(new java.io.InputStreamReader(c.getInputStream()));
+                StringBuilder s=new StringBuilder();String line;
+                while((line=r.readLine())!=null)s.append(line);
+                r.close();c.disconnect();
+                if(code!=200)msg="Gateway HTTP "+code;
+                else{
+                    String raw=s.toString();
+                    String result=gatewayField(raw,"ACK_RESULT");
+                    String id=gatewayField(raw,"ACK_ID");
+                    String pending=gatewayField(raw,"PENDING_ID");
+                    if(!result.isEmpty()) msg="ACK: "+result+"\nID: "+id+(pending.isEmpty()?"\nQueue: kosong":"\nQueue masih menunggu: "+pending);
+                    else msg=pending.isEmpty()?"BELUM ADA ACK":"TEST masih menunggu EA";
+                }
+            }catch(Exception e){
+                msg="Gateway belum aktif / error koneksi";
+            }
+            String out=msg;
+            runOnUiThread(()->new AlertDialog.Builder(this).setTitle("RAYYAN4 • CEK ACK").setMessage(out).setPositiveButton("OK",null).show());
+        }).start();
+    }
+
+    private String gatewayField(String s,String key){
+        if(s==null)return "";
+        String p=key+"=";int a=s.indexOf(p);if(a<0)return "";
+        a+=p.length();int b=s.indexOf(';',a);if(b<0)b=s.length();
+        return s.substring(a,b);
+    }
+
     void showMt5Dialog(){
         startGateway();
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(18,4,18,4);
@@ -355,6 +391,8 @@ public class MainActivity extends Activity {
         EditText sl=new EditText(this);sl.setHint("SL");sl.setInputType(2|8192);
         EditText tp=new EditText(this);tp.setHint("TP");tp.setInputType(2|8192);
         box.addView(auto);box.addView(side);box.addView(vol);box.addView(en);box.addView(sl);box.addView(tp);
+        Button checkAck=btn("CEK ACK");checkAck.setTextSize(12);box.addView(checkAck,new LinearLayout.LayoutParams(-1,48));
+        checkAck.setOnClickListener(v->checkGatewayAck());
         new AlertDialog.Builder(this).setTitle("MT5 / EA • DEMO").setView(box).setNegativeButton("TUTUP",null)
             .setNeutralButton("TEST QUEUE + ACK",(d,w)->queueGatewayTest())
             .setPositiveButton("QUEUE ORDER",(d,w)->{try{getSharedPreferences("rayyan4_gateway",0).edit().putBoolean("auto",auto.isChecked()).apply();
