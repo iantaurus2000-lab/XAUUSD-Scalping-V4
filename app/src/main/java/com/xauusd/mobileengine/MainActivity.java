@@ -17,6 +17,7 @@ public class MainActivity extends Activity {
     public static boolean isAppVisible(){ return visible; }
     private CandleChartView chart;
     private TextView bidView, askView, spreadView, status, signalSummary, scoreView, entryView, slView, tp1View, tp2View;
+    private Button signalSideButton;
     private ScheduledExecutorService ex;
     private SharedPreferences prefs, tgPrefs;
     private boolean telegramEnabled;
@@ -105,7 +106,10 @@ public class MainActivity extends Activity {
 
         LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);
         Button side=btn("WAIT");side.setTextSize(17);side.setTypeface(null,Typeface.BOLD);
-        side.setBackground(roundBg(Color.rgb(75,78,86),12));top.addView(side,new LinearLayout.LayoutParams(78,50));
+        signalSideButton=side;
+        side.setBackground(roundBg(Color.rgb(75,78,86),12));
+        side.setOnClickListener(v->executeCurrentSignal());
+        top.addView(side,new LinearLayout.LayoutParams(78,50));
         signalSummary=tv("XAUUSD • "+selectedTf+"\nWick Rejection + Liquidity Sweep + BOS",10);
         top.addView(signalSummary,new LinearLayout.LayoutParams(0,50,1));
         scoreView=tv("CONFIDENCE\n--/5",11);scoreView.setGravity(Gravity.CENTER);top.addView(scoreView,new LinearLayout.LayoutParams(100,50));
@@ -199,6 +203,19 @@ public class MainActivity extends Activity {
                 }catch(Exception e){runOnUiThread(()->status.setText("● OFFLINE • RETRYING • "+selectedTf));}
             },1,1,TimeUnit.SECONDS);
         }
+    }
+
+    void executeCurrentSignal(){
+        SignalResult s=lastSignal;
+        if(s==null || (!"BUY".equals(s.side)&&!"SELL".equals(s.side)) || s.entry<=0 || s.sl<=0 || s.tp1<=0){
+            Toast.makeText(this,"Belum ada signal BUY/SELL yang siap dieksekusi",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        startGateway();
+        String side="BUY".equals(s.side)?"BUY_LIMIT":"SELL_LIMIT";
+        double lot=getSharedPreferences("rayyan4_gateway",0).getFloat("lot",0.01f);
+        queueLimit(side,lot,s.entry,s.sl,s.tp2>0?s.tp2:s.tp1);
+        Toast.makeText(this,side+" dikirim • Entry "+price(s.entry),Toast.LENGTH_SHORT).show();
     }
 
     void updateSignal(Candle[] m1,Candle[] m5){
