@@ -336,6 +336,15 @@ public class MainActivity extends Activity {
         AppLog.add(this,"ORDER","queued "+cmd);notifyLocal("MT5 "+side,"Pending order queued");
     }
 
+    void queueGatewayTest(){
+        String id="TEST-"+System.currentTimeMillis();
+        String cmd="id="+id+";type=TEST;side=TEST;volume=0;entry=0;sl=0;tp=0";
+        getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putString("next",cmd).apply();
+        AppLog.add(this,"MT5 TEST","queued "+cmd);
+        notifyLocal("MT5 Gateway TEST","Queue TEST dikirim. Menunggu ACK...");
+        Toast.makeText(this,"TEST QUEUE dikirim",Toast.LENGTH_SHORT).show();
+    }
+
     void showMt5Dialog(){
         startGateway();
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(18,4,18,4);
@@ -347,6 +356,7 @@ public class MainActivity extends Activity {
         EditText tp=new EditText(this);tp.setHint("TP");tp.setInputType(2|8192);
         box.addView(auto);box.addView(side);box.addView(vol);box.addView(en);box.addView(sl);box.addView(tp);
         new AlertDialog.Builder(this).setTitle("MT5 / EA • DEMO").setView(box).setNegativeButton("TUTUP",null)
+            .setNeutralButton("TEST QUEUE + ACK",(d,w)->queueGatewayTest())
             .setPositiveButton("QUEUE ORDER",(d,w)->{try{getSharedPreferences("rayyan4_gateway",0).edit().putBoolean("auto",auto.isChecked()).apply();
                 queueLimit(side.getText().toString().trim().toUpperCase(Locale.US),Double.parseDouble(vol.getText().toString()),Double.parseDouble(en.getText().toString()),Double.parseDouble(sl.getText().toString()),Double.parseDouble(tp.getText().toString()));
             }catch(Exception e){Toast.makeText(this,"Isi semua nilai order dengan benar",Toast.LENGTH_SHORT).show();}}).show();
