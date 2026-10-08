@@ -46,7 +46,7 @@ void OnTimer(){
    if(id=="" || id==lastId)return;
 
    string type=field(cmd,"type");
-   if("TEST".equals(type)){
+   if(type=="TEST"){
       lastId=id;
       Print("RAYYAN4 TEST id=",id," result=TEST_OK");
       string ackTest=GatewayUrl+"/ack?id="+urlEncode(id)+"&result=TEST_OK";
