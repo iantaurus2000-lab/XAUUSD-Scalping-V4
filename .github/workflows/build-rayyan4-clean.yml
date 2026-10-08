@@ -5,7 +5,7 @@ on:
     branches: [ main ]
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-slim
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -17,8 +17,8 @@ jobs:
           gradle-version: '8.10'
       - name: Restore stable Rayyan4 signing key
         run: base64 -d app/rayyan4-debug.keystore.b64 > app/rayyan4-debug.keystore
-
-      - run: gradle :app:assembleDebug --no-daemon
+      - name: Build Rayyan4 APK
+        run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
           name: XAUUSD-Mobile-Engine-RAYYAN4-CLEAN
