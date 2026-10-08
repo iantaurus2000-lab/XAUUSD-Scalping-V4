@@ -15,9 +15,9 @@ void OnTick(){}
 
 void OnTimer(){
    string url=GatewayUrl+"/next";
-   uchar data[],result[]; string headers;
+   char data[],result[]; string headers;
    ResetLastError();
-   int code=WebRequest("GET",url,"",3000,data,0,result,headers);
+   int code=WebRequest("GET",url,"","",3000,data,0,result,headers);
    if(code!=200)return;
 
    string cmd=CharArrayToString(result);
@@ -52,8 +52,8 @@ void OnTimer(){
    Print("RAYYAN4 id=",id," side=",side," result=",resultText," retcode=",trade.ResultRetcode());
 
    string ack=GatewayUrl+"/ack?id="+urlEncode(id)+"&result="+urlEncode(resultText);
-   uchar ad[],ar[]; string ah;
-   WebRequest("GET",ack,"",3000,ad,0,ar,ah);
+   char ad[],ar[]; string ah;
+   WebRequest("GET",ack,"","",3000,ad,0,ar,ah);
 }
 
 string field(string s,string key){
