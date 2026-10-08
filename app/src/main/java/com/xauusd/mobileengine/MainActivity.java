@@ -391,11 +391,8 @@ public class MainActivity extends Activity {
         EditText sl=new EditText(this);sl.setHint("SL");sl.setInputType(2|8192);
         EditText tp=new EditText(this);tp.setHint("TP");tp.setInputType(2|8192);
         box.addView(auto);box.addView(side);box.addView(vol);box.addView(en);box.addView(sl);box.addView(tp);
-        Button checkAck=btn("CEK ACK");checkAck.setTextSize(12);box.addView(checkAck,new LinearLayout.LayoutParams(-1,48));
-        checkAck.setOnClickListener(v->checkGatewayAck());
         new AlertDialog.Builder(this).setTitle("MT5 / EA • DEMO").setView(box).setNegativeButton("TUTUP",null)
-            .setNeutralButton("TEST QUEUE + ACK",(d,w)->queueGatewayTest())
-            .setPositiveButton("QUEUE ORDER",(d,w)->{try{getSharedPreferences("rayyan4_gateway",0).edit().putBoolean("auto",auto.isChecked()).apply();
+            .setPositiveButton("KIRIM LIMIT DEMO",(d,w)->{try{getSharedPreferences("rayyan4_gateway",0).edit().putBoolean("auto",auto.isChecked()).apply();
                 queueLimit(side.getText().toString().trim().toUpperCase(Locale.US),Double.parseDouble(vol.getText().toString()),Double.parseDouble(en.getText().toString()),Double.parseDouble(sl.getText().toString()),Double.parseDouble(tp.getText().toString()));
             }catch(Exception e){Toast.makeText(this,"Isi semua nilai order dengan benar",Toast.LENGTH_SHORT).show();}}).show();
     }
