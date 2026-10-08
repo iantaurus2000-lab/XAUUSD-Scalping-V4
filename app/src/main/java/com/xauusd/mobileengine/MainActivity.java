@@ -206,16 +206,26 @@ public class MainActivity extends Activity {
     }
 
     void executeCurrentSignal(){
-        SignalResult s=lastSignal;
-        if(s==null || (!"BUY".equals(s.side)&&!"SELL".equals(s.side)) || s.entry<=0 || s.sl<=0 || s.tp1<=0){
-            Toast.makeText(this,"Belum ada signal BUY/SELL yang siap dieksekusi",Toast.LENGTH_SHORT).show();
+        // Human confirmation is the final trigger, but the price is re-evaluated
+        // immediately before sending so a 1-second market move cannot use stale levels.
+        if(chart==null || chart.isEmpty() || m5Data==null || m5Data.length<30){
+            Toast.makeText(this,"Data M1/M5 belum siap",Toast.LENGTH_SHORT).show();
             return;
         }
+        Candle[] liveM1=chart.getDataSnapshot();
+        double liveBid=chart.getBid(), liveAsk=chart.getAsk();
+        SignalResult s=SignalEngine.evaluate(liveM1,m5Data,liveBid,liveAsk);
+        lastSignal=s;
+
+        if(s==null || (!"BUY".equals(s.side)&&!"SELL".equals(s.side)) || s.entry<=0 || s.sl<=0 || s.tp1<=0){
+            Toast.makeText(this,"Setup sudah berubah • tidak dieksekusi",Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         startGateway();
         String side="BUY".equals(s.side)?"BUY_LIMIT":"SELL_LIMIT";
         double lot=getSharedPreferences("rayyan4_gateway",0).getFloat("lot",0.01f);
         queueLimit(side,lot,s.entry,s.sl,s.tp2>0?s.tp2:s.tp1);
-        Toast.makeText(this,side+" dikirim • Entry "+price(s.entry),Toast.LENGTH_SHORT).show();
     }
 
     void updateSignal(Candle[] m1,Candle[] m5){
