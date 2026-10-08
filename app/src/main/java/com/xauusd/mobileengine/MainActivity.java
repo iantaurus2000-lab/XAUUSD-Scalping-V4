@@ -326,9 +326,21 @@ public class MainActivity extends Activity {
     }
 
     void queueLimit(String side,double volume,double entry,double sl,double tp){
+        side=side==null?"":side.trim().toUpperCase(Locale.US);
+        if("BUY".equals(side))side="BUY_LIMIT";
+        if("SELL".equals(side))side="SELL_LIMIT";
+        if(!"BUY_LIMIT".equals(side)&&!"SELL_LIMIT".equals(side)){
+            Toast.makeText(this,"Side harus BUY_LIMIT atau SELL_LIMIT",Toast.LENGTH_SHORT).show();return;
+        }
         if(volume<=0||entry<=0||sl<=0||tp<=0){Toast.makeText(this,"Nilai order tidak valid",Toast.LENGTH_SHORT).show();return;}
-        if("BUY_LIMIT".equals(side)&&entry>=chart.getAsk()){Toast.makeText(this,"BUY LIMIT harus di bawah ASK",Toast.LENGTH_SHORT).show();return;}
-        if("SELL_LIMIT".equals(side)&&entry<=chart.getBid()){Toast.makeText(this,"SELL LIMIT harus di atas BID",Toast.LENGTH_SHORT).show();return;}
+        if("BUY_LIMIT".equals(side)){
+            if(entry>=chart.getAsk()){Toast.makeText(this,"BUY LIMIT harus di bawah ASK",Toast.LENGTH_SHORT).show();return;}
+            if(!(sl<entry&&tp>entry)){Toast.makeText(this,"BUY LIMIT: SL < Entry < TP",Toast.LENGTH_SHORT).show();return;}
+        }
+        if("SELL_LIMIT".equals(side)){
+            if(entry<=chart.getBid()){Toast.makeText(this,"SELL LIMIT harus di atas BID",Toast.LENGTH_SHORT).show();return;}
+            if(!(tp<entry&&sl>entry)){Toast.makeText(this,"SELL LIMIT: TP < Entry < SL",Toast.LENGTH_SHORT).show();return;}
+        }
         String id=Long.toString(System.currentTimeMillis());
         String cmd="id="+id+";type=LIMIT;side="+side+";volume="+volume+";entry="+entry+";sl="+sl+";tp="+tp;
         getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putString("next",cmd).apply();
