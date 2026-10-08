@@ -49,8 +49,6 @@ public final class GatewayService extends Service {
                 String id=query(path,"id");
                 String result=query(path,"result");
                 out=ack(id,result);
-            }else if(path.startsWith("/status")){
-                out=status();
             }else{
                 out="Rayyan4 gateway OK";
             }
@@ -87,24 +85,10 @@ public final class GatewayService extends Service {
         String currentId=field(current,"id");
         if(id.equals(currentId)){
             getSharedPreferences("rayyan4_gateway",0).edit().remove("next").apply();
-            getSharedPreferences("rayyan4_ack",0).edit()
-                .putString("id",id)
-                .putString("result",result==null?"":result)
-                .putLong("at",System.currentTimeMillis())
-                .apply();
             AppLog.add(this,"MT5","ACK id="+id+" result="+result);
             return "ACK OK";
         }
         return "ACK STALE";
-    }
-
-    private synchronized String status(){
-        SharedPreferences a=getSharedPreferences("rayyan4_ack",0);
-        String ackId=a.getString("id","");
-        String ackResult=a.getString("result","");
-        long at=a.getLong("at",0);
-        String pendingId=field(getPending(),"id");
-        return "ACK_ID="+ackId+";ACK_RESULT="+ackResult+";ACK_AT="+at+";PENDING_ID="+pendingId;
     }
 
     private String field(String s,String key){
