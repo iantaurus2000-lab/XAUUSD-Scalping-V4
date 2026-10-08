@@ -2,14 +2,19 @@
 #include <Trade/Trade.mqh>
 CTrade trade;
 
-input string GatewayUrl="http://192.168.1.100:8787";
-input string AllowedSymbol="XAUUSD";
+input string GatewayUrl="http://192.168.0.109:8787";
+input string AllowedSymbol="XAUUSDm";
 input bool DemoOnly=true;
 input int PollSeconds=1;
 
 string lastId="";
+datetime lastDiag=0;
 
-int OnInit(){ EventSetTimer(MathMax(1,PollSeconds)); return(INIT_SUCCEEDED); }
+int OnInit(){
+   EventSetTimer(MathMax(1,PollSeconds));
+   Print("RAYYAN4 START Gateway=",GatewayUrl," Symbol=",AllowedSymbol);
+   return(INIT_SUCCEEDED);
+}
 void OnDeinit(const int r){ EventKillTimer(); }
 void OnTick(){}
 
@@ -18,10 +23,24 @@ void OnTimer(){
    char data[],result[]; string headers;
    ResetLastError();
    int code=WebRequest("GET",url,"","",3000,data,0,result,headers);
-   if(code!=200)return;
+
+   if(code!=200){
+      if(TimeCurrent()-lastDiag>=10){
+         lastDiag=TimeCurrent();
+         Print("RAYYAN4 GATEWAY ERROR HTTP=",code," err=",GetLastError()," URL=",url);
+      }
+      return;
+   }
 
    string cmd=CharArrayToString(result);
-   if(StringLen(cmd)<5)return;
+
+   if(StringLen(cmd)<5){
+      if(TimeCurrent()-lastDiag>=10){
+         lastDiag=TimeCurrent();
+         Print("RAYYAN4 GATEWAY OK - waiting for command");
+      }
+      return;
+   }
 
    string id=field(cmd,"id");
    if(id=="" || id==lastId)return;
