@@ -2,7 +2,7 @@
 #include <Trade/Trade.mqh>
 CTrade trade;
 
-input string GatewayUrl="http://192.168.0.102:8787";
+input string GatewayUrl="http://192.168.0.109:8787";
 input string AllowedSymbol="XAUUSDm";
 input bool DemoOnly=true;
 input int PollSeconds=1;
