@@ -68,15 +68,31 @@ public final class SignalEngine {
         if (buyPoints >= 8 && buyPoints > sellPoints + 1) side = "BUY";
         else if (sellPoints >= 8 && sellPoints > buyPoints + 1) side = "SELL";
 
-        double entry = side.equals("BUY") ? (ask > 0 ? ask : z.c) :
-                       side.equals("SELL") ? (bid > 0 ? bid : z.c) : 0;
+        // True LIMIT entry: derive a retracement price from the rejection/sweep zone,
+        // never use the current Bid/Ask itself as the pending entry.
+        double entry = 0;
+        if ("BUY".equals(side)) {
+            double bodyLow = Math.min(z.o, z.c);
+            double wickEntry = z.l + (bodyLow - z.l) * 0.50;
+            double sweepEntry = prevLow + Math.max(atr * 0.10, 0.05);
+            entry = (sweepBuy ? Math.min(wickEntry, sweepEntry) : wickEntry);
+            if (ask > 0) entry = Math.min(entry, ask - Math.max(atr * 0.10, 0.05));
+        } else if ("SELL".equals(side)) {
+            double bodyHigh = Math.max(z.o, z.c);
+            double wickEntry = z.h - (z.h - bodyHigh) * 0.50;
+            double sweepEntry = prevHigh - Math.max(atr * 0.10, 0.05);
+            entry = (sweepSell ? Math.max(wickEntry, sweepEntry) : wickEntry);
+            if (bid > 0) entry = Math.max(entry, bid + Math.max(atr * 0.10, 0.05));
+        }
         double sl = 0, tp1 = 0, tp2 = 0, rr = 0;
         if (entry > 0) {
             double dist = Math.max(atr * 1.15, range * 1.10);
             if ("BUY".equals(side)) {
-                sl = entry - dist; tp1 = entry + dist * 1.0; tp2 = entry + dist * 2.0;
+                sl = Math.min(z.l - Math.max(atr * 0.15, 0.05), entry - dist * 0.75);
+                tp1 = entry + dist * 1.0; tp2 = entry + dist * 2.0;
             } else if ("SELL".equals(side)) {
-                sl = entry + dist; tp1 = entry - dist * 1.0; tp2 = entry - dist * 2.0;
+                sl = Math.max(z.h + Math.max(atr * 0.15, 0.05), entry + dist * 0.75);
+                tp1 = entry - dist * 1.0; tp2 = entry - dist * 2.0;
             }
             rr = 2.0;
         }
