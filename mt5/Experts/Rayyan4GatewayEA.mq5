@@ -68,22 +68,72 @@ void OnTimer(){
 
    bool ok=false;
    string resultText="REJECT";
+   string detail="";
+   string sym=AllowedSymbol;
+   SymbolSelect(sym,true);
+
+   MqlTick tick;
+   bool haveTick=SymbolInfoTick(sym,tick);
+   int digits=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS);
+   double point=SymbolInfoDouble(sym,SYMBOL_POINT);
+   double minVol=SymbolInfoDouble(sym,SYMBOL_VOLUME_MIN);
+   double maxVol=SymbolInfoDouble(sym,SYMBOL_VOLUME_MAX);
+   double stepVol=SymbolInfoDouble(sym,SYMBOL_VOLUME_STEP);
+   long stopsLevel=SymbolInfoInteger(sym,SYMBOL_TRADE_STOPS_LEVEL);
+
+   if(stepVol>0) vol=MathFloor(vol/stepVol+1e-8)*stepVol;
+   vol=NormalizeDouble(vol,2);
+   entry=NormalizeDouble(entry,digits);
+   sl=NormalizeDouble(sl,digits);
+   tp=NormalizeDouble(tp,digits);
 
    if(DemoOnly && AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
       resultText="NOT_DEMO";
    }else if(_Symbol!=AllowedSymbol){
       resultText="SYMBOL_MISMATCH";
-   }else if(vol<=0 || entry<=0 || sl<=0 || tp<=0){
+   }else if(!haveTick){
+      resultText="NO_TICK";
+   }else if(vol<minVol || vol>maxVol){
+      resultText="BAD_VOLUME";
+      detail=StringFormat("vol=%.2f min=%.2f max=%.2f",vol,minVol,maxVol);
+   }else if(entry<=0 || sl<=0 || tp<=0){
       resultText="BAD_VALUES";
+   }else if(side=="BUY_LIMIT" && !(entry<tick.ask)){
+      resultText="BAD_ENTRY";
+      detail=StringFormat("BUY_LIMIT entry=%.5f ask=%.5f",entry,tick.ask);
+   }else if(side=="SELL_LIMIT" && !(entry>tick.bid)){
+      resultText="BAD_ENTRY";
+      detail=StringFormat("SELL_LIMIT entry=%.5f bid=%.5f",entry,tick.bid);
+   }else if(side=="BUY_LIMIT" && !(sl<entry && tp>entry)){
+      resultText="BAD_STOPS";
+      detail="BUY requires SL<Entry<TP";
+   }else if(side=="SELL_LIMIT" && !(tp<entry && sl>entry)){
+      resultText="BAD_STOPS";
+      detail="SELL requires TP<Entry<SL";
+   }else if(point<=0){
+      resultText="BAD_SYMBOL";
+   }else if(stopsLevel>0 && MathAbs(entry-sl)/point<stopsLevel){
+      resultText="STOP_DISTANCE";
+      detail=StringFormat("entry-sl=%.0f min=%d points",MathAbs(entry-sl)/point,stopsLevel);
    }else{
-      trade.SetTypeFillingBySymbol(_Symbol);
-      if(side=="BUY_LIMIT") ok=trade.BuyLimit(vol,entry,_Symbol,sl,tp,ORDER_TIME_GTC,0,"RAYYAN4");
-      if(side=="SELL_LIMIT") ok=trade.SellLimit(vol,entry,_Symbol,sl,tp,ORDER_TIME_GTC,0,"RAYYAN4");
+      trade.SetAsyncMode(false);
+      trade.SetTypeFillingBySymbol(sym);
+      if(side=="BUY_LIMIT") ok=trade.BuyLimit(vol,entry,sym,sl,tp,ORDER_TIME_GTC,0,"RAYYAN4");
+      else if(side=="SELL_LIMIT") ok=trade.SellLimit(vol,entry,sym,sl,tp,ORDER_TIME_GTC,0,"RAYYAN4");
+      else resultText="BAD_SIDE";
+
+      uint rc=trade.ResultRetcode();
       resultText=ok ? "EXECUTED" : "FAILED";
+      detail=trade.ResultRetcodeDescription();
+      Print("RAYYAN4 TRADE CHECK side=",side," vol=",DoubleToString(vol,2),
+            " entry=",DoubleToString(entry,digits)," bid=",DoubleToString(tick.bid,digits),
+            " ask=",DoubleToString(tick.ask,digits)," sl=",DoubleToString(sl,digits),
+            " tp=",DoubleToString(tp,digits)," retcode=",rc," desc=",detail);
    }
 
    lastId=id;
-   Print("RAYYAN4 id=",id," side=",side," result=",resultText," retcode=",trade.ResultRetcode());
+   Print("RAYYAN4 id=",id," side=",side," result=",resultText,
+         " detail=",detail," retcode=",trade.ResultRetcode());
 
    string ack=GatewayUrl+"/ack?id="+urlEncode(id)+"&result="+urlEncode(resultText);
    char ad[],ar[]; string ah;
