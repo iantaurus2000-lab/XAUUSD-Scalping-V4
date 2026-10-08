@@ -15,7 +15,7 @@ void OnTick(){}
 
 void OnTimer(){
    string url=GatewayUrl+"/next";
-   char data[],result[]; string headers;
+   uchar data[],result[]; string headers;
    ResetLastError();
    int code=WebRequest("GET",url,"",3000,data,0,result,headers);
    if(code!=200)return;
@@ -52,7 +52,7 @@ void OnTimer(){
    Print("RAYYAN4 id=",id," side=",side," result=",resultText," retcode=",trade.ResultRetcode());
 
    string ack=GatewayUrl+"/ack?id="+urlEncode(id)+"&result="+urlEncode(resultText);
-   char ad[],ar[]; string ah;
+   uchar ad[],ar[]; string ah;
    WebRequest("GET",ack,"",3000,ad,0,ar,ah);
 }
 
@@ -72,7 +72,7 @@ string urlEncode(string s){
       ushort c=StringGetCharacter(s,i);
       if((c>='0'&&c<='9')||(c>='A'&&c<='Z')||(c>='a'&&c<='z')||c=='-'||c=='_'||c=='.') out+=ShortToString((short)c);
       else if(c==' ') out+="+";
-      else out+='%'+StringFormat("%02X",c);
+      else { out+="%"; out+=StringFormat("%02X",c); }
    }
    return out;
 }
