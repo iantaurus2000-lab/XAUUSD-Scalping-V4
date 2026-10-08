@@ -45,6 +45,19 @@ void OnTimer(){
    string id=field(cmd,"id");
    if(id=="" || id==lastId)return;
 
+   string type=field(cmd,"type");
+   if("TEST".equals(type)){
+      lastId=id;
+      Print("RAYYAN4 TEST id=",id," result=TEST_OK");
+      string ackTest=GatewayUrl+"/ack?id="+urlEncode(id)+"&result=TEST_OK";
+      char td[],tr[]; string th;
+      ResetLastError();
+      int testAckCode=WebRequest("GET",ackTest,"","",3000,td,0,tr,th);
+      if(testAckCode==200) Print("RAYYAN4 TEST ACK OK id=",id);
+      else Print("RAYYAN4 TEST ACK ERROR HTTP=",testAckCode," err=",GetLastError());
+      return;
+   }
+
    string side=field(cmd,"side");
    double vol=StringToDouble(field(cmd,"volume"));
    double entry=StringToDouble(field(cmd,"entry"));
