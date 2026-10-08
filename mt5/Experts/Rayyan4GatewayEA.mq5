@@ -46,7 +46,8 @@ void OnTimer(){
    if(id=="" || id==lastId)return;
 
    string type=field(cmd,"type");
-   if(type=="TEST"){
+   // TEST is always safe: also accept side=TEST/id prefix for compatibility with older gateway responses.
+   if(type=="TEST" || field(cmd,"side")=="TEST" || StringFind(id,"TEST-")==0){
       lastId=id;
       Print("RAYYAN4 TEST id=",id," result=TEST_OK");
       string ackTest=GatewayUrl+"/ack?id="+urlEncode(id)+"&result=TEST_OK";
@@ -59,6 +60,7 @@ void OnTimer(){
    }
 
    string side=field(cmd,"side");
+   if(side=="TEST") return;
    double vol=StringToDouble(field(cmd,"volume"));
    double entry=StringToDouble(field(cmd,"entry"));
    double sl=StringToDouble(field(cmd,"sl"));
