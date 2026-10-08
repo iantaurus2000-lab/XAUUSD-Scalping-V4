@@ -8,6 +8,7 @@ on:
       - 'app/build.gradle.kts'
       - 'app/rayyan4-debug.keystore.b64'
       - 'gradle.properties'
+      - 'mt5/**'
 jobs:
   build:
     runs-on: ubuntu-24.04
