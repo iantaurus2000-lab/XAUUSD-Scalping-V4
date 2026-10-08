@@ -23,3 +23,5 @@ jobs:
         with:
           name: XAUUSD-Mobile-Engine-RAYYAN4-CLEAN
           path: app/build/outputs/apk/debug/app-debug.apk
+
+# Rayyan4 build trigger: TEST QUEUE/ACK latest workflow
