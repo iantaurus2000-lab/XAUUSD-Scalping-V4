@@ -100,12 +100,22 @@ public final class GatewayService extends Service {
     private synchronized String getPending(){
         SharedPreferences p=getSharedPreferences("rayyan4_gateway",0);
         String cmd=p.getString("next","");
-        // Discard stale TEST/ACK commands left by older Rayyan4 APK builds.
+        // Discard legacy test commands; never execute them on a later reconnect.
         if(cmd.contains("type=TEST") || cmd.contains("side=TEST") || cmd.contains("id=TEST-")){
             p.edit().remove("next").apply();
             AppLog.add(this,"MT5","discarded legacy TEST/ACK queue; LIMIT only");
             return "";
         }
+        // A scalping command must not sit in the queue and execute after MT5 reconnects much later.
+        String queuedId=field(cmd,"id");
+        try{
+            long queuedAt=Long.parseLong(queuedId);
+            if(System.currentTimeMillis()-queuedAt>120000L){
+                p.edit().remove("next").apply();
+                AppLog.add(this,"ORDER","expired stale LIMIT command; not sent to EA");
+                return "";
+            }
+        }catch(Exception ignored){}
         return cmd;
     }
 
