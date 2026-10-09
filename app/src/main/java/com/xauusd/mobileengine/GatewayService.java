@@ -16,6 +16,7 @@ public final class GatewayService extends Service {
     private volatile boolean running;
     private volatile String lastBgStatus = "";
     private volatile long lastBgHeartbeat = 0L;
+    private volatile long lastNextPollLog = 0L;
 
     @Override public int onStartCommand(Intent i,int flags,int id){
         startForeground(77,notification("Background Engine berjalan • menyiapkan LAN Gateway"));
@@ -51,6 +52,11 @@ public final class GatewayService extends Service {
             String path=first(requestLine);
             String out;
             if(path.startsWith("/next")){
+                long now=System.currentTimeMillis();
+                if(now-lastNextPollLog>=30000L){
+                    lastNextPollLog=now;
+                    AppLog.add(this,"MT5 GATEWAY","EA polling /next received");
+                }
                 out=getPending();
             }else if(path.startsWith("/ack")){
                 String id=query(path,"id");
@@ -128,7 +134,7 @@ public final class GatewayService extends Service {
                 logBgStatus("DATA_INSUFFICIENT M1="+(m1==null?0:m1.length)+" M5="+(m5==null?0:m5.length));
                 return;
             }
-            logBgStatus("FEED_OK M1="+m1.length+" M5="+m5.length+" BID="+f(t[0])+" ASK="+f(t[1]));
+            logBgStatus("FEED_OK M1="+m1.length+" M5="+m5.length);
             SignalResult s=SignalEngine.evaluate(m1,m5,t[0],t[1]);
             if(s==null){logBgStatus("SIGNAL_RESULT_NULL");return;}
             String side=s.side;
