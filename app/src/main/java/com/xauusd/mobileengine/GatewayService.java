@@ -17,6 +17,14 @@ public final class GatewayService extends Service {
     private volatile String lastBgStatus = "";
     private volatile long lastBgHeartbeat = 0L;
     private volatile long lastNextPollLog = 0L;
+    private volatile long nextBgAttemptAt = 0L;
+    private volatile int bgFailureCount = 0;
+
+    public static boolean isEaRecentlyOnline(Context c){
+        long last=c.getSharedPreferences("rayyan4_gateway",Context.MODE_PRIVATE).getLong("ea_last_poll_ms",0L);
+        long age=System.currentTimeMillis()-last;
+        return last>0L && age>=0L && age<=90000L;
+    }
 
     @Override public int onStartCommand(Intent i,int flags,int id){
         startForeground(77,notification("Background Engine berjalan • menyiapkan LAN Gateway"));
@@ -53,6 +61,7 @@ public final class GatewayService extends Service {
             String out;
             if(path.startsWith("/next")){
                 long now=System.currentTimeMillis();
+                getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putLong("ea_last_poll_ms",now).apply();
                 if(now-lastNextPollLog>=30000L){
                     lastNextPollLog=now;
                     AppLog.add(this,"MT5 GATEWAY","EA polling /next received");
@@ -121,15 +130,24 @@ public final class GatewayService extends Service {
 
     private void startBackgroundEngine(){
         engine=Executors.newScheduledThreadPool(1);
-        engine.scheduleAtFixedRate(this::backgroundSignalTick,5,5,TimeUnit.SECONDS);
+        engine.scheduleWithFixedDelay(this::backgroundSignalTick,5,15,TimeUnit.SECONDS);
     }
 
     private void backgroundSignalTick(){
         if(MainActivity.isAppVisible())return;
+        long now=System.currentTimeMillis();
+        if(!isEaRecentlyOnline(this)){
+            logBgStatus("EA_OFFLINE signal notifications paused");
+            return;
+        }
+        if(now<nextBgAttemptAt)return;
+        nextBgAttemptAt=now+30000L;
         try{
             Candle[] m1=BiquoteClient.candles("1m");
             Candle[] m5=BiquoteClient.candles("5m");
             double[] t=BiquoteClient.tick();
+            bgFailureCount=0;
+            nextBgAttemptAt=System.currentTimeMillis()+30000L;
             if(m1==null||m5==null||m1.length<30||m5.length<30){
                 logBgStatus("DATA_INSUFFICIENT M1="+(m1==null?0:m1.length)+" M5="+(m5==null?0:m5.length));
                 return;
@@ -141,8 +159,10 @@ public final class GatewayService extends Service {
             if(!"BUY".equals(side)&&!"SELL".equals(side))logBgStatus("SIGNAL_WAIT side="+side+" confidence="+s.confidence);
             SharedPreferences p=getSharedPreferences("rayyan4_bg_signal",MODE_PRIVATE);
             String last=p.getString("side","");
-            if(("BUY".equals(side)||"SELL".equals(side))&&!side.equals(last)){
-                p.edit().putString("side",side).apply();
+            long lastAlertAt=p.getLong("last_alert_at",0L);
+            long alertNow=System.currentTimeMillis();
+            if(("BUY".equals(side)||"SELL".equals(side))&&!side.equals(last)&&alertNow-lastAlertAt>=180000L){
+                p.edit().putString("side",side).putLong("last_alert_at",alertNow).apply();
                 String msg="XAUUSD SCALPING\n\n"+side+
                     "\nEntry: "+f(s.entry)+"\nSL: "+f(s.sl)+"\nTP1: "+f(s.tp1)+"\nTP2: "+f(s.tp2)+
                     "\nTF: M1\nBias: M5 "+s.m5Bias+"\nSetup: "+s.setup+"\nConfidence: "+s.confidence+"/5";
@@ -155,7 +175,10 @@ public final class GatewayService extends Service {
                 notifyAlert("XAUUSD "+side,"Entry "+f(s.entry)+" | SL "+f(s.sl)+" | TP1 "+f(s.tp1));
             }
         }catch(Exception e){
-            logBgStatus("FEED_ERROR "+e.getClass().getSimpleName()+": "+e.getMessage());
+            bgFailureCount=Math.min(bgFailureCount+1,5);
+            long delay=Math.min(300000L,30000L*(1L<<Math.min(bgFailureCount-1,4)));
+            nextBgAttemptAt=System.currentTimeMillis()+delay;
+            logBgStatus("FEED_ERROR retry="+(delay/1000L)+"s "+e.getClass().getSimpleName()+": "+e.getMessage());
         }
     }
 
