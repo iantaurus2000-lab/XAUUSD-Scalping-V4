@@ -122,7 +122,15 @@ public class MainActivity extends Activity {
             if(n.equals("Entry"))entryView=v;else if(n.equals("SL"))slView=v;else if(n.equals("TP1"))tp1View=v;else tp2View=v;
             levels.addView(v,new LinearLayout.LayoutParams(0,48,1));
         }
-        card.addView(levels);root.addView(card,new LinearLayout.LayoutParams(-1,108));
+        card.addView(levels);
+        root.addView(card,new LinearLayout.LayoutParams(-1,LinearLayout.LayoutParams.WRAP_CONTENT));
+        card.setOnClickListener(v->executeCurrentSignal());
+        signalSummary.setOnClickListener(v->executeCurrentSignal());
+        scoreView.setOnClickListener(v->executeCurrentSignal());
+        entryView.setOnClickListener(v->executeCurrentSignal());
+        slView.setOnClickListener(v->executeCurrentSignal());
+        tp1View.setOnClickListener(v->executeCurrentSignal());
+        tp2View.setOnClickListener(v->executeCurrentSignal());
 
         status=tv("● MT5 DEMO GATEWAY • M1",10);status.setBackgroundColor(Color.rgb(3,17,29));
         root.addView(status,new LinearLayout.LayoutParams(-1,28));
@@ -233,14 +241,17 @@ public class MainActivity extends Activity {
         double bid=chart==null?0:chart.getBid(),ask=chart==null?0:chart.getAsk();
         SignalResult previous=lastSignal;lastSignal=SignalEngine.evaluate(m1,m5,bid,ask);SignalResult s=lastSignal;
 
-        scoreView.setText("CONFIDENCE\n"+s.confidence+"/5  "+stars(s.confidence));
+        scoreView.setText("CONF "+s.confidence+"/5\n"+stars(s.confidence));
+        scoreView.setTextSize(10);
         scoreView.setTextColor(s.confidence>=4?Color.YELLOW:Color.WHITE);
         signalSummary.setText("M1 "+s.side+" • M5 "+s.m5Bias+"\n"+s.setup+" • "+s.confidence+"/5");
         entryView.setText("Entry\n"+price(s.entry));slView.setText("SL\n"+price(s.sl));tp1View.setText("TP1\n"+price(s.tp1));tp2View.setText("TP2\n"+price(s.tp2));
 
         View v=((ViewGroup)scoreView.getParent()).getChildAt(0);
         if(v instanceof Button){
-            Button b=(Button)v;b.setText(s.side);
+            Button b=(Button)v;
+            b.setText(("BUY".equals(s.side)||"SELL".equals(s.side))?s.side+"\nLIMIT":"WAIT\nENTRY");
+            b.setTextSize(14);
             b.setBackground(roundBg("BUY".equals(s.side)?Color.rgb(0,190,105):"SELL".equals(s.side)?Color.rgb(220,45,60):Color.rgb(75,78,86),12));
         }
         chart.setSignalLevels(s.entry,s.sl,s.tp1,s.tp2,"BUY".equals(s.side)||"SELL".equals(s.side));
@@ -348,37 +359,45 @@ public class MainActivity extends Activity {
     }
 
     void startGateway(){
-        try{startForegroundService(new Intent(this,GatewayService.class));}catch(Exception e){startService(new Intent(this,GatewayService.class));}
-        AppLog.add(this,"MT5","gateway started");notifyLocal("MT5 Gateway","LAN gateway aktif di port 8787");
+        try{startForegroundService(new Intent(this,GatewayService.class));}
+        catch(Exception e){try{startService(new Intent(this,GatewayService.class));}catch(Exception ignored){}}
+        AppLog.add(this,"MT5","gateway start requested on port 8787");
     }
 
-    void queueLimit(String side,double volume,double entry,double sl,double tp){
+    boolean queueLimit(String side,double volume,double entry,double sl,double tp){
+        try {
         side=side==null?"":side.trim().toUpperCase(Locale.US);
         if("BUY".equals(side))side="BUY_LIMIT";
         if("SELL".equals(side))side="SELL_LIMIT";
         if(!"BUY_LIMIT".equals(side)&&!"SELL_LIMIT".equals(side)){
-            Toast.makeText(this,"Side harus BUY_LIMIT atau SELL_LIMIT",Toast.LENGTH_SHORT).show();return;
+            Toast.makeText(this,"Side harus BUY_LIMIT atau SELL_LIMIT",Toast.LENGTH_SHORT).show();return false;
         }
-        if(volume<=0||entry<=0||sl<=0||tp<=0){Toast.makeText(this,"Nilai order tidak valid",Toast.LENGTH_SHORT).show();return;}
+        if(volume<=0||entry<=0||sl<=0||tp<=0){Toast.makeText(this,"Nilai order tidak valid",Toast.LENGTH_SHORT).show();return false;}
         if("BUY_LIMIT".equals(side)){
-            if(entry>=chart.getAsk()){Toast.makeText(this,"BUY LIMIT harus di bawah ASK",Toast.LENGTH_SHORT).show();return;}
-            if(!(sl<entry&&tp>entry)){Toast.makeText(this,"BUY LIMIT: SL < Entry < TP",Toast.LENGTH_SHORT).show();return;}
+            if(entry>=chart.getAsk()){Toast.makeText(this,"BUY LIMIT harus di bawah ASK",Toast.LENGTH_SHORT).show();return false;}
+            if(!(sl<entry&&tp>entry)){Toast.makeText(this,"BUY LIMIT: SL < Entry < TP",Toast.LENGTH_SHORT).show();return false;}
         }
         if("SELL_LIMIT".equals(side)){
-            if(entry<=chart.getBid()){Toast.makeText(this,"SELL LIMIT harus di atas BID",Toast.LENGTH_SHORT).show();return;}
-            if(!(tp<entry&&sl>entry)){Toast.makeText(this,"SELL LIMIT: TP < Entry < SL",Toast.LENGTH_SHORT).show();return;}
+            if(entry<=chart.getBid()){Toast.makeText(this,"SELL LIMIT harus di atas BID",Toast.LENGTH_SHORT).show();return false;}
+            if(!(tp<entry&&sl>entry)){Toast.makeText(this,"SELL LIMIT: TP < Entry < SL",Toast.LENGTH_SHORT).show();return false;}
         }
         String id=Long.toString(System.currentTimeMillis());
         String cmd="id="+id+";type=LIMIT;side="+side+";volume="+volume+";entry="+entry+";sl="+sl+";tp="+tp;
         getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putString("next",cmd).apply();
         HistoryStore.add(this,"PENDING",side,entry,sl,tp,tp,lastSignal==null?0:lastSignal.confidence);
-        AppLog.add(this,"ORDER","queued "+cmd);notifyLocal("MT5 "+side,"Pending order queued");
+        AppLog.add(this,"ORDER","queued "+cmd);notifyLocal("MT5 "+side,"Entry queued for demo EA");
+        Toast.makeText(this,"Entry queued • menunggu konfirmasi EA MT5",Toast.LENGTH_SHORT).show();
+        return true;
+        } catch(Exception e) {
+            AppLog.add(this,"ORDER","queue error: "+e.getClass().getSimpleName()+" "+e.getMessage());
+            Toast.makeText(this,"Gagal antre order: "+e.getMessage(),Toast.LENGTH_LONG).show();
+            return false;
+        }
     }
 
     void showMt5Dialog(){
-        startGateway();
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(18,4,18,4);
-        Switch auto=new Switch(this);auto.setText("AUTO PENDING");auto.setChecked(getSharedPreferences("rayyan4_gateway",0).getBoolean("auto",false));
+        Switch auto=new Switch(this);auto.setText("AUTO PENDING • KONFIRMASI MANUAL");auto.setChecked(getSharedPreferences("rayyan4_gateway",0).getBoolean("auto",false));
         EditText side=new EditText(this);side.setHint("BUY_LIMIT / SELL_LIMIT");
         EditText vol=new EditText(this);vol.setHint("Lot, contoh 0.01");vol.setInputType(8194);vol.setText("0.01");
         EditText en=new EditText(this);en.setHint("Entry");en.setInputType(8194);
@@ -386,20 +405,37 @@ public class MainActivity extends Activity {
         EditText tp=new EditText(this);tp.setHint("TP");tp.setInputType(8194);
         // Pre-fill the MT5 dialog from the latest calculated signal when available.
         SignalResult current=lastSignal;
-        if(current!=null && ("BUY".equals(current.side)||"SELL".equals(current.side))){
-            side.setText("BUY".equals(current.side)?"BUY_LIMIT":"SELL_LIMIT");
+        if(current!=null && current.entry>0 && current.sl>0 && current.tp1>0){
+            if("BUY".equals(current.side))side.setText("BUY_LIMIT");
+            else if("SELL".equals(current.side))side.setText("SELL_LIMIT");
+            else side.setText("");
             en.setText(String.format(Locale.US,"%.2f",current.entry));
             sl.setText(String.format(Locale.US,"%.2f",current.sl));
             tp.setText(String.format(Locale.US,"%.2f",current.tp2>0?current.tp2:current.tp1));
+            if(!"BUY".equals(current.side)&&!"SELL".equals(current.side))
+                Toast.makeText(this,"Harga terisi, tunggu BUY/SELL sebelum mengirim",Toast.LENGTH_LONG).show();
         } else {
             side.setText("");
-            Toast.makeText(this,"Menunggu sinyal BUY/SELL untuk mengisi harga otomatis",Toast.LENGTH_LONG).show();
+            Toast.makeText(this,"Data harga sinyal belum siap",Toast.LENGTH_LONG).show();
         }
         box.addView(auto);box.addView(side);box.addView(vol);box.addView(en);box.addView(sl);box.addView(tp);
-        new AlertDialog.Builder(this).setTitle("MT5 / EA • DEMO").setView(box).setNegativeButton("TUTUP",null)
-            .setPositiveButton("KIRIM LIMIT DEMO",(d,w)->{try{getSharedPreferences("rayyan4_gateway",0).edit().putBoolean("auto",auto.isChecked()).apply();
-                queueLimit(side.getText().toString().trim().toUpperCase(Locale.US),Double.parseDouble(vol.getText().toString()),Double.parseDouble(en.getText().toString()),Double.parseDouble(sl.getText().toString()),Double.parseDouble(tp.getText().toString()));
-            }catch(Exception e){Toast.makeText(this,"Isi semua nilai order dengan benar",Toast.LENGTH_SHORT).show();}}).show();
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("MT5 / EA • DEMO").setView(box)
+            .setNegativeButton("TUTUP",null).setPositiveButton("KIRIM LIMIT DEMO",null).create();
+        dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{
+            try{
+                getSharedPreferences("rayyan4_gateway",0).edit().putBoolean("auto",auto.isChecked()).apply();
+                boolean queued=queueLimit(side.getText().toString().trim().toUpperCase(Locale.US),
+                    Double.parseDouble(vol.getText().toString().trim()),
+                    Double.parseDouble(en.getText().toString().trim()),
+                    Double.parseDouble(sl.getText().toString().trim()),
+                    Double.parseDouble(tp.getText().toString().trim()));
+                if(queued)dialog.dismiss();
+            }catch(Exception e){
+                AppLog.add(this,"ORDER","dialog input error: "+e.getClass().getSimpleName());
+                Toast.makeText(this,"Periksa Lot, Entry, SL dan TP",Toast.LENGTH_SHORT).show();
+            }
+        }));
+        dialog.show();
     }
 
     @Override protected void onDestroy(){if(ex!=null)ex.shutdownNow();super.onDestroy();}
