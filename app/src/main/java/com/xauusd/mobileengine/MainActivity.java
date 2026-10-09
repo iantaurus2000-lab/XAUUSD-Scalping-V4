@@ -260,8 +260,12 @@ public class MainActivity extends Activity {
         if(changed&&("BUY".equals(s.side)||"SELL".equals(s.side))){
             String msg="XAUUSD SCALPING\n\n"+s.side+"\nEntry: "+price(s.entry)+"\nSL: "+price(s.sl)+"\nTP1: "+price(s.tp1)+"\nTP2: "+price(s.tp2)+"\nTF: M1\nBias: M5 "+s.m5Bias+"\nSetup: "+s.setup+"\nConfidence: "+s.confidence+"/5";
             AppLog.add(this,"SIGNAL",s.side+" "+price(s.entry)+" score="+s.score);
-            if(telegramEnabled)sendTelegram(msg);
-            notifyLocal("XAUUSD "+s.side,"Entry "+price(s.entry)+" | SL "+price(s.sl)+" | TP1 "+price(s.tp1));
+            if(GatewayService.isEaRecentlyOnline(this)){
+                if(telegramEnabled)sendTelegram(msg);
+                notifyLocal("XAUUSD SIGNAL "+s.side,"EA polling aktif • Entry "+price(s.entry)+" | SL "+price(s.sl)+" | TP1 "+price(s.tp1));
+            }else{
+                AppLog.add(this,"SIGNAL","notification suppressed: EA offline; signal is not an MT5 order");
+            }
         }
     }
 
