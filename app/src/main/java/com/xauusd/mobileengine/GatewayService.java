@@ -16,7 +16,7 @@ public final class GatewayService extends Service {
     private volatile boolean running;
 
     @Override public int onStartCommand(Intent i,int flags,int id){
-        startForeground(77,notification());
+        startForeground(77,notification("Background Engine berjalan • menyiapkan LAN Gateway"));
         if(!running){ running=true; startServer(); startBackgroundEngine(); }
         return START_STICKY;
     }
@@ -26,11 +26,16 @@ public final class GatewayService extends Service {
         serverPool.execute(()->{
             try{
                 server=new ServerSocket(8787);
+                AppLog.add(this,"GATEWAY","LAN gateway listening on port 8787");
+                getSystemService(NotificationManager.class).notify(77,notification("MT5 LAN Gateway aktif • port 8787 | Background Engine berjalan"));
                 while(!server.isClosed()){
                     final Socket s=server.accept();
                     serverPool.execute(()->handle(s));
                 }
-            }catch(Exception e){ AppLog.add(this,"GATEWAY","server stopped: "+e.getMessage()); }
+            }catch(Exception e){
+                AppLog.add(this,"GATEWAY","server stopped: "+e.getMessage());
+                getSystemService(NotificationManager.class).notify(77,notification("LAN Gateway gagal aktif • periksa port 8787"));
+            }
         });
     }
 
@@ -151,13 +156,13 @@ public final class GatewayService extends Service {
                 .setContentTitle(title).setContentText(text).setAutoCancel(true).setPriority(Notification.PRIORITY_HIGH).build());
     }
 
-    private Notification notification(){
+    private Notification notification(String message){
         String id="rayyan4_gateway";
         NotificationManager n=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
         if(Build.VERSION.SDK_INT>=26)n.createNotificationChannel(new NotificationChannel(id,"MT5 Gateway / Background Engine",NotificationManager.IMPORTANCE_LOW));
         return new Notification.Builder(this,id).setSmallIcon(android.R.drawable.ic_menu_upload)
             .setContentTitle("Rayyan4 Background Engine")
-            .setContentText("Signal monitor + MT5 LAN gateway aktif")
+            .setContentText(message)
             .setOngoing(true).setPriority(Notification.PRIORITY_LOW).build();
     }
 
