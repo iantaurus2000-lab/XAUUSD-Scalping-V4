@@ -46,21 +46,8 @@ void OnTimer(){
    if(id=="" || id==lastId)return;
 
    string type=field(cmd,"type");
-   // TEST is always safe: also accept side=TEST/id prefix for compatibility with older gateway responses.
-   if(type=="TEST" || field(cmd,"side")=="TEST" || StringFind(id,"TEST-")==0){
-      lastId=id;
-      Print("RAYYAN4 TEST id=",id," result=TEST_OK");
-      string ackTest=GatewayUrl+"/ack?id="+urlEncode(id)+"&result=TEST_OK";
-      char td[],tr[]; string th;
-      ResetLastError();
-      int testAckCode=WebRequest("GET",ackTest,"","",3000,td,0,tr,th);
-      if(testAckCode==200) Print("RAYYAN4 TEST ACK OK id=",id);
-      else Print("RAYYAN4 TEST ACK ERROR HTTP=",testAckCode," err=",GetLastError());
-      return;
-   }
-
    string side=field(cmd,"side");
-   if(side=="TEST") return;
+   if(side=="TEST") { Print("RAYYAN4 REJECT legacy TEST command; use LIMIT only"); return; }
    double vol=StringToDouble(field(cmd,"volume"));
    double entry=StringToDouble(field(cmd,"entry"));
    double sl=StringToDouble(field(cmd,"sl"));
