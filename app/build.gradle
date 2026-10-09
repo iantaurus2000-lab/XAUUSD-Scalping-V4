@@ -8,8 +8,8 @@ android {
         applicationId 'com.xauusd.mobileengine'
         minSdk 26
         targetSdk 35
-        versionCode 11
-        versionName '1.11.0-RAYYAN4-BACKGROUND-GATEWAY'
+        versionCode 12
+        versionName '1.12.0-RAYYAN4-EA-HEARTBEAT'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
