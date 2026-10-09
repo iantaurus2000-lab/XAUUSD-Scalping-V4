@@ -14,6 +14,8 @@ public final class GatewayService extends Service {
     private ExecutorService serverPool;
     private ScheduledExecutorService engine;
     private volatile boolean running;
+    private volatile String lastBgStatus = "";
+    private volatile long lastBgHeartbeat = 0L;
 
     @Override public int onStartCommand(Intent i,int flags,int id){
         startForeground(77,notification("Background Engine berjalan • menyiapkan LAN Gateway"));
@@ -122,9 +124,15 @@ public final class GatewayService extends Service {
             Candle[] m1=BiquoteClient.candles("1m");
             Candle[] m5=BiquoteClient.candles("5m");
             double[] t=BiquoteClient.tick();
-            if(m1.length<30||m5.length<30)return;
+            if(m1==null||m5==null||m1.length<30||m5.length<30){
+                logBgStatus("DATA_INSUFFICIENT M1="+(m1==null?0:m1.length)+" M5="+(m5==null?0:m5.length));
+                return;
+            }
+            logBgStatus("FEED_OK M1="+m1.length+" M5="+m5.length+" BID="+f(t[0])+" ASK="+f(t[1]));
             SignalResult s=SignalEngine.evaluate(m1,m5,t[0],t[1]);
+            if(s==null){logBgStatus("SIGNAL_RESULT_NULL");return;}
             String side=s.side;
+            if(!"BUY".equals(side)&&!"SELL".equals(side))logBgStatus("SIGNAL_WAIT side="+side+" confidence="+s.confidence);
             SharedPreferences p=getSharedPreferences("rayyan4_bg_signal",MODE_PRIVATE);
             String last=p.getString("side","");
             if(("BUY".equals(side)||"SELL".equals(side))&&!side.equals(last)){
@@ -141,7 +149,18 @@ public final class GatewayService extends Service {
                 notifyAlert("XAUUSD "+side,"Entry "+f(s.entry)+" | SL "+f(s.sl)+" | TP1 "+f(s.tp1));
             }
         }catch(Exception e){
-            AppLog.add(this,"BACKGROUND","feed error: "+e.getMessage());
+            logBgStatus("FEED_ERROR "+e.getClass().getSimpleName()+": "+e.getMessage());
+        }
+    }
+
+    private synchronized void logBgStatus(String status){
+        long now=System.currentTimeMillis();
+        boolean changed=!status.equals(lastBgStatus);
+        boolean heartbeat=now-lastBgHeartbeat>=60000L;
+        if(changed||heartbeat){
+            AppLog.add(this,"BACKGROUND",status);
+            lastBgStatus=status;
+            lastBgHeartbeat=now;
         }
     }
 
