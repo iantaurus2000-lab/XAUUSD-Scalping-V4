@@ -76,7 +76,15 @@ public final class GatewayService extends Service {
     }
 
     private synchronized String getPending(){
-        return getSharedPreferences("rayyan4_gateway",0).getString("next","");
+        SharedPreferences p=getSharedPreferences("rayyan4_gateway",0);
+        String cmd=p.getString("next","");
+        // Discard stale TEST/ACK commands left by older Rayyan4 APK builds.
+        if(cmd.contains("type=TEST") || cmd.contains("side=TEST") || cmd.contains("id=TEST-")){
+            p.edit().remove("next").apply();
+            AppLog.add(this,"MT5","discarded legacy TEST/ACK queue; LIMIT only");
+            return "";
+        }
+        return cmd;
     }
 
     private synchronized String ack(String id,String result){
