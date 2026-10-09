@@ -380,10 +380,21 @@ public class MainActivity extends Activity {
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(18,4,18,4);
         Switch auto=new Switch(this);auto.setText("AUTO PENDING");auto.setChecked(getSharedPreferences("rayyan4_gateway",0).getBoolean("auto",false));
         EditText side=new EditText(this);side.setHint("BUY_LIMIT / SELL_LIMIT");
-        EditText vol=new EditText(this);vol.setHint("Lot, contoh 0.01");vol.setInputType(2|8192);
-        EditText en=new EditText(this);en.setHint("Entry");en.setInputType(2|8192);
-        EditText sl=new EditText(this);sl.setHint("SL");sl.setInputType(2|8192);
-        EditText tp=new EditText(this);tp.setHint("TP");tp.setInputType(2|8192);
+        EditText vol=new EditText(this);vol.setHint("Lot, contoh 0.01");vol.setInputType(8194);vol.setText("0.01");
+        EditText en=new EditText(this);en.setHint("Entry");en.setInputType(8194);
+        EditText sl=new EditText(this);sl.setHint("SL");sl.setInputType(8194);
+        EditText tp=new EditText(this);tp.setHint("TP");tp.setInputType(8194);
+        // Pre-fill the MT5 dialog from the latest calculated signal when available.
+        SignalResult current=lastSignal;
+        if(current!=null && ("BUY".equals(current.side)||"SELL".equals(current.side))){
+            side.setText("BUY".equals(current.side)?"BUY_LIMIT":"SELL_LIMIT");
+            en.setText(String.format(Locale.US,"%.2f",current.entry));
+            sl.setText(String.format(Locale.US,"%.2f",current.sl));
+            tp.setText(String.format(Locale.US,"%.2f",current.tp2>0?current.tp2:current.tp1));
+        } else {
+            side.setText("");
+            Toast.makeText(this,"Menunggu sinyal BUY/SELL untuk mengisi harga otomatis",Toast.LENGTH_LONG).show();
+        }
         box.addView(auto);box.addView(side);box.addView(vol);box.addView(en);box.addView(sl);box.addView(tp);
         new AlertDialog.Builder(this).setTitle("MT5 / EA • DEMO").setView(box).setNegativeButton("TUTUP",null)
             .setPositiveButton("KIRIM LIMIT DEMO",(d,w)->{try{getSharedPreferences("rayyan4_gateway",0).edit().putBoolean("auto",auto.isChecked()).apply();
