@@ -2,7 +2,7 @@
 set -euo pipefail
 
 mkdir -p emulator-artifacts
-ADB="\${ADB:-adb}"
+ADB="${ADB:-adb}"
 APK="app/build/outputs/apk/debug/app-debug.apk"
 
 capture_diagnostics() {
