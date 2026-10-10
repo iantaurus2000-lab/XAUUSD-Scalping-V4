@@ -482,6 +482,7 @@ public class MainActivity extends Activity {
                 AppLog.add(this,"ORDER","dialog input error: "+e.getClass().getSimpleName());
                 Toast.makeText(this,"Periksa Lot, Entry, SL dan TP",Toast.LENGTH_SHORT).show();
             }
+            });
         });
         dialog.show();
     }
