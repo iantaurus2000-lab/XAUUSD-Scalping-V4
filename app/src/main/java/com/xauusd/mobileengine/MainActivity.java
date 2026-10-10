@@ -16,12 +16,13 @@ public class MainActivity extends Activity {
     private static volatile boolean visible = false;
     public static boolean isAppVisible(){ return visible; }
     private CandleChartView chart;
-    private TextView bidView, askView, spreadView, status, signalSummary, scoreView, entryView, slView, tp1View, tp2View;
+    private TextView bidView, askView, spreadView, status, signalSummary, scoreView, entryView, slView, tp1View, tp2View, marketTitle, marketSubtitle;
     private Button signalSideButton;
     private ScheduledExecutorService ex;
     private SharedPreferences prefs, tgPrefs;
     private boolean telegramEnabled;
     private String selectedTf="M1";
+    private String selectedMarket="XAUUSD";
     private Candle[] m5Data=new Candle[0];
     private SignalResult lastSignal;
     private final Map<String,Button> tfButtons=new HashMap<>();
@@ -50,6 +51,7 @@ public class MainActivity extends Activity {
         prefs=getSharedPreferences("rayyan4_indicators",MODE_PRIVATE);
         tgPrefs=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE);
         telegramEnabled=tgPrefs.getBoolean("enabled",false);
+        selectedMarket=prefs.getString("market","XAUUSD");
         buildUI();
     }
 
@@ -62,8 +64,8 @@ public class MainActivity extends Activity {
 
         TextView gold=tv("🪙",30);head.addView(gold,new LinearLayout.LayoutParams(48,70));
         LinearLayout title=new LinearLayout(this);title.setOrientation(LinearLayout.VERTICAL);
-        TextView x=tv("XAUUSD",21);x.setTypeface(null,Typeface.BOLD);title.addView(x,new LinearLayout.LayoutParams(-1,30));
-        title.addView(tv("Gold Spot / US Dollar",11),new LinearLayout.LayoutParams(-1,22));
+        marketTitle=tv(selectedMarket,21);marketTitle.setTypeface(null,Typeface.BOLD);title.addView(marketTitle,new LinearLayout.LayoutParams(-1,30));
+        marketSubtitle=tv(marketDescription(selectedMarket),11);title.addView(marketSubtitle,new LinearLayout.LayoutParams(-1,22));
         TextView rt=tv("● REALTIME",10);rt.setTextColor(green);title.addView(rt,new LinearLayout.LayoutParams(-1,18));
         head.addView(title,new LinearLayout.LayoutParams(0,70,1));
 
@@ -140,7 +142,8 @@ public class MainActivity extends Activity {
         String[] navs={"▥ MARKET","▥ CHART","♧ SIGNAL","▣ ORDERS","⚙ SETTINGS"};
         for(String s:navs){
             Button q=btn(s);q.setTextSize(11);nav.addView(q,new LinearLayout.LayoutParams(0,55,1));
-            if(s.contains("SIGNAL"))q.setOnClickListener(v->showSignalDialog());
+            if(s.contains("MARKET"))q.setOnClickListener(v->showMarketDialog());
+            else if(s.contains("SIGNAL"))q.setOnClickListener(v->showSignalDialog());
             else if(s.contains("ORDERS"))q.setOnClickListener(v->showLogDialog("ORDERS / HISTORY"));
             else if(s.contains("SETTINGS"))q.setOnClickListener(v->showMenu(q));
             else if(s.contains("CHART"))q.setOnClickListener(v->chart.goLive());
@@ -172,7 +175,7 @@ public class MainActivity extends Activity {
             e.getValue().setBackground(roundBg(active?Color.rgb(15,150,235):Color.rgb(7,34,60),12));
         }
         if(chart!=null)chart.setTimeframe(tf);
-        if(signalSummary!=null)signalSummary.setText("XAUUSD • "+tf+"\nWick Rejection + Liquidity Sweep + BOS");
+        if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+tf+"\nWick Rejection + Liquidity Sweep + BOS");
         if(status!=null)status.setText("● "+("M1".equals(tf)?"LIVE":"LOADING")+" • RAYYAN4 • "+tf);
         if(reload)load(interval(tf),tf);
     }
@@ -185,8 +188,9 @@ public class MainActivity extends Activity {
     void load(String interval,String tf){
         new Thread(()->{
             try{
-                Candle[] c=BiquoteClient.candles(interval);
-                Candle[] m5="M5".equals(tf)?c:BiquoteClient.candles("5m");
+                String market=selectedMarket;
+                Candle[] c=BiquoteClient.candles(market,interval);
+                Candle[] m5="M5".equals(tf)?c:BiquoteClient.candles(market,"5m");
                 runOnUiThread(()->{
                     if(!tf.equals(selectedTf))return;
                     chart.setData(c);chart.goLive();m5Data=m5;updateSignal(c,m5Data);
@@ -199,7 +203,7 @@ public class MainActivity extends Activity {
             ex=Executors.newSingleThreadScheduledExecutor();
             ex.scheduleAtFixedRate(()->{
                 try{
-                    double[] t=BiquoteClient.tick();
+                    double[] t=BiquoteClient.tick(selectedMarket);
                     runOnUiThread(()->{
                         chart.setTick(t[0],t[1],selectedTf);
                         if(!chart.isEmpty())updateSignal(chart.getDataSnapshot(),m5Data);
@@ -278,11 +282,11 @@ public class MainActivity extends Activity {
                     AppLog.add(this,"AUTO LIMIT","blocked: EA offline");
                 }
             }
-            String msg="XAUUSD SCALPING\n\n"+s.side+"\nEntry: "+price(s.entry)+"\nSL: "+price(s.sl)+"\nTP1: "+price(s.tp1)+"\nTP2: "+price(s.tp2)+"\nTF: M1\nBias: M5 "+s.m5Bias+"\nSetup: "+s.setup+"\nConfidence: "+s.confidence+"/5";
+            String msg=selectedMarket+" SCALPING\n\n"+s.side+"\nEntry: "+price(s.entry)+"\nSL: "+price(s.sl)+"\nTP1: "+price(s.tp1)+"\nTP2: "+price(s.tp2)+"\nTF: M1\nBias: M5 "+s.m5Bias+"\nSetup: "+s.setup+"\nConfidence: "+s.confidence+"/5";
             AppLog.add(this,"SIGNAL",s.side+" "+price(s.entry)+" score="+s.score);
             if(GatewayService.isEaRecentlyOnline(this)){
                 if(telegramEnabled)sendTelegram(msg);
-                notifyLocal("XAUUSD SIGNAL "+s.side,"EA polling aktif • Entry "+price(s.entry)+" | SL "+price(s.sl)+" | TP1 "+price(s.tp1));
+                notifyLocal(selectedMarket+" SIGNAL "+s.side,"EA polling aktif • Entry "+price(s.entry)+" | SL "+price(s.sl)+" | TP1 "+price(s.tp1));
             }else{
                 AppLog.add(this,"SIGNAL","notification suppressed: EA offline; signal is not an MT5 order");
             }
@@ -306,7 +310,7 @@ public class MainActivity extends Activity {
         for(String s:items){
             Button b=btn(s);b.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);b.setTextSize(14);box.addView(b,new LinearLayout.LayoutParams(270,54));
             b.setOnClickListener(v->{pop.dismiss();
-                if("Indicators".equals(s))showIndicatorDialog();else if("Signal".equals(s))showSignalDialog();else if("Telegram".equals(s))showTelegramDialog();else if("MT5 / EA".equals(s))showMt5Dialog();
+                if("Market".equals(s))showMarketDialog();else if("Chart".equals(s)){chart.goLive();}else if("Indicators".equals(s))showIndicatorDialog();else if("Signal".equals(s))showSignalDialog();else if("Telegram".equals(s))showTelegramDialog();else if("MT5 / EA".equals(s))showMt5Dialog();
                 else if("Orders".equals(s)||"Settings".equals(s))showLogDialog(s);else Toast.makeText(this,s,Toast.LENGTH_SHORT).show();
             });
         }
@@ -314,10 +318,37 @@ public class MainActivity extends Activity {
         pop.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));pop.setOutsideTouchable(true);pop.setFocusable(true);pop.setElevation(16);pop.showAsDropDown(anchor,-204,4);
     }
 
+    String marketDescription(String market){
+        if("BTCUSD".equals(market))return "Bitcoin / US Dollar";
+        if("ETHUSD".equals(market))return "Ethereum / US Dollar";
+        return "Gold Spot / US Dollar";
+    }
+
+    void showMarketDialog(){
+        final String[] markets={"XAUUSD","BTCUSD","ETHUSD"};
+        int current=0;
+        for(int i=0;i<markets.length;i++)if(markets[i].equals(selectedMarket))current=i;
+        new AlertDialog.Builder(this).setTitle("PILIH MARKET")
+            .setSingleChoiceItems(markets,current,(dialog,which)->{
+                String next=markets[which];
+                if(next.equals(selectedMarket)){dialog.dismiss();return;}
+                selectedMarket=next;
+                prefs.edit().putString("market",selectedMarket).apply();
+                if(marketTitle!=null)marketTitle.setText(selectedMarket);
+                if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));
+                if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");
+                if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);
+                lastSignal=null;
+                dialog.dismiss();
+                load(interval(selectedTf),selectedTf);
+                AppLog.add(this,"MARKET","selected "+selectedMarket+" (APK feed only; MT5 symbol mapping deferred)");
+            }).setNegativeButton("BATAL",null).show();
+    }
+
     void showSignalDialog(){
         if(lastSignal==null){Toast.makeText(this,"Menunggu data Signal Engine...",Toast.LENGTH_SHORT).show();return;}
         SignalResult s=lastSignal;
-        String msg="SIDE        : "+s.side+"\nM5 BIAS     : "+s.m5Bias+"\nM1 ENTRY    : "+s.entry+"\nSL          : "+s.sl+"\nTP1         : "+s.tp1+"\nTP2         : "+s.tp2+"\nR:R         : "+String.format(Locale.US,"%.2f",s.rr)+"\nCONFIDENCE  : "+s.confidence+"/5\nENTRY SCORE : "+s.score+"%\n\nLiquidity Sweep : "+onoff(s.liquiditySweep)+"\nWick Rejection  : "+onoff(s.wickRejection)+"\nBOS             : "+onoff(s.bos)+"\nEMA Filter      : "+onoff(s.emaFilter)+"\nRSI Filter      : "+onoff(s.rsiFilter)+"\nMACD Filter     : "+onoff(s.macdFilter)+"\nATR Filter      : "+onoff(s.atrFilter)+"\nSpread Filter   : "+onoff(s.spreadFilter);
+        String msg="MARKET      : "+selectedMarket+"\nSIDE        : "+s.side+"\nM5 BIAS     : "+s.m5Bias+"\nM1 ENTRY    : "+s.entry+"\nSL          : "+s.sl+"\nTP1         : "+s.tp1+"\nTP2         : "+s.tp2+"\nR:R         : "+String.format(Locale.US,"%.2f",s.rr)+"\nCONFIDENCE  : "+s.confidence+"/5\nENTRY SCORE : "+s.score+"%\n\nLiquidity Sweep : "+onoff(s.liquiditySweep)+"\nWick Rejection  : "+onoff(s.wickRejection)+"\nBOS             : "+onoff(s.bos)+"\nEMA Filter      : "+onoff(s.emaFilter)+"\nRSI Filter      : "+onoff(s.rsiFilter)+"\nMACD Filter     : "+onoff(s.macdFilter)+"\nATR Filter      : "+onoff(s.atrFilter)+"\nSpread Filter   : "+onoff(s.spreadFilter);
         new AlertDialog.Builder(this).setTitle("SIGNAL ENGINE").setMessage(msg).setPositiveButton("TUTUP",null).show();
     }
 
