@@ -459,8 +459,16 @@ public class MainActivity extends Activity {
         }
         box.addView(mode);box.addView(modeHint);box.addView(auto);box.addView(side);box.addView(vol);box.addView(en);box.addView(sl);box.addView(tp);
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("MT5 / EA • DEMO").setView(box)
-            .setNegativeButton("TUTUP",null).setPositiveButton("KIRIM LIMIT DEMO",null).create();
-        dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{
+            .setNegativeButton("TUTUP",null).setNeutralButton("SIMPAN MODE",null).setPositiveButton("KIRIM LIMIT DEMO",null).create();
+        dialog.setOnShowListener(v->{
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(w->{
+                gatewayPrefs.edit().putBoolean("auto",auto.isChecked())
+                    .putString("operation_mode",mode.getSelectedItemPosition()==1?"READY":"REST").apply();
+                AppLog.add(this,"MODE",mode.getSelectedItemPosition()==1?"SIAP TRADING":"ISTIRAHAT");
+                Toast.makeText(this,"Mode tersimpan",Toast.LENGTH_SHORT).show();
+                dialog.dismiss();
+            });
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{
             try{
                 gatewayPrefs.edit().putBoolean("auto",auto.isChecked())
                     .putString("operation_mode",mode.getSelectedItemPosition()==1?"READY":"REST").apply();
@@ -474,7 +482,7 @@ public class MainActivity extends Activity {
                 AppLog.add(this,"ORDER","dialog input error: "+e.getClass().getSimpleName());
                 Toast.makeText(this,"Periksa Lot, Entry, SL dan TP",Toast.LENGTH_SHORT).show();
             }
-        }));
+        });
         dialog.show();
     }
 
