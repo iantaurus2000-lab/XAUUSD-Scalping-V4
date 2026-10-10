@@ -258,6 +258,26 @@ public class MainActivity extends Activity {
 
         boolean changed=previous==null||!s.side.equals(previous.side);
         if(changed&&("BUY".equals(s.side)||"SELL".equals(s.side))){
+            // Auto LIMIT is triggered only on a fresh WAIT/other-side -> BUY/SELL transition.
+            // Persistent signal key prevents duplicate queueing on UI refresh/reconnect.
+            SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+            if(gp.getBoolean("auto",false) && "READY".equals(gp.getString("operation_mode","REST"))){
+                String signalKey=s.side+"|"+s.m5Bias+"|"+s.setup;
+                String lastKey=gp.getString("auto_last_signal_key","");
+                long lastAuto=gp.getLong("auto_last_order_ms",0L);
+                boolean filters=s.liquiditySweep&&s.wickRejection&&s.bos&&s.emaFilter&&s.rsiFilter&&s.macdFilter&&s.atrFilter&&s.spreadFilter;
+                if(!signalKey.equals(lastKey) && s.confidence>=gp.getInt("min_confidence",4) && filters
+                        && GatewayService.isEaRecentlyOnline(this) && System.currentTimeMillis()-lastAuto>=60000L){
+                    // Save the signal key before queueing to prevent duplicate attempts on repeated refreshes.
+                    gp.edit().putString("auto_last_signal_key",signalKey).putLong("auto_last_order_ms",System.currentTimeMillis()).apply();
+                    double lot=gp.getFloat("lot",0.01f);
+                    String orderSide="BUY".equals(s.side)?"BUY_LIMIT":"SELL_LIMIT";
+                    boolean queued=queueLimit(orderSide,lot,s.entry,s.sl,s.tp2>0?s.tp2:s.tp1);
+                    AppLog.add(this,"AUTO LIMIT",queued?"queued "+signalKey:"queue rejected "+signalKey);
+                }else if(!GatewayService.isEaRecentlyOnline(this)){
+                    AppLog.add(this,"AUTO LIMIT","blocked: EA offline");
+                }
+            }
             String msg="XAUUSD SCALPING\n\n"+s.side+"\nEntry: "+price(s.entry)+"\nSL: "+price(s.sl)+"\nTP1: "+price(s.tp1)+"\nTP2: "+price(s.tp2)+"\nTF: M1\nBias: M5 "+s.m5Bias+"\nSetup: "+s.setup+"\nConfidence: "+s.confidence+"/5";
             AppLog.add(this,"SIGNAL",s.side+" "+price(s.entry)+" score="+s.score);
             if(GatewayService.isEaRecentlyOnline(this)){
@@ -385,9 +405,16 @@ public class MainActivity extends Activity {
             if(entry<=chart.getBid()){Toast.makeText(this,"SELL LIMIT harus di atas BID",Toast.LENGTH_SHORT).show();return false;}
             if(!(tp<entry&&sl>entry)){Toast.makeText(this,"SELL LIMIT: TP < Entry < SL",Toast.LENGTH_SHORT).show();return false;}
         }
+        SharedPreferences gatewayPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        String existing=gatewayPrefs.getString("next","");
+        if(existing!=null&&!existing.trim().isEmpty()){
+            AppLog.add(this,"ORDER","queue busy; refusing to overwrite unacknowledged command");
+            Toast.makeText(this,"Antrean masih berisi order, tunggu ACK MT5",Toast.LENGTH_SHORT).show();
+            return false;
+        }
         String id=Long.toString(System.currentTimeMillis());
         String cmd="id="+id+";type=LIMIT;side="+side+";volume="+volume+";entry="+entry+";sl="+sl+";tp="+tp;
-        getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putString("next",cmd).apply();
+        gatewayPrefs.edit().putString("next",cmd).apply();
         HistoryStore.add(this,"PENDING",side,entry,sl,tp,tp,lastSignal==null?0:lastSignal.confidence);
         AppLog.add(this,"ORDER","queued "+cmd);notifyLocal("MT5 "+side,"Entry queued for demo EA");
         Toast.makeText(this,"Entry queued • menunggu konfirmasi EA MT5",Toast.LENGTH_SHORT).show();
@@ -401,7 +428,15 @@ public class MainActivity extends Activity {
 
     void showMt5Dialog(){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(18,4,18,4);
-        Switch auto=new Switch(this);auto.setText("AUTO PENDING • KONFIRMASI MANUAL");auto.setChecked(getSharedPreferences("rayyan4_gateway",0).getBoolean("auto",false));
+        SharedPreferences gatewayPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        Switch auto=new Switch(this);auto.setText("AUTO LIMIT DEMO • order otomatis");auto.setChecked(gatewayPrefs.getBoolean("auto",false));
+        Spinner mode=new Spinner(this);
+        String[] modes={"MODE ISTIRAHAT","MODE SIAP TRADING"};
+        ArrayAdapter<String> modeAdapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,modes);
+        mode.setAdapter(modeAdapter);
+        mode.setSelection("READY".equals(gatewayPrefs.getString("operation_mode","REST"))?1:0);
+        TextView modeHint=tv("SIAP TRADING: Winlator + MT5 + EA harus aktif. Otomatisasi hanya demo.",12);
+        modeHint.setPadding(4,8,4,8);
         EditText side=new EditText(this);side.setHint("BUY_LIMIT / SELL_LIMIT");
         EditText vol=new EditText(this);vol.setHint("Lot, contoh 0.01");vol.setInputType(8194);vol.setText("0.01");
         EditText en=new EditText(this);en.setHint("Entry");en.setInputType(8194);
@@ -422,12 +457,13 @@ public class MainActivity extends Activity {
             side.setText("");
             Toast.makeText(this,"Data harga sinyal belum siap",Toast.LENGTH_LONG).show();
         }
-        box.addView(auto);box.addView(side);box.addView(vol);box.addView(en);box.addView(sl);box.addView(tp);
+        box.addView(mode);box.addView(modeHint);box.addView(auto);box.addView(side);box.addView(vol);box.addView(en);box.addView(sl);box.addView(tp);
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("MT5 / EA • DEMO").setView(box)
             .setNegativeButton("TUTUP",null).setPositiveButton("KIRIM LIMIT DEMO",null).create();
         dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{
             try{
-                getSharedPreferences("rayyan4_gateway",0).edit().putBoolean("auto",auto.isChecked()).apply();
+                gatewayPrefs.edit().putBoolean("auto",auto.isChecked())
+                    .putString("operation_mode",mode.getSelectedItemPosition()==1?"READY":"REST").apply();
                 boolean queued=queueLimit(side.getText().toString().trim().toUpperCase(Locale.US),
                     Double.parseDouble(vol.getText().toString().trim()),
                     Double.parseDouble(en.getText().toString().trim()),
