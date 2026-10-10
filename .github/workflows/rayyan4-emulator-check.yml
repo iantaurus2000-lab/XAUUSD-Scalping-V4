@@ -26,9 +26,6 @@ jobs:
       - name: Build APK
         run: gradle :app:assembleDebug --no-daemon
 
-      - name: Prepare emulator diagnostics folder
-        run: mkdir -p emulator-artifacts
-
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
@@ -37,54 +34,7 @@ jobs:
           profile: pixel_5
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -wipe-data
           disable-animations: true
-          script: |
-            set -eu
-            mkdir -p emulator-artifacts
-
-            wait_for_package_service() {
-              for attempt in $(seq 1 90); do
-                boot="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
-                if [ "$boot" = "1" ] && adb shell pm list packages >/dev/null 2>&1; then
-                  echo "Android boot and Package Manager ready after attempt $attempt"
-                  return 0
-                fi
-                sleep 2
-              done
-              return 1
-            }
-
-            adb wait-for-device
-            if ! wait_for_package_service; then
-              echo "Package Manager did not start; rebooting emulator once for recovery."
-              adb logcat -b all -d -v time > emulator-artifacts/logcat-before-reboot.txt || true
-              adb reboot
-              adb wait-for-device
-              if ! wait_for_package_service; then
-                adb shell getprop > emulator-artifacts/getprop.txt || true
-                adb logcat -b all -d -v time > emulator-artifacts/logcat-boot-failure.txt || true
-                echo "Package Manager still unavailable after one reboot."
-                exit 1
-              fi
-            fi
-
-            adb shell pm list packages > emulator-artifacts/packages.txt
-            APK="app/build/outputs/apk/debug/app-debug.apk"
-            test -s "$APK"
-            adb install -r "$APK"
-            adb shell am start -W -n com.xauusd.mobileengine/.MainActivity
-            sleep 12
-
-            adb exec-out screencap -p > emulator-artifacts/rayyan4-home.png
-            adb shell dumpsys activity activities > emulator-artifacts/activities.txt || true
-            adb logcat -b all -d -v time > emulator-artifacts/logcat.txt || true
-            adb shell pidof com.xauusd.mobileengine > emulator-artifacts/app-pid.txt || true
-
-            if [ ! -s emulator-artifacts/app-pid.txt ]; then
-              grep -n -A 8 -B 4 'FATAL EXCEPTION\|AndroidRuntime' emulator-artifacts/logcat.txt > emulator-artifacts/crash-summary.txt || true
-              echo "APK installed, but application process is not alive after launch."
-              exit 1
-            fi
-            echo "PASS: APK installed, MainActivity launched, app process alive, screenshot captured."
+          script: bash .github/scripts/rayyan4-emulator-check.sh
 
       - name: Upload APK and emulator screenshots/logs
         if: always()
