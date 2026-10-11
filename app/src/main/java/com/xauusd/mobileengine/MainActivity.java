@@ -53,6 +53,12 @@ public class MainActivity extends Activity {
         tgPrefs=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE);
         telegramEnabled=tgPrefs.getBoolean("enabled",false);
         selectedMarket=prefs.getString("market","XAUUSD");
+        // Safety migration: never carry AUTO LIMIT into this revised build from an older preference.
+        SharedPreferences gatewayPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        if(!gatewayPrefs.getBoolean("auto_safe_guard_v1",false)){
+            gatewayPrefs.edit().putBoolean("auto",false).putString("operation_mode","REST")
+                .putBoolean("auto_safe_guard_v1",true).apply();
+        }
         buildUI();
     }
 
