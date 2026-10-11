@@ -338,6 +338,10 @@ public class MainActivity extends Activity {
         chart.setSignalLevels(s.entry,s.sl,s.tp1,s.tp2,"BUY".equals(s.side)||"SELL".equals(s.side));
 
         boolean changed=previous==null||!s.side.equals(previous.side);
+        long candleStamp=m1[m1.length-1].t;
+        String candleKey=selectedMarket+"|"+selectedTf+"|"+candleStamp;
+        SharedPreferences noticePrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        boolean alreadyNotified=candleKey.equals(noticePrefs.getString("signal_notified_candle",""));
         if(changed&&("BUY".equals(s.side)||"SELL".equals(s.side))){
             // Auto LIMIT is triggered only on a fresh WAIT/other-side -> BUY/SELL transition.
             // Persistent signal key prevents duplicate queueing on UI refresh/reconnect.
@@ -361,11 +365,14 @@ public class MainActivity extends Activity {
             }
             String msg=selectedMarket+" SCALPING\n\n"+s.side+"\nEntry: "+price(s.entry)+"\nSL: "+price(s.sl)+"\nTP1: "+price(s.tp1)+"\nTP2: "+price(s.tp2)+"\nTF: M1\nBias: M5 "+s.m5Bias+"\nSetup: "+s.setup+"\nConfidence: "+s.confidence+"/5";
             AppLog.add(this,"SIGNAL",s.side+" "+price(s.entry)+" score="+s.score);
-            if(GatewayService.isEaRecentlyOnline(this)){
-                if(telegramEnabled)sendTelegram(msg);
-                notifyLocal(selectedMarket+" SIGNAL "+s.side,"EA polling aktif • Entry "+price(s.entry)+" | SL "+price(s.sl)+" | TP1 "+price(s.tp1));
-            }else{
-                AppLog.add(this,"SIGNAL","notification suppressed: EA offline; signal is not an MT5 order");
+            if(!alreadyNotified){
+                noticePrefs.edit().putString("signal_notified_candle",candleKey).apply();
+                if(GatewayService.isEaRecentlyOnline(this)){
+                    if(telegramEnabled)sendTelegram(msg);
+                    notifyLocal(selectedMarket+" SIGNAL "+s.side,"Maksimal satu notifikasi per candle • Entry "+price(s.entry)+" | SL "+price(s.sl)+" | TP1 "+price(s.tp1));
+                }else{
+                    AppLog.add(this,"SIGNAL","notification suppressed: EA offline; signal is not an MT5 order");
+                }
             }
         }
     }
