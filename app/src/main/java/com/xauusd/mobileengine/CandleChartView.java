@@ -17,6 +17,7 @@ public class CandleChartView extends View {
     private boolean showSignals=true, showWickBos=true, showTradeLevels=true, showPosition=true, showBidAsk=true;
     private boolean follow=true;
     private String timeframe="M1";
+    private String marketName="XAUUSD";
     private final SimpleDateFormat time = new SimpleDateFormat("HH:mm", Locale.US);
     private double signalEntry, signalSl, signalTp1, signalTp2;
     private boolean signalActive=false;
@@ -27,6 +28,7 @@ public class CandleChartView extends View {
     }
 
     public void setTimeframe(String tf){ timeframe=tf==null?"M1":tf; invalidate(); }
+    public void setMarket(String market){ marketName=(market==null||market.trim().isEmpty())?"XAUUSD":market.trim().toUpperCase(Locale.US); invalidate(); }
     public void setData(Candle[] a){ cs.clear(); if(a!=null) Collections.addAll(cs,a); invalidate(); }
 
     public void setTick(double b,double a,String tf){
@@ -122,7 +124,7 @@ public class CandleChartView extends View {
 
         if(follow)positionLatestCandle();
         if(cs.isEmpty()){
-            text(c,"XAUUSD • "+timeframe,L+7,22,12,Color.rgb(0,235,150));
+            text(c,marketName+" • "+timeframe,L+7,22,12,Color.rgb(0,235,150));
             text(c,"Menunggu candle XAUUSD...",L+15,H/2,17,Color.LTGRAY);
             return;
         }
@@ -141,7 +143,7 @@ public class CandleChartView extends View {
 
         // Chart header, matching the reference MT5-like layout.
         p.setColor(Color.rgb(7,15,23));c.drawRect(L,0,R,52,p);
-        bold(c,"XAUUSD • "+timeframe+"  ▾",L+7,16,12,Color.rgb(0,238,150));
+        bold(c,marketName+" • "+timeframe+"  ▾",L+7,16,12,Color.rgb(0,238,150));
         Candle last=cs.get(cs.size()-1);
         text(c,"O "+f(last.o)+"   H "+f(last.h)+"   L "+f(last.l)+"   C "+f(last.c),L+7,34,10,Color.WHITE);
         double e9=emaValue(9),e21=emaValue(21),e50=emaValue(50);

@@ -16,7 +16,8 @@ public class MainActivity extends Activity {
     private static volatile boolean visible = false;
     public static boolean isAppVisible(){ return visible; }
     private CandleChartView chart;
-    private TextView bidView, askView, spreadView, status, signalSummary, scoreView, entryView, slView, tp1View, tp2View, marketTitle, marketSubtitle;
+    private TextView priceView, spreadView, status, signalSummary, scoreView, entryView, slView, tp1View, tp2View, marketTitle, marketSubtitle;
+    private double lastHeaderPrice=Double.NaN;
     private Button signalSideButton;
     private ScheduledExecutorService ex;
     private SharedPreferences prefs, tgPrefs;
@@ -37,7 +38,7 @@ public class MainActivity extends Activity {
 
     Button btn(String s){
         Button b=new Button(this);b.setText(s);b.setTextSize(13);b.setTextColor(Color.WHITE);
-        b.setAllCaps(false);b.setMinHeight(44);b.setPadding(4,0,4,0);
+        b.setAllCaps(false);b.setSingleLine(true);b.setEllipsize(android.text.TextUtils.TruncateAt.END);b.setMinHeight(36);b.setMinimumHeight(36);b.setPadding(3,0,3,0);
         b.setBackground(roundBg(Color.rgb(7,34,60),12));return b;
     }
 
@@ -62,43 +63,38 @@ public class MainActivity extends Activity {
         LinearLayout head=new LinearLayout(this);head.setGravity(Gravity.CENTER_VERTICAL);head.setPadding(7,3,7,3);
         head.setBackgroundColor(Color.rgb(2,15,29));
 
-        TextView gold=tv("🪙",30);head.addView(gold,new LinearLayout.LayoutParams(48,70));
+        TextView gold=tv("🪙",27);head.addView(gold,new LinearLayout.LayoutParams(36,58));
         LinearLayout title=new LinearLayout(this);title.setOrientation(LinearLayout.VERTICAL);
-        marketTitle=tv(selectedMarket,21);marketTitle.setTypeface(null,Typeface.BOLD);title.addView(marketTitle,new LinearLayout.LayoutParams(-1,30));
-        marketSubtitle=tv(marketDescription(selectedMarket),11);title.addView(marketSubtitle,new LinearLayout.LayoutParams(-1,22));
-        TextView rt=tv("● REALTIME",10);rt.setTextColor(green);title.addView(rt,new LinearLayout.LayoutParams(-1,18));
-        head.addView(title,new LinearLayout.LayoutParams(0,70,1));
-
-        LinearLayout quote=new LinearLayout(this);quote.setOrientation(LinearLayout.HORIZONTAL);
-        quote.addView(quoteBox("BID",green),new LinearLayout.LayoutParams(0,70,1));
-        quote.addView(quoteBox("ASK",red),new LinearLayout.LayoutParams(0,70,1));
-        head.addView(quote,new LinearLayout.LayoutParams(215,70));
-
-        Button menu=btn("☰\nMENU");menu.setTextSize(12);menu.setBackground(roundBg(Color.rgb(6,45,74),12));
-        menu.setOnClickListener(v->showMenu(menu));head.addView(menu,new LinearLayout.LayoutParams(70,70));
+        marketTitle=tv(selectedMarket,19);marketTitle.setTypeface(null,Typeface.BOLD);title.addView(marketTitle,new LinearLayout.LayoutParams(-1,25));
+        marketSubtitle=tv(marketDescription(selectedMarket),10);title.addView(marketSubtitle,new LinearLayout.LayoutParams(-1,19));
+        TextView rt=tv("●",11);rt.setTextColor(green);title.addView(rt,new LinearLayout.LayoutParams(-1,13));
+        head.addView(title,new LinearLayout.LayoutParams(0,58,1));
+        head.addView(priceBox(),new LinearLayout.LayoutParams(96,58));
+        Button menu=btn("☰");menu.setTextSize(18);menu.setBackground(roundBg(Color.rgb(6,45,74),12));
+        menu.setOnClickListener(v->showMenu(menu));head.addView(menu,new LinearLayout.LayoutParams(48,52));
         root.addView(head);
 
         // SPREAD
         LinearLayout spread=new LinearLayout(this);spread.setGravity(Gravity.CENTER);spread.setBackgroundColor(Color.rgb(6,27,45));
         spreadView=tv("SPREAD  --",11);spreadView.setGravity(Gravity.CENTER);
-        spread.addView(spreadView,new LinearLayout.LayoutParams(-1,28));root.addView(spread);
+        spread.addView(spreadView,new LinearLayout.LayoutParams(-1,20));root.addView(spread);
 
         // TIMEFRAME ROW - reference structure: M1 M5 M15 H1 H4 D1 LIVE
-        LinearLayout tf=new LinearLayout(this);tf.setPadding(5,4,5,4);tf.setBackgroundColor(Color.rgb(2,14,26));
+        LinearLayout tf=new LinearLayout(this);tf.setPadding(4,2,4,2);tf.setBackgroundColor(Color.rgb(2,14,26));
         addTfButton(tf,"M1");addTfButton(tf,"M5");addTfButton(tf,"M15");addTfButton(tf,"H1");addTfButton(tf,"H4");addTfButton(tf,"D1");
         Button live=btn("◉ LIVE");live.setTextSize(12);live.setTextColor(green);live.setBackground(roundBg(Color.rgb(7,66,49),12));
-        tf.addView(live,new LinearLayout.LayoutParams(0,48,1));
+        tf.addView(live,new LinearLayout.LayoutParams(0,38,1));
         live.setOnClickListener(v->{chart.goLive();selectTimeframe(selectedTf,false);});
         root.addView(tf);
 
-        chart=new CandleChartView(this);chart.setTimeframe(selectedTf);loadIndicatorSettings();
+        chart=new CandleChartView(this);chart.setMarket(selectedMarket);chart.setTimeframe(selectedTf);loadIndicatorSettings();
         root.addView(chart,new LinearLayout.LayoutParams(-1,0,1));
 
         // CHART TOOLS
         LinearLayout layers=new LinearLayout(this);layers.setPadding(4,3,4,3);layers.setBackgroundColor(Color.rgb(3,14,24));
         String[] ls={"▥ S/R","▤ Fibo","〽 EMA","↕ Buy/Sell","▣ Order","◎ Posisi"};
         for(String s:ls){
-            Button b=btn(s);b.setTextSize(10);layers.addView(b,new LinearLayout.LayoutParams(0,46,1));bindQuickLayer(b,s);
+            Button b=btn(s);b.setTextSize(9);layers.addView(b,new LinearLayout.LayoutParams(0,38,1));bindQuickLayer(b,s);
         }
         root.addView(layers);
 
@@ -107,14 +103,14 @@ public class MainActivity extends Activity {
         card.setBackground(roundBg(Color.rgb(5,43,53),14));
 
         LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);
-        Button side=btn("WAIT");side.setTextSize(17);side.setTypeface(null,Typeface.BOLD);
+        Button side=btn("");side.setTextSize(16);side.setTypeface(null,Typeface.BOLD);
         signalSideButton=side;
         side.setBackground(roundBg(Color.rgb(75,78,86),12));
         side.setOnClickListener(v->executeCurrentSignal());
-        top.addView(side,new LinearLayout.LayoutParams(78,50));
+        top.addView(side,new LinearLayout.LayoutParams(58,44));
         signalSummary=tv("XAUUSD • "+selectedTf+"\nWick Rejection + Liquidity Sweep + BOS",10);
-        top.addView(signalSummary,new LinearLayout.LayoutParams(0,50,1));
-        scoreView=tv("CONFIDENCE\n--/5",11);scoreView.setGravity(Gravity.CENTER);top.addView(scoreView,new LinearLayout.LayoutParams(100,50));
+        top.addView(signalSummary,new LinearLayout.LayoutParams(0,44,1));
+        scoreView=tv("CONF\n--/5",10);scoreView.setGravity(Gravity.CENTER);top.addView(scoreView,new LinearLayout.LayoutParams(72,44));
         card.addView(top);
 
         LinearLayout levels=new LinearLayout(this);levels.setPadding(2,2,2,0);
@@ -122,7 +118,7 @@ public class MainActivity extends Activity {
         for(String n:names){
             TextView v=tv(n+"\n--",11);v.setGravity(Gravity.CENTER);
             if(n.equals("Entry"))entryView=v;else if(n.equals("SL"))slView=v;else if(n.equals("TP1"))tp1View=v;else tp2View=v;
-            levels.addView(v,new LinearLayout.LayoutParams(0,48,1));
+            levels.addView(v,new LinearLayout.LayoutParams(0,42,1));
         }
         card.addView(levels);
         root.addView(card,new LinearLayout.LayoutParams(-1,LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -134,21 +130,21 @@ public class MainActivity extends Activity {
         tp1View.setOnClickListener(v->executeCurrentSignal());
         tp2View.setOnClickListener(v->executeCurrentSignal());
 
-        status=tv("● MT5 DEMO GATEWAY • M1",10);status.setBackgroundColor(Color.rgb(3,17,29));
-        root.addView(status,new LinearLayout.LayoutParams(-1,28));
+        status=tv("● LIVE • RAYYAN4 • M1",9);status.setBackgroundColor(Color.rgb(3,17,29));
+        root.addView(status,new LinearLayout.LayoutParams(-1,22));
 
         // BOTTOM NAV - 5 fixed tabs
         LinearLayout nav=new LinearLayout(this);nav.setPadding(4,3,4,3);nav.setBackgroundColor(Color.rgb(2,12,22));
         String[] navs={"▥ MARKET","▥ CHART","♧ SIGNAL","▣ ORDERS","⚙ SETTINGS"};
         for(String s:navs){
-            Button q=btn(s);q.setTextSize(11);nav.addView(q,new LinearLayout.LayoutParams(0,55,1));
+            Button q=btn(s);q.setTextSize(9);nav.addView(q,new LinearLayout.LayoutParams(0,48,1));
             if(s.contains("MARKET"))q.setOnClickListener(v->showMarketDialog());
             else if(s.contains("SIGNAL"))q.setOnClickListener(v->showSignalDialog());
             else if(s.contains("ORDERS"))q.setOnClickListener(v->showLogDialog("ORDERS / HISTORY"));
             else if(s.contains("SETTINGS"))q.setOnClickListener(v->showMenu(q));
             else if(s.contains("CHART"))q.setOnClickListener(v->chart.goLive());
         }
-        root.addView(nav,new LinearLayout.LayoutParams(-1,61));
+        root.addView(nav,new LinearLayout.LayoutParams(-1,53));
 
         setContentView(root);
         requestNotificationPermission();
@@ -156,15 +152,30 @@ public class MainActivity extends Activity {
         selectTimeframe("M1",false);load("1m","M1");
     }
 
-    LinearLayout quoteBox(String name,int color){
-        LinearLayout b=new LinearLayout(this);b.setOrientation(LinearLayout.VERTICAL);b.setPadding(4,2,4,2);
-        TextView n=tv(name,9);n.setTextColor(color);TextView v=tv("--",18);v.setTextColor(color);
-        if(name.equals("BID"))bidView=v;else askView=v;
-        b.addView(n,new LinearLayout.LayoutParams(-1,22));b.addView(v,new LinearLayout.LayoutParams(-1,44));return b;
+    LinearLayout priceBox(){
+        LinearLayout b=new LinearLayout(this);b.setOrientation(LinearLayout.VERTICAL);b.setPadding(2,2,2,2);
+        TextView n=tv("PRICE",9);n.setTextColor(Color.rgb(0,210,220));
+        priceView=tv("--",18);priceView.setTypeface(null,Typeface.BOLD);priceView.setTextColor(Color.CYAN);
+        b.addView(n,new LinearLayout.LayoutParams(-1,20));
+        b.addView(priceView,new LinearLayout.LayoutParams(-1,34));
+        return b;
+    }
+
+    void updateHeaderPrice(double bid,double ask){
+        if(priceView==null||!Double.isFinite(bid)||!Double.isFinite(ask)||bid<=0||ask<=0)return;
+        double current=(bid+ask)/2.0;
+        int color=Color.CYAN;
+        if(!Double.isNaN(lastHeaderPrice)){
+            if(current>lastHeaderPrice)color=green;
+            else if(current<lastHeaderPrice)color=red;
+        }
+        priceView.setText(String.format(Locale.US,"%,.2f",current));
+        priceView.setTextColor(color);
+        lastHeaderPrice=current;
     }
 
     void addTfButton(LinearLayout parent,String tf){
-        Button q=btn(tf);q.setTextSize(13);tfButtons.put(tf,q);parent.addView(q,new LinearLayout.LayoutParams(0,48,1));
+        Button q=btn(tf);q.setTextSize(11);tfButtons.put(tf,q);parent.addView(q,new LinearLayout.LayoutParams(0,38,1));
         q.setOnClickListener(v->selectTimeframe(tf,true));
     }
 
@@ -207,8 +218,7 @@ public class MainActivity extends Activity {
                     runOnUiThread(()->{
                         chart.setTick(t[0],t[1],selectedTf);
                         if(!chart.isEmpty())updateSignal(chart.getDataSnapshot(),m5Data);
-                        bidView.setText(String.format(Locale.US,"%.2f",t[0]));
-                        askView.setText(String.format(Locale.US,"%.2f",t[1]));
+                        updateHeaderPrice(t[0],t[1]);
                         spreadView.setText(String.format(Locale.US,"SPREAD  %.2f",t[1]-t[0]));
                         status.setText("● LIVE • RAYYAN4 • "+selectedTf);
                     });
@@ -236,7 +246,7 @@ public class MainActivity extends Activity {
 
         startGateway();
         String side="BUY".equals(s.side)?"BUY_LIMIT":"SELL_LIMIT";
-        double lot=getSharedPreferences("rayyan4_gateway",0).getFloat("lot",0.01f);
+        double lot=lotForMarket();
         queueLimit(side,lot,s.entry,s.sl,s.tp2>0?s.tp2:s.tp1);
     }
 
@@ -254,7 +264,7 @@ public class MainActivity extends Activity {
         View v=((ViewGroup)scoreView.getParent()).getChildAt(0);
         if(v instanceof Button){
             Button b=(Button)v;
-            b.setText(("BUY".equals(s.side)||"SELL".equals(s.side))?s.side+"\nLIMIT":"WAIT\nENTRY");
+            b.setText(("BUY".equals(s.side)||"SELL".equals(s.side))?s.side:"");
             b.setTextSize(14);
             b.setBackground(roundBg("BUY".equals(s.side)?Color.rgb(0,190,105):"SELL".equals(s.side)?Color.rgb(220,45,60):Color.rgb(75,78,86),12));
         }
@@ -274,7 +284,7 @@ public class MainActivity extends Activity {
                         && GatewayService.isEaRecentlyOnline(this) && System.currentTimeMillis()-lastAuto>=60000L){
                     // Save the signal key before queueing to prevent duplicate attempts on repeated refreshes.
                     gp.edit().putString("auto_last_signal_key",signalKey).putLong("auto_last_order_ms",System.currentTimeMillis()).apply();
-                    double lot=gp.getFloat("lot",0.01f);
+                    double lot=lotForMarket();
                     String orderSide="BUY".equals(s.side)?"BUY_LIMIT":"SELL_LIMIT";
                     boolean queued=queueLimit(orderSide,lot,s.entry,s.sl,s.tp2>0?s.tp2:s.tp1);
                     AppLog.add(this,"AUTO LIMIT",queued?"queued "+signalKey:"queue rejected "+signalKey);
@@ -336,6 +346,7 @@ public class MainActivity extends Activity {
                 prefs.edit().putString("market",selectedMarket).apply();
                 if(marketTitle!=null)marketTitle.setText(selectedMarket);
                 if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));
+                if(chart!=null)chart.setMarket(selectedMarket);
                 if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");
                 if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);
                 lastSignal=null;
@@ -425,6 +436,20 @@ public class MainActivity extends Activity {
         return "XAUUSDm";
     }
 
+    double minLotForSymbol(String symbol){
+        if("ETHUSDm".equalsIgnoreCase(symbol))return 0.10; // confirmed by current Exness MT5 log
+        if("BTCUSDm".equalsIgnoreCase(symbol))return 0.01;
+        return 0.01; // XAUUSDm default profile; MT5 EA validates final symbol rules
+    }
+
+    double lotForMarket(){
+        SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        String symbol=mt5SymbolForMarket(selectedMarket);
+        return p.getFloat("lot_"+symbol,p.getFloat("lot",0.01f));
+    }
+
+    String lotText(double lot){return String.format(Locale.US,"%.2f",lot);}
+
     boolean queueLimit(String side,double volume,double entry,double sl,double tp){
         try {
         side=side==null?"":side.trim().toUpperCase(Locale.US);
@@ -434,6 +459,13 @@ public class MainActivity extends Activity {
             Toast.makeText(this,"Side harus BUY_LIMIT atau SELL_LIMIT",Toast.LENGTH_SHORT).show();return false;
         }
         if(volume<=0||entry<=0||sl<=0||tp<=0){Toast.makeText(this,"Nilai order tidak valid",Toast.LENGTH_SHORT).show();return false;}
+        String mt5Symbol=mt5SymbolForMarket(selectedMarket);
+        double minLot=minLotForSymbol(mt5Symbol);
+        if(volume+1e-8<minLot){
+            AppLog.add(this,"ORDER","blocked BAD_VOLUME symbol="+mt5Symbol+" volume="+lotText(volume)+" min="+lotText(minLot));
+            Toast.makeText(this,"Lot minimum "+mt5Symbol+" = "+lotText(minLot)+" • order tidak dikirim",Toast.LENGTH_LONG).show();
+            return false;
+        }
         if("BUY_LIMIT".equals(side)){
             if(entry>=chart.getAsk()){Toast.makeText(this,"BUY LIMIT harus di bawah ASK",Toast.LENGTH_SHORT).show();return false;}
             if(!(sl<entry&&tp>entry)){Toast.makeText(this,"BUY LIMIT: SL < Entry < TP",Toast.LENGTH_SHORT).show();return false;}
@@ -450,9 +482,8 @@ public class MainActivity extends Activity {
             return false;
         }
         String id=Long.toString(System.currentTimeMillis());
-        String mt5Symbol=mt5SymbolForMarket(selectedMarket);
         String cmd="id="+id+";type=LIMIT;symbol="+mt5Symbol+";side="+side+";volume="+volume+";entry="+entry+";sl="+sl+";tp="+tp;
-        gatewayPrefs.edit().putString("next",cmd).apply();
+        gatewayPrefs.edit().putString("next",cmd).putFloat("lot_"+mt5Symbol,(float)volume).putFloat("lot",(float)volume).apply();
         HistoryStore.add(this,"PENDING",side,entry,sl,tp,tp,lastSignal==null?0:lastSignal.confidence);
         AppLog.add(this,"ORDER","queued "+cmd);notifyLocal("MT5 "+side,"Entry queued for demo EA");
         Toast.makeText(this,"Entry queued • menunggu konfirmasi EA MT5",Toast.LENGTH_SHORT).show();
@@ -473,10 +504,12 @@ public class MainActivity extends Activity {
         ArrayAdapter<String> modeAdapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,modes);
         mode.setAdapter(modeAdapter);
         mode.setSelection("READY".equals(gatewayPrefs.getString("operation_mode","REST"))?1:0);
-        TextView modeHint=tv("SIAP TRADING: Winlator + MT5 + EA harus aktif. Otomatisasi hanya demo.",12);
+        TextView modeHint=tv("DEMO ONLY • "+selectedMt5Symbol+" min lot "+lotText(minLotForSymbol(selectedMt5Symbol))+" • Winlator + MT5 + EA aktif",11);
         modeHint.setPadding(4,8,4,8);
         EditText side=new EditText(this);side.setHint("BUY_LIMIT / SELL_LIMIT");
-        EditText vol=new EditText(this);vol.setHint("Lot, contoh 0.01");vol.setInputType(8194);vol.setText("0.01");
+        String selectedMt5Symbol=mt5SymbolForMarket(selectedMarket);
+        EditText vol=new EditText(this);vol.setHint("Lot • minimum "+lotText(minLotForSymbol(selectedMt5Symbol)));vol.setInputType(8194);
+        vol.setText(lotText(lotForMarket()));
         EditText en=new EditText(this);en.setHint("Entry");en.setInputType(8194);
         EditText sl=new EditText(this);sl.setHint("SL");sl.setInputType(8194);
         EditText tp=new EditText(this);tp.setHint("TP");tp.setInputType(8194);
@@ -495,7 +528,8 @@ public class MainActivity extends Activity {
             side.setText("");
             Toast.makeText(this,"Data harga sinyal belum siap",Toast.LENGTH_LONG).show();
         }
-        box.addView(mode);box.addView(modeHint);box.addView(auto);box.addView(side);box.addView(vol);box.addView(en);box.addView(sl);box.addView(tp);
+        TextView queuedStatus=tv("",11);queuedStatus.setTextColor(green);queuedStatus.setPadding(4,6,4,2);
+        box.addView(mode);box.addView(modeHint);box.addView(auto);box.addView(side);box.addView(vol);box.addView(en);box.addView(sl);box.addView(tp);box.addView(queuedStatus);
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("MT5 / EA • DEMO").setView(box)
             .setNegativeButton("TUTUP",null).setNeutralButton("SIMPAN MODE",null).setPositiveButton("KIRIM LIMIT DEMO",null).create();
         dialog.setOnShowListener(v->{
@@ -515,10 +549,14 @@ public class MainActivity extends Activity {
                     Double.parseDouble(en.getText().toString().trim()),
                     Double.parseDouble(sl.getText().toString().trim()),
                     Double.parseDouble(tp.getText().toString().trim()));
-                if(queued)dialog.dismiss();
+                if(queued){
+                    queuedStatus.setText("MASUK ANTREAN • menunggu respons EA/ACK MT5. Ini belum berarti order terpasang.");
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setText("SUDAH DIANTREKAN");
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+                }
             }catch(Exception e){
-                AppLog.add(this,"ORDER","dialog input error: "+e.getClass().getSimpleName());
-                Toast.makeText(this,"Periksa Lot, Entry, SL dan TP",Toast.LENGTH_SHORT).show();
+                AppLog.add(this,"ORDER","dialog input error: "+e.getClass().getSimpleName()+" "+e.getMessage());
+                Toast.makeText(this,"Periksa angka Lot, Entry, SL dan TP",Toast.LENGTH_SHORT).show();
             }
             });
         });
