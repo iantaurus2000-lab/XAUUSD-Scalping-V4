@@ -56,11 +56,13 @@ void OnTimer(){
    bool ok=false;
    string resultText="REJECT";
    string detail="";
-   string sym=AllowedSymbol;
-   SymbolSelect(sym,true);
+   string requestedSym=field(cmd,"symbol");
+   string sym=(requestedSym=="" ? AllowedSymbol : requestedSym);
+   bool supported=(sym=="XAUUSDm" || sym=="BTCUSDm" || sym=="ETHUSDm");
+   if(supported) SymbolSelect(sym,true);
 
    MqlTick tick;
-   bool haveTick=SymbolInfoTick(sym,tick);
+   bool haveTick=supported && SymbolInfoTick(sym,tick);
    int digits=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS);
    double point=SymbolInfoDouble(sym,SYMBOL_POINT);
    double minVol=SymbolInfoDouble(sym,SYMBOL_VOLUME_MIN);
@@ -76,8 +78,8 @@ void OnTimer(){
 
    if(DemoOnly && AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
       resultText="NOT_DEMO";
-   }else if(_Symbol!=AllowedSymbol){
-      resultText="SYMBOL_MISMATCH";
+   }else if(!supported){
+      resultText="UNSUPPORTED_SYMBOL"; detail=sym;
    }else if(!haveTick){
       resultText="NO_TICK";
    }else if(vol<minVol || vol>maxVol){
@@ -107,12 +109,14 @@ void OnTimer(){
       trade.SetTypeFillingBySymbol(sym);
       if(side=="BUY_LIMIT") ok=trade.BuyLimit(vol,entry,sym,sl,tp,ORDER_TIME_GTC,0,"RAYYAN4");
       else if(side=="SELL_LIMIT") ok=trade.SellLimit(vol,entry,sym,sl,tp,ORDER_TIME_GTC,0,"RAYYAN4");
-      else resultText="BAD_SIDE";
+      else { resultText="BAD_SIDE"; detail=side; }
 
       uint rc=trade.ResultRetcode();
-      resultText=ok ? "EXECUTED" : "FAILED";
-      detail=trade.ResultRetcodeDescription();
-      Print("RAYYAN4 TRADE CHECK side=",side," vol=",DoubleToString(vol,2),
+      if(side=="BUY_LIMIT" || side=="SELL_LIMIT"){
+         resultText=ok ? "EXECUTED" : "FAILED";
+         detail=trade.ResultRetcodeDescription();
+      }
+      Print("RAYYAN4 TRADE CHECK symbol=",sym," side=",side," vol=",DoubleToString(vol,2),
             " entry=",DoubleToString(entry,digits)," bid=",DoubleToString(tick.bid,digits),
             " ask=",DoubleToString(tick.ask,digits)," sl=",DoubleToString(sl,digits),
             " tp=",DoubleToString(tp,digits)," retcode=",rc," desc=",detail);
