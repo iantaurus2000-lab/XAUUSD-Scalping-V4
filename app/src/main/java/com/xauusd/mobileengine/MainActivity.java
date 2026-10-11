@@ -113,7 +113,7 @@ public class MainActivity extends Activity {
         Button side=btn("");side.setText("");side.setTextSize(1);side.setPadding(0,0,0,0);side.setMinWidth(0);side.setMinimumWidth(0);
         signalSideButton=side;
         side.setBackground(roundBg(Color.rgb(110,115,125),1000));
-        side.setOnClickListener(v->executeCurrentSignal());
+        side.setOnClickListener(v->Toast.makeText(this,"Gunakan tombol BUY LIMIT / SELL LIMIT untuk mengirim order",Toast.LENGTH_SHORT).show());
         top.addView(side,new LinearLayout.LayoutParams(30,30));
         signalSummary=tv("Menunggu konfirmasi 0/5\nWick Rejection + Liquidity Sweep + BOS",10);signalSummary.setIncludeFontPadding(false);
         top.addView(signalSummary,new LinearLayout.LayoutParams(0,44,1));
@@ -670,6 +670,9 @@ public class MainActivity extends Activity {
             }catch(Exception e){
                 AppLog.add(this,"ORDER","dialog input error: "+e.getClass().getSimpleName()+" "+e.getMessage());
                 Toast.makeText(this,"Periksa angka Lot, Entry, SL dan TP",Toast.LENGTH_SHORT).show();
+            }catch(Throwable t){
+                AppLog.add(this,"ORDER","dialog submit failure: "+t.getClass().getSimpleName()+" "+t.getMessage());
+                Toast.makeText(this,"Gagal mengirim LIMIT; aplikasi tetap dibuka",Toast.LENGTH_LONG).show();
             }
             });
         });
