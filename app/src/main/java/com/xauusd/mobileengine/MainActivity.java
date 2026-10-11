@@ -69,21 +69,21 @@ public class MainActivity extends Activity {
         LinearLayout head=new LinearLayout(this);head.setGravity(Gravity.CENTER_VERTICAL);head.setPadding(7,3,7,3);
         head.setBackgroundColor(Color.rgb(2,15,29));
 
-        TextView gold=tv("🪙",27);head.addView(gold,new LinearLayout.LayoutParams(36,58));
+        TextView gold=tv("●",27);gold.setTextColor(Color.rgb(255,190,55));gold.setGravity(Gravity.CENTER);head.addView(gold,new LinearLayout.LayoutParams(42,58));
         LinearLayout title=new LinearLayout(this);title.setOrientation(LinearLayout.VERTICAL);
         marketTitle=tv(selectedMarket,19);marketTitle.setTypeface(null,Typeface.BOLD);title.addView(marketTitle,new LinearLayout.LayoutParams(-1,25));
         marketSubtitle=tv(marketDescription(selectedMarket),10);title.addView(marketSubtitle,new LinearLayout.LayoutParams(-1,19));
         TextView rt=tv("●",11);rt.setTextColor(green);title.addView(rt,new LinearLayout.LayoutParams(-1,13));
         head.addView(title,new LinearLayout.LayoutParams(0,58,1));
-        head.addView(priceBox(),new LinearLayout.LayoutParams(96,58));
+        head.addView(priceBox(),new LinearLayout.LayoutParams(126,58));
         Button menu=btn("☰");menu.setTextSize(18);menu.setBackground(roundBg(Color.rgb(6,45,74),12));
         menu.setOnClickListener(v->showMenu(menu));head.addView(menu,new LinearLayout.LayoutParams(48,52));
         root.addView(head);
 
         // SPREAD
         LinearLayout spread=new LinearLayout(this);spread.setGravity(Gravity.CENTER);spread.setBackgroundColor(Color.rgb(6,27,45));
-        spreadView=tv("SPREAD  --",11);spreadView.setGravity(Gravity.CENTER);
-        spread.addView(spreadView,new LinearLayout.LayoutParams(-1,20));root.addView(spread);
+        spreadView=tv("SPREAD  --",13);spreadView.setGravity(Gravity.CENTER);spreadView.setSingleLine(true);spreadView.setIncludeFontPadding(false);
+        spread.addView(spreadView,new LinearLayout.LayoutParams(-1,26));root.addView(spread);
 
         // TIMEFRAME ROW - reference structure: M1 M5 M15 H1 H4 D1 LIVE
         LinearLayout tf=new LinearLayout(this);tf.setPadding(4,2,4,2);tf.setBackgroundColor(Color.rgb(2,14,26));
@@ -116,15 +116,15 @@ public class MainActivity extends Activity {
         top.addView(side,new LinearLayout.LayoutParams(58,44));
         signalSummary=tv("XAUUSD • "+selectedTf+"\nWick Rejection + Liquidity Sweep + BOS",10);
         top.addView(signalSummary,new LinearLayout.LayoutParams(0,44,1));
-        scoreView=tv("CONF\n--/5",10);scoreView.setGravity(Gravity.CENTER);top.addView(scoreView,new LinearLayout.LayoutParams(72,44));
+        scoreView=tv("CONFIDENCE\n--/5",11);scoreView.setGravity(Gravity.CENTER);scoreView.setIncludeFontPadding(false);scoreView.setPadding(1,0,1,0);top.addView(scoreView,new LinearLayout.LayoutParams(82,48));
         card.addView(top);
 
         LinearLayout levels=new LinearLayout(this);levels.setPadding(2,2,2,0);
         String[] names={"Entry","SL","TP1","TP2"};
         for(String n:names){
-            TextView v=tv(n+"\n--",11);v.setGravity(Gravity.CENTER);
+            TextView v=tv(n+"\n--",12);v.setGravity(Gravity.CENTER);v.setIncludeFontPadding(false);v.setPadding(1,0,1,0);v.setAutoSizeTextTypeUniformWithConfiguration(10,12,1,android.util.TypedValue.COMPLEX_UNIT_SP);
             if(n.equals("Entry"))entryView=v;else if(n.equals("SL"))slView=v;else if(n.equals("TP1"))tp1View=v;else tp2View=v;
-            levels.addView(v,new LinearLayout.LayoutParams(0,42,1));
+            levels.addView(v,new LinearLayout.LayoutParams(0,48,1));
         }
         card.addView(levels);
         root.addView(card,new LinearLayout.LayoutParams(-1,LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -136,8 +136,8 @@ public class MainActivity extends Activity {
         tp1View.setOnClickListener(v->executeCurrentSignal());
         tp2View.setOnClickListener(v->executeCurrentSignal());
 
-        status=tv("● LIVE • RAYYAN4 • M1",9);status.setBackgroundColor(Color.rgb(3,17,29));
-        root.addView(status,new LinearLayout.LayoutParams(-1,22));
+        status=tv("● LIVE • RAYYAN4 • M1",10);status.setBackgroundColor(Color.rgb(3,17,29));status.setSingleLine(true);status.setIncludeFontPadding(false);
+        root.addView(status,new LinearLayout.LayoutParams(-1,25));
 
         // BOTTOM NAV - 5 fixed tabs
         LinearLayout nav=new LinearLayout(this);nav.setPadding(4,3,4,3);nav.setBackgroundColor(Color.rgb(2,12,22));
@@ -161,9 +161,9 @@ public class MainActivity extends Activity {
     LinearLayout priceBox(){
         LinearLayout b=new LinearLayout(this);b.setOrientation(LinearLayout.VERTICAL);b.setPadding(2,2,2,2);
         TextView n=tv("PRICE",9);n.setTextColor(Color.rgb(0,210,220));
-        priceView=tv("--",18);priceView.setTypeface(null,Typeface.BOLD);priceView.setTextColor(Color.CYAN);priceView.setPadding(2,0,2,0);priceView.setAutoSizeTextTypeUniformWithConfiguration(12,18,1,android.util.TypedValue.COMPLEX_UNIT_SP);
-        b.addView(n,new LinearLayout.LayoutParams(-1,20));
-        b.addView(priceView,new LinearLayout.LayoutParams(-1,34));
+        priceView=tv("--",20);priceView.setTypeface(null,Typeface.BOLD);priceView.setTextColor(Color.CYAN);priceView.setPadding(1,0,1,0);priceView.setGravity(Gravity.CENTER);priceView.setSingleLine(true);priceView.setIncludeFontPadding(false);priceView.setAutoSizeTextTypeUniformWithConfiguration(14,20,1,android.util.TypedValue.COMPLEX_UNIT_SP);
+        b.addView(n,new LinearLayout.LayoutParams(-1,18));
+        b.addView(priceView,new LinearLayout.LayoutParams(-1,36));
         return b;
     }
 
@@ -261,7 +261,7 @@ public class MainActivity extends Activity {
         double bid=chart==null?0:chart.getBid(),ask=chart==null?0:chart.getAsk();
         SignalResult previous=lastSignal;lastSignal=SignalEngine.evaluate(m1,m5,bid,ask);SignalResult s=lastSignal;
 
-        scoreView.setText("CONF "+s.confidence+"/5\n"+stars(s.confidence));
+        scoreView.setText("CONFIDENCE\n"+s.confidence+"/5");
         scoreView.setTextSize(10);
         scoreView.setTextColor(s.confidence>=4?Color.YELLOW:Color.WHITE);
         signalSummary.setText("M1 "+s.side+" • M5 "+s.m5Bias+"\n"+s.setup+" • "+s.confidence+"/5");
