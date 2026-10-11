@@ -69,15 +69,15 @@ public class MainActivity extends Activity {
         LinearLayout head=new LinearLayout(this);head.setGravity(Gravity.CENTER_VERTICAL);head.setPadding(7,3,7,3);
         head.setBackgroundColor(Color.rgb(2,15,29));
 
-        TextView gold=tv("●",27);gold.setTextColor(Color.rgb(255,190,55));gold.setGravity(Gravity.CENTER);head.addView(gold,new LinearLayout.LayoutParams(42,58));
+        TextView gold=tv("●",24);gold.setTextColor(Color.rgb(255,190,55));gold.setGravity(Gravity.CENTER);gold.setIncludeFontPadding(false);head.addView(gold,new LinearLayout.LayoutParams(30,54));
         LinearLayout title=new LinearLayout(this);title.setOrientation(LinearLayout.VERTICAL);
-        marketTitle=tv(selectedMarket,19);marketTitle.setTypeface(null,Typeface.BOLD);title.addView(marketTitle,new LinearLayout.LayoutParams(-1,25));
-        marketSubtitle=tv(marketDescription(selectedMarket),10);title.addView(marketSubtitle,new LinearLayout.LayoutParams(-1,19));
-        TextView rt=tv("●",11);rt.setTextColor(green);title.addView(rt,new LinearLayout.LayoutParams(-1,13));
-        head.addView(title,new LinearLayout.LayoutParams(0,58,1));
-        head.addView(priceBox(),new LinearLayout.LayoutParams(126,58));
+        marketTitle=tv(selectedMarket,17);marketTitle.setTypeface(null,Typeface.BOLD);marketTitle.setSingleLine(true);marketTitle.setIncludeFontPadding(false);title.addView(marketTitle,new LinearLayout.LayoutParams(-1,24));
+        marketSubtitle=tv(marketDescription(selectedMarket),9);marketSubtitle.setSingleLine(true);marketSubtitle.setIncludeFontPadding(false);title.addView(marketSubtitle,new LinearLayout.LayoutParams(-1,17));
+        TextView rt=tv("●",10);rt.setTextColor(green);rt.setIncludeFontPadding(false);title.addView(rt,new LinearLayout.LayoutParams(-1,11));
+        head.addView(title,new LinearLayout.LayoutParams(0,54,1));
+        head.addView(priceBox(),new LinearLayout.LayoutParams(112,54));
         Button menu=btn("☰");menu.setTextSize(18);menu.setBackground(roundBg(Color.rgb(6,45,74),12));
-        menu.setOnClickListener(v->showMenu(menu));head.addView(menu,new LinearLayout.LayoutParams(48,52));
+        menu.setOnClickListener(v->showMenu(menu));head.addView(menu,new LinearLayout.LayoutParams(42,48));
         root.addView(head);
 
         // SPREAD
@@ -109,14 +109,14 @@ public class MainActivity extends Activity {
         card.setBackground(roundBg(Color.rgb(5,43,53),14));
 
         LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);
-        Button side=btn("");side.setTextSize(16);side.setTypeface(null,Typeface.BOLD);
+        Button side=btn("");side.setText("");side.setTextSize(1);side.setPadding(0,0,0,0);side.setMinWidth(0);side.setMinimumWidth(0);
         signalSideButton=side;
-        side.setBackground(roundBg(Color.rgb(75,78,86),12));
+        side.setBackground(roundBg(Color.rgb(110,115,125),1000));
         side.setOnClickListener(v->executeCurrentSignal());
-        top.addView(side,new LinearLayout.LayoutParams(58,44));
-        signalSummary=tv("XAUUSD • "+selectedTf+"\nWick Rejection + Liquidity Sweep + BOS",10);
+        top.addView(side,new LinearLayout.LayoutParams(30,30));
+        signalSummary=tv("Menunggu konfirmasi 0/5\nWick Rejection + Liquidity Sweep + BOS",10);signalSummary.setIncludeFontPadding(false);
         top.addView(signalSummary,new LinearLayout.LayoutParams(0,44,1));
-        scoreView=tv("CONFIDENCE\n--/5",11);scoreView.setGravity(Gravity.CENTER);scoreView.setIncludeFontPadding(false);scoreView.setPadding(1,0,1,0);top.addView(scoreView,new LinearLayout.LayoutParams(82,48));
+        scoreView=tv("CONFIDENCE\n--/5",10);scoreView.setGravity(Gravity.CENTER);scoreView.setIncludeFontPadding(false);scoreView.setPadding(0,0,0,0);scoreView.setSingleLine(false);top.addView(scoreView,new LinearLayout.LayoutParams(76,44));
         card.addView(top);
 
         LinearLayout levels=new LinearLayout(this);levels.setPadding(2,2,2,0);
@@ -124,7 +124,7 @@ public class MainActivity extends Activity {
         for(String n:names){
             TextView v=tv(n+"\n--",12);v.setGravity(Gravity.CENTER);v.setIncludeFontPadding(false);v.setPadding(1,0,1,0);v.setAutoSizeTextTypeUniformWithConfiguration(10,12,1,android.util.TypedValue.COMPLEX_UNIT_SP);
             if(n.equals("Entry"))entryView=v;else if(n.equals("SL"))slView=v;else if(n.equals("TP1"))tp1View=v;else tp2View=v;
-            levels.addView(v,new LinearLayout.LayoutParams(0,48,1));
+            levels.addView(v,new LinearLayout.LayoutParams(0,46,1));
         }
         card.addView(levels);
         root.addView(card,new LinearLayout.LayoutParams(-1,LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -264,15 +264,15 @@ public class MainActivity extends Activity {
         scoreView.setText("CONFIDENCE\n"+s.confidence+"/5");
         scoreView.setTextSize(10);
         scoreView.setTextColor(s.confidence>=4?Color.YELLOW:Color.WHITE);
-        signalSummary.setText("M1 "+s.side+" • M5 "+s.m5Bias+"\n"+s.setup+" • "+s.confidence+"/5");
+        signalSummary.setText(("BUY".equals(s.side)||"SELL".equals(s.side)?("M1 "+s.side+" • M5 "+s.m5Bias):("Menunggu konfirmasi "+s.confidence+"/5"))+"\n"+s.setup);
         entryView.setText("Entry\n"+price(s.entry));slView.setText("SL\n"+price(s.sl));tp1View.setText("TP1\n"+price(s.tp1));tp2View.setText("TP2\n"+price(s.tp2));
 
         View v=((ViewGroup)scoreView.getParent()).getChildAt(0);
         if(v instanceof Button){
             Button b=(Button)v;
-            b.setText(("BUY".equals(s.side)||"SELL".equals(s.side))?s.side:"");
-            b.setTextSize(14);
-            b.setBackground(roundBg("BUY".equals(s.side)?Color.rgb(0,190,105):"SELL".equals(s.side)?Color.rgb(220,45,60):Color.rgb(75,78,86),12));
+            b.setText("");
+            b.setTextSize(1);
+            b.setBackground(roundBg("BUY".equals(s.side)?Color.rgb(0,225,135):"SELL".equals(s.side)?Color.rgb(255,65,82):Color.rgb(110,115,125),1000));
         }
         chart.setSignalLevels(s.entry,s.sl,s.tp1,s.tp2,"BUY".equals(s.side)||"SELL".equals(s.side));
 
