@@ -445,7 +445,7 @@ public class MainActivity extends Activity {
     double lotForMarket(){
         SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         String symbol=mt5SymbolForMarket(selectedMarket);
-        return p.getFloat("lot_"+symbol,p.getFloat("lot",0.01f));
+        return p.getFloat("lot_"+symbol,0.01f);
     }
 
     String lotText(double lot){return String.format(Locale.US,"%.2f",lot);}
@@ -483,7 +483,7 @@ public class MainActivity extends Activity {
         }
         String id=Long.toString(System.currentTimeMillis());
         String cmd="id="+id+";type=LIMIT;symbol="+mt5Symbol+";side="+side+";volume="+volume+";entry="+entry+";sl="+sl+";tp="+tp;
-        gatewayPrefs.edit().putString("next",cmd).putFloat("lot_"+mt5Symbol,(float)volume).putFloat("lot",(float)volume).apply();
+        gatewayPrefs.edit().putString("next",cmd).putFloat("lot_"+mt5Symbol,(float)volume).apply();
         HistoryStore.add(this,"PENDING",side,entry,sl,tp,tp,lastSignal==null?0:lastSignal.confidence);
         AppLog.add(this,"ORDER","queued "+cmd);notifyLocal("MT5 "+side,"Entry queued for demo EA");
         Toast.makeText(this,"Entry queued • menunggu konfirmasi EA MT5",Toast.LENGTH_SHORT).show();
