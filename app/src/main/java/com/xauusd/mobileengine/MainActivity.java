@@ -419,7 +419,13 @@ public class MainActivity extends Activity {
         AppLog.add(this,"MT5","gateway start requested on port 8787");
     }
 
-    String mt5SymbolForMarket(String market){\n        if("BTCUSD".equalsIgnoreCase(market))return "BTCUSDm";\n        if("ETHUSD".equalsIgnoreCase(market))return "ETHUSDm";\n        return "XAUUSDm";\n    }\n\n    boolean queueLimit(String side,double volume,double entry,double sl,double tp){
+    String mt5SymbolForMarket(String market){
+        if("BTCUSD".equalsIgnoreCase(market))return "BTCUSDm";
+        if("ETHUSD".equalsIgnoreCase(market))return "ETHUSDm";
+        return "XAUUSDm";
+    }
+
+    boolean queueLimit(String side,double volume,double entry,double sl,double tp){
         try {
         side=side==null?"":side.trim().toUpperCase(Locale.US);
         if("BUY".equals(side))side="BUY_LIMIT";
