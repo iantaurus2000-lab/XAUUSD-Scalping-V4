@@ -428,13 +428,13 @@ public class MainActivity extends Activity {
         String detail=p.getString("order_status_detail","Belum ada hasil order/ACK tersimpan");
         String queue=p.getString("next","");
         boolean eaOnline=lastPoll>0L && now-lastPoll<=90000L;
-        String msg="GATEWAY: port 8787 berjalan jika tes TCP/HTTP PASS\\n"
+        String msg="GATEWAY: port 8787 berjalan jika tes TCP/HTTP PASS\n"
             +"EA POLLING: "+(eaOnline?"PASS":"BELUM TERDETEKSI")+(age>=0?" • poll "+age+" dtk lalu":"")+
-            "\\nQUEUE: "+(queue==null||queue.trim().isEmpty()?"KOSONG":"ADA PERINTAH MENUNGGU")+
-            "\\nACK / ORDER TERAKHIR: "+orderStatus+
-            (orderId.isEmpty()?"":"\\nID: "+orderId)+
-            (detail.isEmpty()?"":"\\nDetail: "+detail)+
-            "\\n\\nPemeriksaan ini TIDAK mengirim order atau order tes.";
+            "\nQUEUE: "+(queue==null||queue.trim().isEmpty()?"KOSONG":"ADA PERINTAH MENUNGGU")+
+            "\nACK / ORDER TERAKHIR: "+orderStatus+
+            (orderId.isEmpty()?"":"\nID: "+orderId)+
+            (detail.isEmpty()?"":"\nDetail: "+detail)+
+            "\n\nPemeriksaan ini TIDAK mengirim order atau order tes.";
         TextView v=tv(msg,13);v.setTextIsSelectable(true);v.setGravity(Gravity.TOP|Gravity.START);v.setPadding(18,12,18,12);
         new AlertDialog.Builder(this).setTitle("RAYYAN4 • GATEWAY / QUEUE / ACK")
             .setView(v).setPositiveButton("PERIKSA LAGI",(d,w)->showGatewayAckDiagnostics())
