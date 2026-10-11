@@ -70,7 +70,8 @@ public final class GatewayService extends Service {
             }else if(path.startsWith("/ack")){
                 String id=query(path,"id");
                 String result=query(path,"result");
-                out=ack(id,result);
+                String detail=query(path,"detail");
+                out=ack(id,result,detail);
             }else{
                 out="Rayyan4 gateway OK";
             }
@@ -114,7 +115,7 @@ public final class GatewayService extends Service {
                 p.edit().remove("next")
                     .putString("order_status_id",queuedId)
                     .putString("order_status","EXPIRED")
-                    .putString("order_status_detail","Perintah kedaluwarsa setelah 120 detik; tidak dikirim ke EA")
+                    .putString("order_status_detail","Tidak ada ACK MT5 selama 120 detik; periksa tab Trade dan Experts MT5 sebelum mengirim ulang")
                     .putLong("order_status_at",System.currentTimeMillis()).apply();
                 AppLog.add(this,"ORDER","EXPIRED id="+queuedId+" stale LIMIT command not sent to EA");
                 return "";
@@ -123,7 +124,7 @@ public final class GatewayService extends Service {
         return cmd;
     }
 
-    private synchronized String ack(String id,String result){
+    private synchronized String ack(String id,String result,String detail){
         if(id==null||id.isEmpty())return "ACK ERROR";
         SharedPreferences p=getSharedPreferences("rayyan4_gateway",0);
         String current=p.getString("next","");
@@ -133,7 +134,7 @@ public final class GatewayService extends Service {
             p.edit().remove("next")
                 .putString("order_status_id",id)
                 .putString("order_status",safeResult)
-                .putString("order_status_detail","Hasil diterima dari EA MT5")
+                .putString("order_status_detail",(detail==null||detail.trim().isEmpty())?"Hasil diterima dari EA MT5":detail)
                 .putLong("order_status_at",System.currentTimeMillis()).apply();
             AppLog.add(this,"MT5","ACK id="+id+" result="+safeResult);
             return "ACK OK";
