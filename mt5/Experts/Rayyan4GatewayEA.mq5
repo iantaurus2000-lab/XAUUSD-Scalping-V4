@@ -8,6 +8,9 @@ input bool DemoOnly=true;
 input int PollSeconds=1;
 
 string lastId="";
+string pendingAckId="";
+string pendingAckResult="";
+string pendingAckDetail="";
 datetime lastDiag=0;
 
 int OnInit(){
@@ -43,7 +46,16 @@ void OnTimer(){
    }
 
    string id=field(cmd,"id");
-   if(id=="" || id==lastId)return;
+   if(id=="")return;
+   // A trade is sent once; until ACK is confirmed, retry ACK only, never place it twice.
+   if(pendingAckId!=""){
+      if(sendAck(pendingAckId,pendingAckResult,pendingAckDetail)){
+         lastId=pendingAckId;
+         pendingAckId=""; pendingAckResult=""; pendingAckDetail="";
+      }else return;
+      if(id==lastId)return;
+   }
+   if(id==lastId)return;
 
    string type=field(cmd,"type");
    string side=field(cmd,"side");
@@ -122,13 +134,27 @@ void OnTimer(){
             " tp=",DoubleToString(tp,digits)," retcode=",rc," desc=",detail);
    }
 
-   lastId=id;
    Print("RAYYAN4 id=",id," side=",side," result=",resultText,
          " detail=",detail," retcode=",trade.ResultRetcode());
+   pendingAckId=id; pendingAckResult=resultText; pendingAckDetail=detail;
+   if(sendAck(pendingAckId,pendingAckResult,pendingAckDetail)){
+      lastId=pendingAckId;
+      pendingAckId=""; pendingAckResult=""; pendingAckDetail="";
+   }
+}
 
-   string ack=GatewayUrl+"/ack?id="+urlEncode(id)+"&result="+urlEncode(resultText);
+bool sendAck(string id,string resultText,string detail){
+   string ack=GatewayUrl+"/ack?id="+urlEncode(id)+"&result="+urlEncode(resultText)+"&detail="+urlEncode(detail);
    char ad[],ar[]; string ah;
-   WebRequest("GET",ack,"","",3000,ad,0,ar,ah);
+   ResetLastError();
+   int code=WebRequest("GET",ack,"","",3000,ad,0,ar,ah);
+   string body=CharArrayToString(ar);
+   if(code==200 && (StringFind(body,"ACK OK")>=0 || StringFind(body,"ACK STALE")>=0)) return true;
+   if(TimeCurrent()-lastDiag>=10){
+      lastDiag=TimeCurrent();
+      Print("RAYYAN4 ACK RETRY id=",id," HTTP=",code," err=",GetLastError()," response=",body);
+   }
+   return false;
 }
 
 string field(string s,string key){
