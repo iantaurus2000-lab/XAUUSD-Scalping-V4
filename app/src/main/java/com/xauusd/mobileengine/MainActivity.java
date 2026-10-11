@@ -419,7 +419,7 @@ public class MainActivity extends Activity {
         AppLog.add(this,"MT5","gateway start requested on port 8787");
     }
 
-    boolean queueLimit(String side,double volume,double entry,double sl,double tp){
+    String mt5SymbolForMarket(String market){\n        if("BTCUSD".equalsIgnoreCase(market))return "BTCUSDm";\n        if("ETHUSD".equalsIgnoreCase(market))return "ETHUSDm";\n        return "XAUUSDm";\n    }\n\n    boolean queueLimit(String side,double volume,double entry,double sl,double tp){
         try {
         side=side==null?"":side.trim().toUpperCase(Locale.US);
         if("BUY".equals(side))side="BUY_LIMIT";
@@ -444,7 +444,8 @@ public class MainActivity extends Activity {
             return false;
         }
         String id=Long.toString(System.currentTimeMillis());
-        String cmd="id="+id+";type=LIMIT;side="+side+";volume="+volume+";entry="+entry+";sl="+sl+";tp="+tp;
+        String mt5Symbol=mt5SymbolForMarket(selectedMarket);
+        String cmd="id="+id+";type=LIMIT;symbol="+mt5Symbol+";side="+side+";volume="+volume+";entry="+entry+";sl="+sl+";tp="+tp;
         gatewayPrefs.edit().putString("next",cmd).apply();
         HistoryStore.add(this,"PENDING",side,entry,sl,tp,tp,lastSignal==null?0:lastSignal.confidence);
         AppLog.add(this,"ORDER","queued "+cmd);notifyLocal("MT5 "+side,"Entry queued for demo EA");
