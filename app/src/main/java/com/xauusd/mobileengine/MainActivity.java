@@ -128,6 +128,29 @@ public class MainActivity extends Activity {
         }
         card.addView(levels);
         root.addView(card,new LinearLayout.LayoutParams(-1,LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        // ONE-TAP DEMO LIMIT CONTROLS stay on the main screen, no MT5/EA dialog.
+        LinearLayout limitActions=new LinearLayout(this);
+        limitActions.setGravity(Gravity.CENTER_VERTICAL);
+        limitActions.setPadding(5,3,5,3);
+        limitActions.setBackgroundColor(Color.rgb(3,14,24));
+        Button buyLimitBtn=btn("● BUY LIMIT");
+        buyLimitBtn.setTextSize(12);
+        buyLimitBtn.setTypeface(null,Typeface.BOLD);
+        buyLimitBtn.setTextColor(Color.WHITE);
+        buyLimitBtn.setBackground(roundBg(Color.rgb(0,145,88),10));
+        Button sellLimitBtn=btn("● SELL LIMIT");
+        sellLimitBtn.setTextSize(12);
+        sellLimitBtn.setTypeface(null,Typeface.BOLD);
+        sellLimitBtn.setTextColor(Color.WHITE);
+        sellLimitBtn.setBackground(roundBg(Color.rgb(190,45,58),10));
+        limitActions.addView(buyLimitBtn,new LinearLayout.LayoutParams(0,40,1));
+        View actionGap=new View(this);
+        limitActions.addView(actionGap,new LinearLayout.LayoutParams(7,1));
+        limitActions.addView(sellLimitBtn,new LinearLayout.LayoutParams(0,40,1));
+        buyLimitBtn.setOnClickListener(v->executeLimitForSide("BUY"));
+        sellLimitBtn.setOnClickListener(v->executeLimitForSide("SELL"));
+        root.addView(limitActions,new LinearLayout.LayoutParams(-1,46));
         card.setOnClickListener(v->executeCurrentSignal());
         signalSummary.setOnClickListener(v->executeCurrentSignal());
         scoreView.setOnClickListener(v->executeCurrentSignal());
@@ -231,6 +254,28 @@ public class MainActivity extends Activity {
                 }catch(Exception e){runOnUiThread(()->status.setText("● OFFLINE • RETRYING • "+selectedTf));}
             },1,1,TimeUnit.SECONDS);
         }
+    }
+
+    void executeLimitForSide(String requestedSide){
+        if(chart==null || chart.isEmpty() || m5Data==null || m5Data.length<30){
+            Toast.makeText(this,"Data M1/M5 belum siap",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Candle[] liveM1=chart.getDataSnapshot();
+        SignalResult s=SignalEngine.evaluate(liveM1,m5Data,chart.getBid(),chart.getAsk());
+        lastSignal=s;
+        if(s==null || (!"BUY".equals(s.side)&&!"SELL".equals(s.side)) || s.entry<=0 || s.sl<=0 || s.tp1<=0){
+            Toast.makeText(this,"Belum ada setup valid • order tidak dikirim",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if(!requestedSide.equals(s.side)){
+            Toast.makeText(this,"Sinyal aktif "+s.side+" • tombol "+requestedSide+" tidak dikirim",Toast.LENGTH_LONG).show();
+            return;
+        }
+        startGateway();
+        String orderSide="BUY".equals(requestedSide)?"BUY_LIMIT":"SELL_LIMIT";
+        double lot=lotForMarket();
+        queueLimit(orderSide,lot,s.entry,s.sl,s.tp2>0?s.tp2:s.tp1);
     }
 
     void executeCurrentSignal(){
