@@ -491,7 +491,10 @@ public class MainActivity extends Activity {
         }
         String id=Long.toString(System.currentTimeMillis());
         String cmd="id="+id+";type=LIMIT;symbol="+mt5Symbol+";side="+side+";volume="+volume+";entry="+entry+";sl="+sl+";tp="+tp;
-        gatewayPrefs.edit().putString("next",cmd).putFloat("lot_"+mt5Symbol,(float)volume)\n            .putString("order_status_id",id).putString("order_status","QUEUED")\n            .putString("order_status_detail","Menunggu EA MT5 mengambil perintah")\n            .putLong("order_status_at",System.currentTimeMillis()).apply();
+        gatewayPrefs.edit().putString("next",cmd).putFloat("lot_"+mt5Symbol,(float)volume)
+            .putString("order_status_id",id).putString("order_status","QUEUED")
+            .putString("order_status_detail","Menunggu EA MT5 mengambil perintah")
+            .putLong("order_status_at",System.currentTimeMillis()).apply();
         HistoryStore.add(this,"PENDING",side,entry,sl,tp,tp,lastSignal==null?0:lastSignal.confidence);
         AppLog.add(this,"ORDER","queued "+cmd);notifyLocal("MT5 "+side,"Entry queued for demo EA");
         Toast.makeText(this,"Entry queued • menunggu konfirmasi EA MT5",Toast.LENGTH_SHORT).show();
