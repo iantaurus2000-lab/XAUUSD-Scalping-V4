@@ -111,8 +111,12 @@ public final class GatewayService extends Service {
         try{
             long queuedAt=Long.parseLong(queuedId);
             if(System.currentTimeMillis()-queuedAt>120000L){
-                p.edit().remove("next").apply();
-                AppLog.add(this,"ORDER","expired stale LIMIT command; not sent to EA");
+                p.edit().remove("next")
+                    .putString("order_status_id",queuedId)
+                    .putString("order_status","EXPIRED")
+                    .putString("order_status_detail","Perintah kedaluwarsa setelah 120 detik; tidak dikirim ke EA")
+                    .putLong("order_status_at",System.currentTimeMillis()).apply();
+                AppLog.add(this,"ORDER","EXPIRED id="+queuedId+" stale LIMIT command not sent to EA");
                 return "";
             }
         }catch(Exception ignored){}
@@ -121,13 +125,20 @@ public final class GatewayService extends Service {
 
     private synchronized String ack(String id,String result){
         if(id==null||id.isEmpty())return "ACK ERROR";
-        String current=getPending();
+        SharedPreferences p=getSharedPreferences("rayyan4_gateway",0);
+        String current=p.getString("next","");
         String currentId=field(current,"id");
         if(id.equals(currentId)){
-            getSharedPreferences("rayyan4_gateway",0).edit().remove("next").apply();
-            AppLog.add(this,"MT5","ACK id="+id+" result="+result);
+            String safeResult=(result==null||result.isEmpty())?"UNKNOWN":result;
+            p.edit().remove("next")
+                .putString("order_status_id",id)
+                .putString("order_status",safeResult)
+                .putString("order_status_detail","Hasil diterima dari EA MT5")
+                .putLong("order_status_at",System.currentTimeMillis()).apply();
+            AppLog.add(this,"MT5","ACK id="+id+" result="+safeResult);
             return "ACK OK";
         }
+        AppLog.add(this,"MT5","ACK STALE id="+id+" current="+currentId);
         return "ACK STALE";
     }
 
