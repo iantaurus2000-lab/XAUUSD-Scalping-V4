@@ -272,26 +272,39 @@ public class MainActivity extends Activity {
     }
 
     void executeLimitForSide(String requestedSide){
-        if(chart==null || chart.isEmpty() || m5Data==null || m5Data.length<30){
-            Toast.makeText(this,"Data M1/M5 belum siap",Toast.LENGTH_SHORT).show();
-            return;
+        // Guard the entire button path: malformed live candle/signal data must
+        // show an error instead of terminating MainActivity.
+        try {
+            if(chart==null || chart.isEmpty() || m5Data==null || m5Data.length<30){
+                Toast.makeText(this,"Data M1/M5 belum siap",Toast.LENGTH_SHORT).show();
+                return;
+            }
+            Candle[] liveM1=chart.getDataSnapshot();
+            if(liveM1==null || liveM1.length<30){
+                Toast.makeText(this,"Data candle M1 belum cukup",Toast.LENGTH_SHORT).show();
+                return;
+            }
+            SignalResult s=SignalEngine.evaluate(liveM1,m5Data,chart.getBid(),chart.getAsk());
+            if(s==null || (!"BUY".equals(s.side)&&!"SELL".equals(s.side)) || s.entry<=0 || s.sl<=0 || s.tp1<=0){
+                Toast.makeText(this,"Belum ada setup valid • order tidak dikirim",Toast.LENGTH_SHORT).show();
+                return;
+            }
+            lastSignal=s;
+            if(!requestedSide.equals(s.side)){
+                Toast.makeText(this,"Sinyal aktif "+s.side+" • tombol "+requestedSide+" tidak dikirim",Toast.LENGTH_LONG).show();
+                return;
+            }
+            double lot=readQuickLot();
+            if(lot<=0)return;
+            String orderSide="BUY".equals(requestedSide)?"BUY_LIMIT":"SELL_LIMIT";
+            // queueLimit validates the LIMIT price against current bid/ask and
+            // reports a rejected/stale setup without placing a duplicate.
+            queueLimit(orderSide,lot,s.entry,s.sl,s.tp2>0?s.tp2:s.tp1);
+            startGateway();
+        } catch (Throwable e) {
+            try { AppLog.add(this,"CRASH_GUARD","LIMIT "+requestedSide+" "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage())); } catch(Throwable ignored) {}
+            try { Toast.makeText(this,"LIMIT gagal diproses • APK tetap dibuka. Periksa Log.",Toast.LENGTH_LONG).show(); } catch(Throwable ignored) {}
         }
-        Candle[] liveM1=chart.getDataSnapshot();
-        SignalResult s=SignalEngine.evaluate(liveM1,m5Data,chart.getBid(),chart.getAsk());
-        lastSignal=s;
-        if(s==null || (!"BUY".equals(s.side)&&!"SELL".equals(s.side)) || s.entry<=0 || s.sl<=0 || s.tp1<=0){
-            Toast.makeText(this,"Belum ada setup valid • order tidak dikirim",Toast.LENGTH_SHORT).show();
-            return;
-        }
-        if(!requestedSide.equals(s.side)){
-            Toast.makeText(this,"Sinyal aktif "+s.side+" • tombol "+requestedSide+" tidak dikirim",Toast.LENGTH_LONG).show();
-            return;
-        }
-        startGateway();
-        String orderSide="BUY".equals(requestedSide)?"BUY_LIMIT":"SELL_LIMIT";
-        double lot=readQuickLot();
-        if(lot<=0)return;
-        queueLimit(orderSide,lot,s.entry,s.sl,s.tp2>0?s.tp2:s.tp1);
     }
 
     void executeCurrentSignal(){
