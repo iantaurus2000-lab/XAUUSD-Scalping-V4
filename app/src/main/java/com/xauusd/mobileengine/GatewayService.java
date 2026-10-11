@@ -111,11 +111,11 @@ public final class GatewayService extends Service {
         String queuedId=field(cmd,"id");
         try{
             long queuedAt=Long.parseLong(queuedId);
-            if(System.currentTimeMillis()-queuedAt>120000L){
+            if(System.currentTimeMillis()-queuedAt>15000L){
                 p.edit().remove("next")
                     .putString("order_status_id",queuedId)
                     .putString("order_status","EXPIRED")
-                    .putString("order_status_detail","Tidak ada ACK MT5 selama 120 detik; periksa tab Trade dan Experts MT5 sebelum mengirim ulang")
+                    .putString("order_status_detail","Perintah LIMIT kedaluwarsa setelah 15 detik; cek tab Trade dan Experts MT5 sebelum mengirim ulang")
                     .putLong("order_status_at",System.currentTimeMillis()).apply();
                 AppLog.add(this,"ORDER","EXPIRED id="+queuedId+" stale LIMIT command not sent to EA");
                 return "";
