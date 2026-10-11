@@ -155,7 +155,7 @@ public class MainActivity extends Activity {
     LinearLayout priceBox(){
         LinearLayout b=new LinearLayout(this);b.setOrientation(LinearLayout.VERTICAL);b.setPadding(2,2,2,2);
         TextView n=tv("PRICE",9);n.setTextColor(Color.rgb(0,210,220));
-        priceView=tv("--",18);priceView.setTypeface(null,Typeface.BOLD);priceView.setTextColor(Color.CYAN);
+        priceView=tv("--",18);priceView.setTypeface(null,Typeface.BOLD);priceView.setTextColor(Color.CYAN);priceView.setPadding(2,0,2,0);priceView.setAutoSizeTextTypeUniformWithConfiguration(12,18,1,android.util.TypedValue.COMPLEX_UNIT_SP);
         b.addView(n,new LinearLayout.LayoutParams(-1,20));
         b.addView(priceView,new LinearLayout.LayoutParams(-1,34));
         return b;
@@ -343,6 +343,8 @@ public class MainActivity extends Activity {
                 String next=markets[which];
                 if(next.equals(selectedMarket)){dialog.dismiss();return;}
                 selectedMarket=next;
+                lastHeaderPrice=Double.NaN;
+                if(priceView!=null){priceView.setText("--");priceView.setTextColor(Color.CYAN);}
                 prefs.edit().putString("market",selectedMarket).apply();
                 if(marketTitle!=null)marketTitle.setText(selectedMarket);
                 if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));
