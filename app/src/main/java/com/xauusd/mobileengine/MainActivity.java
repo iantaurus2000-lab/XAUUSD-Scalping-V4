@@ -122,9 +122,9 @@ public class MainActivity extends Activity {
         LinearLayout levels=new LinearLayout(this);levels.setPadding(2,2,2,0);
         String[] names={"Entry","SL","TP1","TP2"};
         for(String n:names){
-            TextView v=tv(n+"\n--",12);v.setGravity(Gravity.CENTER);v.setIncludeFontPadding(false);v.setPadding(1,0,1,0);v.setAutoSizeTextTypeUniformWithConfiguration(10,12,1,android.util.TypedValue.COMPLEX_UNIT_SP);
+            TextView v=tv(n+"\n--",11);v.setGravity(Gravity.CENTER);v.setIncludeFontPadding(false);v.setMaxLines(2);v.setPadding(1,2,1,2);v.setAutoSizeTextTypeUniformWithConfiguration(10,12,1,android.util.TypedValue.COMPLEX_UNIT_SP);
             if(n.equals("Entry"))entryView=v;else if(n.equals("SL"))slView=v;else if(n.equals("TP1"))tp1View=v;else tp2View=v;
-            levels.addView(v,new LinearLayout.LayoutParams(0,46,1));
+            levels.addView(v,new LinearLayout.LayoutParams(0,54,1));
         }
         card.addView(levels);
         root.addView(card,new LinearLayout.LayoutParams(-1,LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -491,7 +491,7 @@ public class MainActivity extends Activity {
 
     double minLotForSymbol(String symbol){
         if("ETHUSDm".equalsIgnoreCase(symbol))return 0.10; // confirmed by current Exness MT5 log
-        if("BTCUSDm".equalsIgnoreCase(symbol))return 0.01;
+        if("BTCUSDm".equalsIgnoreCase(symbol))return 0.10; // BTC minimum confirmed from MT5 log
         return 0.01; // XAUUSDm default profile; MT5 EA validates final symbol rules
     }
 
