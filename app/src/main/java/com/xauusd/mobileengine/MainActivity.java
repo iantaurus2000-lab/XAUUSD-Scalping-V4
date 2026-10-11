@@ -615,14 +615,14 @@ public class MainActivity extends Activity {
             for(String part:existing.split(";")) if(part.startsWith("id=")){existingId=part.substring(3);break;}
             long existingAt=0L;
             try{existingAt=Long.parseLong(existingId);}catch(Exception ignored){}
-            if(existingAt>0L && System.currentTimeMillis()-existingAt>120000L){
+            if(existingAt>0L && System.currentTimeMillis()-existingAt>15000L){
                 gatewayPrefs.edit().remove("next")
                     .putString("order_status_id",existingId)
                     .putString("order_status","EXPIRED")
-                    .putString("order_status_detail","ACK tidak diterima dalam 120 detik; periksa tab Trade dan Experts MT5 untuk memastikan status order lama sebelum mengirim ulang")
+                    .putString("order_status_detail","Perintah belum diambil EA dalam 15 detik; periksa tab Trade dan Experts MT5 sebelum mengirim ulang")
                     .putLong("order_status_at",System.currentTimeMillis()).apply();
                 AppLog.add(this,"ORDER","stale queue cleared without ACK id="+existingId+"; verify MT5 before resending");
-                Toast.makeText(this,"Order lama tanpa ACK >120 detik. Cek MT5 Trade/Experts sebelum entry baru.",Toast.LENGTH_LONG).show();
+                Toast.makeText(this,"Perintah kedaluwarsa >15 detik. Cek MT5 Trade/Experts sebelum entry baru.",Toast.LENGTH_LONG).show();
                 return false;
             }
             AppLog.add(this,"ORDER","queue busy; refusing to overwrite unacknowledged command");
