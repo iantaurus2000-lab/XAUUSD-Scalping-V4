@@ -115,8 +115,11 @@ public class MainActivity extends Activity {
         side.setBackground(roundBg(Color.rgb(110,115,125),1000));
         side.setOnClickListener(v->Toast.makeText(this,"Gunakan tombol BUY LIMIT / SELL LIMIT untuk mengirim order",Toast.LENGTH_SHORT).show());
         top.addView(side,new LinearLayout.LayoutParams(30,30));
-        signalSummary=tv("Menunggu konfirmasi 0/5\nWick Rejection + Liquidity Sweep + BOS",10);signalSummary.setIncludeFontPadding(false);
-        top.addView(signalSummary,new LinearLayout.LayoutParams(0,44,1));
+        signalSummary=tv("Menunggu wick valid • 0/5\nWick Rejection + Liquidity Sweep + BOS",10);
+        signalSummary.setIncludeFontPadding(false);signalSummary.setMaxLines(2);
+        signalSummary.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        signalSummary.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);
+        top.addView(signalSummary,new LinearLayout.LayoutParams(0,50,1));
         scoreView=tv("CONFIDENCE\n--/5",10);scoreView.setGravity(Gravity.CENTER);scoreView.setIncludeFontPadding(false);scoreView.setPadding(0,0,0,0);scoreView.setSingleLine(false);top.addView(scoreView,new LinearLayout.LayoutParams(76,44));
         card.addView(top);
 
@@ -338,7 +341,7 @@ public class MainActivity extends Activity {
         scoreView.setText("CONFIDENCE\n"+s.confidence+"/5");
         scoreView.setTextSize(10);
         scoreView.setTextColor(s.confidence>=4?Color.YELLOW:Color.WHITE);
-        signalSummary.setText(("BUY".equals(s.side)||"SELL".equals(s.side)?("M1 "+s.side+" • M5 "+s.m5Bias):("Menunggu konfirmasi "+s.confidence+"/5"))+"\n"+s.setup);
+        signalSummary.setText(("BUY".equals(s.side)||"SELL".equals(s.side)?("M1 "+s.side+" • M5 "+s.m5Bias):("Menunggu wick valid • "+s.confidence+"/5"))+"\n"+s.setup);
         entryView.setText("Entry\n"+price(s.entry));slView.setText("SL\n"+price(s.sl));tp1View.setText("TP1\n"+price(s.tp1));tp2View.setText("TP2\n"+price(s.tp2));
 
         View v=((ViewGroup)scoreView.getParent()).getChildAt(0);
@@ -402,17 +405,41 @@ public class MainActivity extends Activity {
     @Override protected void onPause(){ visible=false; super.onPause(); }
 
     void showMenu(View anchor){
-        String[] items={"Market","Chart","Indicators","Signal","Orders","Strategy","Risk Management","Telegram","MT5 / EA","Settings"};
+        String[] items={"Market","Chart","Indicators","Signal","Gateway / Queue-ACK","Orders","Strategy","Risk Management","Telegram","MT5 / EA","Settings"};
         PopupWindow pop=new PopupWindow(this);LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(8,8,8,8);box.setBackgroundColor(Color.rgb(5,24,42));
         for(String s:items){
             Button b=btn(s);b.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);b.setTextSize(14);box.addView(b,new LinearLayout.LayoutParams(270,54));
             b.setOnClickListener(v->{pop.dismiss();
-                if("Market".equals(s))showMarketDialog();else if("Chart".equals(s)){chart.goLive();}else if("Indicators".equals(s))showIndicatorDialog();else if("Signal".equals(s))showSignalDialog();else if("Telegram".equals(s))showTelegramDialog();else if("MT5 / EA".equals(s))showMt5Dialog();
+                if("Market".equals(s))showMarketDialog();else if("Chart".equals(s)){chart.goLive();}else if("Indicators".equals(s))showIndicatorDialog();else if("Signal".equals(s))showSignalDialog();else if("Gateway / Queue-ACK".equals(s))showGatewayAckDiagnostics();else if("Telegram".equals(s))showTelegramDialog();else if("MT5 / EA".equals(s))showMt5Dialog();
                 else if("Orders".equals(s)||"Settings".equals(s))showLogDialog(s);else Toast.makeText(this,s,Toast.LENGTH_SHORT).show();
             });
         }
         pop.setContentView(box);pop.setWidth(278);pop.setHeight(WindowManager.LayoutParams.WRAP_CONTENT);
         pop.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));pop.setOutsideTouchable(true);pop.setFocusable(true);pop.setElevation(16);pop.showAsDropDown(anchor,-204,4);
+    }
+
+    void showGatewayAckDiagnostics(){
+        SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        long now=System.currentTimeMillis();
+        long lastPoll=p.getLong("ea_last_poll_ms",0L);
+        long age=lastPoll>0L?Math.max(0L,(now-lastPoll)/1000L):-1L;
+        String orderId=p.getString("order_status_id","");
+        String orderStatus=p.getString("order_status","NONE");
+        String detail=p.getString("order_status_detail","Belum ada hasil order/ACK tersimpan");
+        String queue=p.getString("next","");
+        boolean eaOnline=lastPoll>0L && now-lastPoll<=90000L;
+        String msg="GATEWAY: port 8787 berjalan jika tes TCP/HTTP PASS\\n"
+            +"EA POLLING: "+(eaOnline?"PASS":"BELUM TERDETEKSI")+(age>=0?" • poll "+age+" dtk lalu":"")+
+            "\\nQUEUE: "+(queue==null||queue.trim().isEmpty()?"KOSONG":"ADA PERINTAH MENUNGGU")+
+            "\\nACK / ORDER TERAKHIR: "+orderStatus+
+            (orderId.isEmpty()?"":"\\nID: "+orderId)+
+            (detail.isEmpty()?"":"\\nDetail: "+detail)+
+            "\\n\\nPemeriksaan ini TIDAK mengirim order atau order tes.";
+        TextView v=tv(msg,13);v.setTextIsSelectable(true);v.setGravity(Gravity.TOP|Gravity.START);v.setPadding(18,12,18,12);
+        new AlertDialog.Builder(this).setTitle("RAYYAN4 • GATEWAY / QUEUE / ACK")
+            .setView(v).setPositiveButton("PERIKSA LAGI",(d,w)->showGatewayAckDiagnostics())
+            .setNegativeButton("TUTUP",null).show();
+        AppLog.add(this,"DIAGNOSTIC","Gateway/ACK status checked; EA online="+eaOnline+" ageSec="+age+" order="+orderStatus);
     }
 
     String marketDescription(String market){
