@@ -19,6 +19,7 @@ public class MainActivity extends Activity {
     private TextView priceView, spreadView, status, signalSummary, scoreView, entryView, slView, tp1View, tp2View, marketTitle, marketSubtitle;
     private double lastHeaderPrice=Double.NaN;
     private Button signalSideButton;
+    private EditText quickLotInput;
     private ScheduledExecutorService ex;
     private SharedPreferences prefs, tgPrefs;
     private boolean telegramEnabled;
@@ -134,6 +135,20 @@ public class MainActivity extends Activity {
         limitActions.setGravity(Gravity.CENTER_VERTICAL);
         limitActions.setPadding(5,3,5,3);
         limitActions.setBackgroundColor(Color.rgb(3,14,24));
+        quickLotInput=new EditText(this);
+        quickLotInput.setSingleLine(true);
+        quickLotInput.setTextSize(12);
+        quickLotInput.setTextColor(Color.WHITE);
+        quickLotInput.setHintTextColor(Color.LTGRAY);
+        quickLotInput.setHint("LOT");
+        quickLotInput.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        quickLotInput.setText(lotText(lotForMarket()));
+        quickLotInput.setSelectAllOnFocus(true);
+        quickLotInput.setBackground(roundBg(Color.rgb(12,35,52),8));
+        quickLotInput.setPadding(8,0,8,0);
+        limitActions.addView(quickLotInput,new LinearLayout.LayoutParams(62,40));
+        View lotGap=new View(this);
+        limitActions.addView(lotGap,new LinearLayout.LayoutParams(5,1));
         Button buyLimitBtn=btn("● BUY LIMIT");
         buyLimitBtn.setTextSize(12);
         buyLimitBtn.setTypeface(null,Typeface.BOLD);
@@ -274,7 +289,8 @@ public class MainActivity extends Activity {
         }
         startGateway();
         String orderSide="BUY".equals(requestedSide)?"BUY_LIMIT":"SELL_LIMIT";
-        double lot=lotForMarket();
+        double lot=readQuickLot();
+        if(lot<=0)return;
         queueLimit(orderSide,lot,s.entry,s.sl,s.tp2>0?s.tp2:s.tp1);
     }
 
@@ -502,6 +518,24 @@ public class MainActivity extends Activity {
     }
 
     String lotText(double lot){return String.format(Locale.US,"%.2f",lot);}
+
+    double readQuickLot(){
+        try{
+            double lot=Double.parseDouble(quickLotInput.getText().toString().trim());
+            double min=minLotForSymbol(mt5SymbolForMarket(selectedMarket));
+            if(lot+1e-8<min){
+                Toast.makeText(this,"Lot minimum "+mt5SymbolForMarket(selectedMarket)+" = "+lotText(min),Toast.LENGTH_LONG).show();
+                quickLotInput.setText(lotText(min));
+                return -1;
+            }
+            getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit()
+                .putFloat("lot_"+mt5SymbolForMarket(selectedMarket),(float)lot).apply();
+            return lot;
+        }catch(Exception e){
+            Toast.makeText(this,"Isi lot yang valid terlebih dahulu",Toast.LENGTH_SHORT).show();
+            return -1;
+        }
+    }
 
     boolean queueLimit(String side,double volume,double entry,double sl,double tp){
         try {
