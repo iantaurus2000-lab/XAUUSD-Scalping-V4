@@ -538,6 +538,7 @@ public class MainActivity extends Activity {
         }
         TextView queuedStatus=tv("",11);queuedStatus.setTextColor(green);queuedStatus.setPadding(4,6,4,2);
         box.addView(mode);box.addView(modeHint);box.addView(auto);box.addView(side);box.addView(vol);box.addView(en);box.addView(sl);box.addView(tp);box.addView(queuedStatus);
+        final String[] queuedOrderId={""};
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("MT5 / EA • DEMO").setView(box)
             .setNegativeButton("TUTUP",null).setNeutralButton("SIMPAN MODE",null).setPositiveButton("KIRIM LIMIT DEMO",null).create();
         dialog.setOnShowListener(v->{
@@ -558,7 +559,10 @@ public class MainActivity extends Activity {
                     Double.parseDouble(sl.getText().toString().trim()),
                     Double.parseDouble(tp.getText().toString().trim()));
                 if(queued){
-                    queuedStatus.setText("MASUK ANTREAN • menunggu respons EA/ACK MT5. Ini belum berarti order terpasang.");
+                    queuedOrderId[0]=gatewayPrefs.getString("next","");
+                    int idAt=queuedOrderId[0].indexOf("id=");
+                    if(idAt>=0){int idEnd=queuedOrderId[0].indexOf(';',idAt);queuedOrderId[0]=queuedOrderId[0].substring(idAt+3,idEnd<0?queuedOrderId[0].length():idEnd);}
+                    queuedStatus.setText("DIANTREKAN • menunggu EA MT5, batas 120 detik. Belum berarti order terpasang.");
                     dialog.getButton(AlertDialog.BUTTON_POSITIVE).setText("SUDAH DIANTREKAN");
                     dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
                 }
@@ -569,6 +573,35 @@ public class MainActivity extends Activity {
             });
         });
         dialog.show();
+        android.os.Handler ackHandler=new android.os.Handler(android.os.Looper.getMainLooper());
+        Runnable ackWatcher=new Runnable(){
+            @Override public void run(){
+                if(!dialog.isShowing())return;
+                if(!queuedOrderId[0].isEmpty()){
+                    SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+                    String statusId=p.getString("order_status_id","");
+                    if(queuedOrderId[0].equals(statusId)){
+                        String result=p.getString("order_status","UNKNOWN");
+                        String detail=p.getString("order_status_detail","");
+                        if("EXECUTED".equals(result)){
+                            queuedStatus.setTextColor(green);
+                            queuedStatus.setText("ORDER TERPASANG • MT5 mengonfirmasi order diterima.");
+                        }else if("EXPIRED".equals(result)){
+                            queuedStatus.setTextColor(red);
+                            queuedStatus.setText("KEDALUWARSA • order tidak dikirim ke MT5. Kirim ulang hanya setelah cek harga.");
+                        }else{
+                            queuedStatus.setTextColor(red);
+                            queuedStatus.setText("ORDER GAGAL: "+result+" • "+detail+" • periksa Experts log MT5.");
+                        }
+                    }else{
+                        queuedStatus.setTextColor(Color.rgb(255,190,70));
+                        queuedStatus.setText("DIANTREKAN • menunggu EA MT5 (maks. 120 detik); belum terpasang.");
+                    }
+                }
+                ackHandler.postDelayed(this,1000L);
+            }
+        };
+        ackHandler.post(ackWatcher);
     }
 
     @Override protected void onDestroy(){if(ex!=null)ex.shutdownNow();super.onDestroy();}
