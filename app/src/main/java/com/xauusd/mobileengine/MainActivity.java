@@ -504,10 +504,10 @@ public class MainActivity extends Activity {
         ArrayAdapter<String> modeAdapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,modes);
         mode.setAdapter(modeAdapter);
         mode.setSelection("READY".equals(gatewayPrefs.getString("operation_mode","REST"))?1:0);
+        String selectedMt5Symbol=mt5SymbolForMarket(selectedMarket);
         TextView modeHint=tv("DEMO ONLY • "+selectedMt5Symbol+" min lot "+lotText(minLotForSymbol(selectedMt5Symbol))+" • Winlator + MT5 + EA aktif",11);
         modeHint.setPadding(4,8,4,8);
         EditText side=new EditText(this);side.setHint("BUY_LIMIT / SELL_LIMIT");
-        String selectedMt5Symbol=mt5SymbolForMarket(selectedMarket);
         EditText vol=new EditText(this);vol.setHint("Lot • minimum "+lotText(minLotForSymbol(selectedMt5Symbol)));vol.setInputType(8194);
         vol.setText(lotText(lotForMarket()));
         EditText en=new EditText(this);en.setHint("Entry");en.setInputType(8194);
