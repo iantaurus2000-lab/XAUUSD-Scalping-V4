@@ -581,7 +581,10 @@ public class MainActivity extends Activity {
                     if(queuedOrderId[0].equals(statusId)){
                         String result=p.getString("order_status","UNKNOWN");
                         String detail=p.getString("order_status_detail","");
-                        if("EXECUTED".equals(result)){
+                        if("QUEUED".equals(result)){
+                            queuedStatus.setTextColor(Color.rgb(255,190,70));
+                            queuedStatus.setText("DIANTREKAN • menunggu EA MT5 (maks. 120 detik); belum terpasang.");
+                        }else if("EXECUTED".equals(result)){
                             queuedStatus.setTextColor(green);
                             queuedStatus.setText("ORDER TERPASANG • MT5 mengonfirmasi order diterima.");
                         }else if("EXPIRED".equals(result)){
