@@ -30,7 +30,7 @@ void OnTimer(){
    if(!received || code!=200){
       if(TimeCurrent()-lastDiag>=10){
          lastDiag=TimeCurrent();
-         Print("RAYYAN4 GATEWAY SOCKET ERROR transport=",received,
+         Print("RAYYAN4 GATEWAY HTTP ERROR transport=",received,
                " code=",code," err=",GetLastError()," detail=",transportDetail,
                " gateway=",GatewayUrl);
       }
@@ -185,22 +185,24 @@ bool gatewayGet(string path,int &httpCode,string &body,string &diagnostic){
    // with error 4014. The base URL must be added to Tools > Options >
    // Expert Advisors > Allow WebRequest for listed URL.
    string url=base+path;
-   string requestHeaders="User-Agent: Rayyan4GatewayEA\r\nConnection: close\r\n";
    string responseHeaders="";
    char requestData[];
    char responseData[];
-   ArrayResize(requestData,0);
+   // Use WebRequest's cookie/referer overload with an explicit zero-length GET body.
+   // This is more compatible with MetaTrader builds that reject an empty array in
+   // the headers overload with internal error 1001 / runtime error 4006.
    ResetLastError();
-   int status=WebRequest("GET",url,requestHeaders,2500,requestData,responseData,responseHeaders);
-   if(status==-1){
-      int err=GetLastError();
-      diagnostic="WebRequest failed err="+IntegerToString(err)+
-                 "; allow URL "+base+" in MT5 Expert Advisors options";
+   int status=WebRequest("GET",url,"","",2500,requestData,0,responseData,responseHeaders);
+   int err=GetLastError();
+   if(status==-1 || status==1001){
+      diagnostic="WebRequest has no HTTP connection status="+IntegerToString(status)+
+                 " err="+IntegerToString(err)+"; allow URL "+base+
+                 " in MT5 Expert Advisors options and check Winlator LAN reachability";
       return false;
    }
    httpCode=status;
    body=CharArrayToString(responseData,0,ArraySize(responseData),CP_UTF8);
-   return true;
+   return (status>=100 && status<=599);
 }
 
 int headerContentLength(string headers){
@@ -224,7 +226,7 @@ bool sendAck(string id,string resultText,string detail){
    if(received && code==200 && (StringFind(body,"ACK OK")>=0 || StringFind(body,"ACK STALE")>=0)) return true;
    if(TimeCurrent()-lastDiag>=10){
       lastDiag=TimeCurrent();
-      Print("RAYYAN4 ACK SOCKET RETRY id=",id," transport=",received," code=",code,
+      Print("RAYYAN4 ACK HTTP RETRY id=",id," transport=",received," code=",code,
             " err=",GetLastError()," detail=",transportDetail," response=",body);
    }
    return false;
