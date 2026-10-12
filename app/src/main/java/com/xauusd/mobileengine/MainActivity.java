@@ -369,6 +369,7 @@ public class MainActivity extends Activity {
         // show an error instead of terminating MainActivity.
         try {
             if(chart==null || chart.isEmpty() || m5Data==null || m5Data.length<30){
+                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT: data M1/M5 belum siap");
                 Toast.makeText(this,"Data M1/M5 belum siap",Toast.LENGTH_SHORT).show();
                 return;
             }
@@ -379,11 +380,13 @@ public class MainActivity extends Activity {
             }
             SignalResult s=SignalEngine.evaluate(liveM1,m5Data,chart.getBid(),chart.getAsk());
             if(s==null || (!"BUY".equals(s.side)&&!"SELL".equals(s.side)) || s.entry<=0 || s.sl<=0 || s.tp1<=0){
+                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT: sinyal belum valid; side="+(s==null?"null":s.side));
                 Toast.makeText(this,"Belum ada setup valid • order tidak dikirim",Toast.LENGTH_SHORT).show();
                 return;
             }
             lastSignal=s;
             if(!requestedSide.equals(s.side)){
+                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT blocked: sinyal aktif "+s.side+"; tidak mengirim order berlawanan");
                 Toast.makeText(this,"Sinyal aktif "+s.side+" • tombol "+requestedSide+" tidak dikirim",Toast.LENGTH_LONG).show();
                 return;
             }
@@ -736,7 +739,7 @@ public class MainActivity extends Activity {
             return false;
         }
         String id=Long.toString(System.currentTimeMillis());
-        String cmd="id="+id+";type=LIMIT;symbol="+mt5Symbol+";side="+side+";volume="+volume+";entry="+entry+";sl="+sl+";tp="+tp;
+        String cmd="id="+id+";type=LIMIT;symbol="+mt5Symbol+";side="+side+";volume="+volume+";entry="+entry+";sl="+sl+";tp="+tp+";refBid="+chart.getBid()+";refAsk="+chart.getAsk();
         gatewayPrefs.edit().putString("next",cmd).putFloat("lot_"+mt5Symbol,(float)volume)
             .putString("order_status_id",id).putString("order_status","QUEUED")
             .putString("order_status_detail","Menunggu EA MT5 mengambil perintah")
@@ -809,7 +812,7 @@ public class MainActivity extends Activity {
                     Double.parseDouble(tp.getText().toString().trim()));
                 if(queued){
                     queuedOrderId[0]=gatewayPrefs.getString("order_status_id","");
-                    queuedStatus.setText("DIANTREKAN • menunggu EA MT5, batas 120 detik. Belum berarti order terpasang.");
+                    queuedStatus.setText("DIANTREKAN • menunggu EA MT5, batas 15 detik. Belum berarti order terpasang.");
                     dialog.getButton(AlertDialog.BUTTON_POSITIVE).setText("SUDAH DIANTREKAN");
                     dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
                 }
@@ -835,7 +838,7 @@ public class MainActivity extends Activity {
                         String detail=p.getString("order_status_detail","");
                         if("QUEUED".equals(result)){
                             queuedStatus.setTextColor(Color.rgb(255,190,70));
-                            queuedStatus.setText("DIANTREKAN • menunggu EA MT5 (maks. 120 detik); belum terpasang.");
+                            queuedStatus.setText("DIANTREKAN • menunggu EA MT5 (maks. 15 detik); belum terpasang.");
                         }else if("EXECUTED".equals(result)){
                             queuedStatus.setTextColor(green);
                             queuedStatus.setText("ORDER TERPASANG • MT5 mengonfirmasi order diterima.");
@@ -848,7 +851,7 @@ public class MainActivity extends Activity {
                         }
                     }else{
                         queuedStatus.setTextColor(Color.rgb(255,190,70));
-                        queuedStatus.setText("DIANTREKAN • menunggu EA MT5 (maks. 120 detik); belum terpasang.");
+                        queuedStatus.setText("DIANTREKAN • menunggu EA MT5 (maks. 15 detik); belum terpasang.");
                     }
                 }
                 ackHandler.postDelayed(this,1000L);
