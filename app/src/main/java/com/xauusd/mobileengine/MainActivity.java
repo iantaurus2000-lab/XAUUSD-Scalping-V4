@@ -48,8 +48,33 @@ public class MainActivity extends Activity {
         GradientDrawable g=new GradientDrawable();g.setColor(c);g.setCornerRadius(r);g.setStroke(1,Color.rgb(22,104,157));return g;
     }
 
+    private void installCrashDiagnostics(){
+        try {
+            final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
+            Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
+                try {
+                    StringWriter sw = new StringWriter();
+                    error.printStackTrace(new PrintWriter(sw));
+                    getSharedPreferences("rayyan4_crashlog", MODE_PRIVATE).edit()
+                        .putString("last_crash_time", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(new java.util.Date()))
+                        .putString("last_crash_thread", thread == null ? "unknown" : thread.getName())
+                        .putString("last_crash_stack", sw.toString())
+                        .apply();
+                } catch (Throwable ignored) {}
+                if (previous != null) previous.uncaughtException(thread, error);
+            });
+        } catch (Throwable ignored) {}
+    }
+
     @Override public void onCreate(Bundle b){
         super.onCreate(b);
+        installCrashDiagnostics();
+        try {
+            getSharedPreferences("rayyan4_crashlog", MODE_PRIVATE).edit()
+                .putString("last_action", "MainActivity onCreate")
+                .putString("last_action_time", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(new java.util.Date()))
+                .apply();
+        } catch (Throwable ignored) {}
         getWindow().setStatusBarColor(Color.rgb(1,7,13));
         prefs=getSharedPreferences("rayyan4_indicators",MODE_PRIVATE);
         tgPrefs=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE);
@@ -167,8 +192,8 @@ public class MainActivity extends Activity {
         View actionGap=new View(this);
         limitActions.addView(actionGap,new LinearLayout.LayoutParams(7,1));
         limitActions.addView(sellLimitBtn,new LinearLayout.LayoutParams(0,40,1));
-        buyLimitBtn.setOnClickListener(v->executeLimitForSide("BUY"));
-        sellLimitBtn.setOnClickListener(v->executeLimitForSide("SELL"));
+        buyLimitBtn.setOnClickListener(v->{ recordDiagnosticAction("BUY LIMIT button tapped"); executeLimitForSide("BUY"); });
+        sellLimitBtn.setOnClickListener(v->{ recordDiagnosticAction("SELL LIMIT button tapped"); executeLimitForSide("SELL"); });
         root.addView(limitActions,new LinearLayout.LayoutParams(-1,46));
         card.setOnClickListener(v->executeCurrentSignal());
         signalSummary.setOnClickListener(v->executeCurrentSignal());
@@ -305,6 +330,16 @@ public class MainActivity extends Activity {
                 }
             },15,15,TimeUnit.SECONDS);
         }
+    }
+
+    private void recordDiagnosticAction(String action){
+        try {
+            getSharedPreferences("rayyan4_crashlog", MODE_PRIVATE).edit()
+                .putString("last_action", action)
+                .putString("last_action_time", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(new java.util.Date()))
+                .apply();
+            AppLog.add(this,"DIAGNOSTIC",action);
+        } catch (Throwable ignored) {}
     }
 
     void executeLimitForSide(String requestedSide){
