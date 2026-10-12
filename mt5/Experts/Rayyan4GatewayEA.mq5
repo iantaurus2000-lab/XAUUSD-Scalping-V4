@@ -30,7 +30,7 @@ void OnTimer(){
    if(code!=200){
       if(TimeCurrent()-lastDiag>=10){
          lastDiag=TimeCurrent();
-         Print("RAYYAN4 GATEWAY ERROR HTTP=",code," err=",GetLastError()," URL=",url);
+         Print("RAYYAN4 GATEWAY ERROR HTTP=",code," err=",GetLastError()," URL=",url," headers=",headers," body=",CharArrayToString(result));
       }
       return;
    }
@@ -117,21 +117,46 @@ void OnTimer(){
       resultText="STOP_DISTANCE";
       detail=StringFormat("entry-sl=%.0f min=%d points",MathAbs(entry-sl)/point,stopsLevel);
    }else{
-      trade.SetAsyncMode(false);
-      trade.SetTypeFillingBySymbol(sym);
-      if(side=="BUY_LIMIT") ok=trade.BuyLimit(vol,entry,sym,sl,tp,ORDER_TIME_GTC,0,"RAYYAN4");
-      else if(side=="SELL_LIMIT") ok=trade.SellLimit(vol,entry,sym,sl,tp,ORDER_TIME_GTC,0,"RAYYAN4");
-      else { resultText="BAD_SIDE"; detail=side; }
+      bool terminalConnected=(bool)TerminalInfoInteger(TERMINAL_CONNECTED);
+      bool terminalTradeAllowed=(bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED);
+      bool eaTradeAllowed=(bool)MQLInfoInteger(MQL_TRADE_ALLOWED);
+      bool accountTradeAllowed=(bool)AccountInfoInteger(ACCOUNT_TRADE_ALLOWED);
+      bool accountExpertAllowed=(bool)AccountInfoInteger(ACCOUNT_TRADE_EXPERT);
+      string brokerServer=AccountInfoString(ACCOUNT_SERVER);
+      long accountLogin=AccountInfoInteger(ACCOUNT_LOGIN);
+      Print("RAYYAN4 BROKER CHECK connected=",terminalConnected,
+            " terminalTrade=",terminalTradeAllowed," eaTrade=",eaTradeAllowed,
+            " accountTrade=",accountTradeAllowed," accountExpert=",accountExpertAllowed,
+            " server=",brokerServer," login=",accountLogin);
 
-      uint rc=trade.ResultRetcode();
-      if(side=="BUY_LIMIT" || side=="SELL_LIMIT"){
-         resultText=ok ? "EXECUTED" : "FAILED";
-         detail=trade.ResultRetcodeDescription();
+      if(!terminalConnected){
+         resultText="NO_BROKER_CONNECTION";
+         detail="TERMINAL_CONNECTED=false server="+brokerServer+" login="+IntegerToString((int)accountLogin);
+      }else if(!terminalTradeAllowed || !eaTradeAllowed || !accountTradeAllowed || !accountExpertAllowed){
+         resultText="TRADE_NOT_ALLOWED";
+         detail=StringFormat("terminal=%d ea=%d account=%d expert=%d server=%s",
+            (int)terminalTradeAllowed,(int)eaTradeAllowed,(int)accountTradeAllowed,
+            (int)accountExpertAllowed,brokerServer);
+      }else{
+         trade.SetAsyncMode(false);
+         trade.SetTypeFillingBySymbol(sym);
+         if(side=="BUY_LIMIT") ok=trade.BuyLimit(vol,entry,sym,sl,tp,ORDER_TIME_GTC,0,"RAYYAN4");
+         else if(side=="SELL_LIMIT") ok=trade.SellLimit(vol,entry,sym,sl,tp,ORDER_TIME_GTC,0,"RAYYAN4");
+         else { resultText="BAD_SIDE"; detail=side; }
+
+         uint rc=trade.ResultRetcode();
+         if(side=="BUY_LIMIT" || side=="SELL_LIMIT"){
+            bool brokerAccepted=(rc==TRADE_RETCODE_PLACED || rc==TRADE_RETCODE_DONE);
+            resultText=(ok && brokerAccepted) ? "EXECUTED" : "FAILED";
+            detail=trade.ResultRetcodeDescription()+" retcode="+IntegerToString((int)rc)+
+                   " order="+(string)trade.ResultOrder();
+         }
+         Print("RAYYAN4 TRADE CHECK symbol=",sym," side=",side," vol=",DoubleToString(vol,2),
+               " entry=",DoubleToString(entry,digits)," bid=",DoubleToString(tick.bid,digits),
+               " ask=",DoubleToString(tick.ask,digits)," sl=",DoubleToString(sl,digits),
+               " tp=",DoubleToString(tp,digits)," retcode=",rc," desc=",detail,
+               " connected=",terminalConnected," server=",brokerServer);
       }
-      Print("RAYYAN4 TRADE CHECK symbol=",sym," side=",side," vol=",DoubleToString(vol,2),
-            " entry=",DoubleToString(entry,digits)," bid=",DoubleToString(tick.bid,digits),
-            " ask=",DoubleToString(tick.ask,digits)," sl=",DoubleToString(sl,digits),
-            " tp=",DoubleToString(tp,digits)," retcode=",rc," desc=",detail);
    }
 
    Print("RAYYAN4 id=",id," side=",side," result=",resultText,
