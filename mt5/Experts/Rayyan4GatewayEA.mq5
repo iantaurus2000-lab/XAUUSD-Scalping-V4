@@ -173,112 +173,34 @@ void OnTimer(){
 // Recent MT5 builds have reports of WebRequest returning 1001 / error 5203.
 bool gatewayGet(string path,int &httpCode,string &body,string &diagnostic){
    httpCode=-1; body=""; diagnostic="";
-   if(StringFind(GatewayUrl,"http://")!=0){
-      diagnostic="GatewayUrl must use http://host:port";
-      return false;
-   }
-   string endpoint=StringSubstr(GatewayUrl,7);
-   int slash=StringFind(endpoint,"/");
-   if(slash>=0) endpoint=StringSubstr(endpoint,0,slash);
-   int colon=StringFind(endpoint,":");
-   string host=endpoint;
-   uint port=80;
-   if(colon>=0){
-      host=StringSubstr(endpoint,0,colon);
-      port=(uint)StringToInteger(StringSubstr(endpoint,colon+1));
-   }
-   if(host=="" || port==0){
-      diagnostic="Invalid GatewayUrl host/port";
+   string base=GatewayUrl;
+   while(StringLen(base)>0 && StringSubstr(base,StringLen(base)-1,1)=="/")
+      base=StringSubstr(base,0,StringLen(base)-1);
+   if(StringFind(base,"http://")!=0 && StringFind(base,"https://")!=0){
+      diagnostic="GatewayUrl must start with http:// or https://";
       return false;
    }
 
+   // Use WebRequest rather than SocketConnect: MT5 may reject socket calls
+   // with error 4014. The base URL must be added to Tools > Options >
+   // Expert Advisors > Allow WebRequest for listed URL.
+   string url=base+path;
+   string requestHeaders="User-Agent: Rayyan4GatewayEA\r\nConnection: close\r\n";
+   string responseHeaders="";
+   char requestData[];
+   char responseData[];
+   ArrayResize(requestData,0);
    ResetLastError();
-   int sock=SocketCreate();
-   if(sock==INVALID_HANDLE){
-      diagnostic="SocketCreate failed";
-      return false;
-   }
-   if(!SocketConnect(sock,host,port,1200)){
+   int status=WebRequest("GET",url,requestHeaders,2500,requestData,responseData,responseHeaders);
+   if(status==-1){
       int err=GetLastError();
-      SocketClose(sock);
-      diagnostic="SocketConnect failed err="+IntegerToString(err);
+      diagnostic="WebRequest failed err="+IntegerToString(err)+
+                 "; allow URL "+base+" in MT5 Expert Advisors options";
       return false;
    }
-
-   string request="GET "+path+" HTTP/1.1\r\nHost: "+host+"\r\nUser-Agent: Rayyan4GatewayEA\r\nConnection: close\r\n\r\n";
-   uchar outgoing[];
-   int sendLen=StringToCharArray(request,outgoing,0,WHOLE_ARRAY,CP_UTF8)-1;
-   if(sendLen<=0 || SocketSend(sock,outgoing,(uint)sendLen)!=sendLen){
-      int err=GetLastError();
-      SocketClose(sock);
-      diagnostic="SocketSend failed err="+IntegerToString(err);
-      return false;
-   }
-
-   string raw="";
-   bool complete=false;
-   uint started=GetTickCount();
-   while(GetTickCount()-started<2200 && !IsStopped()){
-      uint available=SocketIsReadable(sock);
-      if(available==0){
-         if(StringLen(raw)>0){
-            int split0=StringFind(raw,"\r\n\r\n");
-            if(split0>=0){
-               string hdr0=StringSubstr(raw,0,split0);
-               int expected0=headerContentLength(hdr0);
-               string body0=StringSubstr(raw,split0+4);
-               if(expected0>=0 && StringLen(body0)>=expected0){
-                  complete=true;
-                  break;
-               }
-            }
-         }
-         Sleep(10);
-         continue;
-      }
-         uchar incoming[];
-      uint wanted=(uint)MathMin(8192.0,(double)available);
-      uint got=SocketRead(sock,incoming,wanted,250);
-      if(got==0){
-         Sleep(10);
-         continue;
-      }
-      raw+=CharArrayToString(incoming,0,(int)got,CP_UTF8);
-
-      int split=StringFind(raw,"\r\n\r\n");
-      if(split>=0){
-         string hdr=StringSubstr(raw,0,split);
-         int expected=headerContentLength(hdr);
-         string responseBody=StringSubstr(raw,split+4);
-         if(expected>=0 && StringLen(responseBody)>=expected){
-            complete=true;
-            break;
-         }
-      }
-      if(StringLen(raw)>16000){
-         diagnostic="HTTP response exceeded 16KB safety limit";
-         break;
-      }
-   }
-   SocketClose(sock);
-
-   int split=StringFind(raw,"\r\n\r\n");
-   if(split<0){
-      if(diagnostic=="") diagnostic="Incomplete HTTP response";
-      return false;
-   }
-   string header=StringSubstr(raw,0,split);
-   string firstLine=StringSubstr(header,0,StringFind(header,"\r\n")>=0?StringFind(header,"\r\n"):StringLen(header));
-   int space=StringFind(firstLine," ");
-   if(space>=0) httpCode=(int)StringToInteger(StringSubstr(firstLine,space+1,3));
-   int expected=headerContentLength(header);
-   body=StringSubstr(raw,split+4);
-   if(expected>=0 && StringLen(body)>expected) body=StringSubstr(body,0,expected);
-   if(!complete && expected>=0 && StringLen(body)<expected){
-      diagnostic="Short HTTP body expected="+IntegerToString(expected)+" got="+IntegerToString(StringLen(body));
-      return false;
-   }
-   return (httpCode>=100);
+   httpCode=status;
+   body=CharArrayToString(responseData,0,ArraySize(responseData),CP_UTF8);
+   return true;
 }
 
 int headerContentLength(string headers){
