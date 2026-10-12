@@ -158,24 +158,54 @@ void OnTimer(){
             (int)terminalTradeAllowed,(int)eaTradeAllowed,(int)accountTradeAllowed,
             (int)accountExpertAllowed,brokerServer);
       }else{
+         // Snapshot the connection immediately before the request. This is a point-in-time
+         // indicator only; the trade server can disconnect between this check and OrderSend.
+         Print("RAYYAN4 SEND PRECHECK time=",TimeToString(TimeCurrent(),TIME_DATE|TIME_SECONDS),
+               " connected=",(bool)TerminalInfoInteger(TERMINAL_CONNECTED),
+               " terminalTrade=",(bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED),
+               " eaTrade=",(bool)MQLInfoInteger(MQL_TRADE_ALLOWED),
+               " accountTrade=",(bool)AccountInfoInteger(ACCOUNT_TRADE_ALLOWED),
+               " accountExpert=",(bool)AccountInfoInteger(ACCOUNT_TRADE_EXPERT),
+               " server=",brokerServer," login=",accountLogin,
+               " symbol=",sym," side=",side);
+
          trade.SetAsyncMode(false);
          trade.SetTypeFillingBySymbol(sym);
+         ResetLastError();
          if(side=="BUY_LIMIT") ok=trade.BuyLimit(vol,entry,sym,sl,tp,ORDER_TIME_GTC,0,"RAYYAN4");
          else if(side=="SELL_LIMIT") ok=trade.SellLimit(vol,entry,sym,sl,tp,ORDER_TIME_GTC,0,"RAYYAN4");
          else { resultText="BAD_SIDE"; detail=side; }
 
          uint rc=trade.ResultRetcode();
+         int sendLastError=GetLastError();
+         bool connectedAfter=(bool)TerminalInfoInteger(TERMINAL_CONNECTED);
+         bool brokerAccepted=(rc==TRADE_RETCODE_PLACED || rc==TRADE_RETCODE_DONE);
+         string rcDescription=trade.ResultRetcodeDescription();
          if(side=="BUY_LIMIT" || side=="SELL_LIMIT"){
-            bool brokerAccepted=(rc==TRADE_RETCODE_PLACED || rc==TRADE_RETCODE_DONE);
-            resultText=(ok && brokerAccepted) ? "EXECUTED" : "FAILED";
-            detail=trade.ResultRetcodeDescription()+" retcode="+IntegerToString((int)rc)+
-                   " order="+(string)trade.ResultOrder();
+            if(ok && brokerAccepted){
+               resultText="EXECUTED";
+            }else if(rc==TRADE_RETCODE_CONNECTION){
+               resultText="NO_BROKER_CONNECTION";
+               detail="MT5 returned TRADE_RETCODE_CONNECTION(10031); terminalConnectedBefore="+
+                      IntegerToString((int)terminalConnected)+" connectedAfter="+
+                      IntegerToString((int)connectedAfter)+" server="+brokerServer+
+                      " login="+IntegerToString((int)accountLogin)+
+                      ". No automatic resubmission; verify MT5 Trade/Journal before retry. retcode=10031";
+            }else{
+               resultText="FAILED";
+               detail=rcDescription+" retcode="+IntegerToString((int)rc)+
+                      " lastError="+IntegerToString(sendLastError)+
+                      " order="+(string)trade.ResultOrder();
+            }
          }
-         Print("RAYYAN4 TRADE CHECK symbol=",sym," side=",side," vol=",DoubleToString(vol,2),
+         Print("RAYYAN4 TRADE CHECK time=",TimeToString(TimeCurrent(),TIME_DATE|TIME_SECONDS),
+               " symbol=",sym," side=",side," vol=",DoubleToString(vol,2),
                " entry=",DoubleToString(entry,digits)," bid=",DoubleToString(tick.bid,digits),
                " ask=",DoubleToString(tick.ask,digits)," sl=",DoubleToString(sl,digits),
-               " tp=",DoubleToString(tp,digits)," retcode=",rc," desc=",detail,
-               " connected=",terminalConnected," server=",brokerServer);
+               " tp=",DoubleToString(tp,digits)," retcode=",rc," desc=",rcDescription,
+               " ok=",ok," lastError=",sendLastError," order=",trade.ResultOrder(),
+               " connectedBefore=",terminalConnected," connectedAfter=",connectedAfter,
+               " server=",brokerServer);
       }
    }
 
@@ -189,8 +219,8 @@ void OnTimer(){
 }
 
 
-// Use MQL5 TCP sockets instead of WebRequest for the local LAN bridge.
-// Recent MT5 builds have reports of WebRequest returning 1001 / error 5203.
+// Local LAN bridge uses WebRequest (not MQL5 TCP sockets).
+// Add the exact GatewayUrl base to MT5 Tools > Options > Expert Advisors > Allow WebRequest.
 bool gatewayGet(string path,int &httpCode,string &body,string &diagnostic){
    httpCode=-1; body=""; diagnostic="";
    string base=GatewayUrl;
