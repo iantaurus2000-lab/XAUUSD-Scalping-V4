@@ -206,7 +206,7 @@ bool gatewayGet(string path,int &httpCode,string &body,string &diagnostic){
    }
 
    string request="GET "+path+" HTTP/1.1\r\nHost: "+host+"\r\nUser-Agent: Rayyan4GatewayEA\r\nConnection: close\r\n\r\n";
-   char outgoing[];
+   uchar outgoing[];
    int sendLen=StringToCharArray(request,outgoing,0,WHOLE_ARRAY,CP_UTF8)-1;
    if(sendLen<=0 || SocketSend(sock,outgoing,(uint)sendLen)!=sendLen){
       int err=GetLastError();
@@ -236,14 +236,14 @@ bool gatewayGet(string path,int &httpCode,string &body,string &diagnostic){
          Sleep(10);
          continue;
       }
-      char incoming[];
+         uchar incoming[];
       uint wanted=(uint)MathMin(8192.0,(double)available);
-      int got=SocketRead(sock,incoming,wanted,250);
-      if(got<0){
-         if(StringLen(raw)==0) diagnostic="SocketRead failed err="+IntegerToString(GetLastError());
-         break;
+      uint got=SocketRead(sock,incoming,wanted,250);
+      if(got==0){
+         Sleep(10);
+         continue;
       }
-      if(got>0) raw+=CharArrayToString(incoming,0,got,CP_UTF8);
+      raw+=CharArrayToString(incoming,0,(int)got,CP_UTF8);
 
       int split=StringFind(raw,"\r\n\r\n");
       if(split>=0){
