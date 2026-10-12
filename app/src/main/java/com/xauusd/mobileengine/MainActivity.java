@@ -10,6 +10,8 @@ import android.graphics.drawable.GradientDrawable;
 import android.view.*;
 import android.widget.*;
 import java.util.*;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.concurrent.*;
 
 public class MainActivity extends Activity {
