@@ -82,6 +82,26 @@ void OnTimer(){
    double stepVol=SymbolInfoDouble(sym,SYMBOL_VOLUME_STEP);
    long stopsLevel=SymbolInfoInteger(sym,SYMBOL_TRADE_STOPS_LEVEL);
 
+   // APK chart is sourced from Biquote while orders are validated against the
+   // broker quote in MT5. Map the signal levels to the MT5 quote reference
+   // captured when the command was queued, preserving the signal's risk distances.
+   double refBid=StringToDouble(field(cmd,"refBid"));
+   double refAsk=StringToDouble(field(cmd,"refAsk"));
+   if(haveTick && refBid>0 && refAsk>=refBid){
+      double shift=0.0;
+      if(side=="BUY_LIMIT") shift=tick.ask-refAsk;
+      else if(side=="SELL_LIMIT") shift=tick.bid-refBid;
+      if(side=="BUY_LIMIT" || side=="SELL_LIMIT"){
+         entry+=shift; sl+=shift; tp+=shift;
+         Print("RAYYAN4 PRICE MAP side=",side,
+               " refBid=",DoubleToString(refBid, digits),
+               " refAsk=",DoubleToString(refAsk, digits),
+               " brokerBid=",DoubleToString(tick.bid, digits),
+               " brokerAsk=",DoubleToString(tick.ask, digits),
+               " shift=",DoubleToString(shift, digits));
+      }
+   }
+
    if(stepVol>0) vol=MathFloor(vol/stepVol+1e-8)*stepVol;
    vol=NormalizeDouble(vol,2);
    entry=NormalizeDouble(entry,digits);
