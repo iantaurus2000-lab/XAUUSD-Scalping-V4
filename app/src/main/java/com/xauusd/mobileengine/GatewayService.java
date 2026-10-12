@@ -93,7 +93,14 @@ public final class GatewayService extends Service {
         String[] a=path.substring(q+1).split("&");
         for(String x:a){
             int e=x.indexOf('=');
-            if(e>0&&key.equals(x.substring(0,e)))return URLDecoder.decode(x.substring(e+1),StandardCharsets.UTF_8);
+            if(e>0&&key.equals(x.substring(0,e))){
+                String value=x.substring(e+1);
+                try {
+                    return URLDecoder.decode(value,"UTF-8");
+                } catch (UnsupportedEncodingException ignored) {
+                    return value;
+                }
+            }
         }
         return "";
     }
@@ -126,7 +133,7 @@ public final class GatewayService extends Service {
 
     private synchronized String ack(String id,String result,String detail){
         if(id==null||id.isEmpty())return "ACK ERROR";
-        SharedPreferences p=getSharedPreferences("rayyan4_gateway",0);
+        SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         String current=p.getString("next","");
         String currentId=field(current,"id");
         if(id.equals(currentId)){
