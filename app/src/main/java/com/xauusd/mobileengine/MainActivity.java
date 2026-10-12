@@ -61,7 +61,7 @@ public class MainActivity extends Activity {
                         .putString("last_crash_time", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(new java.util.Date()))
                         .putString("last_crash_thread", thread == null ? "unknown" : thread.getName())
                         .putString("last_crash_stack", sw.toString())
-                        .apply();
+                        .commit();
                 } catch (Throwable ignored) {}
                 if (previous != null) previous.uncaughtException(thread, error);
             });
@@ -78,6 +78,8 @@ public class MainActivity extends Activity {
                 .apply();
         } catch (Throwable ignored) {}
         getWindow().setStatusBarColor(Color.rgb(1,7,13));
+        // Keep the main screen usable when the Lot field has opened the soft keyboard.
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         prefs=getSharedPreferences("rayyan4_indicators",MODE_PRIVATE);
         tgPrefs=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE);
         telegramEnabled=tgPrefs.getBoolean("enabled",false);
@@ -194,8 +196,8 @@ public class MainActivity extends Activity {
         View actionGap=new View(this);
         limitActions.addView(actionGap,new LinearLayout.LayoutParams(7,1));
         limitActions.addView(sellLimitBtn,new LinearLayout.LayoutParams(0,40,1));
-        buyLimitBtn.setOnClickListener(v->{ recordDiagnosticAction("BUY LIMIT button tapped"); executeLimitForSide("BUY"); });
-        sellLimitBtn.setOnClickListener(v->{ recordDiagnosticAction("SELL LIMIT button tapped"); executeLimitForSide("SELL"); });
+        buyLimitBtn.setOnClickListener(v->prepareLimitButton("BUY LIMIT button tapped","BUY",v));
+        sellLimitBtn.setOnClickListener(v->prepareLimitButton("SELL LIMIT button tapped","SELL",v));
         root.addView(limitActions,new LinearLayout.LayoutParams(-1,46));
         card.setOnClickListener(v->executeCurrentSignal());
         signalSummary.setOnClickListener(v->executeCurrentSignal());
@@ -332,6 +334,24 @@ public class MainActivity extends Activity {
                 }
             },15,15,TimeUnit.SECONDS);
         }
+    }
+
+    private void prepareLimitButton(String action,String side,View button){
+        // Hide the Lot input keyboard before placing an order; on small phones it
+        // otherwise covers most of the chart and can look like the screen closed.
+        try{
+            View focus=getCurrentFocus();
+            if(focus!=null){
+                Object service=getSystemService(INPUT_METHOD_SERVICE);
+                if(service instanceof android.view.inputmethod.InputMethodManager)
+                    ((android.view.inputmethod.InputMethodManager)service)
+                        .hideSoftInputFromWindow(focus.getWindowToken(),0);
+            }
+            if(quickLotInput!=null)quickLotInput.clearFocus();
+            if(button!=null)button.requestFocus();
+        }catch(Throwable ignored){}
+        recordDiagnosticAction(action);
+        executeLimitForSide(side);
     }
 
     private void recordDiagnosticAction(String action){
@@ -504,20 +524,30 @@ public class MainActivity extends Activity {
         String detail=p.getString("order_status_detail","Belum ada hasil order/ACK tersimpan");
         String queue=p.getString("next","");
         boolean eaOnline=lastPoll>0L && now-lastPoll<=90000L;
+        SharedPreferences crash=getSharedPreferences("rayyan4_crashlog",MODE_PRIVATE);
+        String action=crash.getString("last_action","tidak terekam");
+        String actionTime=crash.getString("last_action_time","");
+        String crashTime=crash.getString("last_crash_time","tidak ada crash Java tercatat");
+        String crashThread=crash.getString("last_crash_thread","");
+        String crashStack=crash.getString("last_crash_stack","");
+        if(crashStack.length()>6000)crashStack=crashStack.substring(0,6000)+"\n...[stack dipotong]";
         String msg="GATEWAY: port 8787 berjalan jika tes TCP/HTTP PASS\n"
             +"EA POLLING: "+(eaOnline?"PASS":"BELUM TERDETEKSI")+(age>=0?" • poll "+age+" dtk lalu":"")+
             "\nQUEUE: "+(queue==null||queue.trim().isEmpty()?"KOSONG":"ADA PERINTAH MENUNGGU")+
             "\nACK / ORDER TERAKHIR: "+orderStatus+
             (orderId.isEmpty()?"":"\nID: "+orderId)+
             (detail.isEmpty()?"":"\nDetail: "+detail)+
+            "\n\nAKSI TERAKHIR: "+action+(actionTime.isEmpty()?"":" • "+actionTime)+
+            "\nCRASH JAVA TERAKHIR: "+crashTime+(crashThread.isEmpty()?"":" • thread "+crashThread)+
+            (crashStack.isEmpty()?"":"\n\nSTACK TRACE:\n"+crashStack)+
             "\n\nPemeriksaan ini TIDAK mengirim order atau order tes.";
         TextView v=tv(msg,13);v.setTextIsSelectable(true);v.setGravity(Gravity.TOP|Gravity.START);v.setPadding(18,12,18,12);
+        ScrollView sc=new ScrollView(this);sc.addView(v);
         new AlertDialog.Builder(this).setTitle("RAYYAN4 • GATEWAY / QUEUE / ACK")
-            .setView(v).setPositiveButton("PERIKSA LAGI",(d,w)->showGatewayAckDiagnostics())
+            .setView(sc).setPositiveButton("PERIKSA LAGI",(d,w)->showGatewayAckDiagnostics())
             .setNegativeButton("TUTUP",null).show();
         AppLog.add(this,"DIAGNOSTIC","Gateway/ACK status checked; EA online="+eaOnline+" ageSec="+age+" order="+orderStatus);
     }
-
     String marketDescription(String market){
         if("BTCUSD".equals(market))return "Bitcoin / US Dollar";
         if("ETHUSD".equals(market))return "Ethereum / US Dollar";
