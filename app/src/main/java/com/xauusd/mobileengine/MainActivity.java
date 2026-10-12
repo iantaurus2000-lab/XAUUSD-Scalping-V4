@@ -333,10 +333,16 @@ public class MainActivity extends Activity {
             double lot=readQuickLot();
             if(lot<=0)return;
             String orderSide="BUY".equals(requestedSide)?"BUY_LIMIT":"SELL_LIMIT";
-            // queueLimit validates the LIMIT price against current bid/ask and
-            // reports a rejected/stale setup without placing a duplicate.
-            queueLimit(orderSide,lot,s.entry,s.sl,s.tp2>0?s.tp2:s.tp1);
-            startGateway();
+            // Start the gateway only after the order is successfully queued.
+            // A rejected/invalid order must leave the APK open without starting
+            // unnecessary background work.
+            boolean queued = queueLimit(orderSide,lot,s.entry,s.sl,s.tp2>0?s.tp2:s.tp1);
+            if(queued){
+                AppLog.add(this,"ORDER","button accepted queue; starting Gateway");
+                startGateway();
+            }else{
+                AppLog.add(this,"ORDER","button order rejected before queue; Gateway not started");
+            }
         } catch (Throwable e) {
             try { AppLog.add(this,"CRASH_GUARD","LIMIT "+requestedSide+" "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage())); } catch(Throwable ignored) {}
             try { Toast.makeText(this,"LIMIT gagal diproses • APK tetap dibuka. Periksa Log.",Toast.LENGTH_LONG).show(); } catch(Throwable ignored) {}
