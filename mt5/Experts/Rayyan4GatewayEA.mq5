@@ -22,20 +22,20 @@ void OnDeinit(const int r){ EventKillTimer(); }
 void OnTick(){}
 
 void OnTimer(){
-   string url=GatewayUrl+"/next";
-   char data[],result[]; string headers;
+   int code=-1;
+   string cmd="",transportDetail="";
    ResetLastError();
-   int code=WebRequest("GET",url,"","",3000,data,0,result,headers);
+   bool received=gatewayGet("/next",code,cmd,transportDetail);
 
-   if(code!=200){
+   if(!received || code!=200){
       if(TimeCurrent()-lastDiag>=10){
          lastDiag=TimeCurrent();
-         Print("RAYYAN4 GATEWAY ERROR HTTP=",code," err=",GetLastError()," URL=",url," headers=",headers," body=",CharArrayToString(result));
+         Print("RAYYAN4 GATEWAY SOCKET ERROR transport=",received,
+               " code=",code," err=",GetLastError()," detail=",transportDetail,
+               " gateway=",GatewayUrl);
       }
       return;
    }
-
-   string cmd=CharArrayToString(result);
 
    if(StringLen(cmd)<5){
       if(TimeCurrent()-lastDiag>=10){
@@ -168,16 +168,142 @@ void OnTimer(){
    }
 }
 
-bool sendAck(string id,string resultText,string detail){
-   string ack=GatewayUrl+"/ack?id="+urlEncode(id)+"&result="+urlEncode(resultText)+"&detail="+urlEncode(detail);
-   char ad[],ar[]; string ah;
+
+// Use MQL5 TCP sockets instead of WebRequest for the local LAN bridge.
+// Recent MT5 builds have reports of WebRequest returning 1001 / error 5203.
+bool gatewayGet(string path,int &httpCode,string &body,string &diagnostic){
+   httpCode=-1; body=""; diagnostic="";
+   if(StringFind(GatewayUrl,"http://")!=0){
+      diagnostic="GatewayUrl must use http://host:port";
+      return false;
+   }
+   string endpoint=StringSubstr(GatewayUrl,7);
+   int slash=StringFind(endpoint,"/");
+   if(slash>=0) endpoint=StringSubstr(endpoint,0,slash);
+   int colon=StringFind(endpoint,":");
+   string host=endpoint;
+   uint port=80;
+   if(colon>=0){
+      host=StringSubstr(endpoint,0,colon);
+      port=(uint)StringToInteger(StringSubstr(endpoint,colon+1));
+   }
+   if(host=="" || port==0){
+      diagnostic="Invalid GatewayUrl host/port";
+      return false;
+   }
+
    ResetLastError();
-   int code=WebRequest("GET",ack,"","",3000,ad,0,ar,ah);
-   string body=CharArrayToString(ar);
-   if(code==200 && (StringFind(body,"ACK OK")>=0 || StringFind(body,"ACK STALE")>=0)) return true;
+   int sock=SocketCreate();
+   if(sock==INVALID_HANDLE){
+      diagnostic="SocketCreate failed";
+      return false;
+   }
+   if(!SocketConnect(sock,host,port,1200)){
+      int err=GetLastError();
+      SocketClose(sock);
+      diagnostic="SocketConnect failed err="+IntegerToString(err);
+      return false;
+   }
+
+   string request="GET "+path+" HTTP/1.1\r\nHost: "+host+"\r\nUser-Agent: Rayyan4GatewayEA\r\nConnection: close\r\n\r\n";
+   char outgoing[];
+   int sendLen=StringToCharArray(request,outgoing,0,WHOLE_ARRAY,CP_UTF8)-1;
+   if(sendLen<=0 || SocketSend(sock,outgoing,(uint)sendLen)!=sendLen){
+      int err=GetLastError();
+      SocketClose(sock);
+      diagnostic="SocketSend failed err="+IntegerToString(err);
+      return false;
+   }
+
+   string raw="";
+   bool complete=false;
+   uint started=GetTickCount();
+   while(GetTickCount()-started<2200 && !IsStopped()){
+      uint available=SocketIsReadable(sock);
+      if(available==0){
+         if(StringLen(raw)>0){
+            int split0=StringFind(raw,"\r\n\r\n");
+            if(split0>=0){
+               string hdr0=StringSubstr(raw,0,split0);
+               int expected0=headerContentLength(hdr0);
+               string body0=StringSubstr(raw,split0+4);
+               if(expected0>=0 && StringLen(body0)>=expected0){
+                  complete=true;
+                  break;
+               }
+            }
+         }
+         Sleep(10);
+         continue;
+      }
+      char incoming[];
+      uint wanted=(uint)MathMin(8192.0,(double)available);
+      int got=SocketRead(sock,incoming,wanted,250);
+      if(got<0){
+         if(StringLen(raw)==0) diagnostic="SocketRead failed err="+IntegerToString(GetLastError());
+         break;
+      }
+      if(got>0) raw+=CharArrayToString(incoming,0,got,CP_UTF8);
+
+      int split=StringFind(raw,"\r\n\r\n");
+      if(split>=0){
+         string hdr=StringSubstr(raw,0,split);
+         int expected=headerContentLength(hdr);
+         string responseBody=StringSubstr(raw,split+4);
+         if(expected>=0 && StringLen(responseBody)>=expected){
+            complete=true;
+            break;
+         }
+      }
+      if(StringLen(raw)>16000){
+         diagnostic="HTTP response exceeded 16KB safety limit";
+         break;
+      }
+   }
+   SocketClose(sock);
+
+   int split=StringFind(raw,"\r\n\r\n");
+   if(split<0){
+      if(diagnostic=="") diagnostic="Incomplete HTTP response";
+      return false;
+   }
+   string header=StringSubstr(raw,0,split);
+   string firstLine=StringSubstr(header,0,StringFind(header,"\r\n")>=0?StringFind(header,"\r\n"):StringLen(header));
+   int space=StringFind(firstLine," ");
+   if(space>=0) httpCode=(int)StringToInteger(StringSubstr(firstLine,space+1,3));
+   int expected=headerContentLength(header);
+   body=StringSubstr(raw,split+4);
+   if(expected>=0 && StringLen(body)>expected) body=StringSubstr(body,0,expected);
+   if(!complete && expected>=0 && StringLen(body)<expected){
+      diagnostic="Short HTTP body expected="+IntegerToString(expected)+" got="+IntegerToString(StringLen(body));
+      return false;
+   }
+   return (httpCode>=100);
+}
+
+int headerContentLength(string headers){
+   string lines[];
+   int count=StringSplit(headers,'\n',lines);
+   for(int i=0;i<count;i++){
+      string line=lines[i];
+      StringReplace(line,"\r","");
+      if(StringFind(line,"Content-Length:")==0)
+         return (int)StringToInteger(StringSubstr(line,StringLen("Content-Length:")));
+   }
+   return -1;
+}
+
+bool sendAck(string id,string resultText,string detail){
+   string path="/ack?id="+urlEncode(id)+"&result="+urlEncode(resultText)+"&detail="+urlEncode(detail);
+   int code=-1;
+   string body="",transportDetail="";
+   ResetLastError();
+   bool received=gatewayGet(path,code,body,transportDetail);
+   if(received && code==200 && (StringFind(body,"ACK OK")>=0 || StringFind(body,"ACK STALE")>=0)) return true;
    if(TimeCurrent()-lastDiag>=10){
       lastDiag=TimeCurrent();
-      Print("RAYYAN4 ACK RETRY id=",id," HTTP=",code," err=",GetLastError()," response=",body);
+      Print("RAYYAN4 ACK SOCKET RETRY id=",id," transport=",received," code=",code,
+            " err=",GetLastError()," detail=",transportDetail," response=",body);
    }
    return false;
 }
