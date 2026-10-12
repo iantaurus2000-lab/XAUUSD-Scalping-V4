@@ -21,6 +21,7 @@ public class MainActivity extends Activity {
     private Button signalSideButton;
     private EditText quickLotInput;
     private ScheduledExecutorService ex;
+    private ScheduledExecutorService candleRefresh;
     private SharedPreferences prefs, tgPrefs;
     private boolean telegramEnabled;
     private String selectedTf="M1";
@@ -261,8 +262,10 @@ public class MainActivity extends Activity {
             ex=Executors.newSingleThreadScheduledExecutor();
             ex.scheduleAtFixedRate(()->{
                 try{
-                    double[] t=BiquoteClient.tick(selectedMarket);
+                    String market=selectedMarket;
+                    double[] t=BiquoteClient.tick(market);
                     runOnUiThread(()->{
+                        if(!market.equals(selectedMarket))return;
                         chart.setTick(t[0],t[1],selectedTf);
                         if(!chart.isEmpty())updateSignal(chart.getDataSnapshot(),m5Data);
                         updateHeaderPrice(t[0],t[1]);
@@ -271,6 +274,36 @@ public class MainActivity extends Activity {
                     });
                 }catch(Exception e){runOnUiThread(()->status.setText("● OFFLINE • RETRYING • "+selectedTf));}
             },1,1,TimeUnit.SECONDS);
+        }
+
+        // Tick polling updates the quote every second, but that alone cannot create
+        // new timestamped OHLC bars or refresh the M5 bias. Refresh both candle feeds
+        // separately, without blocking the live quote loop or resetting the chart
+        // while the user is looking at another market/timeframe.
+        if(candleRefresh==null){
+            candleRefresh=Executors.newSingleThreadScheduledExecutor();
+            candleRefresh.scheduleWithFixedDelay(()->{
+                final String market=selectedMarket;
+                final String tfNow=selectedTf;
+                try{
+                    Candle[] fresh=BiquoteClient.candles(market,interval(tfNow));
+                    Candle[] freshM5="M5".equals(tfNow)?fresh:BiquoteClient.candles(market,"5m");
+                    runOnUiThread(()->{
+                        if(!market.equals(selectedMarket)||!tfNow.equals(selectedTf))return;
+                        boolean wasFollowing=chart.isFollow();
+                        chart.setData(fresh);
+                        if(wasFollowing)chart.goLive();
+                        m5Data=freshM5;
+                        updateSignal(chart.getDataSnapshot(),m5Data);
+                        status.setText("● LIVE • "+market+" • "+tfNow+" • OHLC refreshed");
+                    });
+                }catch(Exception e){
+                    runOnUiThread(()->{
+                        if(market.equals(selectedMarket)&&tfNow.equals(selectedTf))
+                            status.setText("● QUOTE LIVE • OHLC RETRY • "+tfNow);
+                    });
+                }
+            },15,15,TimeUnit.SECONDS);
         }
     }
 
@@ -751,5 +784,5 @@ public class MainActivity extends Activity {
         ackHandler.post(ackWatcher);
     }
 
-    @Override protected void onDestroy(){if(ex!=null)ex.shutdownNow();super.onDestroy();}
+    @Override protected void onDestroy(){if(ex!=null)ex.shutdownNow();if(candleRefresh!=null)candleRefresh.shutdownNow();super.onDestroy();}
 }
