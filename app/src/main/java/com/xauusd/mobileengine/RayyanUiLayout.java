@@ -130,7 +130,7 @@ public final class RayyanUiLayout {
         priceView.setTypeface(null, Typeface.BOLD);
         priceView.setGravity(Gravity.CENTER);
         priceView.setSingleLine(true);
-        priceView.setEllipsize(android.text.TextUtils.TruncateAt.CLIP);
+        priceView.setEllipsize(android.text.TextUtils.TruncateAt.END);
         priceView.setIncludeFontPadding(false);
         priceView.setPadding(0, 0, 0, 0);
         priceView.setAutoSizeTextTypeUniformWithConfiguration(14, 22, 1, TypedValue.COMPLEX_UNIT_SP);
