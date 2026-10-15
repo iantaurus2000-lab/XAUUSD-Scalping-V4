@@ -690,29 +690,22 @@ public class MainActivity extends Activity {
 
     void showMarketDialog(){
         final String[] markets={"XAUUSD","BTCUSD","ETHUSD"};
-        int current=0;
-        for(int i=0;i<markets.length;i++)if(markets[i].equals(selectedMarket))current=i;
-        new AlertDialog.Builder(this).setTitle("PILIH MARKET")
-            .setSingleChoiceItems(markets,current,(dialog,which)->{
-                String next=markets[which];
-                if(next.equals(selectedMarket)){dialog.dismiss();return;}
-                selectedMarket=next;
-                lastHeaderPrice=Double.NaN;
-                if(priceView!=null){priceView.setText("--");priceView.setTextColor(Color.CYAN);}
-                prefs.edit().putString("market",selectedMarket).apply();
-                if(marketTitle!=null)marketTitle.setText(selectedMarket);
-                if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));
-                if(chart!=null)chart.setMarket(selectedMarket);
-                if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");
-                if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);
-                lastSignal=null;
-                resetEntryReadyUi("menunggu data market");
-                dialog.dismiss();
-                load(interval(selectedTf),selectedTf);
-                AppLog.add(this,"MARKET","selected "+selectedMarket+" (APK feed only; MT5 symbol mapping deferred)");
-            }).setNegativeButton("BATAL",null).show();
+        final String[] icons={"◈","₿","◆"};
+        final String[] details={"Gold Spot / US Dollar","Bitcoin / US Dollar","Ethereum / US Dollar"};
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(22,16,22,14);box.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("SELECT MARKET",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);box.addView(title,new LinearLayout.LayoutParams(-1,40));
+        TextView note=tv("Pilih instrumen untuk chart dan signal engine",12);note.setTextColor(Color.LTGRAY);box.addView(note,new LinearLayout.LayoutParams(-1,36));
+        AlertDialog d=new AlertDialog.Builder(this).setView(box).setNegativeButton("TUTUP",null).create();
+        for(int i=0;i<markets.length;i++){final String market=markets[i];boolean selected=market.equals(selectedMarket);
+            LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(12,8,12,8);row.setBackground(roundBg(selected?Color.rgb(5,65,58):Color.rgb(7,30,47),12));
+            LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,62);rp.setMargins(0,5,0,5);box.addView(row,rp);
+            TextView icon=tv(icons[i],22);icon.setTextColor(Color.rgb(0,225,180));icon.setGravity(Gravity.CENTER);row.addView(icon,new LinearLayout.LayoutParams(42,-1));
+            LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setGravity(Gravity.CENTER_VERTICAL);TextView name=tv(market,14);name.setTextColor(Color.WHITE);name.setTypeface(null,Typeface.BOLD);labels.addView(name);TextView sub=tv(details[i],10);sub.setTextColor(Color.LTGRAY);labels.addView(sub);row.addView(labels,new LinearLayout.LayoutParams(0,-1,1));
+            TextView mark=tv(selected?"✓ ACTIVE":"SELECT  ›",10);mark.setTextColor(selected?Color.rgb(0,235,160):Color.CYAN);row.addView(mark);
+            row.setOnClickListener(v->{if(market.equals(selectedMarket)){d.dismiss();return;}selectedMarket=market;lastHeaderPrice=Double.NaN;if(priceView!=null){priceView.setText("--");priceView.setTextColor(Color.CYAN);}prefs.edit().putString("market",selectedMarket).apply();if(marketTitle!=null)marketTitle.setText(selectedMarket);if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));if(chart!=null)chart.setMarket(selectedMarket);if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);lastSignal=null;resetEntryReadyUi("menunggu data market");d.dismiss();load(interval(selectedTf),selectedTf);AppLog.add(this,"MARKET","selected "+selectedMarket+" (APK feed only; MT5 symbol mapping deferred)");});
+        }
+        d.show();if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-36,430),-2);}
     }
-
     void showSignalDialog(){
         if(lastSignal==null){Toast.makeText(this,"Menunggu data Signal Engine...",Toast.LENGTH_SHORT).show();return;}
         SignalResult s=lastSignal;
