@@ -741,12 +741,16 @@ public class MainActivity extends Activity {
             boolean continuation=SmartLimitReentry.hasContinuation(m1,sideNow)
                 &&m5DoesNotOppose(sideNow,s.m5Bias);
             boolean validFresh=isAutoEntryEligible(s,bid,ask,true)&&s.side.equals(sideNow);
-            boolean replacement=elapsed>=3&&movedAway&&continuation&&validFresh
+            double maxDistanceAtr=smartReentryMaxDistanceAtr(gp);
+            boolean withinMaxDistance=SmartLimitReentry.withinMaxDistanceFromOriginalEntry(
+                activeEntry,s.entry,atr,maxDistanceAtr);
+            boolean replacement=elapsed>=3&&elapsed<smartReentryMaxAgeBars(gp)
+                &&movedAway&&continuation&&validFresh&&withinMaxDistance
                 &&SmartLimitReentry.materiallyDifferentEntry(activeEntry,s.entry,atr);
             boolean structureInvalid=("BUY".equals(sideNow)&&("SELL".equals(s.side)||"SELL".equals(s.m5Bias)))
                 ||("SELL".equals(sideNow)&&("BUY".equals(s.side)||"BUY".equals(s.m5Bias)));
             boolean staleRun=elapsed>=4&&movedAway;
-            boolean maxAge=elapsed>=8;
+            boolean maxAge=elapsed>=smartReentryMaxAgeBars(gp);
             long retryAfter=gp.getLong("smart_cancel_retry_after_ms",0L);
             boolean shouldCancel=structureInvalid||replacement||staleRun||maxAge;
             if(shouldCancel&&now>=retryAfter){
@@ -816,7 +820,11 @@ public class MainActivity extends Activity {
                         &&s.side.equals(sideNow)
                         &&m5DoesNotOppose(sideNow,s.m5Bias)
                         &&SmartLimitReentry.hasContinuation(m1,sideNow)
+                        &&SmartLimitReentry.elapsedM1Bars(startedAt,candleStamp)
+                            <smartReentryMaxAgeBars(gp)
                         &&SmartLimitReentry.movedAwayInFavor(sideNow,activeEntry,bid,ask,atr)
+                        &&SmartLimitReentry.withinMaxDistanceFromOriginalEntry(activeEntry,s.entry,atr,
+                            smartReentryMaxDistanceAtr(gp))
                         &&SmartLimitReentry.materiallyDifferentEntry(activeEntry,s.entry,atr);
                     if(candidate){
                         String nextKey=makeSignalKey(s,candleStamp);
@@ -1384,6 +1392,37 @@ public class MainActivity extends Activity {
 
     String lotText(double lot){return String.format(Locale.US,"%.2f",lot);}
 
+    private double smartReentryMaxDistanceAtr(SharedPreferences gp){
+        double value=gp.getFloat("smart_reentry_max_distance_atr",1.5f);
+        return Double.isFinite(value)&&value>=0.5&&value<=5.0?value:1.5;
+    }
+
+    private int smartReentryMaxAgeBars(SharedPreferences gp){
+        int value=gp.getInt("smart_reentry_max_age_m1_bars",8);
+        return value>=3&&value<=20?value:8;
+    }
+
+    private boolean validSmartReentryLimits(EditText distance,EditText age){
+        try{
+            double d=Double.parseDouble(distance.getText().toString().trim());
+            int a=Integer.parseInt(age.getText().toString().trim());
+            if(!Double.isFinite(d)||d<0.5||d>5.0||a<3||a>20)throw new NumberFormatException();
+            return true;
+        }catch(Exception e){
+            Toast.makeText(this,"Jarak maksimum 0,5–5,0 ATR dan usia maksimum 3–20 candle M1.",
+                Toast.LENGTH_LONG).show();
+            return false;
+        }
+    }
+
+    private void persistSmartReentryLimits(EditText distance,EditText age,SharedPreferences gp){
+        double d=Double.parseDouble(distance.getText().toString().trim());
+        int a=Integer.parseInt(age.getText().toString().trim());
+        gp.edit().putFloat("smart_reentry_max_distance_atr",(float)d)
+            .putInt("smart_reentry_max_age_m1_bars",a).apply();
+        AppLog.add(this,"SMART LIMIT","limits saved maxDistance="+d+" ATR; maxAge="+a+" M1 bars");
+    }
+
     double readQuickLot(){
         try{
             double lot=Double.parseDouble(quickLotInput.getText().toString().trim());
@@ -1534,6 +1573,16 @@ public class MainActivity extends Activity {
         smartReentry.setMinHeight(uiDp(52));smartReentry.setMinimumHeight(uiDp(52));
         smartReentry.setChecked(gatewayPrefs.getBoolean("smart_reentry_enabled",true));
 
+        EditText maxDistance=new EditText(this);
+        maxDistance.setHint("Jarak entry baru maksimum (ATR M1), default 1.5");
+        maxDistance.setInputType(8194);styleDialogInput(maxDistance);
+        maxDistance.setText(String.format(Locale.US,"%.1f",
+            gatewayPrefs.getFloat("smart_reentry_max_distance_atr",1.5f)));
+        EditText maxAge=new EditText(this);
+        maxAge.setHint("Usia maksimum order lama (candle M1), default 8");
+        maxAge.setInputType(2);styleDialogInput(maxAge);
+        maxAge.setText(Integer.toString(gatewayPrefs.getInt("smart_reentry_max_age_m1_bars",8)));
+
         Spinner mode=new Spinner(this);
         String[] modes={"MODE ISTIRAHAT","MODE SIAP TRADING"};
         ArrayAdapter<String> modeAdapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,modes);
@@ -1571,6 +1620,8 @@ public class MainActivity extends Activity {
         hintParams.setMargins(0,uiDp(5),0,uiDp(6));fields.addView(modeHint,hintParams);
         fields.addView(auto,new LinearLayout.LayoutParams(-1,uiDp(54)));
         fields.addView(smartReentry,new LinearLayout.LayoutParams(-1,uiDp(54)));
+        fields.addView(maxDistance,new LinearLayout.LayoutParams(-1,uiDp(54)));
+        fields.addView(maxAge,new LinearLayout.LayoutParams(-1,uiDp(54)));
         fields.addView(vol,new LinearLayout.LayoutParams(-1,uiDp(54)));
 
         // Manual one-shot LIMIT fields are separate from automatic signal execution.
@@ -1630,14 +1681,18 @@ public class MainActivity extends Activity {
         updateAutoUi.run();
 
         save.setOnClickListener(v->{
+            if(!validSmartReentryLimits(maxDistance,maxAge))return;
             if(!saveAutoEntrySettings(auto,smartReentry,mode,vol,gatewayPrefs,selectedMt5Symbol))return;
-            Toast.makeText(this,"Lot dan pengaturan AUTO ENTRY tersimpan untuk "+selectedMt5Symbol,Toast.LENGTH_SHORT).show();
+            persistSmartReentryLimits(maxDistance,maxAge,gatewayPrefs);
+            Toast.makeText(this,"Pengaturan AUTO ENTRY dan batas Smart LIMIT tersimpan untuk "+selectedMt5Symbol,Toast.LENGTH_SHORT).show();
             dialog.dismiss();
         });
         close.setOnClickListener(v->dialog.dismiss());
         send.setOnClickListener(v->{
             try{
-                if(!saveAutoEntrySettings(auto,mode,vol,gatewayPrefs,selectedMt5Symbol))return;
+                if(!validSmartReentryLimits(maxDistance,maxAge))return;
+                if(!saveAutoEntrySettings(auto,smartReentry,mode,vol,gatewayPrefs,selectedMt5Symbol))return;
+                persistSmartReentryLimits(maxDistance,maxAge,gatewayPrefs);
                 if(!GatewayService.isEaRecentlyOnline(this)){
                     queuedStatus.setTextColor(Color.rgb(255,190,70));
                     queuedStatus.setText("DITAHAN • EA MT5 belum polling aktif. Periksa koneksi MT5/Winlator; tidak ada order yang diantrekan.");
