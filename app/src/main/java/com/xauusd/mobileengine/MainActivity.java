@@ -97,11 +97,13 @@ public class MainActivity extends Activity {
         tgPrefs=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE);
         telegramEnabled=tgPrefs.getBoolean("enabled",false);
         selectedMarket=prefs.getString("market","XAUUSD");
-        // Safety migration: never carry AUTO LIMIT into this revised build from an older preference.
+        // Explicit project request: enable AUTO LIMIT in DEMO-ready mode.
+        // Order submission remains guarded by fresh EA polling, signal validity, spread,
+        // LIMIT price geometry, lot minimum, duplicate cooldown, and the single-command queue.
         SharedPreferences gatewayPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        if(!gatewayPrefs.getBoolean("auto_safe_guard_v1",false)){
-            gatewayPrefs.edit().putBoolean("auto",false).putString("operation_mode","REST")
-                .putBoolean("auto_safe_guard_v1",true).apply();
+        if(!gatewayPrefs.getBoolean("auto_safe_guard_v2",false)){
+            gatewayPrefs.edit().putBoolean("auto",true).putString("operation_mode","READY")
+                .putBoolean("auto_safe_guard_v2",true).apply();
         }
         buildUI();
     }
@@ -584,9 +586,14 @@ public class MainActivity extends Activity {
                 String signalKey=s.side+"|"+s.m5Bias+"|"+s.setup;
                 String lastKey=gp.getString("auto_last_signal_key","");
                 long lastAuto=gp.getLong("auto_last_order_ms",0L);
-                boolean filters=s.liquiditySweep&&s.wickRejection&&s.bos&&s.emaFilter&&s.rsiFilter&&s.macdFilter&&s.atrFilter&&s.spreadFilter;
+                // Do not require every secondary indicator to agree: that prevented valid
+                // wick-rejection entries. Keep hard safety gates for wick + spread + valid levels.
+                boolean filters=s.wickRejection&&s.spreadFilter&&s.entry>0&&s.sl>0
+                        &&(s.tp2>0||s.tp1>0)&&("BUY".equals(s.side)||"SELL".equals(s.side));
+                boolean queueFree=gp.getString("next","").trim().isEmpty();
                 if(!signalKey.equals(lastKey) && s.confidence>=gp.getInt("min_confidence",4) && filters
-                        && GatewayService.isEaRecentlyOnline(this) && System.currentTimeMillis()-lastAuto>=60000L){
+                        && queueFree && GatewayService.isEaRecentlyOnline(this)
+                        && System.currentTimeMillis()-lastAuto>=60000L){
                     // Save the signal key before queueing to prevent duplicate attempts on repeated refreshes.
                     gp.edit().putString("auto_last_signal_key",signalKey).putLong("auto_last_order_ms",System.currentTimeMillis()).apply();
                     double lot=lotForMarket();
