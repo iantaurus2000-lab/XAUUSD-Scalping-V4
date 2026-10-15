@@ -667,7 +667,9 @@ public class MainActivity extends Activity {
                 activeTicket=gp.getString("ea_order_state_ticket","");
                 activeSymbol=gp.getString("ea_order_state_symbol",activeSymbol);
                 startedAt=candleStamp; // restore conservatively after app restart
-                phase="POSITION".equals(remoteState)?"POSITION":"ACTIVE";
+                // An order discovered without its original APK signal levels is locked,
+                // because broker-mapped price may differ from the signal-feed entry.
+                phase="POSITION".equals(remoteState)?"POSITION":"LOCKED_UNCERTAIN";
                 gp.edit().putString("smart_active_id",activeId)
                     .putString("smart_active_side",sideNow)
                     .putString("smart_active_symbol",activeSymbol)
@@ -675,7 +677,8 @@ public class MainActivity extends Activity {
                     .putString("smart_active_ticket",activeTicket)
                     .putLong("smart_active_start_candle_ms",startedAt)
                     .putString("smart_phase",phase).apply();
-                AppLog.add(this,"SMART LIMIT","recovered EA state "+remoteState+" id="+activeId);
+                AppLog.add(this,"SMART LIMIT","recovered EA state "+remoteState+" id="+activeId+
+                    ("LOCKED_UNCERTAIN".equals(phase)?" • conservatively locked; original feed entry unavailable":""));
             }else if(!activeId.equals(remoteId)){
                 smartLogOnce(gp,"STATE_ID_MISMATCH|"+activeId+"|"+remoteId,
                     "blocked: EA active order id berbeda dari antrean APK; cek MT5 Trade/Experts sebelum melanjutkan");
@@ -692,17 +695,41 @@ public class MainActivity extends Activity {
 
             // A pending order can be cancelled only after the exact order ticket and
             // original R4-id are confirmed by the EA state heartbeat.
-            if("CANCEL_REQUESTED".equals(phase)||"QUEUED".equals(phase)
-                    ||"LOCKED_UNCERTAIN".equals(phase))return;
+            if("CANCEL_REQUESTED".equals(phase)){
+                String cancelId=gp.getString("smart_cancel_command_id","");
+                if(cancelId.equals(gp.getString("order_status_id",""))){
+                    String cancelResult=gp.getString("order_status","UNKNOWN");
+                    if("CANCEL_FAILED".equals(cancelResult)||"FAILED".equals(cancelResult)
+                            ||"NOT_DEMO".equals(cancelResult)||"EXPIRED".equals(cancelResult)
+                            ||"REJECT".equals(cancelResult)){
+                        gp.edit().putString("smart_phase","ACTIVE")
+                            .putLong("smart_cancel_retry_after_ms",now+60000L)
+                            .putBoolean("smart_reentry_allowed",false).apply();
+                        AppLog.add(this,"SMART LIMIT","cancel ACK failed while order remains pending; retaining original and pausing retry");
+                    }
+                }
+                return;
+            }
+            if("LOCKED_UNCERTAIN".equals(phase))return;
+            if("QUEUED".equals(phase)){
+                gp.edit().putString("smart_phase","ACTIVE").apply();
+                phase="ACTIVE";
+            }
             if(!"ACTIVE".equals(phase)){
                 gp.edit().putString("smart_phase","ACTIVE").apply();
                 phase="ACTIVE";
             }
             activeTicket=gp.getString("ea_order_state_ticket",activeTicket);
-            activeEntry=preferenceDouble(gp,"ea_order_state_price",activeEntry);
+            // Keep the original Biquote signal entry for movement tests; the EA's
+            // state price is broker-mapped and is not an interchangeable reference.
             activeSide=gp.getString("ea_order_state_side",activeSide);
             sideNow=normalizedStateSide(activeSide);
             activeSymbol=gp.getString("ea_order_state_symbol",activeSymbol);
+            if(!activeSymbol.equals(mt5SymbolForMarket(selectedMarket))){
+                smartLogOnce(gp,"SYMBOL_MISMATCH|"+activeSymbol+"|"+selectedMarket,
+                    "blocked: pending order milik simbol lain; tidak membatalkan atau membuat order pada market yang berbeda");
+                return;
+            }
             gp.edit().putString("smart_active_ticket",activeTicket)
                 .putString("smart_active_entry",Double.toString(activeEntry))
                 .putString("smart_active_side",sideNow)
