@@ -96,33 +96,31 @@ public class MainActivity extends Activity {
     void buildUI(){
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(bg);
 
-        // HEADER
-        LinearLayout head=new LinearLayout(this);head.setGravity(Gravity.CENTER_VERTICAL);head.setPadding(7,3,7,3);
-        head.setBackgroundColor(Color.rgb(2,15,29));
-
-        TextView gold=tv("●",24);gold.setTextColor(Color.rgb(255,190,55));gold.setGravity(Gravity.CENTER);gold.setIncludeFontPadding(false);head.addView(gold,new LinearLayout.LayoutParams(30,54));
-        LinearLayout title=new LinearLayout(this);title.setOrientation(LinearLayout.VERTICAL);
-        marketTitle=tv(selectedMarket,17);marketTitle.setTypeface(null,Typeface.BOLD);marketTitle.setSingleLine(true);marketTitle.setIncludeFontPadding(false);title.addView(marketTitle,new LinearLayout.LayoutParams(-1,24));
-        marketSubtitle=tv(marketDescription(selectedMarket),9);marketSubtitle.setSingleLine(true);marketSubtitle.setIncludeFontPadding(false);title.addView(marketSubtitle,new LinearLayout.LayoutParams(-1,17));
-        TextView rt=tv("●",10);rt.setTextColor(green);rt.setIncludeFontPadding(false);title.addView(rt,new LinearLayout.LayoutParams(-1,11));
-        head.addView(title,new LinearLayout.LayoutParams(0,54,1));
-        head.addView(priceBox(),new LinearLayout.LayoutParams(112,54));
-        Button menu=btn("☰");menu.setTextSize(18);menu.setBackground(roundBg(Color.rgb(6,45,74),12));
-        menu.setOnClickListener(v->showMenu(menu));head.addView(menu,new LinearLayout.LayoutParams(42,48));
-        root.addView(head);
-
-        // SPREAD
-        LinearLayout spread=new LinearLayout(this);spread.setGravity(Gravity.CENTER);spread.setBackgroundColor(Color.rgb(6,27,45));
-        spreadView=tv("SPREAD  --",13);spreadView.setGravity(Gravity.CENTER);spreadView.setSingleLine(true);spreadView.setIncludeFontPadding(false);
-        spread.addView(spreadView,new LinearLayout.LayoutParams(-1,26));root.addView(spread);
-
-        // TIMEFRAME ROW - reference structure: M1 M5 M15 H1 H4 D1 LIVE
-        LinearLayout tf=new LinearLayout(this);tf.setPadding(4,2,4,2);tf.setBackgroundColor(Color.rgb(2,14,26));
-        addTfButton(tf,"M1");addTfButton(tf,"M5");addTfButton(tf,"M15");addTfButton(tf,"H1");addTfButton(tf,"H4");addTfButton(tf,"D1");
-        Button live=btn("◉ LIVE");live.setTextSize(12);live.setTextColor(green);live.setBackground(roundBg(Color.rgb(7,66,49),12));
-        tf.addView(live,new LinearLayout.LayoutParams(0,38,1));
-        live.setOnClickListener(v->{chart.goLive();selectTimeframe(selectedTf,false);});
-        root.addView(tf);
+        // HEADER / SPREAD / TIMEFRAME UI is isolated in RayyanUiLayout.
+        // Gateway, queueing, and order-sending methods below remain untouched.
+        RayyanUiLayout.Header headerUi = RayyanUiLayout.build(this, selectedMarket,
+            new RayyanUiLayout.Listener() {
+                @Override public void onMenu(View anchor) {
+                    showMenu(anchor);
+                }
+                @Override public void onTimeframe(String timeframe) {
+                    selectTimeframe(timeframe, true);
+                }
+                @Override public void onLive() {
+                    if (chart != null) {
+                        chart.goLive();
+                        selectTimeframe(selectedTf, false);
+                    }
+                }
+            });
+        marketTitle = headerUi.marketTitle;
+        marketSubtitle = headerUi.marketSubtitle;
+        priceView = headerUi.priceView;
+        spreadView = headerUi.spreadView;
+        tfButtons.clear();
+        tfButtons.putAll(headerUi.timeframeButtons);
+        root.addView(headerUi.container,
+            new LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         chart=new CandleChartView(this);chart.setMarket(selectedMarket);chart.setTimeframe(selectedTf);loadIndicatorSettings();
         root.addView(chart,new LinearLayout.LayoutParams(-1,0,1));
