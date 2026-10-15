@@ -70,7 +70,8 @@ public final class RayyanMenuLayout {
             new Item("◈", "Market", "Pilih XAUUSD, BTCUSD, atau ETHUSD", "market"),
             new Item("⌖", "Chart", "Kembali ke chart live", "chart"),
             new Item("▦", "Indicators / Tampilan", "EMA, S/R, Fibonacci, RSI, MACD", "indicators"),
-            new Item("↗", "Signal Engine", "Entry, SL, TP, bias dan filter", "signal")
+            new Item("↗", "Signal Engine", "Entry, SL, TP, bias dan filter", "signal"),
+            new Item("◉", "Confidence Entry", "Ambang minimum 60%, 70%, 80%, atau 90%", "confidence")
         ), actions);
 
         addSection(host, content, "ORDER & KONEKSI");
