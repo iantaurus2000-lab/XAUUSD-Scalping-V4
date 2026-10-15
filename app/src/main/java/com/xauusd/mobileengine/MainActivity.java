@@ -436,8 +436,8 @@ public class MainActivity extends Activity {
     }
 
     void executeCurrentSignal(){
-        // Human confirmation is the final trigger, but the price is re-evaluated
-        // immediately before sending so a 1-second market move cannot use stale levels.
+        // Manual chart-tap entry only. AUTO LIMIT has its own direct path below and must never wait for a confirmation dialog.
+        // Re-evaluate the signal immediately before queueing so stale levels are not used.
         if(chart==null || chart.isEmpty() || m5Data==null || m5Data.length<30){
             Toast.makeText(this,"Data M1/M5 belum siap",Toast.LENGTH_SHORT).show();
             return;
@@ -1122,7 +1122,7 @@ public class MainActivity extends Activity {
             .putLong("order_status_at",System.currentTimeMillis()).apply();
         HistoryStore.add(this,"PENDING",side,entry,sl,tp,tp,lastSignal==null?0:lastSignal.confidence);
         AppLog.add(this,"ORDER","queued "+cmd);notifyLocal("MT5 "+side,"Entry queued for demo EA");
-        Toast.makeText(this,"Entry queued • menunggu konfirmasi EA MT5",Toast.LENGTH_SHORT).show();
+        Toast.makeText(this,"Entry masuk antrean • EA MT5 akan memproses otomatis",Toast.LENGTH_SHORT).show();
         return true;
         } catch(Exception e) {
             AppLog.add(this,"ORDER","queue error: "+e.getClass().getSimpleName()+" "+e.getMessage());
