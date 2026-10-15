@@ -41,4 +41,13 @@ public class SmartLimitReentryTest {
         assertTrue(SmartLimitReentry.materiallyDifferentEntry(100,100.2,1));
         assertFalse(SmartLimitReentry.materiallyDifferentEntry(100,100.05,1));
     }
+
+    @Test public void blocksReplacementBeyondConfiguredAtrDistance() {
+        assertTrue(SmartLimitReentry.withinMaxDistanceFromOriginalEntry(2000,2001.5,1,1.5));
+        assertFalse(SmartLimitReentry.withinMaxDistanceFromOriginalEntry(2000,2001.51,1,1.5));
+        assertTrue(SmartLimitReentry.withinMaxDistanceFromOriginalEntry(2000,1998.5,1,1.5));
+        assertFalse(SmartLimitReentry.withinMaxDistanceFromOriginalEntry(2000,2001,0,1.5));
+        assertFalse(SmartLimitReentry.withinMaxDistanceFromOriginalEntry(2000,2001,1,0.4));
+        assertFalse(SmartLimitReentry.withinMaxDistanceFromOriginalEntry(2000,Double.NaN,1,1.5));
+    }
 }
