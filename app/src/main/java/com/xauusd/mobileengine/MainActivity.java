@@ -20,7 +20,20 @@ public class MainActivity extends Activity {
     private CandleChartView chart;
     private TextView priceView, spreadView, status, signalSummary, scoreView, entryView, slView, tp1View, tp2View, marketTitle, marketSubtitle;
     private double lastHeaderPrice=Double.NaN;
-    private Button signalSideButton;
+    private Button signalSideButton, buyLimitBtn, sellLimitBtn;
+    private TextView entryReadyView;
+    private final Handler signalUiHandler = new Handler(Looper.getMainLooper());
+    private boolean entryReady = false;
+    private boolean blinkOn = false;
+    private String readySide = "WAIT";
+    private final Runnable entryBlinkRunnable = new Runnable() {
+        @Override public void run() {
+            if (!entryReady || buyLimitBtn == null || sellLimitBtn == null) return;
+            blinkOn = !blinkOn;
+            applyEntryButtonColors();
+            signalUiHandler.postDelayed(this, 520L);
+        }
+    };
     private EditText quickLotInput;
     private ScheduledExecutorService ex;
     private ScheduledExecutorService candleRefresh;
@@ -148,8 +161,19 @@ public class MainActivity extends Activity {
         signalSummary.setEllipsize(android.text.TextUtils.TruncateAt.END);
         signalSummary.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);
         top.addView(signalSummary,new LinearLayout.LayoutParams(0,50,1));
-        scoreView=tv("CONFIDENCE\n--/5",10);scoreView.setGravity(Gravity.CENTER);scoreView.setIncludeFontPadding(false);scoreView.setPadding(0,0,0,0);scoreView.setSingleLine(false);top.addView(scoreView,new LinearLayout.LayoutParams(76,44));
+        scoreView=tv("SCORE\n0%",10);scoreView.setGravity(Gravity.CENTER);scoreView.setIncludeFontPadding(false);scoreView.setPadding(0,0,0,0);scoreView.setSingleLine(false);top.addView(scoreView,new LinearLayout.LayoutParams(76,44));
         card.addView(top);
+
+        entryReadyView=tv("WAIT • menunggu setup valid",11);
+        entryReadyView.setGravity(Gravity.CENTER);
+        entryReadyView.setIncludeFontPadding(false);
+        entryReadyView.setSingleLine(true);
+        entryReadyView.setTextColor(Color.rgb(255,205,95));
+        entryReadyView.setPadding(8,0,8,0);
+        entryReadyView.setBackground(roundBg(Color.rgb(35,38,35),10));
+        LinearLayout.LayoutParams readyParams=new LinearLayout.LayoutParams(-1,30);
+        readyParams.setMargins(0,4,0,3);
+        card.addView(entryReadyView,readyParams);
 
         LinearLayout levels=new LinearLayout(this);levels.setPadding(2,2,2,0);
         String[] names={"Entry","SL","TP1","TP2"};
@@ -180,12 +204,12 @@ public class MainActivity extends Activity {
         limitActions.addView(quickLotInput,new LinearLayout.LayoutParams(62,40));
         View lotGap=new View(this);
         limitActions.addView(lotGap,new LinearLayout.LayoutParams(5,1));
-        Button buyLimitBtn=btn("● BUY LIMIT");
+        buyLimitBtn=btn("● BUY LIMIT");
         buyLimitBtn.setTextSize(12);
         buyLimitBtn.setTypeface(null,Typeface.BOLD);
         buyLimitBtn.setTextColor(Color.WHITE);
         buyLimitBtn.setBackground(roundBg(Color.rgb(0,145,88),10));
-        Button sellLimitBtn=btn("● SELL LIMIT");
+        sellLimitBtn=btn("● SELL LIMIT");
         sellLimitBtn.setTextSize(12);
         sellLimitBtn.setTypeface(null,Typeface.BOLD);
         sellLimitBtn.setTextColor(Color.WHITE);
@@ -216,7 +240,7 @@ public class MainActivity extends Activity {
             if(s.contains("MARKET"))q.setOnClickListener(v->showMarketDialog());
             else if(s.contains("SIGNAL"))q.setOnClickListener(v->showSignalDialog());
             else if(s.contains("ORDERS"))q.setOnClickListener(v->showLogDialog("ORDERS / HISTORY"));
-            else if(s.contains("SETTINGS"))q.setOnClickListener(v->showMenu(q));
+            else if(s.contains("SETTINGS"))q.setOnClickListener(v->showSettingsPanel(q));
             else if(s.contains("CHART"))q.setOnClickListener(v->chart.goLive());
         }
         root.addView(nav,new LinearLayout.LayoutParams(-1,53));
@@ -430,16 +454,101 @@ public class MainActivity extends Activity {
         queueLimit(side,lot,s.entry,s.sl,s.tp2>0?s.tp2:s.tp1);
     }
 
+    private boolean isEntryReady(SignalResult signal,double bid,double ask){
+        if(signal==null||bid<=0||ask<=0)return false;
+        if(!"BUY".equals(signal.side)&&!"SELL".equals(signal.side))return false;
+        int score=Math.max(0,Math.min(100,signal.score));
+        if(score<60||!signal.spreadFilter||!signal.atrFilter)return false;
+        if(signal.entry<=0||signal.sl<=0||signal.tp1<=0)return false;
+        if("BUY".equals(signal.side))return signal.entry<ask&&signal.sl<signal.entry&&signal.tp1>signal.entry;
+        return signal.entry>bid&&signal.tp1<signal.entry&&signal.sl>signal.entry;
+    }
+
+    private void updateEntryReadyUi(SignalResult signal,double bid,double ask){
+        boolean nextReady=isEntryReady(signal,bid,ask);
+        String nextSide=nextReady?signal.side:"WAIT";
+        if(nextReady){
+            boolean sideChanged=!readySide.equals(nextSide);
+            if(!entryReady||sideChanged){
+                signalUiHandler.removeCallbacks(entryBlinkRunnable);
+                blinkOn=false;
+                readySide=nextSide;
+                entryReady=true;
+                signalUiHandler.post(entryBlinkRunnable);
+            }else{
+                entryReady=true;
+                readySide=nextSide;
+            }
+            entryReadyView.setText("● ENTRY READY • "+nextSide+" LIMIT");
+            entryReadyView.setTextColor(Color.WHITE);
+            entryReadyView.setBackground(roundBg("BUY".equals(nextSide)?Color.rgb(0,105,68):Color.rgb(140,28,43),10));
+        }else{
+            signalUiHandler.removeCallbacks(entryBlinkRunnable);
+            entryReady=false;
+            readySide="WAIT";
+            blinkOn=false;
+            boolean hasSide=signal!=null&&("BUY".equals(signal.side)||"SELL".equals(signal.side));
+            entryReadyView.setText(hasSide?"WAIT • "+signal.side+" setup belum memenuhi filter/level":"WAIT • menunggu setup valid");
+            entryReadyView.setTextColor(Color.rgb(255,205,95));
+            entryReadyView.setBackground(roundBg(Color.rgb(35,38,35),10));
+        }
+        applyEntryButtonColors();
+    }
+
+    private void resetEntryReadyUi(String reason){
+        signalUiHandler.removeCallbacks(entryBlinkRunnable);
+        entryReady=false;
+        readySide="WAIT";
+        blinkOn=false;
+        if(entryReadyView!=null){
+            entryReadyView.setText("WAIT • "+reason);
+            entryReadyView.setTextColor(Color.rgb(255,205,95));
+            entryReadyView.setBackground(roundBg(Color.rgb(35,38,35),10));
+        }
+        applyEntryButtonColors();
+    }
+
+    private void applyEntryButtonColors(){
+        if(buyLimitBtn==null||sellLimitBtn==null)return;
+        if(!entryReady){
+            buyLimitBtn.setBackground(roundBg(Color.rgb(0,145,88),10));
+            sellLimitBtn.setBackground(roundBg(Color.rgb(190,45,58),10));
+            buyLimitBtn.setTextColor(Color.WHITE);
+            sellLimitBtn.setTextColor(Color.WHITE);
+            return;
+        }
+        // Both buttons pulse for visibility; the matching direction stays brighter.
+        int buyColor;
+        int sellColor;
+        if("BUY".equals(readySide)){
+            buyColor=blinkOn?Color.rgb(0,245,145):Color.rgb(0,104,67);
+            sellColor=blinkOn?Color.rgb(105,40,48):Color.rgb(65,28,35);
+        }else{
+            buyColor=blinkOn?Color.rgb(15,105,75):Color.rgb(8,58,43);
+            sellColor=blinkOn?Color.rgb(255,85,100):Color.rgb(140,28,43);
+        }
+        buyLimitBtn.setBackground(roundBg(buyColor,10));
+        sellLimitBtn.setBackground(roundBg(sellColor,10));
+        buyLimitBtn.setTextColor(Color.WHITE);
+        sellLimitBtn.setTextColor(Color.WHITE);
+    }
+
     void updateSignal(Candle[] m1,Candle[] m5){
-        if(m1==null||m1.length<30||m5==null||m5.length<30)return;
+        if(m1==null||m1.length<30||m5==null||m5.length<30){
+            if(scoreView!=null)scoreView.setText("SCORE\n0%");
+            resetEntryReadyUi("menunggu data M1/M5");
+            return;
+        }
         double bid=chart==null?0:chart.getBid(),ask=chart==null?0:chart.getAsk();
         SignalResult previous=lastSignal;lastSignal=SignalEngine.evaluate(m1,m5,bid,ask);SignalResult s=lastSignal;
 
-        scoreView.setText("CONFIDENCE\n"+s.confidence+"/5");
-        scoreView.setTextSize(10);
-        scoreView.setTextColor(s.confidence>=4?Color.YELLOW:Color.WHITE);
-        signalSummary.setText(("BUY".equals(s.side)||"SELL".equals(s.side)?("M1 "+s.side+" • M5 "+s.m5Bias):("Menunggu wick valid • "+s.confidence+"/5"))+"\n"+s.setup);
+        int displayScore=Math.max(0,Math.min(100,s.score));
+        scoreView.setText("SCORE\n"+displayScore+"%");
+        scoreView.setTextSize(11);
+        scoreView.setTextColor(displayScore>=75?Color.YELLOW:displayScore>=60?Color.CYAN:Color.WHITE);
+        signalSummary.setText(("BUY".equals(s.side)||"SELL".equals(s.side)?("M1 "+s.side+" • M5 "+s.m5Bias):("Menunggu wick valid"))+"\n"+s.setup+" • CONF "+s.confidence+"/5");
         entryView.setText("Entry\n"+price(s.entry));slView.setText("SL\n"+price(s.sl));tp1View.setText("TP1\n"+price(s.tp1));tp2View.setText("TP2\n"+price(s.tp2));
+        updateEntryReadyUi(s,bid,ask);
 
         View v=((ViewGroup)scoreView.getParent()).getChildAt(0);
         if(v instanceof Button){
@@ -502,17 +611,25 @@ public class MainActivity extends Activity {
     @Override protected void onPause(){ visible=false; super.onPause(); }
 
     void showMenu(View anchor){
-        String[] items={"Market","Chart","Indicators","Signal","Gateway / Queue-ACK","Orders","Strategy","Risk Management","Telegram","MT5 / EA","Settings"};
-        PopupWindow pop=new PopupWindow(this);LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(8,8,8,8);box.setBackgroundColor(Color.rgb(5,24,42));
-        for(String s:items){
-            Button b=btn(s);b.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);b.setTextSize(14);box.addView(b,new LinearLayout.LayoutParams(270,54));
-            b.setOnClickListener(v->{pop.dismiss();
-                if("Market".equals(s))showMarketDialog();else if("Chart".equals(s)){chart.goLive();}else if("Indicators".equals(s))showIndicatorDialog();else if("Signal".equals(s))showSignalDialog();else if("Gateway / Queue-ACK".equals(s))showGatewayAckDiagnostics();else if("Telegram".equals(s))showTelegramDialog();else if("MT5 / EA".equals(s))showMt5Dialog();
-                else if("Orders".equals(s)||"Settings".equals(s))showLogDialog(s);else Toast.makeText(this,s,Toast.LENGTH_SHORT).show();
-            });
-        }
-        pop.setContentView(box);pop.setWidth(278);pop.setHeight(WindowManager.LayoutParams.WRAP_CONTENT);
-        pop.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));pop.setOutsideTouchable(true);pop.setFocusable(true);pop.setElevation(16);pop.showAsDropDown(anchor,-204,4);
+        RayyanMenuLayout.showMain(this,selectedMarket,selectedTf,this::handleMenuAction);
+    }
+
+    private void showSettingsPanel(View anchor){
+        RayyanMenuLayout.showSettings(this,selectedMarket,selectedTf,this::handleMenuAction);
+    }
+
+    private void handleMenuAction(String action){
+        if("market".equals(action)||"settings_market".equals(action))showMarketDialog();
+        else if("chart".equals(action)){if(chart!=null)chart.goLive();}
+        else if("indicators".equals(action)||"settings_indicators".equals(action))showIndicatorDialog();
+        else if("signal".equals(action))showSignalDialog();
+        else if("gateway".equals(action)||"settings_gateway".equals(action))showGatewayAckDiagnostics();
+        else if("orders".equals(action)||"settings_logs".equals(action))showLogDialog("ORDERS / SYSTEM LOG");
+        else if("mt5".equals(action)||"settings_mt5".equals(action))showMt5Dialog();
+        else if("telegram".equals(action)||"settings_telegram".equals(action))showTelegramDialog();
+        else if("settings".equals(action))showSettingsPanel(null);
+        else if("strategy".equals(action))Toast.makeText(this,"Strategy: wick rejection + liquidity sweep + BOS",Toast.LENGTH_LONG).show();
+        else if("risk".equals(action))Toast.makeText(this,"Risk Management: gunakan akun demo dan lot minimum saat pengujian",Toast.LENGTH_LONG).show();
     }
 
     void showGatewayAckDiagnostics(){
@@ -573,6 +690,7 @@ public class MainActivity extends Activity {
                 if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");
                 if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);
                 lastSignal=null;
+                resetEntryReadyUi("menunggu data market");
                 dialog.dismiss();
                 load(interval(selectedTf),selectedTf);
                 AppLog.add(this,"MARKET","selected "+selectedMarket+" (APK feed only; MT5 symbol mapping deferred)");
@@ -858,5 +976,5 @@ public class MainActivity extends Activity {
         ackHandler.post(ackWatcher);
     }
 
-    @Override protected void onDestroy(){if(ex!=null)ex.shutdownNow();if(candleRefresh!=null)candleRefresh.shutdownNow();super.onDestroy();}
+    @Override protected void onDestroy(){signalUiHandler.removeCallbacks(entryBlinkRunnable);if(ex!=null)ex.shutdownNow();if(candleRefresh!=null)candleRefresh.shutdownNow();super.onDestroy();}
 }
