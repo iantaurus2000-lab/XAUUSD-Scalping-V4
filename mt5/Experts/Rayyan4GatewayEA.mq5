@@ -1,6 +1,7 @@
 #property strict
 #include <Trade/Trade.mqh>
 CTrade trade;
+#define RAYYAN_MAGIC 4104407
 
 input string GatewayUrl="http://192.168.0.109:8787";
 input string AllowedSymbol="XAUUSDm";
@@ -79,7 +80,9 @@ void OnTimer(){
       }else if(targetId!="" && cancelTicket>0 && OrderSelect(cancelTicket)){
          string orderComment=OrderGetString(ORDER_COMMENT);
          ENUM_ORDER_TYPE orderType=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
-         bool correctSide=(orderType==ORDER_TYPE_BUY_LIMIT || orderType==ORDER_TYPE_SELL_LIMIT);
+         long orderMagic=OrderGetInteger(ORDER_MAGIC);
+         bool correctSide=(orderType==ORDER_TYPE_BUY_LIMIT || orderType==ORDER_TYPE_SELL_LIMIT)
+            && orderMagic==RAYYAN_MAGIC;
          if(orderComment==expectedComment && correctSide){
             ResetLastError();
             bool deleted=trade.OrderDelete(cancelTicket);
@@ -218,6 +221,7 @@ void OnTimer(){
                " symbol=",sym," side=",side);
 
          trade.SetAsyncMode(false);
+         trade.SetExpertMagicNumber(RAYYAN_MAGIC);
          trade.SetTypeFillingBySymbol(sym);
          ResetLastError();
          if(side=="BUY_LIMIT") ok=trade.BuyLimit(vol,entry,sym,sl,tp,ORDER_TIME_GTC,0,"R4-"+id);
@@ -280,8 +284,11 @@ void publishOrderState(){
       ulong ticket=PositionGetTicket(i);
       if(ticket==0) continue;
       string comment=PositionGetString(POSITION_COMMENT);
-      if(StringFind(comment,"R4-")!=0) continue;
-      string oid=StringSubstr(comment,3);
+      long positionMagic=PositionGetInteger(POSITION_MAGIC);
+      bool tagged=StringFind(comment,"R4-")==0;
+      if(!tagged && positionMagic!=RAYYAN_MAGIC) continue;
+      string oid=tagged ? StringSubstr(comment,3)
+                        : (managedId!="" ? managedId : "UNKNOWN_POSITION");
       if(managedId!="" && oid!=managedId) continue;
       managedId=oid; trackedOrderId=oid;
       state="POSITION"; ticketText=(string)ticket;
@@ -298,8 +305,11 @@ void publishOrderState(){
          ulong ticket=OrderGetTicket(i);
          if(ticket==0) continue;
          string comment=OrderGetString(ORDER_COMMENT);
-         if(StringFind(comment,"R4-")!=0) continue;
-         string oid=StringSubstr(comment,3);
+         long orderMagic=OrderGetInteger(ORDER_MAGIC);
+         bool tagged=StringFind(comment,"R4-")==0;
+         if(!tagged && orderMagic!=RAYYAN_MAGIC) continue;
+         string oid=tagged ? StringSubstr(comment,3)
+                           : (managedId!="" ? managedId : "UNKNOWN_PENDING");
          if(managedId!="" && oid!=managedId) continue;
          ENUM_ORDER_TYPE ot=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
          if(ot!=ORDER_TYPE_BUY_LIMIT && ot!=ORDER_TYPE_SELL_LIMIT) continue;
