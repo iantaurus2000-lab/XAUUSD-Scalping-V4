@@ -74,11 +74,11 @@ public final class RayyanMenuLayout {
             new Item("◉", "Confidence Entry", "Ambang minimum 60%, 70%, 80%, atau 90%", "confidence")
         ), actions);
 
-        addSection(host, content, "ORDER & KONEKSI");
+        addSection(host, content, "SMART AUTO ENTRY & KONEKSI");
         addItems(host, content, Arrays.asList(
             new Item("⇄", "Gateway / Queue / ACK", "Status EA, antrean, dan konfirmasi MT5", "gateway"),
             new Item("▤", "Orders / History", "Log dan riwayat aktivitas aplikasi", "orders"),
-            new Item("◉", "MT5 / EA • DEMO", "Mode trading dan pengiriman LIMIT demo", "mt5")
+            new Item("✦", "Smart Auto Entry", "Pengaturan Auto Entry dan LIMIT demo", "mt5")
         ), actions);
 
         addSection(host, content, "ALAT & PENGATURAN");
@@ -111,7 +111,7 @@ public final class RayyanMenuLayout {
         addSection(host, content, "KONEKSI & NOTIFIKASI");
         addItems(host, content, Arrays.asList(
             new Item("⇄", "Gateway / Queue / ACK", "Periksa status EA dan antrean; tidak mengirim order", "settings_gateway"),
-            new Item("◉", "MT5 / EA • DEMO", "Mode kerja dan kontrol LIMIT demo", "settings_mt5"),
+            new Item("✦", "Smart Auto Entry", "Pengaturan Auto Entry dan LIMIT demo", "settings_mt5"),
             new Item("✉", "Telegram", "Token, Chat ID, dan notifikasi", "settings_telegram"),
             new Item("▤", "Log Sistem", "Lihat catatan aktivitas aplikasi", "settings_logs")
         ), actions);
