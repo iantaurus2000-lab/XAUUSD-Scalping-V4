@@ -566,6 +566,329 @@ public class MainActivity extends Activity {
         sellLimitBtn.setTextColor(sellActive||!entryReady?Color.WHITE:Color.rgb(158,172,181));
     }
 
+    private double preferenceDouble(SharedPreferences p,String key,double fallback){
+        try{
+            String v=p.getString(key,"");
+            double n=Double.parseDouble(v);
+            return Double.isFinite(n)&&n>0?n:fallback;
+        }catch(Exception e){return fallback;}
+    }
+
+    private String normalizedStateSide(String side){
+        if(side==null)return "";
+        if(side.startsWith("BUY"))return "BUY";
+        if(side.startsWith("SELL"))return "SELL";
+        return side;
+    }
+
+    private void smartLogOnce(SharedPreferences p,String key,String message){
+        if(!key.equals(p.getString("smart_last_log_key",""))){
+            AppLog.add(this,"SMART LIMIT",message);
+            p.edit().putString("smart_last_log_key",key).apply();
+        }
+    }
+
+    private boolean m5DoesNotOppose(String side,String bias){
+        if("BUY".equals(side))return !"SELL".equals(bias);
+        if("SELL".equals(side))return !"BUY".equals(bias);
+        return false;
+    }
+
+    private String makeSignalKey(SignalResult s,long candleStamp){
+        return selectedMarket+"|"+s.side+"|"+s.m5Bias+"|"+s.setup+"|"+candleStamp;
+    }
+
+    private boolean queueAutoSignal(SignalResult s,Candle[] m1,SharedPreferences gp,
+                                    double lot,long candleStamp,String signalKey){
+        double target=validAutoTarget(s);
+        if(target<=0)return false;
+        String orderSide="BUY".equals(s.side)?"BUY_LIMIT":"SELL_LIMIT";
+        boolean queued=queueLimit(orderSide,lot,s.entry,s.sl,target);
+        if(!queued)return false;
+        String orderId=gp.getString("order_status_id","");
+        long now=System.currentTimeMillis();
+        gp.edit().putString("auto_last_signal_key",signalKey)
+            .putLong("auto_last_order_ms",now)
+            .putString("smart_phase","QUEUED")
+            .putString("smart_active_id",orderId)
+            .putString("smart_active_side",s.side)
+            .putString("smart_active_symbol",mt5SymbolForMarket(selectedMarket))
+            .putString("smart_active_entry",Double.toString(s.entry))
+            .putString("smart_active_ticket","")
+            .putLong("smart_active_start_candle_ms",candleStamp)
+            .putLong("smart_active_queue_ms",now)
+            .putBoolean("smart_reentry_allowed",false)
+            .remove("smart_cancel_command_id")
+            .apply();
+        AppLog.add(this,"AUTO LIMIT","queued "+signalKey+"; lifecycle locked pending EA state");
+        return true;
+    }
+
+    private void processAutoLimit(SignalResult s,Candle[] m1,Candle[] m5,
+                                  double bid,double ask,long candleStamp){
+        SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        if(!gp.getBoolean("auto",false)
+                ||!"READY".equals(gp.getString("operation_mode","REST")))return;
+        if(!"M1".equals(selectedTf)||m1==null||m1.length<30||m5==null||m5.length<30)return;
+
+        long now=System.currentTimeMillis();
+        boolean eaOnline=GatewayService.isEaRecentlyOnline(this);
+        long stateAt=gp.getLong("ea_order_state_at",0L);
+        String remoteState=gp.getString("ea_order_state","UNKNOWN");
+        String remoteId=gp.getString("ea_order_state_id","");
+        boolean stateFresh=stateAt>0L&&now>=stateAt&&now-stateAt<=8000L&&eaOnline;
+        if(!eaOnline){
+            smartLogOnce(gp,"EA_OFFLINE","blocked: EA MT5 tidak polling aktif; tidak antre/re-entry");
+            return;
+        }
+        if(!stateFresh){
+            smartLogOnce(gp,"STATE_STALE","blocked: status order EA belum segar; aman menunggu, bukan membuat order baru");
+            return;
+        }
+
+        String phase=gp.getString("smart_phase","IDLE");
+        String activeId=gp.getString("smart_active_id","");
+        String activeSide=gp.getString("smart_active_side","");
+        double activeEntry=preferenceDouble(gp,"smart_active_entry",0.0);
+        String activeSymbol=gp.getString("smart_active_symbol",mt5SymbolForMarket(selectedMarket));
+        String activeTicket=gp.getString("smart_active_ticket","");
+        long startedAt=gp.getLong("smart_active_start_candle_ms",candleStamp);
+        String sideNow=normalizedStateSide(activeSide);
+        double atr=SmartLimitReentry.atr(m1,14);
+        String signalKey=makeSignalKey(s,candleStamp);
+
+        // EA has positively confirmed a pending order or an open position.
+        if("PENDING".equals(remoteState)||"POSITION".equals(remoteState)){
+            if(activeId.isEmpty()||"IDLE".equals(phase)){
+                activeId=remoteId;
+                String remoteSide=gp.getString("ea_order_state_side","");
+                sideNow=normalizedStateSide(remoteSide);
+                activeEntry=preferenceDouble(gp,"ea_order_state_price",0.0);
+                activeTicket=gp.getString("ea_order_state_ticket","");
+                activeSymbol=gp.getString("ea_order_state_symbol",activeSymbol);
+                startedAt=candleStamp; // restore conservatively after app restart
+                phase="POSITION".equals(remoteState)?"POSITION":"ACTIVE";
+                gp.edit().putString("smart_active_id",activeId)
+                    .putString("smart_active_side",sideNow)
+                    .putString("smart_active_symbol",activeSymbol)
+                    .putString("smart_active_entry",Double.toString(activeEntry))
+                    .putString("smart_active_ticket",activeTicket)
+                    .putLong("smart_active_start_candle_ms",startedAt)
+                    .putString("smart_phase",phase).apply();
+                AppLog.add(this,"SMART LIMIT","recovered EA state "+remoteState+" id="+activeId);
+            }else if(!activeId.equals(remoteId)){
+                smartLogOnce(gp,"STATE_ID_MISMATCH|"+activeId+"|"+remoteId,
+                    "blocked: EA active order id berbeda dari antrean APK; cek MT5 Trade/Experts sebelum melanjutkan");
+                return;
+            }
+
+            if("POSITION".equals(remoteState)){
+                if(!"POSITION".equals(phase)){
+                    gp.edit().putString("smart_phase","POSITION").apply();
+                    AppLog.add(this,"SMART LIMIT","position detected; AUTO locked until EA reports no position");
+                }
+                return;
+            }
+
+            // A pending order can be cancelled only after the exact order ticket and
+            // original R4-id are confirmed by the EA state heartbeat.
+            if("CANCEL_REQUESTED".equals(phase)||"QUEUED".equals(phase)
+                    ||"LOCKED_UNCERTAIN".equals(phase))return;
+            if(!"ACTIVE".equals(phase)){
+                gp.edit().putString("smart_phase","ACTIVE").apply();
+                phase="ACTIVE";
+            }
+            activeTicket=gp.getString("ea_order_state_ticket",activeTicket);
+            activeEntry=preferenceDouble(gp,"ea_order_state_price",activeEntry);
+            activeSide=gp.getString("ea_order_state_side",activeSide);
+            sideNow=normalizedStateSide(activeSide);
+            activeSymbol=gp.getString("ea_order_state_symbol",activeSymbol);
+            gp.edit().putString("smart_active_ticket",activeTicket)
+                .putString("smart_active_entry",Double.toString(activeEntry))
+                .putString("smart_active_side",sideNow)
+                .putString("smart_active_symbol",activeSymbol).apply();
+
+            if(!gp.getBoolean("smart_reentry_enabled",true))return;
+            int elapsed=SmartLimitReentry.elapsedM1Bars(startedAt,candleStamp);
+            boolean movedAway=SmartLimitReentry.movedAwayInFavor(sideNow,activeEntry,bid,ask,atr);
+            boolean continuation=SmartLimitReentry.hasContinuation(m1,sideNow)
+                &&m5DoesNotOppose(sideNow,s.m5Bias);
+            boolean validFresh=isAutoEntryEligible(s,bid,ask,true)&&s.side.equals(sideNow);
+            boolean replacement=elapsed>=3&&movedAway&&continuation&&validFresh
+                &&SmartLimitReentry.materiallyDifferentEntry(activeEntry,s.entry,atr);
+            boolean structureInvalid=("BUY".equals(sideNow)&&("SELL".equals(s.side)||"SELL".equals(s.m5Bias)))
+                ||("SELL".equals(sideNow)&&("BUY".equals(s.side)||"BUY".equals(s.m5Bias)));
+            boolean staleRun=elapsed>=4&&movedAway;
+            boolean maxAge=elapsed>=8;
+            long retryAfter=gp.getLong("smart_cancel_retry_after_ms",0L);
+            boolean shouldCancel=structureInvalid||replacement||staleRun||maxAge;
+            if(shouldCancel&&now>=retryAfter){
+                boolean queued=queueCancelPending(activeId,activeTicket,activeSymbol);
+                if(queued){
+                    String cancelCommandId=gp.getString("order_status_id","");
+                    boolean allowReplacement=replacement&&!structureInvalid&&!maxAge;
+                    gp.edit().putString("smart_phase","CANCEL_REQUESTED")
+                        .putString("smart_cancel_command_id",cancelCommandId)
+                        .putBoolean("smart_reentry_allowed",allowReplacement)
+                        .putString("smart_cancel_reason",structureInvalid?"M1/M5 structure invalid"
+                            :(replacement?"fresh trend pullback setup":"stale LIMIT without valid re-entry"))
+                        .apply();
+                    AppLog.add(this,"SMART LIMIT","cancel requested id="+activeId+
+                        " ageM1="+elapsed+" replacement="+allowReplacement);
+                }
+            }
+            return;
+        }
+
+        // Wait for the order queue/ACK to settle. EXECUTED is not enough to conclude
+        // an order is still pending; the separate EA state endpoint must identify it.
+        if("QUEUED".equals(phase)){
+            String orderId=gp.getString("order_status_id","");
+            String result=gp.getString("order_status","UNKNOWN");
+            if(activeId.equals(orderId)&&"QUEUED".equals(result))return;
+            if(activeId.equals(orderId)&&"EXECUTED".equals(result)){
+                if(remoteId.equals(activeId)&&"NONE".equals(remoteState)){
+                    gp.edit().putString("smart_phase","IDLE").remove("smart_active_id")
+                        .putString("smart_last_log_key","EXECUTED_WITHOUT_ACTIVE_ORDER").apply();
+                    AppLog.add(this,"SMART LIMIT","EA reports no pending order/position after EXECUTED; no immediate resend");
+                }else if(now-gp.getLong("smart_active_queue_ms",now)>10000L){
+                    gp.edit().putString("smart_phase","LOCKED_UNCERTAIN").apply();
+                    AppLog.add(this,"SMART LIMIT","execution acknowledged but state is inconclusive; AUTO locked to prevent duplicate");
+                }
+                return;
+            }
+            if(activeId.equals(orderId)&&("NO_BROKER_CONNECTION".equals(result)||"UNKNOWN".equals(result))){
+                gp.edit().putString("smart_phase","LOCKED_UNCERTAIN").apply();
+                AppLog.add(this,"SMART LIMIT","ambiguous execution result; locked pending manual MT5 verification");
+                return;
+            }
+            if(activeId.equals(orderId)&&!"QUEUED".equals(result)){
+                gp.edit().putString("smart_phase","IDLE").remove("smart_active_id")
+                    .putString("smart_last_log_key","ORDER_REJECTED|"+activeId).apply();
+                AppLog.add(this,"SMART LIMIT","initial order rejected: "+result+"; no automatic duplicate retry");
+                return;
+            }
+            return;
+        }
+
+        if("LOCKED_UNCERTAIN".equals(phase)){
+            // Explicitly fail closed: connection/ACK ambiguity must be checked in MT5.
+            return;
+        }
+
+        if("CANCEL_REQUESTED".equals(phase)){
+            String cancelId=gp.getString("smart_cancel_command_id","");
+            String statusId=gp.getString("order_status_id","");
+            String result=gp.getString("order_status","UNKNOWN");
+            if(!cancelId.isEmpty()&&cancelId.equals(statusId)){
+                if("CANCELLED".equals(result)){
+                    // Wait for a fresh EA snapshot proving the original ticket disappeared.
+                    if(!stateFresh||!activeId.equals(remoteId)||!"NONE".equals(remoteState))return;
+                    boolean allow=gp.getBoolean("smart_reentry_allowed",false);
+                    boolean candidate=allow&&isAutoEntryEligible(s,bid,ask,true)
+                        &&s.side.equals(sideNow)
+                        &&m5DoesNotOppose(sideNow,s.m5Bias)
+                        &&SmartLimitReentry.hasContinuation(m1,sideNow)
+                        &&SmartLimitReentry.movedAwayInFavor(sideNow,activeEntry,bid,ask,atr)
+                        &&SmartLimitReentry.materiallyDifferentEntry(activeEntry,s.entry,atr);
+                    if(candidate){
+                        String nextKey=makeSignalKey(s,candleStamp);
+                        double lot=lotForMarket();
+                        if(Double.isFinite(lot)&&lot>=minLotForSymbol(mt5SymbolForMarket(selectedMarket))
+                                &&queueAutoSignal(s,m1,gp,lot,candleStamp,nextKey)){
+                            AppLog.add(this,"SMART LIMIT","re-entry queued after CANCELLED ACK + EA NONE; side="+sideNow);
+                        }else{
+                            AppLog.add(this,"SMART LIMIT","old order cancelled; replacement not queued because fresh validation/queue failed");
+                            gp.edit().putString("smart_phase","IDLE").remove("smart_active_id")
+                                .putBoolean("smart_reentry_allowed",false).apply();
+                        }
+                    }else{
+                        AppLog.add(this,"SMART LIMIT","old order confirmed cancelled; fresh replacement conditions no longer valid; waiting");
+                        gp.edit().putString("smart_phase","IDLE").remove("smart_active_id")
+                            .putBoolean("smart_reentry_allowed",false)
+                            .putString("smart_blocked_signal_key",signalKey).apply();
+                    }
+                    return;
+                }
+                if("CANCEL_FAILED".equals(result)||"FAILED".equals(result)||"NOT_DEMO".equals(result)
+                        ||"EXPIRED".equals(result)||"REJECT".equals(result)){
+                    if("PENDING".equals(remoteState)&&activeId.equals(remoteId)){
+                        gp.edit().putString("smart_phase","ACTIVE")
+                            .putLong("smart_cancel_retry_after_ms",now+60000L)
+                            .putBoolean("smart_reentry_allowed",false).apply();
+                        AppLog.add(this,"SMART LIMIT","cancel not confirmed; retain old order state and pause retry for 60s");
+                    }else if("POSITION".equals(remoteState)){
+                        gp.edit().putString("smart_phase","POSITION").apply();
+                        AppLog.add(this,"SMART LIMIT","cancel race resolved as POSITION; replacement prohibited");
+                    }else{
+                        gp.edit().putString("smart_phase","IDLE").remove("smart_active_id")
+                            .putBoolean("smart_reentry_allowed",false).apply();
+                        AppLog.add(this,"SMART LIMIT","cancel outcome inconclusive; active state cleared only after EA reports no active exposure");
+                    }
+                    return;
+                }
+            }
+            return;
+        }
+
+        if("POSITION".equals(phase)){
+            // A closed position never triggers a replacement for that same setup.
+            if("NONE".equals(remoteState)){
+                gp.edit().putString("smart_phase","IDLE").remove("smart_active_id")
+                    .putBoolean("smart_reentry_allowed",false).apply();
+                AppLog.add(this,"SMART LIMIT","position lifecycle ended; waiting for a new signal");
+            }
+            return;
+        }
+
+        if("ACTIVE".equals(phase)){
+            // Pending/position vanished without our confirmed cancel ACK (e.g. fill,
+            // TP/SL, manual cancel). Never infer "unfilled"; do not re-enter this setup.
+            if("NONE".equals(remoteState)){
+                gp.edit().putString("smart_phase","IDLE").remove("smart_active_id")
+                    .putBoolean("smart_reentry_allowed",false).apply();
+                AppLog.add(this,"SMART LIMIT","active order ended outside managed cancel; no re-entry for old order");
+            }
+            return;
+        }
+
+        // Fail closed if the EA snapshot is not a verified flat state.
+        if(!"NONE".equals(remoteState))return;
+        if(!"NONE".equals(remoteId)&&remoteId.isEmpty())return;
+        if(!queueIsFree(gp))return;
+
+        boolean m1Context="M1".equals(selectedTf)&&m1.length>=30&&m5.length>=30;
+        if(!isAutoEntryEligible(s,bid,ask,m1Context))return;
+        double lot=lotForMarket();
+        double minLot=minLotForSymbol(mt5SymbolForMarket(selectedMarket));
+        if(!Double.isFinite(lot)||lot<=0||lot+1e-8<minLot){
+            smartLogOnce(gp,"LOT_INVALID|"+selectedMarket,"blocked: lot "+lotText(lot)+" di bawah minimum "+lotText(minLot));
+            return;
+        }
+        if(signalKey.equals(gp.getString("auto_last_signal_key",""))
+                ||signalKey.equals(gp.getString("smart_blocked_signal_key",""))){
+            smartLogOnce(gp,"DUPLICATE_SIGNAL|"+signalKey,"blocked: sinyal/Setup ini sudah diproses; menunggu candle/setup baru");
+            return;
+        }
+        long lastAuto=gp.getLong("auto_last_order_ms",0L);
+        if(now-lastAuto<60000L){
+            smartLogOnce(gp,"COOLDOWN|"+signalKey,"blocked: cooldown 60 detik setelah command terakhir");
+            return;
+        }
+        double target=validAutoTarget(s);
+        if(target<=0)return;
+        if(!queueAutoSignal(s,m1,gp,lot,candleStamp,signalKey)){
+            smartLogOnce(gp,"QUEUE_REJECTED|"+signalKey,"queue rejected; no immediate automatic resend");
+        }else{
+            gp.edit().remove("smart_last_log_key").apply();
+        }
+    }
+
+    private boolean queueIsFree(SharedPreferences p){
+        String queue=p.getString("next","");
+        return queue==null||queue.trim().isEmpty();
+    }
+
     void updateSignal(Candle[] m1,Candle[] m5){
         if(m1==null||m1.length<30||m5==null||m5.length<30){
             if(scoreView!=null)scoreView.setText("SCORE 0%");
@@ -601,56 +924,9 @@ public class MainActivity extends Activity {
         String candleKey=selectedMarket+"|"+selectedTf+"|"+candleStamp;
         SharedPreferences noticePrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         boolean alreadyNotified=candleKey.equals(noticePrefs.getString("signal_notified_candle",""));
-        // AUTO ENTRY is evaluated only from actual M1 candles with a separate M5 context.
-        // It uses the same score/spread/ATR/price-geometry guard as ENTRY READY, plus wick rejection.
-        if("BUY".equals(s.side)||"SELL".equals(s.side)){
-            SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-            if(gp.getBoolean("auto",false) && "READY".equals(gp.getString("operation_mode","REST"))){
-                String signalKey=selectedMarket+"|"+s.side+"|"+s.m5Bias+"|"+s.setup+"|"+m1[m1.length-1].t;
-                String lastKey=gp.getString("auto_last_signal_key","");
-                long now=System.currentTimeMillis();
-                long lastAuto=gp.getLong("auto_last_order_ms",0L);
-                boolean m1Context="M1".equals(selectedTf)&&m1.length>=30&&m5.length>=30;
-                boolean filters=isAutoEntryEligible(s,bid,ask,m1Context);
-                boolean queueFree=gp.getString("next","").trim().isEmpty();
-                boolean eaOnline=GatewayService.isEaRecentlyOnline(this);
-                double lot=lotForMarket();
-                double minLot=minLotForSymbol(mt5SymbolForMarket(selectedMarket));
-                boolean lotValid=Double.isFinite(lot)&&lot>0&&lot+1e-8>=minLot;
-                String blocked="";
-                if(!m1Context) blocked="blocked: pilih timeframe M1; entry wajib M1 + bias M5";
-                else if(!filters) blocked="blocked: wick/score/spread/ATR/Entry-SL-TP validation";
-                else if(!lotValid) blocked="blocked: lot "+lotText(lot)+" di bawah minimum "+lotText(minLot);
-                else if(!eaOnline) blocked="blocked: EA MT5 tidak polling aktif; tidak antre order";
-                else if(!queueFree) blocked="blocked: queue berisi perintah; menunggu ACK/pengecekan MT5";
-                else if(signalKey.equals(lastKey)) blocked="blocked: sinyal ini sudah pernah diantrekan";
-                else if(now-lastAuto<60000L) blocked="blocked: cooldown 60 detik";
-                if(!blocked.isEmpty()){
-                    String blockLogKey=signalKey+"|"+blocked;
-                    if(!blockLogKey.equals(gp.getString("auto_last_block_log_key",""))){
-                        AppLog.add(this,"AUTO LIMIT",blocked);
-                        gp.edit().putString("auto_last_block_log_key",blockLogKey).apply();
-                    }
-                }else{
-                    double target=validAutoTarget(s);
-                    String orderSide="BUY".equals(s.side)?"BUY_LIMIT":"SELL_LIMIT";
-                    boolean queued=queueLimit(orderSide,lot,s.entry,s.sl,target);
-                    if(queued){
-                        gp.edit().putString("auto_last_signal_key",signalKey)
-                            .putLong("auto_last_order_ms",now)
-                            .remove("auto_last_block_log_key").apply();
-                        AppLog.add(this,"AUTO LIMIT","queued "+signalKey+"; menunggu ACK MT5");
-                    }else{
-                        // Avoid repeating dialogs/toasts every second if local validation refuses the queue.
-                        String rejectKey=signalKey+"|QUEUE_REJECTED";
-                        if(!rejectKey.equals(gp.getString("auto_last_block_log_key",""))){
-                            AppLog.add(this,"AUTO LIMIT","queue rejected; no automatic resend until a new signal/context");
-                            gp.edit().putString("auto_last_block_log_key",rejectKey).apply();
-                        }
-                    }
-                }
-            }
-        }
+        // The lifecycle manager owns one Rayyan LIMIT/position at a time. It
+        // queues, cancels, and re-enters only after fresh EA state plus matching ACK.
+        processAutoLimit(s,m1,m5,bid,ask,candleStamp);
         if(changed&&("BUY".equals(s.side)||"SELL".equals(s.side))){
             String msg=selectedMarket+" SCALPING\n\n"+s.side+"\nEntry: "+price(s.entry)+"\nSL: "+price(s.sl)+"\nTP1: "+price(s.tp1)+"\nTP2: "+price(s.tp2)+"\nTF: M1\nBias: M5 "+s.m5Bias+"\nSetup: "+s.setup+"\nConfidence: "+s.confidence+"/5";
             AppLog.add(this,"SIGNAL",s.side+" "+price(s.entry)+" score="+s.score);
@@ -1053,7 +1329,7 @@ public class MainActivity extends Activity {
      * Save the market-specific lot used by AUTO LIMIT as well as the selected mode.
      * AUTO computes Entry/SL/TP from the live signal; those manual fields are not used.
      */
-    private boolean saveAutoEntrySettings(Switch auto,Spinner mode,EditText volume,
+    private boolean saveAutoEntrySettings(Switch auto,Switch smartReentry,Spinner mode,EditText volume,
                                           SharedPreferences gatewayPrefs,String symbol){
         final double lot;
         try{
@@ -1071,6 +1347,7 @@ public class MainActivity extends Activity {
         String operation=mode.getSelectedItemPosition()==1?"READY":"REST";
         gatewayPrefs.edit().putFloat("lot_"+symbol,(float)lot)
             .putBoolean("auto",auto.isChecked())
+            .putBoolean("smart_reentry_enabled",smartReentry.isChecked())
             .putString("operation_mode",operation).apply();
         AppLog.add(this,"MODE",operation.equals("READY")?"SIAP TRADING":"ISTIRAHAT");
         AppLog.add(this,"AUTO LIMIT","settings saved symbol="+symbol+" lot="+lotText(lot)
@@ -1095,6 +1372,40 @@ public class MainActivity extends Activity {
         }catch(Exception e){
             Toast.makeText(this,"Isi lot yang valid terlebih dahulu",Toast.LENGTH_SHORT).show();
             return -1;
+        }
+    }
+
+    private boolean queueCancelPending(String targetId,String ticket,String symbol){
+        SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        try{
+            if(targetId==null||targetId.isEmpty()||ticket==null||ticket.isEmpty()
+                    ||Long.parseLong(ticket)<=0){
+                AppLog.add(this,"SMART LIMIT","cancel blocked: missing original id/ticket");
+                return false;
+            }
+            if(!GatewayService.isEaRecentlyOnline(this)){
+                AppLog.add(this,"SMART LIMIT","cancel blocked: EA not polling; no replacement permitted");
+                return false;
+            }
+            String existing=p.getString("next","");
+            if(existing!=null&&!existing.trim().isEmpty()){
+                AppLog.add(this,"SMART LIMIT","cancel blocked: gateway queue is busy");
+                return false;
+            }
+            String commandId=Long.toString(System.currentTimeMillis());
+            String safeSymbol=(symbol==null||symbol.isEmpty())?mt5SymbolForMarket(selectedMarket):symbol;
+            String command="id="+commandId+";type=CANCEL;targetId="+targetId+
+                ";ticket="+ticket+";symbol="+safeSymbol;
+            p.edit().putString("next",command)
+                .putString("order_status_id",commandId)
+                .putString("order_status","QUEUED")
+                .putString("order_status_detail","Menunggu EA memverifikasi dan membatalkan LIMIT lama")
+                .putLong("order_status_at",System.currentTimeMillis()).apply();
+            AppLog.add(this,"SMART LIMIT","cancel command queued target="+targetId+" ticket="+ticket);
+            return true;
+        }catch(Exception e){
+            AppLog.add(this,"SMART LIMIT","cancel queue error: "+e.getClass().getSimpleName()+" "+e.getMessage());
+            return false;
         }
     }
 
@@ -1188,6 +1499,14 @@ public class MainActivity extends Activity {
         auto.setMinHeight(uiDp(52));auto.setMinimumHeight(uiDp(52));
         auto.setChecked(gatewayPrefs.getBoolean("auto",false));
 
+        Switch smartReentry=new Switch(this);
+        smartReentry.setText("SMART LIMIT RE-ENTRY • evaluasi 3 candle M1");
+        smartReentry.setTextSize(13);
+        smartReentry.setPadding(uiDp(10),uiDp(4),uiDp(10),uiDp(4));
+        smartReentry.setBackground(roundBg(Color.rgb(7,30,47),12));
+        smartReentry.setMinHeight(uiDp(52));smartReentry.setMinimumHeight(uiDp(52));
+        smartReentry.setChecked(gatewayPrefs.getBoolean("smart_reentry_enabled",true));
+
         Spinner mode=new Spinner(this);
         String[] modes={"MODE ISTIRAHAT","MODE SIAP TRADING"};
         ArrayAdapter<String> modeAdapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,modes);
@@ -1224,6 +1543,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams hintParams=new LinearLayout.LayoutParams(-1,-2);
         hintParams.setMargins(0,uiDp(5),0,uiDp(6));fields.addView(modeHint,hintParams);
         fields.addView(auto,new LinearLayout.LayoutParams(-1,uiDp(54)));
+        fields.addView(smartReentry,new LinearLayout.LayoutParams(-1,uiDp(54)));
         fields.addView(vol,new LinearLayout.LayoutParams(-1,uiDp(54)));
 
         // Manual one-shot LIMIT fields are separate from automatic signal execution.
@@ -1283,7 +1603,7 @@ public class MainActivity extends Activity {
         updateAutoUi.run();
 
         save.setOnClickListener(v->{
-            if(!saveAutoEntrySettings(auto,mode,vol,gatewayPrefs,selectedMt5Symbol))return;
+            if(!saveAutoEntrySettings(auto,smartReentry,mode,vol,gatewayPrefs,selectedMt5Symbol))return;
             Toast.makeText(this,"Lot dan pengaturan AUTO ENTRY tersimpan untuk "+selectedMt5Symbol,Toast.LENGTH_SHORT).show();
             dialog.dismiss();
         });
