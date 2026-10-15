@@ -35,8 +35,16 @@ public final class RayyanMenuLayout {
     private static final int GREEN = Color.rgb(0, 225, 135);
     private static final int MUTED = Color.rgb(160, 182, 197);
     private static final int WHITE = Color.WHITE;
+    private static AlertDialog activeDialog;
 
     private RayyanMenuLayout() {}
+
+    /** Dismiss the current custom menu before opening the selected sub-page. */
+    public static void dismissActive() {
+        AlertDialog dialog = activeDialog;
+        activeDialog = null;
+        if (dialog != null && dialog.isShowing()) dialog.dismiss();
+    }
 
     private static final class Item {
         final String icon, title, subtitle, action;
@@ -197,6 +205,7 @@ public final class RayyanMenuLayout {
 
     private static void showDialog(Activity host, LinearLayout content, String tag) {
         AlertDialog dialog = new AlertDialog.Builder(host).setView(content).create();
+        activeDialog = dialog;
         dialog.setOnShowListener(ignored -> {
             Window window = dialog.getWindow();
             if (window != null) {
