@@ -468,6 +468,29 @@ public class MainActivity extends Activity {
         return signal.entry>bid&&signal.tp1<signal.entry&&signal.sl>signal.entry;
     }
 
+    private double validAutoTarget(SignalResult signal){
+        if(signal==null||signal.entry<=0)return 0;
+        if("BUY".equals(signal.side)){
+            if(signal.tp2>signal.entry)return signal.tp2;
+            if(signal.tp1>signal.entry)return signal.tp1;
+        }else if("SELL".equals(signal.side)){
+            if(signal.tp2>0&&signal.tp2<signal.entry)return signal.tp2;
+            if(signal.tp1>0&&signal.tp1<signal.entry)return signal.tp1;
+        }
+        return 0;
+    }
+
+    private boolean isAutoEntryEligible(SignalResult signal,double bid,double ask,boolean m1Context){
+        if(!m1Context||!isEntryReady(signal,bid,ask)||!signal.wickRejection)return false;
+        double target=validAutoTarget(signal);
+        if(target<=0)return false;
+        if("BUY".equals(signal.side))
+            return signal.entry<ask&&signal.sl<signal.entry&&target>signal.entry;
+        if("SELL".equals(signal.side))
+            return signal.entry>bid&&target<signal.entry&&signal.sl>signal.entry;
+        return false;
+    }
+
     private void updateEntryReadyUi(SignalResult signal,double bid,double ask){
         boolean nextReady=isEntryReady(signal,bid,ask);
         String nextSide=nextReady?signal.side:"WAIT";
@@ -578,35 +601,53 @@ public class MainActivity extends Activity {
         String candleKey=selectedMarket+"|"+selectedTf+"|"+candleStamp;
         SharedPreferences noticePrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         boolean alreadyNotified=candleKey.equals(noticePrefs.getString("signal_notified_candle",""));
-        // Evaluate AUTO LIMIT on each fresh signal calculation, not only the first side
-        // transition. This lets a setup retry after data/feed becomes valid without spamming:
-        // signal key + 60s cooldown + online EA + empty queue enforce one-at-a-time behavior.
+        // AUTO ENTRY is evaluated only from actual M1 candles with a separate M5 context.
+        // It uses the same score/spread/ATR/price-geometry guard as ENTRY READY, plus wick rejection.
         if("BUY".equals(s.side)||"SELL".equals(s.side)){
             SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
             if(gp.getBoolean("auto",false) && "READY".equals(gp.getString("operation_mode","REST"))){
                 String signalKey=selectedMarket+"|"+s.side+"|"+s.m5Bias+"|"+s.setup+"|"+m1[m1.length-1].t;
                 String lastKey=gp.getString("auto_last_signal_key","");
+                long now=System.currentTimeMillis();
                 long lastAuto=gp.getLong("auto_last_order_ms",0L);
-                boolean filters=s.wickRejection&&s.spreadFilter&&s.entry>0&&s.sl>0
-                        &&(s.tp2>0||s.tp1>0);
+                boolean m1Context="M1".equals(selectedTf)&&m1.length>=30&&m5.length>=30;
+                boolean filters=isAutoEntryEligible(s,bid,ask,m1Context);
                 boolean queueFree=gp.getString("next","").trim().isEmpty();
                 boolean eaOnline=GatewayService.isEaRecentlyOnline(this);
-                if(!signalKey.equals(lastKey) && s.confidence>=gp.getInt("min_confidence",4) && filters
-                        && queueFree && eaOnline && System.currentTimeMillis()-lastAuto>=60000L){
-                    double lot=lotForMarket();
+                double lot=lotForMarket();
+                double minLot=minLotForSymbol(mt5SymbolForMarket(selectedMarket));
+                boolean lotValid=Double.isFinite(lot)&&lot>0&&lot+1e-8>=minLot;
+                String blocked="";
+                if(!m1Context) blocked="blocked: pilih timeframe M1; entry wajib M1 + bias M5";
+                else if(!filters) blocked="blocked: wick/score/spread/ATR/Entry-SL-TP validation";
+                else if(!lotValid) blocked="blocked: lot "+lotText(lot)+" di bawah minimum "+lotText(minLot);
+                else if(!eaOnline) blocked="blocked: EA MT5 tidak polling aktif; tidak antre order";
+                else if(!queueFree) blocked="blocked: queue berisi perintah; menunggu ACK/pengecekan MT5";
+                else if(signalKey.equals(lastKey)) blocked="blocked: sinyal ini sudah pernah diantrekan";
+                else if(now-lastAuto<60000L) blocked="blocked: cooldown 60 detik";
+                if(!blocked.isEmpty()){
+                    String blockLogKey=signalKey+"|"+blocked;
+                    if(!blockLogKey.equals(gp.getString("auto_last_block_log_key",""))){
+                        AppLog.add(this,"AUTO LIMIT",blocked);
+                        gp.edit().putString("auto_last_block_log_key",blockLogKey).apply();
+                    }
+                }else{
+                    double target=validAutoTarget(s);
                     String orderSide="BUY".equals(s.side)?"BUY_LIMIT":"SELL_LIMIT";
-                    boolean queued=queueLimit(orderSide,lot,s.entry,s.sl,s.tp2>0?s.tp2:s.tp1);
+                    boolean queued=queueLimit(orderSide,lot,s.entry,s.sl,target);
                     if(queued){
                         gp.edit().putString("auto_last_signal_key",signalKey)
-                            .putLong("auto_last_order_ms",System.currentTimeMillis()).apply();
+                            .putLong("auto_last_order_ms",now)
+                            .remove("auto_last_block_log_key").apply();
+                        AppLog.add(this,"AUTO LIMIT","queued "+signalKey+"; menunggu ACK MT5");
+                    }else{
+                        // Avoid repeating dialogs/toasts every second if local validation refuses the queue.
+                        String rejectKey=signalKey+"|QUEUE_REJECTED";
+                        if(!rejectKey.equals(gp.getString("auto_last_block_log_key",""))){
+                            AppLog.add(this,"AUTO LIMIT","queue rejected; no automatic resend until a new signal/context");
+                            gp.edit().putString("auto_last_block_log_key",rejectKey).apply();
+                        }
                     }
-                    AppLog.add(this,"AUTO LIMIT",queued?"queued "+signalKey:"queue rejected "+signalKey);
-                }else if(!eaOnline){
-                    AppLog.add(this,"AUTO LIMIT","blocked: EA offline; no order queued");
-                }else if(!filters){
-                    AppLog.add(this,"AUTO LIMIT","blocked: wick/spread/entry/SL/TP validation");
-                }else if(!queueFree){
-                    AppLog.add(this,"AUTO LIMIT","blocked: existing command awaits ACK");
                 }
             }
         }
@@ -1091,62 +1132,130 @@ public class MainActivity extends Activity {
     }
 
     void showMt5Dialog(){
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(14));
-        box.setBackground(roundBg(Color.rgb(3,18,30),16));
-        TextView panelTitle=tv("MT5 / EA • DEMO",18);panelTitle.setTextColor(Color.CYAN);panelTitle.setTypeface(null,Typeface.BOLD);
-        box.addView(panelTitle,new LinearLayout.LayoutParams(-1,uiDp(38)));
-        TextView panelNote=tv("Mode, AUTO LIMIT, dan parameter LIMIT demo",12);panelNote.setTextColor(Color.LTGRAY);
-        box.addView(panelNote,new LinearLayout.LayoutParams(-1,uiDp(34)));
         SharedPreferences gatewayPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        Switch auto=new Switch(this);auto.setText("AUTO LIMIT DEMO • order otomatis");auto.setTextSize(15);auto.setPadding(uiDp(12),uiDp(4),uiDp(12),uiDp(4));auto.setBackground(roundBg(Color.rgb(7,30,47),12));auto.setMinHeight(uiDp(54));auto.setMinimumHeight(uiDp(54));auto.setChecked(gatewayPrefs.getBoolean("auto",false));
+        String selectedMt5Symbol=mt5SymbolForMarket(selectedMarket);
+
+        // Fixed header and footer keep KIRIM LIMIT / SIMPAN / TUTUP visible on small phones.
+        LinearLayout root=new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(uiDp(14),uiDp(12),uiDp(14),uiDp(10));
+        root.setBackground(roundBg(Color.rgb(3,18,30),16));
+
+        TextView panelTitle=tv("AUTO ENTRY / MT5 • DEMO",18);
+        panelTitle.setTextColor(Color.CYAN);panelTitle.setTypeface(null,Typeface.BOLD);
+        root.addView(panelTitle,new LinearLayout.LayoutParams(-1,uiDp(36)));
+        TextView panelNote=tv("Pemicu M1 + bias M5 • kirim hanya saat EA terhubung",12);
+        panelNote.setTextColor(Color.LTGRAY);
+        root.addView(panelNote,new LinearLayout.LayoutParams(-1,uiDp(32)));
+
+        LinearLayout fields=new LinearLayout(this);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        fields.setPadding(0,uiDp(3),0,uiDp(5));
+
+        Switch auto=new Switch(this);
+        auto.setText("AUTO LIMIT DEMO • order otomatis");
+        auto.setTextSize(14);auto.setPadding(uiDp(10),uiDp(4),uiDp(10),uiDp(4));
+        auto.setBackground(roundBg(Color.rgb(7,30,47),12));
+        auto.setMinHeight(uiDp(52));auto.setMinimumHeight(uiDp(52));
+        auto.setChecked(gatewayPrefs.getBoolean("auto",false));
+
         Spinner mode=new Spinner(this);
         String[] modes={"MODE ISTIRAHAT","MODE SIAP TRADING"};
         ArrayAdapter<String> modeAdapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,modes);
-        mode.setAdapter(modeAdapter);mode.setMinimumHeight(uiDp(54));mode.setBackground(roundBg(Color.rgb(7,30,47),12));
+        mode.setAdapter(modeAdapter);mode.setMinimumHeight(uiDp(50));
+        mode.setBackground(roundBg(Color.rgb(7,30,47),12));
         mode.setSelection("READY".equals(gatewayPrefs.getString("operation_mode","REST"))?1:0);
-        String selectedMt5Symbol=mt5SymbolForMarket(selectedMarket);
-        TextView modeHint=tv("DEMO ONLY • "+selectedMt5Symbol+" min lot "+lotText(minLotForSymbol(selectedMt5Symbol))+" • Winlator + MT5 + EA aktif",11);
-        modeHint.setTextSize(12);modeHint.setTextColor(Color.CYAN);modeHint.setPadding(uiDp(12),uiDp(8),uiDp(12),uiDp(8));modeHint.setBackground(roundBg(Color.rgb(7,30,47),12));
+
+        TextView modeHint=tv("DEMO ONLY • "+selectedMt5Symbol+" • minimum lot "+lotText(minLotForSymbol(selectedMt5Symbol))+
+            " • Auto entry hanya pada chart M1; EA MT5 harus polling aktif.",11);
+        modeHint.setTextSize(11);modeHint.setTextColor(Color.CYAN);
+        modeHint.setPadding(uiDp(10),uiDp(7),uiDp(10),uiDp(7));
+        modeHint.setBackground(roundBg(Color.rgb(7,30,47),10));
+
         EditText side=new EditText(this);side.setHint("BUY_LIMIT / SELL_LIMIT");styleDialogInput(side);
-        EditText vol=new EditText(this);vol.setHint("Lot • minimum "+lotText(minLotForSymbol(selectedMt5Symbol)));vol.setInputType(8194);styleDialogInput(vol);
-        vol.setText(lotText(lotForMarket()));
+        EditText vol=new EditText(this);vol.setHint("Lot • minimum "+lotText(minLotForSymbol(selectedMt5Symbol)));
+        vol.setInputType(8194);styleDialogInput(vol);vol.setText(lotText(lotForMarket()));
         EditText en=new EditText(this);en.setHint("Entry");en.setInputType(8194);styleDialogInput(en);
-        EditText sl=new EditText(this);sl.setHint("SL");sl.setInputType(8194);styleDialogInput(sl);
-        EditText tp=new EditText(this);tp.setHint("TP");tp.setInputType(8194);styleDialogInput(tp);
-        // Pre-fill the MT5 dialog from the latest calculated signal when available.
+        EditText sl=new EditText(this);sl.setHint("Stop Loss (SL)");sl.setInputType(8194);styleDialogInput(sl);
+        EditText tp=new EditText(this);tp.setHint("Take Profit (TP)");tp.setInputType(8194);styleDialogInput(tp);
+
         SignalResult current=lastSignal;
-        if(current!=null && current.entry>0 && current.sl>0 && current.tp1>0){
+        if(current!=null&&current.entry>0&&current.sl>0&&current.tp1>0){
             if("BUY".equals(current.side))side.setText("BUY_LIMIT");
             else if("SELL".equals(current.side))side.setText("SELL_LIMIT");
-            else side.setText("");
             en.setText(String.format(Locale.US,"%.2f",current.entry));
             sl.setText(String.format(Locale.US,"%.2f",current.sl));
-            tp.setText(String.format(Locale.US,"%.2f",current.tp2>0?current.tp2:current.tp1));
-            if(!"BUY".equals(current.side)&&!"SELL".equals(current.side))
-                Toast.makeText(this,"Harga terisi, tunggu BUY/SELL sebelum mengirim",Toast.LENGTH_LONG).show();
-        } else {
+            double target=validAutoTarget(current);
+            if(target>0)tp.setText(String.format(Locale.US,"%.2f",target));
+        }else{
             side.setText("");
-            Toast.makeText(this,"Data harga sinyal belum siap",Toast.LENGTH_LONG).show();
         }
-        TextView queuedStatus=tv("",11);queuedStatus.setTextColor(green);queuedStatus.setPadding(4,6,4,2);
-        box.addView(mode,new LinearLayout.LayoutParams(-1,uiDp(56)));box.addView(modeHint);box.addView(auto,new LinearLayout.LayoutParams(-1,uiDp(58)));box.addView(side,new LinearLayout.LayoutParams(-1,uiDp(56)));box.addView(vol,new LinearLayout.LayoutParams(-1,uiDp(56)));box.addView(en,new LinearLayout.LayoutParams(-1,uiDp(56)));box.addView(sl,new LinearLayout.LayoutParams(-1,uiDp(56)));box.addView(tp,new LinearLayout.LayoutParams(-1,uiDp(56)));box.addView(queuedStatus);
+
+        fields.addView(mode,new LinearLayout.LayoutParams(-1,uiDp(52)));
+        LinearLayout.LayoutParams hintParams=new LinearLayout.LayoutParams(-1,-2);
+        hintParams.setMargins(0,uiDp(5),0,uiDp(6));fields.addView(modeHint,hintParams);
+        fields.addView(auto,new LinearLayout.LayoutParams(-1,uiDp(54)));
+        fields.addView(side,new LinearLayout.LayoutParams(-1,uiDp(54)));
+        fields.addView(vol,new LinearLayout.LayoutParams(-1,uiDp(54)));
+        fields.addView(en,new LinearLayout.LayoutParams(-1,uiDp(54)));
+        fields.addView(sl,new LinearLayout.LayoutParams(-1,uiDp(54)));
+        fields.addView(tp,new LinearLayout.LayoutParams(-1,uiDp(54)));
+
+        ScrollView sc=new ScrollView(this);
+        sc.setFillViewport(false);sc.setSmoothScrollingEnabled(true);sc.addView(fields);
+        root.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
+
+        TextView queuedStatus=tv("Belum ada perintah baru.",11);
+        queuedStatus.setTextColor(Color.LTGRAY);
+        queuedStatus.setPadding(uiDp(4),uiDp(4),uiDp(4),uiDp(4));
+        queuedStatus.setMaxLines(3);
+        queuedStatus.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        root.addView(queuedStatus,new LinearLayout.LayoutParams(-1,-2));
+
+        Button send=btn("KIRIM LIMIT DEMO");
+        send.setTextSize(12);send.setTypeface(null,Typeface.BOLD);
+        send.setTextColor(Color.WHITE);send.setBackground(roundBg(Color.rgb(0,110,85),10));
+        send.setMinHeight(uiDp(46));send.setMinimumHeight(uiDp(46));
+        root.addView(send,new LinearLayout.LayoutParams(-1,uiDp(48)));
+
+        LinearLayout footer=new LinearLayout(this);
+        footer.setOrientation(LinearLayout.HORIZONTAL);
+        footer.setGravity(Gravity.CENTER_VERTICAL);
+        Button save=btn("SIMPAN MODE");
+        save.setTextSize(11);save.setTextColor(Color.WHITE);
+        save.setBackground(roundBg(Color.rgb(8,70,103),10));
+        Button close=btn("TUTUP");
+        close.setTextSize(11);close.setTextColor(Color.WHITE);
+        close.setBackground(roundBg(Color.rgb(53,65,77),10));
+        LinearLayout.LayoutParams buttonParams=new LinearLayout.LayoutParams(0,uiDp(46),1f);
+        buttonParams.setMargins(0,uiDp(5),uiDp(4),0);footer.addView(save,buttonParams);
+        LinearLayout.LayoutParams closeParams=new LinearLayout.LayoutParams(0,uiDp(46),1f);
+        closeParams.setMargins(uiDp(4),uiDp(5),0,0);footer.addView(close,closeParams);
+        root.addView(footer,new LinearLayout.LayoutParams(-1,uiDp(51)));
+
+        AlertDialog dialog=new AlertDialog.Builder(this).setView(root).create();
         final String[] queuedOrderId={""};
-        ScrollView dialogScroll=new ScrollView(this);dialogScroll.setFillViewport(false);dialogScroll.addView(box);
-        AlertDialog dialog=new AlertDialog.Builder(this).setView(dialogScroll)
-            .setNegativeButton("TUTUP",null).setNeutralButton("SIMPAN MODE",null).setPositiveButton("KIRIM LIMIT DEMO",null).create();
-        dialog.setOnShowListener(v->{
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(w->{
-                gatewayPrefs.edit().putBoolean("auto",auto.isChecked())
-                    .putString("operation_mode",mode.getSelectedItemPosition()==1?"READY":"REST").apply();
-                AppLog.add(this,"MODE",mode.getSelectedItemPosition()==1?"SIAP TRADING":"ISTIRAHAT");
-                Toast.makeText(this,"Mode tersimpan",Toast.LENGTH_SHORT).show();
-                dialog.dismiss();
-            });
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{
+        Runnable saveMode=()->{
+            gatewayPrefs.edit().putBoolean("auto",auto.isChecked())
+                .putString("operation_mode",mode.getSelectedItemPosition()==1?"READY":"REST").apply();
+            AppLog.add(this,"MODE",mode.getSelectedItemPosition()==1?"SIAP TRADING":"ISTIRAHAT");
+        };
+        save.setOnClickListener(v->{
+            saveMode.run();
+            Toast.makeText(this,"Pengaturan AUTO ENTRY tersimpan",Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
+        });
+        close.setOnClickListener(v->dialog.dismiss());
+        send.setOnClickListener(v->{
             try{
-                gatewayPrefs.edit().putBoolean("auto",auto.isChecked())
-                    .putString("operation_mode",mode.getSelectedItemPosition()==1?"READY":"REST").apply();
+                saveMode.run();
+                if(!GatewayService.isEaRecentlyOnline(this)){
+                    queuedStatus.setTextColor(Color.rgb(255,190,70));
+                    queuedStatus.setText("DITAHAN • EA MT5 belum polling aktif. Periksa koneksi MT5/Winlator; tidak ada order yang diantrekan.");
+                    AppLog.add(this,"ORDER_BLOCKED","manual LIMIT blocked: EA offline");
+                    Toast.makeText(this,"EA MT5 belum terhubung • LIMIT tidak dikirim",Toast.LENGTH_LONG).show();
+                    return;
+                }
                 boolean queued=queueLimit(side.getText().toString().trim().toUpperCase(Locale.US),
                     Double.parseDouble(vol.getText().toString().trim()),
                     Double.parseDouble(en.getText().toString().trim()),
@@ -1154,27 +1263,21 @@ public class MainActivity extends Activity {
                     Double.parseDouble(tp.getText().toString().trim()));
                 if(queued){
                     queuedOrderId[0]=gatewayPrefs.getString("order_status_id","");
-                    queuedStatus.setText("DIANTREKAN • menunggu EA MT5, batas 15 detik. Belum berarti order terpasang.");
-                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setText("SUDAH DIANTREKAN");
-                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+                    queuedStatus.setTextColor(Color.rgb(255,190,70));
+                    queuedStatus.setText("DIANTREKAN • menunggu ACK EA MT5. Ini belum berarti order telah terpasang.");
+                    send.setText("LIMIT SUDAH DIANTREKAN");
+                    send.setEnabled(false);
                 }
             }catch(Exception e){
                 AppLog.add(this,"ORDER","dialog input error: "+e.getClass().getSimpleName()+" "+e.getMessage());
                 Toast.makeText(this,"Periksa angka Lot, Entry, SL dan TP",Toast.LENGTH_SHORT).show();
             }catch(Throwable t){
                 AppLog.add(this,"ORDER","dialog submit failure: "+t.getClass().getSimpleName()+" "+t.getMessage());
-                Toast.makeText(this,"Gagal mengirim LIMIT; aplikasi tetap dibuka",Toast.LENGTH_LONG).show();
+                Toast.makeText(this,"Gagal memproses LIMIT; aplikasi tetap dibuka",Toast.LENGTH_LONG).show();
             }
-            });
         });
-        dialog.show();
-        resizeDialogButtons(dialog);
-        if(dialog.getWindow()!=null){
-            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
-            dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-            int sw=getResources().getDisplayMetrics().widthPixels, sh=getResources().getDisplayMetrics().heightPixels;
-            dialog.getWindow().setLayout(Math.min(sw-uiDp(32),uiDp(450)),Math.min(sh-uiDp(150),uiDp(720)));
-        }
+
+        showSizedDialog(dialog,0.86f,450);
         android.os.Handler ackHandler=new android.os.Handler(android.os.Looper.getMainLooper());
         Runnable ackWatcher=new Runnable(){
             @Override public void run(){
@@ -1187,20 +1290,20 @@ public class MainActivity extends Activity {
                         String detail=p.getString("order_status_detail","");
                         if("QUEUED".equals(result)){
                             queuedStatus.setTextColor(Color.rgb(255,190,70));
-                            queuedStatus.setText("DIANTREKAN • menunggu EA MT5 (maks. 15 detik); belum terpasang.");
+                            queuedStatus.setText("DIANTREKAN • menunggu ACK EA MT5; belum terpasang.");
                         }else if("EXECUTED".equals(result)){
                             queuedStatus.setTextColor(green);
                             queuedStatus.setText("ORDER TERPASANG • MT5 mengonfirmasi order diterima.");
                         }else if("EXPIRED".equals(result)){
                             queuedStatus.setTextColor(red);
-                            queuedStatus.setText("KEDALUWARSA / ACK TIDAK DITERIMA • "+detail+" • cek MT5 Trade/Experts sebelum kirim ulang.");
+                            queuedStatus.setText("ACK KEDALUWARSA • "+detail+" • cek MT5 Trade/Experts sebelum kirim ulang.");
                         }else{
                             queuedStatus.setTextColor(red);
                             queuedStatus.setText("ORDER GAGAL: "+result+" • "+detail+" • periksa Experts log MT5.");
                         }
                     }else{
                         queuedStatus.setTextColor(Color.rgb(255,190,70));
-                        queuedStatus.setText("DIANTREKAN • menunggu EA MT5 (maks. 15 detik); belum terpasang.");
+                        queuedStatus.setText("DIANTREKAN • menunggu ACK EA MT5; belum terpasang.");
                     }
                 }
                 ackHandler.postDelayed(this,1000L);
