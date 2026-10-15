@@ -621,6 +621,7 @@ public class MainActivity extends Activity {
     }
 
     private void handleMenuAction(String action){
+        RayyanMenuLayout.dismissActive();
         if("market".equals(action)||"settings_market".equals(action))showMarketDialog();
         else if("chart".equals(action)){if(chart!=null)chart.goLive();}
         else if("indicators".equals(action)||"settings_indicators".equals(action))showIndicatorDialog();
