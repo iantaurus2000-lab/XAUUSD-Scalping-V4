@@ -161,7 +161,7 @@ public class MainActivity extends Activity {
         signalSummary.setEllipsize(android.text.TextUtils.TruncateAt.END);
         signalSummary.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);
         top.addView(signalSummary,new LinearLayout.LayoutParams(0,50,1));
-        scoreView=tv("CONFIDENCE 0%",10);scoreView.setGravity(Gravity.CENTER);scoreView.setIncludeFontPadding(false);scoreView.setPadding(0,0,0,0);scoreView.setSingleLine(false);top.addView(scoreView,new LinearLayout.LayoutParams(92,44));
+        scoreView=tv("SCORE 0%",11);scoreView.setGravity(Gravity.CENTER);scoreView.setIncludeFontPadding(false);scoreView.setPadding(uiDp(2),0,uiDp(2),0);scoreView.setSingleLine(true);scoreView.setEllipsize(android.text.TextUtils.TruncateAt.END);scoreView.setAutoSizeTextTypeUniformWithConfiguration(9,11,1,android.util.TypedValue.COMPLEX_UNIT_SP);top.addView(scoreView,new LinearLayout.LayoutParams(uiDp(86),uiDp(44)));
         card.addView(top);
 
         entryReadyView=tv("WAIT • menunggu setup valid",11);
@@ -510,34 +510,40 @@ public class MainActivity extends Activity {
         applyEntryButtonColors();
     }
 
+    private GradientDrawable entryButtonBg(int color,boolean active,int radius){
+        GradientDrawable g=new GradientDrawable();
+        g.setColor(color);
+        g.setCornerRadius(uiDp(radius));
+        g.setStroke(uiDp(active?2:1),active?color:Color.rgb(55,68,78));
+        return g;
+    }
+
     private void applyEntryButtonColors(){
         if(buyLimitBtn==null||sellLimitBtn==null)return;
-        if(!entryReady){
-            buyLimitBtn.setBackground(roundBg(Color.rgb(0,145,88),10));
-            sellLimitBtn.setBackground(roundBg(Color.rgb(190,45,58),10));
-            buyLimitBtn.setTextColor(Color.WHITE);
-            sellLimitBtn.setTextColor(Color.WHITE);
-            return;
-        }
-        // Only the active entry direction pulses; the opposite side stays dim.
-        int buyColor;
-        int sellColor;
-        if("BUY".equals(readySide)){
-            buyColor=blinkOn?Color.rgb(0,245,145):Color.rgb(0,104,67);
-            sellColor=blinkOn?Color.rgb(105,40,48):Color.rgb(65,28,35);
+        int buyColor, sellColor;
+        boolean buyActive=entryReady&&"BUY".equals(readySide);
+        boolean sellActive=entryReady&&"SELL".equals(readySide);
+        if(buyActive){
+            buyColor=blinkOn?Color.rgb(0,255,145):Color.rgb(0,112,70);
+            sellColor=Color.rgb(38,47,57);
+        }else if(sellActive){
+            buyColor=Color.rgb(38,47,57);
+            sellColor=blinkOn?Color.rgb(255,55,75):Color.rgb(132,18,35);
         }else{
-            buyColor=blinkOn?Color.rgb(15,105,75):Color.rgb(8,58,43);
-            sellColor=blinkOn?Color.rgb(255,85,100):Color.rgb(140,28,43);
+            buyColor=Color.rgb(32,75,58);
+            sellColor=Color.rgb(76,42,48);
         }
-        buyLimitBtn.setBackground(roundBg(buyColor,10));
-        sellLimitBtn.setBackground(roundBg(sellColor,10));
-        buyLimitBtn.setTextColor(Color.WHITE);
-        sellLimitBtn.setTextColor(Color.WHITE);
+        buyLimitBtn.setBackground(entryButtonBg(buyColor,buyActive,10));
+        sellLimitBtn.setBackground(entryButtonBg(sellColor,sellActive,10));
+        buyLimitBtn.setText(buyActive?"● BUY LIMIT":"○ BUY LIMIT");
+        sellLimitBtn.setText(sellActive?"● SELL LIMIT":"○ SELL LIMIT");
+        buyLimitBtn.setTextColor(buyActive||!entryReady?Color.WHITE:Color.rgb(158,172,181));
+        sellLimitBtn.setTextColor(sellActive||!entryReady?Color.WHITE:Color.rgb(158,172,181));
     }
 
     void updateSignal(Candle[] m1,Candle[] m5){
         if(m1==null||m1.length<30||m5==null||m5.length<30){
-            if(scoreView!=null)scoreView.setText("SCORE\n0%");
+            if(scoreView!=null)scoreView.setText("SCORE 0%");
             resetEntryReadyUi("menunggu data M1/M5");
             return;
         }
@@ -545,8 +551,12 @@ public class MainActivity extends Activity {
         SignalResult previous=lastSignal;lastSignal=SignalEngine.evaluate(m1,m5,bid,ask);SignalResult s=lastSignal;
 
         int displayScore=Math.max(0,Math.min(100,s.score));
-        scoreView.setText("SCORE\n"+displayScore+"%");
+        scoreView.setText("SCORE "+displayScore+"%");
         scoreView.setTextSize(11);
+        scoreView.setSingleLine(true);
+        scoreView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        scoreView.setIncludeFontPadding(false);
+        scoreView.setGravity(Gravity.CENTER);
         scoreView.setTextColor(displayScore>=75?Color.YELLOW:displayScore>=60?Color.CYAN:Color.WHITE);
         signalSummary.setText(("BUY".equals(s.side)||"SELL".equals(s.side)?("M1 "+s.side+" • M5 "+s.m5Bias):("Menunggu wick valid"))+"\n"+s.setup+" • CONF "+s.confidence+"/5");
         entryView.setText("Entry\n"+price(s.entry));slView.setText("SL\n"+price(s.sl));tp1View.setText("TP1\n"+price(s.tp1));tp2View.setText("TP2\n"+price(s.tp2));
@@ -632,6 +642,48 @@ public class MainActivity extends Activity {
         RayyanMenuLayout.showSettings(this,selectedMarket,selectedTf,this::handleMenuAction);
     }
 
+    private void showStrategyDialog(){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(12));
+        box.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("SCALPING STRATEGY",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(40)));
+        TextView note=tv("Panduan baca-sinyal • bukan jaminan hasil",12);note.setTextColor(Color.LTGRAY);
+        box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(36)));
+        LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
+        addPanelRow(rows,"01 • MARKET BIAS","Gunakan M5 untuk arah konteks, lalu cari pemicu masuk pada M1.",Color.WHITE);
+        addPanelRow(rows,"02 • WICK REJECTION","Cari ekor candle yang menolak level; jangan masuk hanya karena candle tampak panjang.",Color.WHITE);
+        addPanelRow(rows,"03 • LIQUIDITY SWEEP","Perhatikan sapuan swing high/low dan reaksi harga sesudahnya.",Color.WHITE);
+        addPanelRow(rows,"04 • BOS","Tunggu struktur terkonfirmasi; BOS membantu validasi, bukan sinyal tunggal.",Color.WHITE);
+        addPanelRow(rows,"05 • FILTER","EMA, RSI, MACD, ATR, dan spread membantu konteks; periksa spread/feed sebelum keputusan.",Color.WHITE);
+        addPanelRow(rows,"06 • ENTRY PLAN","Tinjau Entry, SL, TP1, TP2, dan Risk:Reward sebelum LIMIT demo.",Color.CYAN);
+        ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
+        box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
+        AlertDialog d=new AlertDialog.Builder(this).setView(box).setPositiveButton("TUTUP",null).create();
+        showSizedDialog(d,0.80f,450);
+    }
+
+    private void showRiskManagementDialog(){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(12));
+        box.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("RISK MANAGEMENT",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(40)));
+        TextView note=tv("Aturan kendali risiko sebelum mengirim order",12);note.setTextColor(Color.LTGRAY);
+        box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(36)));
+        LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
+        addPanelRow(rows,"AKUN DEMO","Gunakan demo untuk verifikasi alur APK → Gateway → EA/MT5; hasil demo tidak menjamin hasil live.",Color.WHITE);
+        addPanelRow(rows,"UKURAN LOT","Mulai dari lot minimum yang valid untuk simbol pada akun. Jangan memakai lot default tanpa memeriksa spesifikasi simbol.",Color.WHITE);
+        addPanelRow(rows,"STOP LOSS","Periksa SL sebelum konfirmasi. Jangan mengirim order dengan SL yang salah atau level tidak valid.",Color.WHITE);
+        addPanelRow(rows,"TARGET","Tinjau TP1/TP2 dan Risk:Reward; level sinyal dapat berubah mengikuti data baru.",Color.WHITE);
+        addPanelRow(rows,"KONDISI KONEKSI","Jangan kirim ulang ketika ACK belum jelas. Periksa status order di MT5 Trade/Experts dan antrean Gateway dahulu.",Color.rgb(255,205,95));
+        addPanelRow(rows,"BATASAN","Ini pengingat proses, bukan perhitungan lot otomatis atau nasihat keuangan.",Color.LTGRAY);
+        ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
+        box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
+        AlertDialog d=new AlertDialog.Builder(this).setView(box).setPositiveButton("TUTUP",null).create();
+        showSizedDialog(d,0.80f,450);
+    }
+
     private void handleMenuAction(String action){
         RayyanMenuLayout.dismissActive();
         if("confidence".equals(action))showConfidenceDialog();
@@ -644,8 +696,8 @@ public class MainActivity extends Activity {
         else if("mt5".equals(action)||"settings_mt5".equals(action))showMt5Dialog();
         else if("telegram".equals(action)||"settings_telegram".equals(action))showTelegramDialog();
         else if("settings".equals(action))showSettingsPanel(null);
-        else if("strategy".equals(action))Toast.makeText(this,"Strategy: wick rejection + liquidity sweep + BOS",Toast.LENGTH_LONG).show();
-        else if("risk".equals(action))Toast.makeText(this,"Risk Management: gunakan akun demo dan lot minimum saat pengujian",Toast.LENGTH_LONG).show();
+        else if("strategy".equals(action))showStrategyDialog();
+        else if("risk".equals(action))showRiskManagementDialog();
     }
 
     private int uiDp(float value){return Math.round(value*getResources().getDisplayMetrics().density);}
@@ -1025,17 +1077,23 @@ public class MainActivity extends Activity {
     }
 
     void showMt5Dialog(){
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(uiDp(18),uiDp(10),uiDp(18),uiDp(10));
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(14));
+        box.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView panelTitle=tv("MT5 / EA • DEMO",18);panelTitle.setTextColor(Color.CYAN);panelTitle.setTypeface(null,Typeface.BOLD);
+        box.addView(panelTitle,new LinearLayout.LayoutParams(-1,uiDp(38)));
+        TextView panelNote=tv("Mode, AUTO LIMIT, dan parameter LIMIT demo",12);panelNote.setTextColor(Color.LTGRAY);
+        box.addView(panelNote,new LinearLayout.LayoutParams(-1,uiDp(34)));
         SharedPreferences gatewayPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        Switch auto=new Switch(this);auto.setText("AUTO LIMIT DEMO • order otomatis");auto.setTextSize(15);auto.setMinHeight(uiDp(54));auto.setMinimumHeight(uiDp(54));auto.setChecked(gatewayPrefs.getBoolean("auto",false));
+        Switch auto=new Switch(this);auto.setText("AUTO LIMIT DEMO • order otomatis");auto.setTextSize(15);auto.setPadding(uiDp(12),uiDp(4),uiDp(12),uiDp(4));auto.setBackground(roundBg(Color.rgb(7,30,47),12));auto.setMinHeight(uiDp(54));auto.setMinimumHeight(uiDp(54));auto.setChecked(gatewayPrefs.getBoolean("auto",false));
         Spinner mode=new Spinner(this);
         String[] modes={"MODE ISTIRAHAT","MODE SIAP TRADING"};
         ArrayAdapter<String> modeAdapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,modes);
-        mode.setAdapter(modeAdapter);mode.setMinimumHeight(uiDp(54));
+        mode.setAdapter(modeAdapter);mode.setMinimumHeight(uiDp(54));mode.setBackground(roundBg(Color.rgb(7,30,47),12));
         mode.setSelection("READY".equals(gatewayPrefs.getString("operation_mode","REST"))?1:0);
         String selectedMt5Symbol=mt5SymbolForMarket(selectedMarket);
         TextView modeHint=tv("DEMO ONLY • "+selectedMt5Symbol+" min lot "+lotText(minLotForSymbol(selectedMt5Symbol))+" • Winlator + MT5 + EA aktif",11);
-        modeHint.setTextSize(12);modeHint.setPadding(uiDp(8),uiDp(8),uiDp(8),uiDp(8));
+        modeHint.setTextSize(12);modeHint.setTextColor(Color.CYAN);modeHint.setPadding(uiDp(12),uiDp(8),uiDp(12),uiDp(8));modeHint.setBackground(roundBg(Color.rgb(7,30,47),12));
         EditText side=new EditText(this);side.setHint("BUY_LIMIT / SELL_LIMIT");styleDialogInput(side);
         EditText vol=new EditText(this);vol.setHint("Lot • minimum "+lotText(minLotForSymbol(selectedMt5Symbol)));vol.setInputType(8194);styleDialogInput(vol);
         vol.setText(lotText(lotForMarket()));
@@ -1060,7 +1118,8 @@ public class MainActivity extends Activity {
         TextView queuedStatus=tv("",11);queuedStatus.setTextColor(green);queuedStatus.setPadding(4,6,4,2);
         box.addView(mode,new LinearLayout.LayoutParams(-1,uiDp(56)));box.addView(modeHint);box.addView(auto,new LinearLayout.LayoutParams(-1,uiDp(58)));box.addView(side,new LinearLayout.LayoutParams(-1,uiDp(56)));box.addView(vol,new LinearLayout.LayoutParams(-1,uiDp(56)));box.addView(en,new LinearLayout.LayoutParams(-1,uiDp(56)));box.addView(sl,new LinearLayout.LayoutParams(-1,uiDp(56)));box.addView(tp,new LinearLayout.LayoutParams(-1,uiDp(56)));box.addView(queuedStatus);
         final String[] queuedOrderId={""};
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("MT5 / EA • DEMO").setView(box)
+        ScrollView dialogScroll=new ScrollView(this);dialogScroll.setFillViewport(false);dialogScroll.addView(box);
+        AlertDialog dialog=new AlertDialog.Builder(this).setView(dialogScroll)
             .setNegativeButton("TUTUP",null).setNeutralButton("SIMPAN MODE",null).setPositiveButton("KIRIM LIMIT DEMO",null).create();
         dialog.setOnShowListener(v->{
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(w->{
@@ -1095,6 +1154,13 @@ public class MainActivity extends Activity {
             });
         });
         dialog.show();
+        resizeDialogButtons(dialog);
+        if(dialog.getWindow()!=null){
+            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+            dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+            int sw=getResources().getDisplayMetrics().widthPixels, sh=getResources().getDisplayMetrics().heightPixels;
+            dialog.getWindow().setLayout(Math.min(sw-uiDp(32),uiDp(450)),Math.min(sh-uiDp(150),uiDp(720)));
+        }
         android.os.Handler ackHandler=new android.os.Handler(android.os.Looper.getMainLooper());
         Runnable ackWatcher=new Runnable(){
             @Override public void run(){
