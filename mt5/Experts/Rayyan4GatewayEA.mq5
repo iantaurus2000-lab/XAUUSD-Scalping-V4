@@ -8,6 +8,7 @@ input bool DemoOnly=true;
 input int PollSeconds=1;
 
 string lastId="";
+string trackedOrderId="";
 string pendingAckId="";
 string pendingAckResult="";
 string pendingAckDetail="";
@@ -37,6 +38,8 @@ void OnTimer(){
       return;
    }
 
+   publishOrderState();
+
    if(StringLen(cmd)<5){
       if(TimeCurrent()-lastDiag>=10){
          lastDiag=TimeCurrent();
@@ -59,6 +62,51 @@ void OnTimer(){
 
    string type=field(cmd,"type");
    string side=field(cmd,"side");
+
+   // Isolated additive path: cancel only the exact still-pending Rayyan LIMIT
+   // identified by both ticket and its unique R4-<original-id> order comment.
+   // No new order is sent by this command.
+   if(type=="CANCEL"){
+      string targetId=field(cmd,"targetId");
+      ulong cancelTicket=(ulong)StringToInteger(field(cmd,"ticket"));
+      string expectedComment="R4-"+targetId;
+      string cancelResult="CANCEL_FAILED";
+      string cancelDetail="Pending order not found or identity mismatch; no replacement permitted";
+      trackedOrderId=targetId;
+      if(DemoOnly && AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
+         cancelResult="NOT_DEMO";
+         cancelDetail="DemoOnly guard blocked order cancellation outside demo account";
+      }else if(targetId!="" && cancelTicket>0 && OrderSelect(cancelTicket)){
+         string orderComment=OrderGetString(ORDER_COMMENT);
+         ENUM_ORDER_TYPE orderType=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+         bool correctSide=(orderType==ORDER_TYPE_BUY_LIMIT || orderType==ORDER_TYPE_SELL_LIMIT);
+         if(orderComment==expectedComment && correctSide){
+            ResetLastError();
+            bool deleted=trade.OrderDelete(cancelTicket);
+            uint cancelRc=trade.ResultRetcode();
+            if(deleted && cancelRc==TRADE_RETCODE_DONE){
+               cancelResult="CANCELLED";
+               cancelDetail="Exact pending LIMIT deleted ticket="+(string)cancelTicket;
+               Print("RAYYAN4 SMART CANCEL OK id=",targetId," ticket=",cancelTicket);
+            }else{
+               cancelDetail="OrderDelete failed retcode="+IntegerToString((int)cancelRc)+
+                  " "+trade.ResultRetcodeDescription()+" lastError="+IntegerToString(GetLastError());
+            }
+         }else{
+            cancelDetail="Order identity rejected comment="+orderComment+
+               " type="+IntegerToString((int)orderType);
+         }
+      }
+      pendingAckId=id; pendingAckResult=cancelResult; pendingAckDetail=cancelDetail;
+      if(sendAck(pendingAckId,pendingAckResult,pendingAckDetail)){
+         lastId=pendingAckId;
+         pendingAckId=""; pendingAckResult=""; pendingAckDetail="";
+      }
+      Print("RAYYAN4 id=",id," type=CANCEL target=",targetId,
+            " result=",cancelResult," detail=",cancelDetail);
+      return;
+   }
+
    if(side=="TEST") { Print("RAYYAN4 REJECT legacy TEST command; use LIMIT only"); return; }
    double vol=StringToDouble(field(cmd,"volume"));
    double entry=StringToDouble(field(cmd,"entry"));
@@ -172,8 +220,8 @@ void OnTimer(){
          trade.SetAsyncMode(false);
          trade.SetTypeFillingBySymbol(sym);
          ResetLastError();
-         if(side=="BUY_LIMIT") ok=trade.BuyLimit(vol,entry,sym,sl,tp,ORDER_TIME_GTC,0,"RAYYAN4");
-         else if(side=="SELL_LIMIT") ok=trade.SellLimit(vol,entry,sym,sl,tp,ORDER_TIME_GTC,0,"RAYYAN4");
+         if(side=="BUY_LIMIT") ok=trade.BuyLimit(vol,entry,sym,sl,tp,ORDER_TIME_GTC,0,"R4-"+id);
+         else if(side=="SELL_LIMIT") ok=trade.SellLimit(vol,entry,sym,sl,tp,ORDER_TIME_GTC,0,"R4-"+id);
          else { resultText="BAD_SIDE"; detail=side; }
 
          uint rc=trade.ResultRetcode();
@@ -209,6 +257,7 @@ void OnTimer(){
       }
    }
 
+   if(resultText=="EXECUTED") trackedOrderId=id;
    Print("RAYYAN4 id=",id," side=",side," result=",resultText,
          " detail=",detail," retcode=",trade.ResultRetcode());
    pendingAckId=id; pendingAckResult=resultText; pendingAckDetail=detail;
@@ -218,6 +267,69 @@ void OnTimer(){
    }
 }
 
+
+// Publish a read-only snapshot of Rayyan-managed order lifecycle. This is
+// separate from /next and /ack; it never changes trade state.
+void publishOrderState(){
+   string managedId=trackedOrderId;
+   string state="NONE", ticketText="", symbol="", side="", priceText="0";
+
+   // Positions dominate pending state: if a LIMIT has filled, AUTO ENTRY must
+   // stay locked until that position is gone. This is deliberately conservative.
+   for(int i=PositionsTotal()-1;i>=0;i--){
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0) continue;
+      string comment=PositionGetString(POSITION_COMMENT);
+      if(StringFind(comment,"R4-")!=0) continue;
+      string oid=StringSubstr(comment,3);
+      if(managedId!="" && oid!=managedId) continue;
+      managedId=oid; trackedOrderId=oid;
+      state="POSITION"; ticketText=(string)ticket;
+      symbol=PositionGetString(POSITION_SYMBOL);
+      ENUM_POSITION_TYPE pt=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      side=(pt==POSITION_TYPE_BUY ? "BUY" : "SELL");
+      priceText=DoubleToString(PositionGetDouble(POSITION_PRICE_OPEN),
+                               (int)SymbolInfoInteger(symbol,SYMBOL_DIGITS));
+      break;
+   }
+
+   if(state!="POSITION"){
+      for(int i=OrdersTotal()-1;i>=0;i--){
+         ulong ticket=OrderGetTicket(i);
+         if(ticket==0) continue;
+         string comment=OrderGetString(ORDER_COMMENT);
+         if(StringFind(comment,"R4-")!=0) continue;
+         string oid=StringSubstr(comment,3);
+         if(managedId!="" && oid!=managedId) continue;
+         ENUM_ORDER_TYPE ot=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+         if(ot!=ORDER_TYPE_BUY_LIMIT && ot!=ORDER_TYPE_SELL_LIMIT) continue;
+         managedId=oid; trackedOrderId=oid;
+         state="PENDING"; ticketText=(string)ticket;
+         symbol=OrderGetString(ORDER_SYMBOL);
+         side=(ot==ORDER_TYPE_BUY_LIMIT ? "BUY_LIMIT" : "SELL_LIMIT");
+         priceText=DoubleToString(OrderGetDouble(ORDER_PRICE_OPEN),
+                                  (int)SymbolInfoInteger(symbol,SYMBOL_DIGITS));
+         break;
+      }
+   }
+
+   if(managedId=="") managedId="NONE";
+   string path="/state?id="+urlEncode(managedId)+
+      "&state="+urlEncode(state)+
+      "&ticket="+urlEncode(ticketText)+
+      "&symbol="+urlEncode(symbol)+
+      "&side="+urlEncode(side)+
+      "&price="+urlEncode(priceText);
+   int code=-1;
+   string body="",diagnostic="";
+   if(!gatewayGet(path,code,body,diagnostic) || code!=200){
+      if(TimeCurrent()-lastDiag>=10){
+         lastDiag=TimeCurrent();
+         Print("RAYYAN4 STATE HTTP ERROR code=",code,
+               " err=",GetLastError()," detail=",diagnostic);
+      }
+   }
+}
 
 // Local LAN bridge uses WebRequest (not MQL5 TCP sockets).
 // Add the exact GatewayUrl base to MT5 Tools > Options > Expert Advisors > Allow WebRequest.
