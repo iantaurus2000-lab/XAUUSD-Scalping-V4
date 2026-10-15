@@ -578,32 +578,39 @@ public class MainActivity extends Activity {
         String candleKey=selectedMarket+"|"+selectedTf+"|"+candleStamp;
         SharedPreferences noticePrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         boolean alreadyNotified=candleKey.equals(noticePrefs.getString("signal_notified_candle",""));
-        if(changed&&("BUY".equals(s.side)||"SELL".equals(s.side))){
-            // Auto LIMIT is triggered only on a fresh WAIT/other-side -> BUY/SELL transition.
-            // Persistent signal key prevents duplicate queueing on UI refresh/reconnect.
+        // Evaluate AUTO LIMIT on each fresh signal calculation, not only the first side
+        // transition. This lets a setup retry after data/feed becomes valid without spamming:
+        // signal key + 60s cooldown + online EA + empty queue enforce one-at-a-time behavior.
+        if("BUY".equals(s.side)||"SELL".equals(s.side)){
             SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
             if(gp.getBoolean("auto",false) && "READY".equals(gp.getString("operation_mode","REST"))){
-                String signalKey=s.side+"|"+s.m5Bias+"|"+s.setup;
+                String signalKey=selectedMarket+"|"+s.side+"|"+s.m5Bias+"|"+s.setup+"|"+m1[m1.length-1].t;
                 String lastKey=gp.getString("auto_last_signal_key","");
                 long lastAuto=gp.getLong("auto_last_order_ms",0L);
-                // Do not require every secondary indicator to agree: that prevented valid
-                // wick-rejection entries. Keep hard safety gates for wick + spread + valid levels.
                 boolean filters=s.wickRejection&&s.spreadFilter&&s.entry>0&&s.sl>0
-                        &&(s.tp2>0||s.tp1>0)&&("BUY".equals(s.side)||"SELL".equals(s.side));
+                        &&(s.tp2>0||s.tp1>0);
                 boolean queueFree=gp.getString("next","").trim().isEmpty();
+                boolean eaOnline=GatewayService.isEaRecentlyOnline(this);
                 if(!signalKey.equals(lastKey) && s.confidence>=gp.getInt("min_confidence",4) && filters
-                        && queueFree && GatewayService.isEaRecentlyOnline(this)
-                        && System.currentTimeMillis()-lastAuto>=60000L){
-                    // Save the signal key before queueing to prevent duplicate attempts on repeated refreshes.
-                    gp.edit().putString("auto_last_signal_key",signalKey).putLong("auto_last_order_ms",System.currentTimeMillis()).apply();
+                        && queueFree && eaOnline && System.currentTimeMillis()-lastAuto>=60000L){
                     double lot=lotForMarket();
                     String orderSide="BUY".equals(s.side)?"BUY_LIMIT":"SELL_LIMIT";
                     boolean queued=queueLimit(orderSide,lot,s.entry,s.sl,s.tp2>0?s.tp2:s.tp1);
+                    if(queued){
+                        gp.edit().putString("auto_last_signal_key",signalKey)
+                            .putLong("auto_last_order_ms",System.currentTimeMillis()).apply();
+                    }
                     AppLog.add(this,"AUTO LIMIT",queued?"queued "+signalKey:"queue rejected "+signalKey);
-                }else if(!GatewayService.isEaRecentlyOnline(this)){
-                    AppLog.add(this,"AUTO LIMIT","blocked: EA offline");
+                }else if(!eaOnline){
+                    AppLog.add(this,"AUTO LIMIT","blocked: EA offline; no order queued");
+                }else if(!filters){
+                    AppLog.add(this,"AUTO LIMIT","blocked: wick/spread/entry/SL/TP validation");
+                }else if(!queueFree){
+                    AppLog.add(this,"AUTO LIMIT","blocked: existing command awaits ACK");
                 }
             }
+        }
+        if(changed&&("BUY".equals(s.side)||"SELL".equals(s.side))){
             String msg=selectedMarket+" SCALPING\n\n"+s.side+"\nEntry: "+price(s.entry)+"\nSL: "+price(s.sl)+"\nTP1: "+price(s.tp1)+"\nTP2: "+price(s.tp2)+"\nTF: M1\nBias: M5 "+s.m5Bias+"\nSetup: "+s.setup+"\nConfidence: "+s.confidence+"/5";
             AppLog.add(this,"SIGNAL",s.side+" "+price(s.entry)+" score="+s.score);
             if(!alreadyNotified){
