@@ -624,7 +624,7 @@ public class MainActivity extends Activity {
         TextView title=tv("ENTRY CONFIDENCE",18); title.setTextColor(Color.CYAN); title.setTypeface(null,Typeface.BOLD); box.addView(title,new LinearLayout.LayoutParams(-1,42));
         TextView note=tv("Pilih ambang confidence minimum",12); note.setTextColor(Color.LTGRAY); box.addView(note,new LinearLayout.LayoutParams(-1,34));
         LinearLayout choices=new LinearLayout(this); choices.setOrientation(LinearLayout.VERTICAL);
-        for(int value:new int[]{60,70,80,90}){ Button option=btn((current==value?"✓  ":"")+"CONFIDENCE "+value+"%"); option.setTextSize(14); option.setBackground(roundBg(current==value?Color.rgb(0,105,83):Color.rgb(7,34,60),12)); LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,48);p.setMargins(0,5,0,5);choices.addView(option,p);option.setOnClickListener(v->{getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putInt("min_entry_score",value).apply();Toast.makeText(this,"Confidence minimum "+value+"%",Toast.LENGTH_SHORT).show();if(lastSignal!=null)updateEntryReadyUi(lastSignal,chart.getBid(),chart.getAsk());((Dialog)box.getTag()).dismiss();}); }
+        for(int value:new int[]{60,70,80,90}){ Button option=btn((current==value?"✓  ":"")+"CONFIDENCE "+value+"%"); option.setTextSize(14); option.setBackground(roundBg(current==value?Color.rgb(0,105,83):Color.rgb(7,34,60),12)); LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,58);p.setMargins(0,6,0,6);choices.addView(option,p);option.setOnClickListener(v->{getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putInt("min_entry_score",value).apply();Toast.makeText(this,"Confidence minimum "+value+"%",Toast.LENGTH_SHORT).show();if(lastSignal!=null)updateEntryReadyUi(lastSignal,chart.getBid(),chart.getAsk());((Dialog)box.getTag()).dismiss();}); }
         box.addView(choices); AlertDialog d=new AlertDialog.Builder(this).setView(box).setNegativeButton("Tutup",null).create();box.setTag(d);d.setOnShowListener(x->{if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-40,420),-2);}});d.show();if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-40,420),-2);}
     }
 
@@ -648,6 +648,65 @@ public class MainActivity extends Activity {
         else if("risk".equals(action))Toast.makeText(this,"Risk Management: gunakan akun demo dan lot minimum saat pengujian",Toast.LENGTH_LONG).show();
     }
 
+    private int uiDp(float value){return Math.round(value*getResources().getDisplayMetrics().density);}
+
+    private void addPanelRow(LinearLayout parent,String label,String value,int valueColor){
+        LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(uiDp(12),uiDp(7),uiDp(12),uiDp(7));
+        card.setBackground(roundBg(Color.rgb(7,30,47),12));
+        TextView key=tv(label,11);key.setTextColor(Color.CYAN);key.setTypeface(null,Typeface.BOLD);
+        card.addView(key,new LinearLayout.LayoutParams(-1,uiDp(20)));
+        TextView val=tv(value==null?"—":value,14);val.setTextColor(valueColor);val.setGravity(Gravity.TOP|Gravity.START);
+        val.setPadding(uiDp(8),uiDp(2),uiDp(8),uiDp(3));val.setTextIsSelectable(true);
+        card.addView(val,new LinearLayout.LayoutParams(-1,-2));
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);
+        params.setMargins(0,0,0,uiDp(7));parent.addView(card,params);
+        card.setMinimumHeight(uiDp(56));
+    }
+
+    private void styleDialogInput(EditText field){
+        field.setTextColor(Color.WHITE);field.setHintTextColor(Color.rgb(150,175,190));
+        field.setTextSize(16);field.setSingleLine(true);field.setPadding(uiDp(14),uiDp(8),uiDp(14),uiDp(8));
+        field.setBackground(roundBg(Color.rgb(7,30,47),12));
+        field.setMinHeight(uiDp(54));field.setMinimumHeight(uiDp(54));
+    }
+
+    private void showSizedDialog(AlertDialog dialog,float heightFraction,int widthDp){
+        dialog.setOnShowListener(ignored->{
+            resizeDialogButtons(dialog);
+            if(dialog.getWindow()!=null){
+                dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+                dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+                int sw=getResources().getDisplayMetrics().widthPixels;
+                int sh=getResources().getDisplayMetrics().heightPixels;
+                int width=Math.min(sw-uiDp(32),uiDp(widthDp));
+                int height=Math.min((int)(sh*heightFraction),Math.min(uiDp(780),sh-uiDp(72)));
+                dialog.getWindow().setLayout(width,height);
+            }
+        });
+        dialog.show();
+        resizeDialogButtons(dialog);
+        if(dialog.getWindow()!=null){
+            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+            int sw=getResources().getDisplayMetrics().widthPixels;
+            int sh=getResources().getDisplayMetrics().heightPixels;
+            int width=Math.min(sw-uiDp(32),uiDp(widthDp));
+            int height=Math.min((int)(sh*heightFraction),Math.min(uiDp(780),sh-uiDp(72)));
+            dialog.getWindow().setLayout(width,height);
+        }
+    }
+
+    private void resizeDialogButtons(AlertDialog dialog){
+        int[] ids={AlertDialog.BUTTON_POSITIVE,AlertDialog.BUTTON_NEGATIVE,AlertDialog.BUTTON_NEUTRAL};
+        for(int id:ids){
+            Button button=dialog.getButton(id);
+            if(button!=null){
+                button.setMinHeight(uiDp(50));button.setMinimumHeight(uiDp(50));
+                button.setTextSize(13);button.setPadding(uiDp(10),uiDp(6),uiDp(10),uiDp(6));
+            }
+        }
+    }
+
     void showGatewayAckDiagnostics(){
         SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         long now=System.currentTimeMillis();
@@ -664,22 +723,37 @@ public class MainActivity extends Activity {
         String crashTime=crash.getString("last_crash_time","tidak ada crash Java tercatat");
         String crashThread=crash.getString("last_crash_thread","");
         String crashStack=crash.getString("last_crash_stack","");
-        if(crashStack.length()>6000)crashStack=crashStack.substring(0,6000)+"\n...[stack dipotong]";
-        String msg="GATEWAY: port 8787 berjalan jika tes TCP/HTTP PASS\n"
-            +"EA POLLING: "+(eaOnline?"PASS":"BELUM TERDETEKSI")+(age>=0?" • poll "+age+" dtk lalu":"")+
-            "\nQUEUE: "+(queue==null||queue.trim().isEmpty()?"KOSONG":"ADA PERINTAH MENUNGGU")+
-            "\nACK / ORDER TERAKHIR: "+orderStatus+
-            (orderId.isEmpty()?"":"\nID: "+orderId)+
-            (detail.isEmpty()?"":"\nDetail: "+detail)+
-            "\n\nAKSI TERAKHIR: "+action+(actionTime.isEmpty()?"":" • "+actionTime)+
-            "\nCRASH JAVA TERAKHIR: "+crashTime+(crashThread.isEmpty()?"":" • thread "+crashThread)+
-            (crashStack.isEmpty()?"":"\n\nSTACK TRACE:\n"+crashStack)+
-            "\n\nPemeriksaan ini TIDAK mengirim order atau order tes.";
-        TextView v=tv(msg,13);v.setTextIsSelectable(true);v.setGravity(Gravity.TOP|Gravity.START);v.setPadding(18,12,18,12);
-        ScrollView sc=new ScrollView(this);sc.addView(v);
-        new AlertDialog.Builder(this).setTitle("RAYYAN4 • GATEWAY / QUEUE / ACK")
-            .setView(sc).setPositiveButton("PERIKSA LAGI",(d,w)->showGatewayAckDiagnostics())
-            .setNegativeButton("TUTUP",null).show();
+        if(crashStack.length()>6000)crashStack=crashStack.substring(0,6000)+"\\n...[stack dipotong]";
+
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(12));
+        box.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("GATEWAY / QUEUE / ACK",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(38)));
+        TextView note=tv("Diagnostik baca-saja • tidak mengirim order tes",12);note.setTextColor(Color.LTGRAY);
+        box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(38)));
+
+        LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
+        addPanelRow(rows,"GATEWAY","Port 8787 • status layanan diperiksa terpisah",Color.WHITE);
+        addPanelRow(rows,"EA POLLING",(eaOnline?"PASS":"BELUM TERDETEKSI")+(age>=0?" • poll "+age+" dtk lalu":""),eaOnline?green:Color.rgb(255,190,70));
+        addPanelRow(rows,"QUEUE",queue==null||queue.trim().isEmpty()?"KOSONG":"ADA PERINTAH MENUNGGU",(queue==null||queue.trim().isEmpty())?green:Color.rgb(255,190,70));
+        addPanelRow(rows,"ACK / ORDER TERAKHIR",orderStatus+(orderId.isEmpty()?"":" • ID "+orderId),Color.CYAN);
+        if(detail!=null&&!detail.isEmpty())addPanelRow(rows,"DETAIL ACK",detail,Color.WHITE);
+        addPanelRow(rows,"AKSI TERAKHIR",action+(actionTime.isEmpty()?"":" • "+actionTime),Color.WHITE);
+        addPanelRow(rows,"CRASH JAVA TERAKHIR",crashTime+(crashThread.isEmpty()?"":" • thread "+crashThread),crashTime.startsWith("tidak ada")?green:Color.rgb(255,190,70));
+        if(!crashStack.isEmpty()){
+            TextView stackLabel=tv("STACK TRACE",12);stackLabel.setTextColor(Color.CYAN);stackLabel.setTypeface(null,Typeface.BOLD);
+            rows.addView(stackLabel,new LinearLayout.LayoutParams(-1,uiDp(30)));
+            TextView stack=tv(crashStack,12);stack.setGravity(Gravity.TOP|Gravity.START);stack.setTextIsSelectable(true);
+            stack.setPadding(uiDp(12),uiDp(10),uiDp(12),uiDp(10));stack.setBackground(roundBg(Color.rgb(6,25,40),10));
+            rows.addView(stack,new LinearLayout.LayoutParams(-1,-2));
+        }
+        ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
+        box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
+        AlertDialog d=new AlertDialog.Builder(this).setView(box)
+            .setPositiveButton("PERIKSA LAGI",(dialog,which)->showGatewayAckDiagnostics())
+            .setNegativeButton("TUTUP",null).create();
+        showSizedDialog(d,0.80f,450);
         AppLog.add(this,"DIAGNOSTIC","Gateway/ACK status checked; EA online="+eaOnline+" ageSec="+age+" order="+orderStatus);
     }
     String marketDescription(String market){
@@ -698,9 +772,9 @@ public class MainActivity extends Activity {
         AlertDialog d=new AlertDialog.Builder(this).setView(box).setNegativeButton("TUTUP",null).create();
         for(int i=0;i<markets.length;i++){final String market=markets[i];boolean selected=market.equals(selectedMarket);
             LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(12,8,12,8);row.setBackground(roundBg(selected?Color.rgb(5,65,58):Color.rgb(7,30,47),12));
-            LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,62);rp.setMargins(0,5,0,5);box.addView(row,rp);
+            LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,68);rp.setMargins(0,6,0,6);box.addView(row,rp);
             TextView icon=tv(icons[i],22);icon.setTextColor(Color.rgb(0,225,180));icon.setGravity(Gravity.CENTER);row.addView(icon,new LinearLayout.LayoutParams(42,-1));
-            LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setGravity(Gravity.CENTER_VERTICAL);TextView name=tv(market,14);name.setTextColor(Color.WHITE);name.setTypeface(null,Typeface.BOLD);labels.addView(name);TextView sub=tv(details[i],10);sub.setTextColor(Color.LTGRAY);labels.addView(sub);row.addView(labels,new LinearLayout.LayoutParams(0,-1,1));
+            LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setGravity(Gravity.CENTER_VERTICAL);TextView name=tv(market,16);name.setTextColor(Color.WHITE);name.setTypeface(null,Typeface.BOLD);labels.addView(name);TextView sub=tv(details[i],12);sub.setTextColor(Color.LTGRAY);labels.addView(sub);row.addView(labels,new LinearLayout.LayoutParams(0,-1,1));
             TextView mark=tv(selected?"✓ ACTIVE":"SELECT  ›",10);mark.setTextColor(selected?Color.rgb(0,235,160):Color.CYAN);row.addView(mark);
             row.setOnClickListener(v->{if(market.equals(selectedMarket)){d.dismiss();return;}selectedMarket=market;lastHeaderPrice=Double.NaN;if(priceView!=null){priceView.setText("--");priceView.setTextColor(Color.CYAN);}prefs.edit().putString("market",selectedMarket).apply();if(marketTitle!=null)marketTitle.setText(selectedMarket);if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));if(chart!=null)chart.setMarket(selectedMarket);if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);lastSignal=null;resetEntryReadyUi("menunggu data market");d.dismiss();load(interval(selectedTf),selectedTf);AppLog.add(this,"MARKET","selected "+selectedMarket+" (APK feed only; MT5 symbol mapping deferred)");});
         }
@@ -709,8 +783,35 @@ public class MainActivity extends Activity {
     void showSignalDialog(){
         if(lastSignal==null){Toast.makeText(this,"Menunggu data Signal Engine...",Toast.LENGTH_SHORT).show();return;}
         SignalResult s=lastSignal;
-        String msg="MARKET      : "+selectedMarket+"\nSIDE        : "+s.side+"\nM5 BIAS     : "+s.m5Bias+"\nM1 ENTRY    : "+s.entry+"\nSL          : "+s.sl+"\nTP1         : "+s.tp1+"\nTP2         : "+s.tp2+"\nR:R         : "+String.format(Locale.US,"%.2f",s.rr)+"\nCONFIDENCE  : "+s.confidence+"/5\nENTRY SCORE : "+s.score+"%\n\nLiquidity Sweep : "+onoff(s.liquiditySweep)+"\nWick Rejection  : "+onoff(s.wickRejection)+"\nBOS             : "+onoff(s.bos)+"\nEMA Filter      : "+onoff(s.emaFilter)+"\nRSI Filter      : "+onoff(s.rsiFilter)+"\nMACD Filter     : "+onoff(s.macdFilter)+"\nATR Filter      : "+onoff(s.atrFilter)+"\nSpread Filter   : "+onoff(s.spreadFilter);
-        new AlertDialog.Builder(this).setTitle("SIGNAL ENGINE").setMessage(msg).setPositiveButton("TUTUP",null).show();
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(12));
+        box.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("SIGNAL ENGINE",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(38)));
+        TextView note=tv(selectedMarket+" • M5 bias + M1 entry",12);note.setTextColor(Color.LTGRAY);
+        box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(34)));
+        LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
+        addPanelRow(rows,"MARKET",selectedMarket,Color.WHITE);
+        addPanelRow(rows,"SIDE",s.side,("BUY".equals(s.side)?green:("SELL".equals(s.side)?red:Color.rgb(255,190,70))));
+        addPanelRow(rows,"M5 BIAS",String.valueOf(s.m5Bias),Color.CYAN);
+        addPanelRow(rows,"M1 ENTRY",String.valueOf(s.entry),Color.WHITE);
+        addPanelRow(rows,"STOP LOSS (SL)",String.valueOf(s.sl),red);
+        addPanelRow(rows,"TAKE PROFIT 1 (TP1)",String.valueOf(s.tp1),green);
+        addPanelRow(rows,"TAKE PROFIT 2 (TP2)",String.valueOf(s.tp2),green);
+        addPanelRow(rows,"RISK : REWARD",String.format(Locale.US,"%.2f",s.rr),Color.WHITE);
+        addPanelRow(rows,"CONFIDENCE",s.confidence+"/5  •  ENTRY SCORE "+s.score+"%",Color.CYAN);
+        addPanelRow(rows,"LIQUIDITY SWEEP",onoff(s.liquiditySweep),s.liquiditySweep?green:Color.LTGRAY);
+        addPanelRow(rows,"WICK REJECTION",onoff(s.wickRejection),s.wickRejection?green:Color.LTGRAY);
+        addPanelRow(rows,"BOS",onoff(s.bos),s.bos?green:Color.LTGRAY);
+        addPanelRow(rows,"EMA FILTER",onoff(s.emaFilter),s.emaFilter?green:Color.LTGRAY);
+        addPanelRow(rows,"RSI FILTER",onoff(s.rsiFilter),s.rsiFilter?green:Color.LTGRAY);
+        addPanelRow(rows,"MACD FILTER",onoff(s.macdFilter),s.macdFilter?green:Color.LTGRAY);
+        addPanelRow(rows,"ATR FILTER",onoff(s.atrFilter),s.atrFilter?green:Color.LTGRAY);
+        addPanelRow(rows,"SPREAD FILTER",onoff(s.spreadFilter),s.spreadFilter?green:Color.LTGRAY);
+        ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
+        box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
+        AlertDialog d=new AlertDialog.Builder(this).setView(box).setPositiveButton("TUTUP",null).create();
+        showSizedDialog(d,0.82f,450);
     }
 
     String onoff(boolean v){return v?"ON":"OFF";}
@@ -753,9 +854,9 @@ public class MainActivity extends Activity {
         ScrollView scroll=new ScrollView(this);LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);scroll.addView(list);
         for(int i=0;i<names.length;i++){final int index=i;boolean enabled=ind(keys[i],true);
             LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(12,7,12,7);row.setBackground(roundBg(enabled?Color.rgb(5,48,55):Color.rgb(7,30,47),12));
-            LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,54);rp.setMargins(0,4,0,4);list.addView(row,rp);
+            LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,64);rp.setMargins(0,5,0,5);list.addView(row,rp);
             TextView ico=tv(icons[i],21);ico.setTextColor(Color.rgb(0,225,180));ico.setGravity(Gravity.CENTER);row.addView(ico,new LinearLayout.LayoutParams(38,-1));
-            LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setGravity(Gravity.CENTER_VERTICAL);TextView nm=tv(names[i],13);nm.setTextColor(Color.WHITE);nm.setTypeface(null,Typeface.BOLD);labels.addView(nm);TextView state=tv(enabled?"TAMPIL • ON":"SEMBUNYI • OFF",10);state.setTextColor(enabled?Color.rgb(0,225,150):Color.LTGRAY);labels.addView(state);row.addView(labels,new LinearLayout.LayoutParams(0,-1,1));
+            LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setGravity(Gravity.CENTER_VERTICAL);TextView nm=tv(names[i],14);nm.setTextColor(Color.WHITE);nm.setTypeface(null,Typeface.BOLD);labels.addView(nm);TextView state=tv(enabled?"TAMPIL • ON":"SEMBUNYI • OFF",11);state.setTextColor(enabled?Color.rgb(0,225,150):Color.LTGRAY);labels.addView(state);row.addView(labels,new LinearLayout.LayoutParams(0,-1,1));
             Switch sw=new Switch(this);sw.setChecked(enabled);row.addView(sw);sw.setOnCheckedChangeListener((button,isChecked)->{setInd(keys[index],isChecked);row.setBackground(roundBg(isChecked?Color.rgb(5,48,55):Color.rgb(7,30,47),12));state.setText(isChecked?"TAMPIL • ON":"SEMBUNYI • OFF");state.setTextColor(isChecked?Color.rgb(0,225,150):Color.LTGRAY);});
             row.setOnClickListener(v->sw.setChecked(!sw.isChecked()));
         }
@@ -772,19 +873,49 @@ public class MainActivity extends Activity {
     }
 
     void showTelegramDialog(){
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(22,8,22,4);
-        EditText token=new EditText(this);token.setHint("Bot Token");token.setText(tgPrefs.getString("token",""));
-        EditText chat=new EditText(this);chat.setHint("Chat ID");chat.setInputType(2);chat.setText(tgPrefs.getString("chat",""));
-        Switch sw=new Switch(this);sw.setText("Telegram aktif");sw.setChecked(telegramEnabled);box.addView(token);box.addView(chat);box.addView(sw);
-        new AlertDialog.Builder(this).setTitle("TELEGRAM").setView(box).setNegativeButton("BATAL",null)
-            .setNeutralButton("TEST",(d,w)->TelegramClient.send(token.getText().toString(),chat.getText().toString(),"Rayyan4 Telegram TEST",(ok,x)->{}))
-            .setPositiveButton("SIMPAN",(d,w)->{tgPrefs.edit().putString("token",token.getText().toString().trim()).putString("chat",chat.getText().toString().trim()).putBoolean("enabled",sw.isChecked()).apply();telegramEnabled=sw.isChecked();AppLog.add(this,"TELEGRAM",telegramEnabled?"enabled":"disabled");}).show();
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(uiDp(20),uiDp(16),uiDp(20),uiDp(14));
+        box.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("TELEGRAM NOTIFICATIONS",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(40)));
+        TextView note=tv("Atur token bot dan Chat ID untuk notifikasi",12);note.setTextColor(Color.LTGRAY);
+        box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(38)));
+
+        TextView tokenLabel=tv("BOT TOKEN",12);tokenLabel.setTextColor(Color.CYAN);tokenLabel.setTypeface(null,Typeface.BOLD);
+        box.addView(tokenLabel,new LinearLayout.LayoutParams(-1,uiDp(28)));
+        EditText token=new EditText(this);token.setHint("Masukkan Bot Token");token.setText(tgPrefs.getString("token",""));
+        styleDialogInput(token);box.addView(token,new LinearLayout.LayoutParams(-1,uiDp(58)));
+
+        TextView chatLabel=tv("CHAT ID",12);chatLabel.setTextColor(Color.CYAN);chatLabel.setTypeface(null,Typeface.BOLD);
+        box.addView(chatLabel,new LinearLayout.LayoutParams(-1,uiDp(28)));
+        EditText chat=new EditText(this);chat.setHint("Masukkan Chat ID");chat.setInputType(2);chat.setText(tgPrefs.getString("chat",""));
+        styleDialogInput(chat);box.addView(chat,new LinearLayout.LayoutParams(-1,uiDp(58)));
+
+        Switch sw=new Switch(this);sw.setText("Telegram aktif");sw.setTextColor(Color.WHITE);sw.setTextSize(15);
+        sw.setMinHeight(uiDp(54));sw.setMinimumHeight(uiDp(54));sw.setPadding(uiDp(8),uiDp(6),uiDp(8),uiDp(6));
+        sw.setChecked(telegramEnabled);box.addView(sw,new LinearLayout.LayoutParams(-1,uiDp(58)));
+        AlertDialog d=new AlertDialog.Builder(this).setView(box).setNegativeButton("BATAL",null)
+            .setNeutralButton("TEST",(dialog,which)->TelegramClient.send(token.getText().toString(),chat.getText().toString(),"Rayyan4 Telegram TEST",(ok,x)->{}))
+            .setPositiveButton("SIMPAN",(dialog,which)->{tgPrefs.edit().putString("token",token.getText().toString().trim()).putString("chat",chat.getText().toString().trim()).putBoolean("enabled",sw.isChecked()).apply();telegramEnabled=sw.isChecked();AppLog.add(this,"TELEGRAM",telegramEnabled?"enabled":"disabled");}).create();
+        showSizedDialog(d,0.78f,440);
     }
 
     void showLogDialog(String title){
         String data=AppLog.all(this);if(data.isEmpty())data="Belum ada log.";
-        TextView v=tv(data,10);v.setTextIsSelectable(true);v.setGravity(Gravity.TOP|Gravity.START);ScrollView sc=new ScrollView(this);sc.addView(v);
-        new AlertDialog.Builder(this).setTitle(title).setView(sc).setNegativeButton("TUTUP",null).setNeutralButton("HAPUS LOG",(d,w)->AppLog.clear(this)).show();
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(12));
+        box.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView heading=tv(title,18);heading.setTextColor(Color.CYAN);heading.setTypeface(null,Typeface.BOLD);
+        box.addView(heading,new LinearLayout.LayoutParams(-1,uiDp(40)));
+        TextView note=tv("Catatan aktivitas • tekan lama untuk memilih teks",12);note.setTextColor(Color.LTGRAY);
+        box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(34)));
+        TextView v=tv(data,12);v.setTextIsSelectable(true);v.setGravity(Gravity.TOP|Gravity.START);
+        v.setPadding(uiDp(12),uiDp(12),uiDp(12),uiDp(12));v.setBackground(roundBg(Color.rgb(6,25,40),12));
+        ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(v);
+        box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
+        AlertDialog d=new AlertDialog.Builder(this).setView(box).setNegativeButton("TUTUP",null)
+            .setNeutralButton("HAPUS LOG",(dialog,which)->AppLog.clear(this)).create();
+        showSizedDialog(d,0.82f,450);
     }
 
     void startGateway(){
@@ -894,23 +1025,23 @@ public class MainActivity extends Activity {
     }
 
     void showMt5Dialog(){
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(18,4,18,4);
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(uiDp(18),uiDp(10),uiDp(18),uiDp(10));
         SharedPreferences gatewayPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        Switch auto=new Switch(this);auto.setText("AUTO LIMIT DEMO • order otomatis");auto.setChecked(gatewayPrefs.getBoolean("auto",false));
+        Switch auto=new Switch(this);auto.setText("AUTO LIMIT DEMO • order otomatis");auto.setTextSize(15);auto.setMinHeight(uiDp(54));auto.setMinimumHeight(uiDp(54));auto.setChecked(gatewayPrefs.getBoolean("auto",false));
         Spinner mode=new Spinner(this);
         String[] modes={"MODE ISTIRAHAT","MODE SIAP TRADING"};
         ArrayAdapter<String> modeAdapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,modes);
-        mode.setAdapter(modeAdapter);
+        mode.setAdapter(modeAdapter);mode.setMinimumHeight(uiDp(54));
         mode.setSelection("READY".equals(gatewayPrefs.getString("operation_mode","REST"))?1:0);
         String selectedMt5Symbol=mt5SymbolForMarket(selectedMarket);
         TextView modeHint=tv("DEMO ONLY • "+selectedMt5Symbol+" min lot "+lotText(minLotForSymbol(selectedMt5Symbol))+" • Winlator + MT5 + EA aktif",11);
-        modeHint.setPadding(4,8,4,8);
-        EditText side=new EditText(this);side.setHint("BUY_LIMIT / SELL_LIMIT");
-        EditText vol=new EditText(this);vol.setHint("Lot • minimum "+lotText(minLotForSymbol(selectedMt5Symbol)));vol.setInputType(8194);
+        modeHint.setTextSize(12);modeHint.setPadding(uiDp(8),uiDp(8),uiDp(8),uiDp(8));
+        EditText side=new EditText(this);side.setHint("BUY_LIMIT / SELL_LIMIT");styleDialogInput(side);
+        EditText vol=new EditText(this);vol.setHint("Lot • minimum "+lotText(minLotForSymbol(selectedMt5Symbol)));vol.setInputType(8194);styleDialogInput(vol);
         vol.setText(lotText(lotForMarket()));
-        EditText en=new EditText(this);en.setHint("Entry");en.setInputType(8194);
-        EditText sl=new EditText(this);sl.setHint("SL");sl.setInputType(8194);
-        EditText tp=new EditText(this);tp.setHint("TP");tp.setInputType(8194);
+        EditText en=new EditText(this);en.setHint("Entry");en.setInputType(8194);styleDialogInput(en);
+        EditText sl=new EditText(this);sl.setHint("SL");sl.setInputType(8194);styleDialogInput(sl);
+        EditText tp=new EditText(this);tp.setHint("TP");tp.setInputType(8194);styleDialogInput(tp);
         // Pre-fill the MT5 dialog from the latest calculated signal when available.
         SignalResult current=lastSignal;
         if(current!=null && current.entry>0 && current.sl>0 && current.tp1>0){
@@ -927,7 +1058,7 @@ public class MainActivity extends Activity {
             Toast.makeText(this,"Data harga sinyal belum siap",Toast.LENGTH_LONG).show();
         }
         TextView queuedStatus=tv("",11);queuedStatus.setTextColor(green);queuedStatus.setPadding(4,6,4,2);
-        box.addView(mode);box.addView(modeHint);box.addView(auto);box.addView(side);box.addView(vol);box.addView(en);box.addView(sl);box.addView(tp);box.addView(queuedStatus);
+        box.addView(mode,new LinearLayout.LayoutParams(-1,uiDp(56)));box.addView(modeHint);box.addView(auto,new LinearLayout.LayoutParams(-1,uiDp(58)));box.addView(side,new LinearLayout.LayoutParams(-1,uiDp(56)));box.addView(vol,new LinearLayout.LayoutParams(-1,uiDp(56)));box.addView(en,new LinearLayout.LayoutParams(-1,uiDp(56)));box.addView(sl,new LinearLayout.LayoutParams(-1,uiDp(56)));box.addView(tp,new LinearLayout.LayoutParams(-1,uiDp(56)));box.addView(queuedStatus);
         final String[] queuedOrderId={""};
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("MT5 / EA • DEMO").setView(box)
             .setNegativeButton("TUTUP",null).setNeutralButton("SIMPAN MODE",null).setPositiveButton("KIRIM LIMIT DEMO",null).create();
