@@ -1049,6 +1049,35 @@ public class MainActivity extends Activity {
         return p.getFloat("lot_"+symbol,0.01f);
     }
 
+    /**
+     * Save the market-specific lot used by AUTO LIMIT as well as the selected mode.
+     * AUTO computes Entry/SL/TP from the live signal; those manual fields are not used.
+     */
+    private boolean saveAutoEntrySettings(Switch auto,Spinner mode,EditText volume,
+                                          SharedPreferences gatewayPrefs,String symbol){
+        final double lot;
+        try{
+            lot=Double.parseDouble(volume.getText().toString().trim());
+        }catch(Exception e){
+            Toast.makeText(this,"Isi lot yang valid terlebih dahulu",Toast.LENGTH_SHORT).show();
+            return false;
+        }
+        double min=minLotForSymbol(symbol);
+        if(!Double.isFinite(lot)||lot<=0||lot+1e-8<min){
+            Toast.makeText(this,"Lot minimum "+symbol+" = "+lotText(min),Toast.LENGTH_LONG).show();
+            volume.setText(lotText(min));
+            return false;
+        }
+        String operation=mode.getSelectedItemPosition()==1?"READY":"REST";
+        gatewayPrefs.edit().putFloat("lot_"+symbol,(float)lot)
+            .putBoolean("auto",auto.isChecked())
+            .putString("operation_mode",operation).apply();
+        AppLog.add(this,"MODE",operation.equals("READY")?"SIAP TRADING":"ISTIRAHAT");
+        AppLog.add(this,"AUTO LIMIT","settings saved symbol="+symbol+" lot="+lotText(lot)
+            +" auto="+auto.isChecked()+" mode="+operation);
+        return true;
+    }
+
     String lotText(double lot){return String.format(Locale.US,"%.2f",lot);}
 
     double readQuickLot(){
@@ -1195,11 +1224,21 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams hintParams=new LinearLayout.LayoutParams(-1,-2);
         hintParams.setMargins(0,uiDp(5),0,uiDp(6));fields.addView(modeHint,hintParams);
         fields.addView(auto,new LinearLayout.LayoutParams(-1,uiDp(54)));
-        fields.addView(side,new LinearLayout.LayoutParams(-1,uiDp(54)));
         fields.addView(vol,new LinearLayout.LayoutParams(-1,uiDp(54)));
-        fields.addView(en,new LinearLayout.LayoutParams(-1,uiDp(54)));
-        fields.addView(sl,new LinearLayout.LayoutParams(-1,uiDp(54)));
-        fields.addView(tp,new LinearLayout.LayoutParams(-1,uiDp(54)));
+
+        // Manual one-shot LIMIT fields are separate from automatic signal execution.
+        // With AUTO enabled, only market-specific lot and operating mode need adjustment.
+        LinearLayout manualFields=new LinearLayout(this);
+        manualFields.setOrientation(LinearLayout.VERTICAL);
+        TextView manualTitle=tv("MANUAL LIMIT • Entry / SL / TP",11);
+        manualTitle.setTextColor(Color.CYAN);
+        manualTitle.setPadding(uiDp(3),uiDp(6),uiDp(3),uiDp(3));
+        manualFields.addView(manualTitle,new LinearLayout.LayoutParams(-1,uiDp(28)));
+        manualFields.addView(side,new LinearLayout.LayoutParams(-1,uiDp(54)));
+        manualFields.addView(en,new LinearLayout.LayoutParams(-1,uiDp(54)));
+        manualFields.addView(sl,new LinearLayout.LayoutParams(-1,uiDp(54)));
+        manualFields.addView(tp,new LinearLayout.LayoutParams(-1,uiDp(54)));
+        fields.addView(manualFields,new LinearLayout.LayoutParams(-1,-2));
 
         ScrollView sc=new ScrollView(this);
         sc.setFillViewport(false);sc.setSmoothScrollingEnabled(true);sc.addView(fields);
@@ -1235,20 +1274,23 @@ public class MainActivity extends Activity {
 
         AlertDialog dialog=new AlertDialog.Builder(this).setView(root).create();
         final String[] queuedOrderId={""};
-        Runnable saveMode=()->{
-            gatewayPrefs.edit().putBoolean("auto",auto.isChecked())
-                .putString("operation_mode",mode.getSelectedItemPosition()==1?"READY":"REST").apply();
-            AppLog.add(this,"MODE",mode.getSelectedItemPosition()==1?"SIAP TRADING":"ISTIRAHAT");
+        Runnable updateAutoUi=()->{
+            int visibility=auto.isChecked()?View.GONE:View.VISIBLE;
+            manualFields.setVisibility(visibility);
+            send.setVisibility(visibility);
         };
+        auto.setOnCheckedChangeListener((buttonView,isChecked)->updateAutoUi.run());
+        updateAutoUi.run();
+
         save.setOnClickListener(v->{
-            saveMode.run();
-            Toast.makeText(this,"Pengaturan AUTO ENTRY tersimpan",Toast.LENGTH_SHORT).show();
+            if(!saveAutoEntrySettings(auto,mode,vol,gatewayPrefs,selectedMt5Symbol))return;
+            Toast.makeText(this,"Lot dan pengaturan AUTO ENTRY tersimpan untuk "+selectedMt5Symbol,Toast.LENGTH_SHORT).show();
             dialog.dismiss();
         });
         close.setOnClickListener(v->dialog.dismiss());
         send.setOnClickListener(v->{
             try{
-                saveMode.run();
+                if(!saveAutoEntrySettings(auto,mode,vol,gatewayPrefs,selectedMt5Symbol))return;
                 if(!GatewayService.isEaRecentlyOnline(this)){
                     queuedStatus.setTextColor(Color.rgb(255,190,70));
                     queuedStatus.setText("DITAHAN • EA MT5 belum polling aktif. Periksa koneksi MT5/Winlator; tidak ada order yang diantrekan.");
