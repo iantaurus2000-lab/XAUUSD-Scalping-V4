@@ -279,7 +279,9 @@ public class MainActivity extends Activity {
     }
 
     void selectTimeframe(String tf,boolean reload){
+        String previousTf=selectedTf;
         selectedTf=tf;
+        if(!tf.equals(previousTf))resetEntryReadyUi("memuat timeframe "+tf);
         for(Map.Entry<String,Button> e:tfButtons.entrySet()){
             boolean active=e.getKey().equals(tf);e.getValue().setTextColor(active?Color.BLACK:Color.WHITE);
             e.getValue().setBackground(roundBg(active?Color.rgb(15,150,235):Color.rgb(7,34,60),12));
@@ -306,7 +308,7 @@ public class MainActivity extends Activity {
                     chart.setData(c);chart.goLive();m5Data=m5;updateSignal(c,m5Data);
                     status.setText("● LIVE • RAYYAN4 • "+tf);
                 });
-            }catch(Exception e){runOnUiThread(()->status.setText("● OFFLINE • "+tf+" • RETRYING"));}
+            }catch(Exception e){runOnUiThread(()->{status.setText("● OFFLINE • "+tf+" • RETRYING");resetEntryReadyUi("feed offline • menunggu data");});}
         }).start();
 
         if(ex==null){
@@ -323,7 +325,7 @@ public class MainActivity extends Activity {
                         spreadView.setText(String.format(Locale.US,"SPREAD  %.2f",t[1]-t[0]));
                         status.setText("● LIVE • RAYYAN4 • "+selectedTf);
                     });
-                }catch(Exception e){runOnUiThread(()->status.setText("● OFFLINE • RETRYING • "+selectedTf));}
+                }catch(Exception e){runOnUiThread(()->{status.setText("● OFFLINE • RETRYING • "+selectedTf);resetEntryReadyUi("feed offline • menunggu data");});}
             },1,1,TimeUnit.SECONDS);
         }
 
