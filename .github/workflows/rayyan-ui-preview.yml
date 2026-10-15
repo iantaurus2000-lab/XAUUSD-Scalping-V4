@@ -24,7 +24,7 @@ jobs:
       - name: Restore signing key
         run: base64 -d app/rayyan4-debug.keystore.b64 > app/rayyan4-debug.keystore
       - name: Build preview APK
-        run: gradle :app:assembleDebug --no-daemon
+        run: gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon
       - name: Upload preview APK
         uses: actions/upload-artifact@v4
         with:
