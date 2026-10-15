@@ -72,6 +72,8 @@ public final class GatewayService extends Service {
                 String result=query(path,"result");
                 String detail=query(path,"detail");
                 out=ack(id,result,detail);
+            }else if(path.startsWith("/state")){
+                out=receiveState(path);
             }else{
                 out="Rayyan4 gateway OK";
             }
@@ -80,6 +82,40 @@ public final class GatewayService extends Service {
             OutputStream o=socket.getOutputStream();
             o.write(h.getBytes(StandardCharsets.UTF_8));o.write(b);o.flush();
         }catch(Exception e){ AppLog.add(this,"GATEWAY","request error: "+e.getMessage()); }
+    }
+
+    /**
+     * Read-only EA order-state heartbeat. This endpoint never queues or sends trades.
+     * The APK uses it to distinguish a pending order from an open position before
+     * considering cancellation/re-entry.
+     */
+    private synchronized String receiveState(String path){
+        String id=query(path,"id");
+        String state=query(path,"state");
+        String ticket=query(path,"ticket");
+        String symbol=query(path,"symbol");
+        String side=query(path,"side");
+        String price=query(path,"price");
+        if(id==null||id.trim().isEmpty())return "STATE ERROR";
+        if(!"NONE".equals(state)&&!"PENDING".equals(state)&&!"POSITION".equals(state))
+            return "STATE ERROR";
+        SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        String snapshot=id+"|"+state+"|"+ticket+"|"+symbol+"|"+side+"|"+price;
+        String previous=p.getString("ea_order_state_snapshot","");
+        p.edit().putString("ea_order_state_id",id)
+            .putString("ea_order_state",state)
+            .putString("ea_order_state_ticket",ticket==null?"":ticket)
+            .putString("ea_order_state_symbol",symbol==null?"":symbol)
+            .putString("ea_order_state_side",side==null?"":side)
+            .putString("ea_order_state_price",price==null?"":price)
+            .putString("ea_order_state_snapshot",snapshot)
+            .putLong("ea_order_state_at",System.currentTimeMillis()).apply();
+        if(!snapshot.equals(previous)){
+            AppLog.add(this,"MT5 STATE","id="+id+" state="+state+
+                (ticket==null||ticket.isEmpty()?"":" ticket="+ticket)+
+                (symbol==null||symbol.isEmpty()?"":" symbol="+symbol));
+        }
+        return "STATE OK";
     }
 
     private String first(String l){
