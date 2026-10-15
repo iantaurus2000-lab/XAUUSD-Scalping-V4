@@ -167,29 +167,29 @@ public final class RayyanMenuLayout {
             TextView icon = text(host, item.icon, 23, GREEN);
             icon.setGravity(Gravity.CENTER);
             icon.setBackground(background(Color.rgb(4, 53, 67), 10, Color.rgb(20, 106, 126)));
-            row.addView(icon, new LinearLayout.LayoutParams(dp(host, 46), dp(host, 46)));
+            row.addView(icon, new LinearLayout.LayoutParams(dp(host, 50), dp(host, 50)));
 
             LinearLayout labels = new LinearLayout(host);
             labels.setOrientation(LinearLayout.VERTICAL);
             labels.setGravity(Gravity.CENTER_VERTICAL);
             labels.setPadding(dp(host, 12), 0, dp(host, 6), 0);
-            TextView title = text(host, item.title, 14, WHITE);
+            TextView title = text(host, item.title, 15, WHITE);
             title.setTypeface(null, Typeface.BOLD);
             title.setSingleLine(true);
             title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            labels.addView(title, new LinearLayout.LayoutParams(-1, dp(host, 23)));
-            TextView subtitle = text(host, item.subtitle, 10, MUTED);
+            labels.addView(title, new LinearLayout.LayoutParams(-1, dp(host, 26)));
+            TextView subtitle = text(host, item.subtitle, 11, MUTED);
             subtitle.setSingleLine(true);
             subtitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            labels.addView(subtitle, new LinearLayout.LayoutParams(-1, dp(host, 19)));
+            labels.addView(subtitle, new LinearLayout.LayoutParams(-1, dp(host, 21)));
             row.addView(labels, new LinearLayout.LayoutParams(0, -1, 1f));
 
             TextView chevron = text(host, "›", 26, CYAN);
             chevron.setGravity(Gravity.CENTER);
             row.addView(chevron, new LinearLayout.LayoutParams(dp(host, 24), -1));
 
-            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, dp(host, 66));
-            rowParams.setMargins(0, dp(host, 3), 0, dp(host, 3));
+            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, dp(host, 76));
+            rowParams.setMargins(0, dp(host, 4), 0, dp(host, 4));
             parent.addView(row, rowParams);
             row.setOnClickListener(v -> {
                 if (actions != null) actions.onAction(item.action);
