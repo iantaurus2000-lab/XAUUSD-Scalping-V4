@@ -161,7 +161,7 @@ public class MainActivity extends Activity {
         signalSummary.setEllipsize(android.text.TextUtils.TruncateAt.END);
         signalSummary.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);
         top.addView(signalSummary,new LinearLayout.LayoutParams(0,50,1));
-        scoreView=tv("SCORE\n0%",10);scoreView.setGravity(Gravity.CENTER);scoreView.setIncludeFontPadding(false);scoreView.setPadding(0,0,0,0);scoreView.setSingleLine(false);top.addView(scoreView,new LinearLayout.LayoutParams(76,44));
+        scoreView=tv("CONFIDENCE 0%",10);scoreView.setGravity(Gravity.CENTER);scoreView.setIncludeFontPadding(false);scoreView.setPadding(0,0,0,0);scoreView.setSingleLine(false);top.addView(scoreView,new LinearLayout.LayoutParams(92,44));
         card.addView(top);
 
         entryReadyView=tv("WAIT • menunggu setup valid",11);
@@ -460,7 +460,7 @@ public class MainActivity extends Activity {
         if(signal==null||bid<=0||ask<=0)return false;
         if(!"BUY".equals(signal.side)&&!"SELL".equals(signal.side))return false;
         int score=Math.max(0,Math.min(100,signal.score));
-        if(score<60||!signal.spreadFilter||!signal.atrFilter)return false;
+        if(score<getMinimumEntryConfidence()||!signal.spreadFilter||!signal.atrFilter)return false;
         if(signal.entry<=0||signal.sl<=0||signal.tp1<=0)return false;
         if("BUY".equals(signal.side))return signal.entry<ask&&signal.sl<signal.entry&&signal.tp1>signal.entry;
         return signal.entry>bid&&signal.tp1<signal.entry&&signal.sl>signal.entry;
@@ -519,7 +519,7 @@ public class MainActivity extends Activity {
             sellLimitBtn.setTextColor(Color.WHITE);
             return;
         }
-        // Both buttons pulse for visibility; the matching direction stays brighter.
+        // Only the active entry direction pulses; the opposite side stays dim.
         int buyColor;
         int sellColor;
         if("BUY".equals(readySide)){
@@ -616,13 +616,25 @@ public class MainActivity extends Activity {
         RayyanMenuLayout.showMain(this,selectedMarket,selectedTf,this::handleMenuAction);
     }
 
+    private int getMinimumEntryConfidence(){ return getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).getInt("min_entry_score",60); }
+
+    private void showConfidenceDialog(){
+        int current=getMinimumEntryConfidence();
+        LinearLayout box=new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL); box.setPadding(24,18,24,18); box.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("ENTRY CONFIDENCE",18); title.setTextColor(Color.CYAN); title.setTypeface(null,Typeface.BOLD); box.addView(title,new LinearLayout.LayoutParams(-1,42));
+        TextView note=tv("Pilih ambang confidence minimum",12); note.setTextColor(Color.LTGRAY); box.addView(note,new LinearLayout.LayoutParams(-1,34));
+        LinearLayout choices=new LinearLayout(this); choices.setOrientation(LinearLayout.VERTICAL);
+        for(int value:new int[]{60,70,80,90}){ Button option=btn((current==value?"✓  ":"")+"CONFIDENCE "+value+"%"); option.setTextSize(14); option.setBackground(roundBg(current==value?Color.rgb(0,105,83):Color.rgb(7,34,60),12)); LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,48);p.setMargins(0,5,0,5);choices.addView(option,p);option.setOnClickListener(v->{getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putInt("min_entry_score",value).apply();Toast.makeText(this,"Confidence minimum "+value+"%",Toast.LENGTH_SHORT).show();if(lastSignal!=null)updateEntryReadyUi(lastSignal,chart.getBid(),chart.getAsk());((Dialog)box.getTag()).dismiss();}); }
+        box.addView(choices); AlertDialog d=new AlertDialog.Builder(this).setView(box).setNegativeButton("Tutup",null).create();box.setTag(d);d.setOnShowListener(x->{if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-40,420),-2);}});d.show();if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-40,420),-2);}
+    }
+
     private void showSettingsPanel(View anchor){
         RayyanMenuLayout.showSettings(this,selectedMarket,selectedTf,this::handleMenuAction);
     }
 
     private void handleMenuAction(String action){
         RayyanMenuLayout.dismissActive();
-        if("market".equals(action)||"settings_market".equals(action))showMarketDialog();
+        if("confidence".equals(action))showConfidenceDialog();\n        else if("market".equals(action)||"settings_market".equals(action))showMarketDialog();
         else if("chart".equals(action)){if(chart!=null)chart.goLive();}
         else if("indicators".equals(action)||"settings_indicators".equals(action))showIndicatorDialog();
         else if("signal".equals(action))showSignalDialog();
