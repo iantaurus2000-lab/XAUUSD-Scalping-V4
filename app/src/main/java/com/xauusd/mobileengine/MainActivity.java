@@ -140,7 +140,7 @@ public class MainActivity extends Activity {
 
         // CHART TOOLS
         LinearLayout layers=new LinearLayout(this);layers.setPadding(4,3,4,3);layers.setBackgroundColor(Color.rgb(3,14,24));
-        String[] ls={"▥ S/R","▤ Fibo","〽 EMA","↕ Buy/Sell","▣ Order","◎ Posisi"};
+        String[] ls={"⌗ S/R","⟋ Fibo","〽 EMA","↗ Buy/Sell","▤ Order","◎ Posisi"};
         for(String s:ls){
             Button b=btn(s);b.setTextSize(9);layers.addView(b,new LinearLayout.LayoutParams(0,38,1));bindQuickLayer(b,s);
         }
