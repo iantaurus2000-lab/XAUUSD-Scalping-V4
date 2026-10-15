@@ -115,6 +115,8 @@ public final class RayyanMenuLayout {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(host, 2), dp(host, 2), dp(host, 2), dp(host, 2));
         root.setBackground(background(BG, 18, BORDER));
+        root.setLayoutParams(new LinearLayout.LayoutParams(-1, -1));
+        root.setMinimumHeight(dp(host, 520));
         return root;
     }
 
