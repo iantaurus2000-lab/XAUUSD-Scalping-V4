@@ -66,7 +66,24 @@ public final class SmartLimitReentry {
 
     public static boolean materiallyDifferentEntry(double oldEntry, double newEntry,
                                                    double atr) {
-        return oldEntry > 0 && newEntry > 0 && atr > 0
+        return Double.isFinite(oldEntry) && Double.isFinite(newEntry) && Double.isFinite(atr)
+                && oldEntry > 0 && newEntry > 0 && atr > 0
                 && Math.abs(oldEntry - newEntry) >= atr * 0.12;
+    }
+
+    /**
+     * Reject a proposed replacement LIMIT if its entry has drifted too far
+     * from the original pending-order entry. Distance is normalized by M1 ATR
+     * so the same rule works across symbols with different price scales.
+     */
+    public static boolean withinMaxDistanceFromOriginalEntry(double originalEntry,
+                                                              double proposedEntry,
+                                                              double atr,
+                                                              double maxAtrDistance) {
+        if (!Double.isFinite(originalEntry) || !Double.isFinite(proposedEntry)
+                || !Double.isFinite(atr) || !Double.isFinite(maxAtrDistance)
+                || originalEntry <= 0 || proposedEntry <= 0 || atr <= 0
+                || maxAtrDistance < 0.5 || maxAtrDistance > 5.0) return false;
+        return Math.abs(proposedEntry - originalEntry) <= atr * maxAtrDistance;
     }
 }
