@@ -141,8 +141,22 @@ public class CandleChartView extends View {
         if(mainBottom<H*.48f)mainBottom=H*.48f;
         float each=panels>0?(bottom-mainBottom-gap*(panels-1))/panels:0;
 
+        // Auto-scale to the candles currently visible on screen, like a trading chart.
+        float step=cw+5;
+        int n=cs.size();
+        int st=Math.max(0,(int)Math.floor((-ox)/step)-3);
+        int en=Math.min(n,(int)Math.ceil((R-L-ox)/step)+3);
+        if(en<=st){st=0;en=n;}
         double lo=1e99,hi=-1e99;
-        for(Candle z:cs){lo=Math.min(lo,z.l);hi=Math.max(hi,z.h);}
+        for(int i=st;i<en;i++){
+            Candle z=cs.get(i);
+            lo=Math.min(lo,z.l);
+            hi=Math.max(hi,z.h);
+        }
+        if(!Double.isFinite(lo)||!Double.isFinite(hi)||hi<=lo){
+            lo=cs.get(n-1).l;
+            hi=cs.get(n-1).h;
+        }
         double pad=Math.max((hi-lo)*.10,.40);lo-=pad;hi+=pad;
 
         // Chart header, matching the reference MT5-like layout.
@@ -161,9 +175,6 @@ public class CandleChartView extends View {
         for(int i=0;i<=6;i++){float y=T+i*(B-T)/6;ln(c,L,y,R,y,Color.rgb(29,39,50),1);}
         for(int i=0;i<=8;i++){float x=L+i*(R-L)/8;ln(c,x,T,x,B,Color.rgb(21,31,41),1);}
 
-        float step=cw+5;int n=cs.size();
-        int st=Math.max(0,(int)Math.floor((-ox)/step)-3);
-        int en=Math.min(n,(int)Math.ceil((R-L-ox)/step)+3);
         for(int i=st;i<en;i++){
             Candle z=cs.get(i);float x=L+i*step+ox+step/2;
             float yh=py(z.h,lo,hi,T,B),yl=py(z.l,lo,hi,T,B),yo=py(z.o,lo,hi,T,B),yc=py(z.c,lo,hi,T,B);
@@ -235,8 +246,10 @@ public class CandleChartView extends View {
         for(double q=q0;q<=hi+unit*.25;q+=unit){
             float y=py(q,lo,hi,T,B);if(y>=T-2&&y<=B+2)text(c,f(q),R+7,y+4,10,Color.WHITE);
         }
+        int visibleCount=Math.max(1,en-st);
         for(int i=0;i<6;i++){
-            int idx=Math.min(n-1,i*(n-1)/5);float x=L+idx*step+ox+step/2;
+            int idx=Math.min(n-1,st+(int)Math.round(i*(visibleCount-1)/5.0));
+            float x=L+idx*step+ox+step/2;
             if(x>=L&&x<=R)text(c,time.format(new Date(cs.get(idx).t)),x-15,B+16,9,Color.LTGRAY);
         }
 
