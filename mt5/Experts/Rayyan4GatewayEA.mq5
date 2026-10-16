@@ -39,7 +39,7 @@ void OnTimer(){
       return;
    }
 
-   publishOrderState();\n   if(TimeCurrent()-lastFeedPush>=2){ publishMarketFeed(); lastFeedPush=TimeCurrent(); }
+   publishOrderState();\n   if(TimeCurrent()-lastFeedPush>=5){ publishMarketFeed(); lastFeedPush=TimeCurrent(); }
 
    if(StringLen(cmd)<5){
       if(TimeCurrent()-lastDiag>=10){
