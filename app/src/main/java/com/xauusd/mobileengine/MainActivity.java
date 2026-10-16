@@ -26,6 +26,8 @@ public class MainActivity extends Activity {
     private boolean entryReady = false;
     private boolean blinkOn = false;
     private String readySide = "WAIT";
+    private String readyCandleKey = "";
+    private String readyCandleSide = "WAIT";
     private final Runnable entryBlinkRunnable = new Runnable() {
         @Override public void run() {
             if (!entryReady || buyLimitBtn == null || sellLimitBtn == null) return;
@@ -492,8 +494,22 @@ public class MainActivity extends Activity {
     }
 
     private void updateEntryReadyUi(SignalResult signal,double bid,double ask){
+        long candleStamp=chart!=null&&!chart.isEmpty()?chart.getDataSnapshot()[chart.getDataSnapshot().length-1].t:-1L;
+        String candleKey=selectedMarket+"|"+selectedTf+"|"+candleStamp;
+        if(!candleKey.equals(readyCandleKey)){
+            readyCandleKey=candleKey;
+            readyCandleSide="WAIT";
+        }
         boolean nextReady=isAutoEntryEligible(signal,bid,ask,"M1".equals(selectedTf));
         String nextSide=nextReady?signal.side:"WAIT";
+        // Once one direction has claimed READY in this candle, a reversal cannot
+        // light the opposite button until the next M1 candle opens.
+        if(nextReady && !"WAIT".equals(readyCandleSide) && !readyCandleSide.equals(nextSide)){
+            nextReady=false;
+            nextSide="WAIT";
+        }else if(nextReady && "WAIT".equals(readyCandleSide)){
+            readyCandleSide=nextSide;
+        }
         if(nextReady){
             boolean sideChanged=!readySide.equals(nextSide);
             if(!entryReady||sideChanged){
@@ -941,8 +957,10 @@ public class MainActivity extends Activity {
         scoreView.setIncludeFontPadding(false);
         scoreView.setGravity(Gravity.CENTER);
         scoreView.setTextColor(displayScore>=75?Color.YELLOW:displayScore>=60?Color.CYAN:Color.WHITE);
-        signalSummary.setText(("BUY".equals(s.side)||"SELL".equals(s.side)?("M1 "+s.side+" • M5 "+s.m5Bias):("Menunggu wick valid"))+"\n"+s.setup+" • CONF "+s.confidence+"/5");
-        entryView.setText("Entry\n"+price(s.entry));slView.setText("SL\n"+price(s.sl));tp1View.setText("TP1\n"+price(s.tp1));tp2View.setText("TP2\n"+price(s.tp2));
+        boolean directional="BUY".equals(s.side)||"SELL".equals(s.side);
+        signalSummary.setText((directional?("M1 "+s.side+" • M5 "+s.m5Bias):"WAIT • "+s.m5Bias)+"\n"+s.setup+" • CONF "+s.confidence+"/5");
+        entryView.setText("Entry\n"+price(directional?s.entry:0));slView.setText("SL\n"+price(directional?s.sl:0));
+        tp1View.setText("TP1\n"+price(directional?s.tp1:0));tp2View.setText("TP2\n"+price(directional?s.tp2:0));
         updateEntryReadyUi(s,bid,ask);
 
         View v=((ViewGroup)scoreView.getParent()).getChildAt(0);
@@ -952,7 +970,9 @@ public class MainActivity extends Activity {
             b.setTextSize(1);
             b.setBackground(roundBg("BUY".equals(s.side)?Color.rgb(0,225,135):"SELL".equals(s.side)?Color.rgb(255,65,82):Color.rgb(110,115,125),1000));
         }
-        chart.setSignalLevels(s.entry,s.sl,s.tp1,s.tp2,"BUY".equals(s.side)||"SELL".equals(s.side));
+        boolean signalDirectional="BUY".equals(s.side)||"SELL".equals(s.side);
+        chart.setSignalLevels(signalDirectional?s.entry:0,signalDirectional?s.sl:0,
+            signalDirectional?s.tp1:0,signalDirectional?s.tp2:0,signalDirectional);
 
         boolean changed=previous==null||!s.side.equals(previous.side);
         long candleStamp=m1[m1.length-1].t;
