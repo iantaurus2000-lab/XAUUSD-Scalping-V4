@@ -17,7 +17,7 @@ public final class WinRateTracker {
         if(c==null||entry<=0||sl<=0||tp<=0||(!"BUY".equals(side)&&!"SELL".equals(side)))return false;
         SharedPreferences p=c.getSharedPreferences(PREF,Context.MODE_PRIVATE);
         JSONArray a=read(p.getString(KEY,"[]"));
-        String id=cohort+"|"+market+"|"+side+"|"+startCandle;
+        String id="READY".equals(cohort)?cohort+"|"+market+"|"+side+"|"+startCandle:cohort+"|"+market+"|"+side+"|"+System.currentTimeMillis();
         for(int i=0;i<a.length();i++){
             JSONObject old=a.optJSONObject(i);
             if(old!=null&&id.equals(old.optString("id")))return false;
