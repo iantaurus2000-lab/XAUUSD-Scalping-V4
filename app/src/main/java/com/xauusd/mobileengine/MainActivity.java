@@ -405,9 +405,9 @@ public class MainActivity extends Activity {
                 return;
             }
             SignalResult s=SignalEngine.evaluate(liveM1,m5Data,chart.getBid(),chart.getAsk());
-            if(s==null || (!"BUY".equals(s.side)&&!"SELL".equals(s.side)) || s.entry<=0 || s.sl<=0 || s.tp1<=0){
-                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT: sinyal belum valid; side="+(s==null?"null":s.side));
-                Toast.makeText(this,"Belum ada setup valid • order tidak dikirim",Toast.LENGTH_SHORT).show();
+            if(!isAutoEntryEligible(s,chart.getBid(),chart.getAsk(),"M1".equals(selectedTf))){
+                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT: setup belum memenuhi READY Smart Auto Entry");
+                Toast.makeText(this,"Belum ada wick READY • order tidak dikirim",Toast.LENGTH_SHORT).show();
                 return;
             }
             lastSignal=s;
@@ -447,8 +447,8 @@ public class MainActivity extends Activity {
         SignalResult s=SignalEngine.evaluate(liveM1,m5Data,liveBid,liveAsk);
         lastSignal=s;
 
-        if(s==null || (!"BUY".equals(s.side)&&!"SELL".equals(s.side)) || s.entry<=0 || s.sl<=0 || s.tp1<=0){
-            Toast.makeText(this,"Setup sudah berubah • tidak dieksekusi",Toast.LENGTH_SHORT).show();
+        if(!isAutoEntryEligible(s,liveBid,liveAsk,"M1".equals(selectedTf))){
+            Toast.makeText(this,"Setup belum memenuhi READY Smart Auto Entry • tidak dieksekusi",Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -492,7 +492,7 @@ public class MainActivity extends Activity {
     }
 
     private void updateEntryReadyUi(SignalResult signal,double bid,double ask){
-        boolean nextReady=isEntryReady(signal,bid,ask);
+        boolean nextReady=isAutoEntryEligible(signal,bid,ask,"M1".equals(selectedTf));
         String nextSide=nextReady?signal.side:"WAIT";
         if(nextReady){
             boolean sideChanged=!readySide.equals(nextSide);
