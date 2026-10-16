@@ -26,7 +26,8 @@ public final class SignalEngine {
         int bestIndex = -1;
         boolean bestBuy = false;
         double bestStrength = 0;
-        for (int i = Math.max(2, n - 4); i < n; i++) {
+        // Only the newest M1 candle may create a READY setup; older wick candles expire.
+        for (int i = n - 1; i < n; i++) {
             Candle c = m1[i];
             double b = Math.max(Math.abs(c.c - c.o), Math.max(atr * 0.035, 0.00001));
             double up = c.h - Math.max(c.o, c.c);
@@ -67,14 +68,9 @@ public final class SignalEngine {
         // A pronounced rejection wick is the primary trigger. Indicators contribute to
         // confidence, not a veto; spread and valid pending-order geometry remain safety gates.
         String side="WAIT";
+        // Wick rejection is the sole entry trigger; indicators provide context only.
         if (needleBuy && !needleSell) side="BUY";
         else if (needleSell && !needleBuy) side="SELL";
-        else {
-            int buy= (biasBuy?1:0)+(sweepBuy?1:0)+(emaBuy?1:0)+(rsiBuy?1:0)+(macdBuy?1:0)+(bosBuy?1:0);
-            int sell=(biasSell?1:0)+(sweepSell?1:0)+(emaSell?1:0)+(rsiSell?1:0)+(macdSell?1:0)+(bosSell?1:0);
-            if(buy>=4&&buy>sell+1) side="BUY";
-            else if(sell>=4&&sell>buy+1) side="SELL";
-        }
 
         double entry=0, sl=0, tp1=0, tp2=0, rr=0;
         if ("BUY".equals(side)) {
