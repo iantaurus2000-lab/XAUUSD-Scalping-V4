@@ -13,7 +13,8 @@ string trackedOrderId="";
 string pendingAckId="";
 string pendingAckResult="";
 string pendingAckDetail="";
-datetime lastDiag=0;\ndatetime lastFeedPush=0;
+datetime lastDiag=0;
+datetime lastFeedPush=0;
 
 int OnInit(){
    EventSetTimer(MathMax(1,PollSeconds));
@@ -39,7 +40,8 @@ void OnTimer(){
       return;
    }
 
-   publishOrderState();\n   if(TimeCurrent()-lastFeedPush>=5){ publishMarketFeed(); lastFeedPush=TimeCurrent(); }
+   publishOrderState();
+   if(TimeCurrent()-lastFeedPush>=5){ publishMarketFeed(); lastFeedPush=TimeCurrent(); }
 
    if(StringLen(cmd)<5){
       if(TimeCurrent()-lastDiag>=10){
@@ -321,7 +323,8 @@ void publishMarketFeed(){
    char data[],response[];
    StringToCharArray(payload,data,0,WHOLE_ARRAY,CP_UTF8);
    if(ArraySize(data)>0)ArrayResize(data,ArraySize(data)-1);
-   string headers="Content-Type: application/json\r\n";
+   string headers="Content-Type: application/json\r
+";
    string responseHeaders="";
    ResetLastError();
    int code=WebRequest("POST",base+"/feed",headers,1800,data,response,responseHeaders);
@@ -437,7 +440,8 @@ bool gatewayGet(string path,int &httpCode,string &body,string &diagnostic){
 
 int headerContentLength(string headers){
    string lines[];
-   int count=StringSplit(headers,'\n',lines);
+   int count=StringSplit(headers,'
+',lines);
    for(int i=0;i<count;i++){
       string line=lines[i];
       StringReplace(line,"\r","");
