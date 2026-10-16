@@ -33,11 +33,8 @@ public class CandleChartView extends View {
     public void setData(Candle[] a){ cs.clear(); if(a!=null) Collections.addAll(cs,a); invalidate(); }
 
     public void setTick(double b,double a,String tf){
+        // Quotes move independently; candle OHLC comes only from MT5 CopyRates.
         bid=b; ask=a; if(tf!=null) timeframe=tf;
-        if(!cs.isEmpty()){
-            Candle z=cs.get(cs.size()-1); double q=(b+a)/2.0;
-            z.c=q; z.h=Math.max(z.h,q); z.l=Math.min(z.l,q);
-        }
         invalidate();
     }
 
@@ -163,7 +160,7 @@ public class CandleChartView extends View {
         p.setColor(Color.rgb(7,15,23));c.drawRect(L,0,R,52,p);
         bold(c,marketName+" • "+timeframe+"  ▾",L+7,16,12,Color.rgb(0,238,150));
         // Be transparent: current chart bars/quotes come from Biquote, not the MT5 EA feed.
-        text(c,"FEED EXTERNAL",Math.max(L+8,R-93),16,8,Color.rgb(255,190,70));
+        text(c,"FEED MT5",Math.max(L+8,R-65),16,8,Color.rgb(0,220,150));
         Candle last=cs.get(cs.size()-1);
         text(c,"O "+f(last.o)+"   H "+f(last.h)+"   L "+f(last.l)+"   C "+f(last.c),L+7,34,10,Color.WHITE);
         double e9=emaValue(9),e21=emaValue(21),e50=emaValue(50);
