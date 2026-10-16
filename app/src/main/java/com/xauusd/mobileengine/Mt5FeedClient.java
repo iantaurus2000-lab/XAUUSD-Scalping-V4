@@ -13,8 +13,8 @@ public final class Mt5FeedClient {
         public final int digits;
         public final long serverTime;
         public final Candle[] m1, m5, m15, h1, h4, d1;
-        Snapshot(String s,double b,double a,int d,long t,Candle[] one,Candle[] five){
-            symbol=s;bid=b;ask=a;digits=d;serverTime=t;m1=one;m5=five;
+        Snapshot(String s,double b,double a,int d,long t,Candle[] one,Candle[] five,Candle[] fifteen,Candle[] hour,Candle[] four,Candle[] day){
+            symbol=s;bid=b;ask=a;digits=d;serverTime=t;m1=one;m5=five;m15=fifteen;h1=hour;h4=four;d1=day;
         }
     }
     public static Snapshot fetch() throws Exception {
