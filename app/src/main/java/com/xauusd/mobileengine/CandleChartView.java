@@ -20,6 +20,7 @@ public class CandleChartView extends View {
     private String marketName="XAUUSD";
     private final SimpleDateFormat time = new SimpleDateFormat("HH:mm", Locale.US);
     private double signalEntry, signalSl, signalTp1, signalTp2;
+    private double positionEntry;
     private boolean signalActive=false;
 
     public CandleChartView(Context c) {
@@ -50,6 +51,9 @@ public class CandleChartView extends View {
     public void setSignalLevels(double e,double s,double t1,double t2,boolean active){
         signalEntry=e; signalSl=s; signalTp1=t1; signalTp2=t2; signalActive=active; invalidate();
     }
+    /** Fixed entry price captured when READY/Manual/Smart Auto is recorded. */
+    public void setPositionEntryLevel(double entry){positionEntry=entry>0?entry:0;invalidate();}
+    public double getPositionEntryLevel(){return positionEntry;}
     public void setShowEMA9(boolean v){showEMA9=v;invalidate();}
     public void setShowEMA21(boolean v){showEMA21=v;invalidate();}
     public void setShowEMA50(boolean v){showEMA50=v;invalidate();}
@@ -190,6 +194,16 @@ public class CandleChartView extends View {
         if(showBidAsk){
             if(bid>0){float y=py(bid,lo,hi,T,B);ln(c,L,y,R,y,Color.rgb(0,255,145),2);box(c,"BID "+f(bid),y,Color.rgb(0,200,125),Color.BLACK);}
             if(ask>0){float y=py(ask,lo,hi,T,B);ln(c,L,y,R,y,Color.rgb(255,65,85),2);box(c,"ASK "+f(ask),y,Color.rgb(225,45,65),Color.WHITE);}
+        }
+
+        if(showPosition&&positionEntry>0){
+            float y=py(positionEntry,lo,hi,T,B);
+            if(y>=T&&y<=B){
+                p.setPathEffect(new DashPathEffect(new float[]{9,5},0));
+                ln(c,L,y,R,y,Color.rgb(0,210,255),2);
+                p.setPathEffect(null);
+                box(c,"OPEN ENTRY "+f(positionEntry),y,Color.rgb(0,170,220),Color.BLACK);
+            }
         }
 
         if(showTradeLevels&&signalActive){
