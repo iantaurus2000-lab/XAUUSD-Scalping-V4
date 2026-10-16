@@ -162,6 +162,8 @@ public class CandleChartView extends View {
         // Chart header, matching the reference MT5-like layout.
         p.setColor(Color.rgb(7,15,23));c.drawRect(L,0,R,52,p);
         bold(c,marketName+" • "+timeframe+"  ▾",L+7,16,12,Color.rgb(0,238,150));
+        // Be transparent: current chart bars/quotes come from Biquote, not the MT5 EA feed.
+        text(c,"FEED EXTERNAL",Math.max(L+8,R-93),16,8,Color.rgb(255,190,70));
         Candle last=cs.get(cs.size()-1);
         text(c,"O "+f(last.o)+"   H "+f(last.h)+"   L "+f(last.l)+"   C "+f(last.c),L+7,34,10,Color.WHITE);
         double e9=emaValue(9),e21=emaValue(21),e50=emaValue(50);
