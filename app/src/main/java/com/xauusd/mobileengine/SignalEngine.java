@@ -19,43 +19,27 @@ public final class SignalEngine {
         boolean biasSell = e9_5 < e21_5 && e21_5 < e50_5;
         String bias = biasBuy ? "BUY" : biasSell ? "SELL" : "NEUTRAL";
 
-        // Scan recent candles for a needle wick instead of demanding every indicator agree.
-        // Prefer the latest qualifying wick; older candidates are allowed only if price
-        // has not already run far away from the rejection area.
+        // Only the latest M1 candle can produce a setup. If its geometry
+        // qualifies as both BUY and SELL rejection, direction is ambiguous: WAIT.
         int n = m1.length;
-        int bestIndex = -1;
-        boolean bestBuy = false;
-        double bestStrength = 0;
-        // Only the newest M1 candle may create a READY setup; older wick candles expire.
-        for (int i = n - 1; i < n; i++) {
-            Candle c = m1[i];
-            double b = Math.max(Math.abs(c.c - c.o), Math.max(atr * 0.035, 0.00001));
-            double up = c.h - Math.max(c.o, c.c);
-            double down = Math.min(c.o, c.c) - c.l;
-            double localRange = Math.max(c.h - c.l, atr);
-            double priorLow = Math.min(m1[i-1].l, m1[i-2].l);
-            double priorHigh = Math.max(m1[i-1].h, m1[i-2].h);
-            boolean swBuy = c.l < priorLow && c.c > priorLow;
-            boolean swSell = c.h > priorHigh && c.c < priorHigh;
-            boolean rejectBuy = down >= b * 1.8 && down >= localRange * 0.38 && c.c >= c.l + (c.h-c.l)*0.48;
-            boolean rejectSell = up >= b * 1.8 && up >= localRange * 0.38 && c.c <= c.l + (c.h-c.l)*0.52;
-            double buyStrength = down / b + (swBuy ? 1.6 : 0) + (i == n-1 ? 0.25 : 0);
-            double sellStrength = up / b + (swSell ? 1.6 : 0) + (i == n-1 ? 0.25 : 0);
-            if (rejectBuy && buyStrength > bestStrength) {
-                bestIndex=i; bestBuy=true; bestStrength=buyStrength;
-            }
-            if (rejectSell && sellStrength > bestStrength) {
-                bestIndex=i; bestBuy=false; bestStrength=sellStrength;
-            }
-        }
-
-        boolean needleBuy = bestIndex >= 0 && bestBuy;
-        boolean needleSell = bestIndex >= 0 && !bestBuy;
-        Candle wick = bestIndex >= 0 ? m1[bestIndex] : z;
-        double prevLow = Math.min(p.l, m1[n-3].l);
-        double prevHigh = Math.max(p.h, m1[n-3].h);
-        boolean sweepBuy = bestIndex >= 0 && wick.l < Math.min(m1[bestIndex-1].l, m1[bestIndex-2].l) && wick.c > Math.min(m1[bestIndex-1].l, m1[bestIndex-2].l);
-        boolean sweepSell = bestIndex >= 0 && wick.h > Math.max(m1[bestIndex-1].h, m1[bestIndex-2].h) && wick.c < Math.max(m1[bestIndex-1].h, m1[bestIndex-2].h);
+        int bestIndex = n - 1;
+        Candle wick = z;
+        double wickBody = Math.max(body, Math.max(atr * 0.035, 0.00001));
+        double localRange = Math.max(z.h - z.l, atr);
+        double priorLow = Math.min(m1[n-2].l, m1[n-3].l);
+        double priorHigh = Math.max(m1[n-2].h, m1[n-3].h);
+        boolean swBuy = z.l < priorLow && z.c > priorLow;
+        boolean swSell = z.h > priorHigh && z.c < priorHigh;
+        boolean rejectBuy = lower >= wickBody * 1.8
+            && lower >= localRange * 0.38
+            && z.c >= z.l + (z.h-z.l)*0.48;
+        boolean rejectSell = upper >= wickBody * 1.8
+            && upper >= localRange * 0.38
+            && z.c <= z.l + (z.h-z.l)*0.52;
+        boolean needleBuy = rejectBuy && !rejectSell;
+        boolean needleSell = rejectSell && !rejectBuy;
+        boolean sweepBuy = needleBuy && swBuy;
+        boolean sweepSell = needleSell && swSell;
 
         double rsi = rsi(m1,14), macd = ema(m1,12)-ema(m1,26);
         boolean rsiBuy=rsi>=50&&rsi<=72, rsiSell=rsi<=50&&rsi>=28;
@@ -98,9 +82,9 @@ public final class SignalEngine {
             +(macdBuy||macdSell?1:0)+(bosBuy||bosSell?1:0)+(spreadOk?1:0)+(atrOk?1:0);
         int score=Math.min(99,45+points*4);
         int confidence=needleBuy||needleSell?(sweepBuy||sweepSell?5:4):(points>=7?3:points>=5?2:1);
-        String setup="WAIT".equals(side)?"Menunggu wick valid":(needleBuy||needleSell)
-            ?"NEEDLE WICK + REJECTION"+((sweepBuy||sweepSell)?" + LIQUIDITY SWEEP":"")
-            :"Momentum fallback";
+        String setup="WAIT".equals(side)
+            ? (rejectBuy && rejectSell ? "WICK AMBIGU • WAIT" : "Menunggu wick valid")
+            : "NEEDLE WICK + REJECTION"+((sweepBuy||sweepSell)?" + LIQUIDITY SWEEP":"");
         return new SignalResult(side,bias,entry,sl,tp1,tp2,rr,score,confidence,setup,
             sweepBuy||sweepSell,needleBuy||needleSell,bosBuy||bosSell,
             emaBuy||emaSell,rsiBuy||rsiSell,macdBuy||macdSell,atrOk,spreadOk);
