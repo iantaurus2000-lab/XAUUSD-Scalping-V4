@@ -1347,7 +1347,7 @@ public class MainActivity extends Activity {
     void bindQuickLayer(Button b,String label){
         b.setOnClickListener(v->{if(label.contains("S/R"))setInd("sr",!ind("sr",true));else if(label.contains("Fibo"))setInd("fibo",!ind("fibo",true));
             else if(label.contains("EMA")){boolean next=!(ind("ema9",true)&&ind("ema21",true)&&ind("ema50",true));setInd("ema9",next);setInd("ema21",next);setInd("ema50",next);}
-            else if(label.contains("Buy/Sell"))setInd("signals",!ind("signals",true));else if(label.contains("Order"))setInd("orders",!ind("orders",true));else if(label.contains("Posisi")){boolean next=!ind("position",true);setInd("position",next);if(chart!=null)chart.setShowPosition(next);showWinRateDialog();}updateQuickLayerButton(b,label);});
+            else if(label.contains("Buy/Sell"))setInd("signals",!ind("signals",true));else if(label.contains("Order"))setInd("orders",!ind("orders",true));else if(label.contains("Posisi")){setInd("position",true);if(chart!=null)chart.setShowPosition(true);showWinRateDialog();}updateQuickLayerButton(b,label);});
         updateQuickLayerButton(b,label);
     }
 
