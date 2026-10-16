@@ -2,7 +2,7 @@ name: Rayyan4 Emulator Check
 on:
   workflow_dispatch:
   push:
-    branches: [ main, rayyan-entry-ready-menu-fix ]
+    branches: [ main, rayyan-entry-ready-menu-fix, rayyan-stage1-professional-chart ]
 
 jobs:
   emulator:
