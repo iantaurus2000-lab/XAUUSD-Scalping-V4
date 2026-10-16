@@ -28,6 +28,7 @@ public class MainActivity extends Activity {
     private String readySide = "WAIT";
     private String readyCandleKey = "";
     private String readyCandleSide = "WAIT";
+    private String queueOrigin = "MANUAL";
     private final Runnable entryBlinkRunnable = new Runnable() {
         @Override public void run() {
             if (!entryReady || buyLimitBtn == null || sellLimitBtn == null) return;
@@ -619,7 +620,10 @@ public class MainActivity extends Activity {
         double target=validAutoTarget(s);
         if(target<=0)return false;
         String orderSide="BUY".equals(s.side)?"BUY_LIMIT":"SELL_LIMIT";
-        boolean queued=queueLimit(orderSide,lot,s.entry,s.sl,target);
+        queueOrigin="SMART_AUTO";
+        boolean queued;
+        try { queued=queueLimit(orderSide,lot,s.entry,s.sl,target); }
+        finally { queueOrigin="MANUAL"; }
         if(!queued)return false;
         String orderId=gp.getString("order_status_id","");
         long now=System.currentTimeMillis();
@@ -989,8 +993,20 @@ public class MainActivity extends Activity {
         chart.setSignalLevels(signalDirectional?s.entry:0,signalDirectional?s.sl:0,
             signalDirectional?s.tp1:0,signalDirectional?s.tp2:0,signalDirectional);
 
-        boolean changed=previous==null||!s.side.equals(previous.side);
         long candleStamp=m1[m1.length-1].t;
+        WinRateTracker.evaluate(this,selectedMarket,m1);
+        if(entryReady && ("BUY".equals(s.side)||"SELL".equals(s.side))){
+            String readyTrackKey=selectedMarket+"|"+readyCandleKey+"|"+readyCandleSide;
+            SharedPreferences trackPrefs=getSharedPreferences("rayyan4_winrate",MODE_PRIVATE);
+            if(!readyTrackKey.equals(trackPrefs.getString("last_ready_key",""))){
+                if(WinRateTracker.record(this,"READY",selectedMarket,s.side,s.entry,s.sl,s.tp1,candleStamp)){
+                    chart.setPositionEntryLevel(s.entry);
+                }
+                trackPrefs.edit().putString("last_ready_key",readyTrackKey).apply();
+            }
+        }
+
+        boolean changed=previous==null||!s.side.equals(previous.side);
         String candleKey=selectedMarket+"|"+selectedTf+"|"+candleStamp;
         SharedPreferences noticePrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         boolean alreadyNotified=candleKey.equals(noticePrefs.getString("signal_notified_candle",""));
@@ -1285,10 +1301,51 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void showWinRateDialog(){
+        WinRateTracker.Stats ready=WinRateTracker.stats(this,"READY");
+        WinRateTracker.Stats manual=WinRateTracker.stats(this,"MANUAL");
+        WinRateTracker.Stats smart=WinRateTracker.stats(this,"SMART_AUTO");
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(uiDp(16),uiDp(14),uiDp(16),uiDp(12));
+        box.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("HASIL UJI • WIN RATE",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(38)));
+        TextView note=tv("READY = sinyal simulasi • MANUAL/SMART AUTO = perintah berhasil masuk antrean APK",11);
+        note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
+        box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(42)));
+        LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
+        addWinRateRow(rows,"1. SINYAL ENTRY READY",ready);
+        addWinRateRow(rows,"2. ORDER MANUAL",manual);
+        addWinRateRow(rows,"3. SMART AUTO ENTRY",smart);
+        TextView rule=tv("WIN: TP1 tersentuh dahulu • LOSS: SL tersentuh dahulu • OPEN: belum selesai • AMBIGU: TP1 dan SL tersentuh dalam candle sama. Garis ENTRY tetap pada harga yang dicatat terakhir.",11);
+        rule.setTextColor(Color.rgb(255,205,95));rule.setGravity(Gravity.TOP|Gravity.START);
+        rule.setPadding(uiDp(10),uiDp(8),uiDp(10),uiDp(8));rule.setBackground(roundBg(Color.rgb(7,30,47),10));
+        rows.addView(rule,new LinearLayout.LayoutParams(-1,-2));
+        TextView disclaimer=tv("Catatan: untuk order MANUAL/SMART AUTO, status OPEN dimulai saat APK menerima perintah ke antrean; ini belum membuktikan order terisi di MT5. Hasil memakai level Entry/SL/TP1 dan candle berikutnya sebagai simulasi.",10);
+        disclaimer.setTextColor(Color.LTGRAY);disclaimer.setGravity(Gravity.TOP|Gravity.START);
+        disclaimer.setPadding(uiDp(10),uiDp(8),uiDp(10),uiDp(8));rows.addView(disclaimer);
+        TextView detailTitle=tv("RIWAYAT TERAKHIR",13);detailTitle.setTextColor(Color.CYAN);detailTitle.setTypeface(null,Typeface.BOLD);
+        rows.addView(detailTitle,new LinearLayout.LayoutParams(-1,uiDp(32)));
+        TextView details=tv("READY\n"+WinRateTracker.details(this,"READY")+"\n\nMANUAL\n"+WinRateTracker.details(this,"MANUAL")+"\n\nSMART AUTO\n"+WinRateTracker.details(this,"SMART_AUTO"),11);
+        details.setTextIsSelectable(true);details.setGravity(Gravity.TOP|Gravity.START);
+        details.setPadding(uiDp(10),uiDp(8),uiDp(10),uiDp(8));details.setBackground(roundBg(Color.rgb(6,25,40),10));
+        rows.addView(details,new LinearLayout.LayoutParams(-1,-2));
+        ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
+        box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
+        AlertDialog d=new AlertDialog.Builder(this).setView(box).setPositiveButton("PERBARUI",null).setNegativeButton("TUTUP",null).create();
+        showSizedDialog(d,0.84f,450);
+    }
+
+    private void addWinRateRow(LinearLayout parent,String title,WinRateTracker.Stats s){
+        String value="WIN "+s.win+" ("+String.format(Locale.US,"%.1f",s.winRate())+"%)  •  LOSS "+s.loss+
+            "\nOPEN "+s.open+"  •  AMBIGU "+s.ambiguous+"  •  TOTAL "+s.total;
+        addPanelRow(parent,title,value,Color.WHITE);
+    }
+
     void bindQuickLayer(Button b,String label){
         b.setOnClickListener(v->{if(label.contains("S/R"))setInd("sr",!ind("sr",true));else if(label.contains("Fibo"))setInd("fibo",!ind("fibo",true));
             else if(label.contains("EMA")){boolean next=!(ind("ema9",true)&&ind("ema21",true)&&ind("ema50",true));setInd("ema9",next);setInd("ema21",next);setInd("ema50",next);}
-            else if(label.contains("Buy/Sell"))setInd("signals",!ind("signals",true));else if(label.contains("Order"))setInd("orders",!ind("orders",true));else if(label.contains("Posisi"))setInd("position",!ind("position",true));updateQuickLayerButton(b,label);});
+            else if(label.contains("Buy/Sell"))setInd("signals",!ind("signals",true));else if(label.contains("Order"))setInd("orders",!ind("orders",true));else if(label.contains("Posisi")){boolean next=!ind("position",true);setInd("position",next);if(chart!=null)chart.setShowPosition(next);showWinRateDialog();}updateQuickLayerButton(b,label);});
         updateQuickLayerButton(b,label);
     }
 
@@ -1562,6 +1619,10 @@ public class MainActivity extends Activity {
             .putString("order_status_detail","Menunggu EA MT5 mengambil perintah")
             .putLong("order_status_at",System.currentTimeMillis()).apply();
         HistoryStore.add(this,"PENDING",side,entry,sl,tp,tp,lastSignal==null?0:lastSignal.confidence);
+        String trackedSide=side.startsWith("BUY")?"BUY":"SELL";
+        long trackedCandle=chart!=null&&!chart.isEmpty()?chart.getDataSnapshot()[chart.getDataSnapshot().length-1].t:System.currentTimeMillis();
+        WinRateTracker.record(this,queueOrigin,selectedMarket,trackedSide,entry,sl,tp,trackedCandle);
+        if(chart!=null)chart.setPositionEntryLevel(entry);
         AppLog.add(this,"ORDER","queued "+cmd);notifyLocal("MT5 "+side,"Entry queued for demo EA");
         Toast.makeText(this,"Entry masuk antrean • EA MT5 akan memproses otomatis",Toast.LENGTH_SHORT).show();
         return true;
