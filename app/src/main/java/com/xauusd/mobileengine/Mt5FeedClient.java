@@ -12,7 +12,7 @@ public final class Mt5FeedClient {
         public final double bid, ask;
         public final int digits;
         public final long serverTime;
-        public final Candle[] m1, m5;
+        public final Candle[] m1, m5, m15, h1, h4, d1;
         Snapshot(String s,double b,double a,int d,long t,Candle[] one,Candle[] five){
             symbol=s;bid=b;ask=a;digits=d;serverTime=t;m1=one;m5=five;
         }
@@ -32,7 +32,7 @@ public final class Mt5FeedClient {
             if(!j.optBoolean("ok",false))throw new IOException(j.optString("error","MT5 feed not ready"));
             String symbol=j.getString("symbol");
             return new Snapshot(symbol,j.getDouble("bid"),j.getDouble("ask"),j.optInt("digits",2),
-                j.optLong("serverTime"),bars(j.getJSONArray("m1")),bars(j.getJSONArray("m5")));
+                j.optLong("serverTime"),bars(j.getJSONArray("m1")),bars(j.getJSONArray("m5")),bars(j.getJSONArray("m15")),bars(j.getJSONArray("h1")),bars(j.getJSONArray("h4")),bars(j.getJSONArray("d1")));
         }finally{c.disconnect();}
     }
     private static Candle[] bars(JSONArray a)throws Exception{
@@ -42,6 +42,14 @@ public final class Mt5FeedClient {
             out[i]=new Candle(x.getLong("t")*1000L,x.getDouble("o"),x.getDouble("h"),x.getDouble("l"),x.getDouble("c"));
         }
         return out;
+    }
+    public static Candle[] barsFor(Snapshot s,String tf){
+        if("M5".equals(tf))return s.m5;
+        if("M15".equals(tf))return s.m15;
+        if("H1".equals(tf))return s.h1;
+        if("H4".equals(tf))return s.h4;
+        if("D1".equals(tf))return s.d1;
+        return s.m1;
     }
     public static String expectedSymbol(String market){
         String m=market==null?"XAUUSD":market.trim().toUpperCase(Locale.US);
