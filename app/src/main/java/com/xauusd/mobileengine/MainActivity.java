@@ -388,7 +388,7 @@ public class MainActivity extends Activity {
                             status.setText("● QUOTE LIVE • OHLC RETRY • "+tfNow);
                     });
                 }
-            },15,15,TimeUnit.SECONDS);
+            },5,5,TimeUnit.SECONDS);
         }
     }
 
