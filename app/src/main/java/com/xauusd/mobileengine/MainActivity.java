@@ -756,7 +756,9 @@ public class MainActivity extends Activity {
             boolean movedAway=SmartLimitReentry.movedAwayInFavor(sideNow,activeEntry,bid,ask,atr);
             boolean continuation=SmartLimitReentry.hasContinuation(m1,sideNow)
                 &&m5DoesNotOppose(sideNow,s.m5Bias);
-            boolean validFresh=isAutoEntryEligible(s,bid,ask,true)&&s.side.equals(sideNow);
+            boolean validFresh=isAutoEntryEligible(s,bid,ask,true)&&s.side.equals(sideNow)
+                &&readyCandleKey.equals(selectedMarket+"|"+selectedTf+"|"+candleStamp)
+                &&readyCandleSide.equals(s.side);
             double maxDistanceAtr=smartReentryMaxDistanceAtr(gp);
             boolean withinMaxDistance=SmartLimitReentry.withinMaxDistanceFromOriginalEntry(
                 activeEntry,s.entry,atr,maxDistanceAtr);
@@ -833,6 +835,8 @@ public class MainActivity extends Activity {
                     if(!stateFresh||!activeId.equals(remoteId)||!"NONE".equals(remoteState))return;
                     boolean allow=gp.getBoolean("smart_reentry_allowed",false);
                     boolean candidate=allow&&isAutoEntryEligible(s,bid,ask,true)
+                        &&readyCandleKey.equals(selectedMarket+"|"+selectedTf+"|"+candleStamp)
+                        &&readyCandleSide.equals(s.side)
                         &&s.side.equals(sideNow)
                         &&m5DoesNotOppose(sideNow,s.m5Bias)
                         &&SmartLimitReentry.hasContinuation(m1,sideNow)
@@ -910,6 +914,17 @@ public class MainActivity extends Activity {
 
         boolean m1Context="M1".equals(selectedTf)&&m1.length>=30&&m5.length>=30;
         if(!isAutoEntryEligible(s,bid,ask,m1Context))return;
+        // AUTO LIMIT must use the same per-candle direction accepted by READY UI.
+        // updateEntryReadyUi runs immediately before processAutoLimit in updateSignal.
+        long liveStamp=m1[m1.length-1].t;
+        String liveCandleKey=selectedMarket+"|"+selectedTf+"|"+liveStamp;
+        if(!liveCandleKey.equals(readyCandleKey)
+                ||"WAIT".equals(readyCandleSide)
+                ||!readyCandleSide.equals(s.side)){
+            smartLogOnce(gp,"READY_DIRECTION_MISMATCH|"+liveCandleKey,
+                "blocked: AUTO LIMIT direction does not match candle-locked READY; waiting for next M1 candle");
+            return;
+        }
         double lot=lotForMarket();
         double minLot=minLotForSymbol(mt5SymbolForMarket(selectedMarket));
         if(!Double.isFinite(lot)||lot<=0||lot+1e-8<minLot){
