@@ -20,7 +20,9 @@ public class CandleChartView extends View {
     private String marketName="XAUUSD";
     private final SimpleDateFormat time = new SimpleDateFormat("HH:mm", Locale.US);
     private double signalEntry, signalSl, signalTp1, signalTp2;
-    private double positionEntry;\n    private double brokerEntry;\n    private String brokerEntryLabel="MT5 ENTRY";
+    private double positionEntry;
+    private double brokerEntry;
+    private String brokerEntryLabel="MT5 ENTRY";
     private boolean signalActive=false;
 
     public CandleChartView(Context c) {
@@ -50,7 +52,8 @@ public class CandleChartView extends View {
     }
     /** Fixed entry price captured when READY/Manual/Smart Auto is recorded. */
     public void setPositionEntryLevel(double entry){positionEntry=entry>0?entry:0;invalidate();}
-    public double getPositionEntryLevel(){return positionEntry;}\n    public void setBrokerEntryLevel(double entry,String label){brokerEntry=entry>0?entry:0;brokerEntryLabel=(label==null||label.trim().isEmpty()?"MT5 ENTRY":label);invalidate();}
+    public double getPositionEntryLevel(){return positionEntry;}
+    public void setBrokerEntryLevel(double entry,String label){brokerEntry=entry>0?entry:0;brokerEntryLabel=(label==null||label.trim().isEmpty()?"MT5 ENTRY":label);invalidate();}
     public void setShowEMA9(boolean v){showEMA9=v;invalidate();}
     public void setShowEMA21(boolean v){showEMA21=v;invalidate();}
     public void setShowEMA50(boolean v){showEMA50=v;invalidate();}
