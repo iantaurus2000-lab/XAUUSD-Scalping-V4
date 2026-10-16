@@ -29,6 +29,7 @@ public class MainActivity extends Activity {
     private String readyCandleKey = "";
     private String readyCandleSide = "WAIT";
     private String queueOrigin = "MANUAL";
+    private double queueOutcomeTarget = 0;
     private final Runnable entryBlinkRunnable = new Runnable() {
         @Override public void run() {
             if (!entryReady || buyLimitBtn == null || sellLimitBtn == null) return;
@@ -621,9 +622,10 @@ public class MainActivity extends Activity {
         if(target<=0)return false;
         String orderSide="BUY".equals(s.side)?"BUY_LIMIT":"SELL_LIMIT";
         queueOrigin="SMART_AUTO";
+        queueOutcomeTarget=s.tp1;
         boolean queued;
         try { queued=queueLimit(orderSide,lot,s.entry,s.sl,target); }
-        finally { queueOrigin="MANUAL"; }
+        finally { queueOrigin="MANUAL"; queueOutcomeTarget=0; }
         if(!queued)return false;
         String orderId=gp.getString("order_status_id","");
         long now=System.currentTimeMillis();
@@ -1621,7 +1623,7 @@ public class MainActivity extends Activity {
         HistoryStore.add(this,"PENDING",side,entry,sl,tp,tp,lastSignal==null?0:lastSignal.confidence);
         String trackedSide=side.startsWith("BUY")?"BUY":"SELL";
         long trackedCandle=chart!=null&&!chart.isEmpty()?chart.getDataSnapshot()[chart.getDataSnapshot().length-1].t:System.currentTimeMillis();
-        WinRateTracker.record(this,queueOrigin,selectedMarket,trackedSide,entry,sl,tp,trackedCandle);
+        WinRateTracker.record(this,queueOrigin,selectedMarket,trackedSide,entry,sl,queueOutcomeTarget>0?queueOutcomeTarget:tp,trackedCandle);
         if(chart!=null)chart.setPositionEntryLevel(entry);
         AppLog.add(this,"ORDER","queued "+cmd);notifyLocal("MT5 "+side,"Entry queued for demo EA");
         Toast.makeText(this,"Entry masuk antrean • EA MT5 akan memproses otomatis",Toast.LENGTH_SHORT).show();
