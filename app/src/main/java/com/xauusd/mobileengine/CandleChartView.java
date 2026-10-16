@@ -190,10 +190,13 @@ public class CandleChartView extends View {
             }
         }
 
-        double mid=(bid+ask)/2;
-        if(showBidAsk){
-            if(bid>0){float y=py(bid,lo,hi,T,B);ln(c,L,y,R,y,Color.rgb(0,255,145),2);box(c,"BID "+f(bid),y,Color.rgb(0,200,125),Color.BLACK);}
-            if(ask>0){float y=py(ask,lo,hi,T,B);ln(c,L,y,R,y,Color.rgb(255,65,85),2);box(c,"ASK "+f(ask),y,Color.rgb(225,45,65),Color.WHITE);}
+        // Show one market PRICE line (mid-price), not separate Bid/Ask labels.
+        // Spread remains visible in the app header; candle OHLC remains the chart reference.
+        double mid=(bid>0 && ask>0)?(bid+ask)/2.0:(bid>0?bid:ask);
+        if(showBidAsk && mid>0){
+            float y=py(mid,lo,hi,T,B);
+            ln(c,L,y,R,y,Color.rgb(0,235,190),2);
+            box(c,"PRICE "+f(mid),y,Color.rgb(0,190,160),Color.BLACK);
         }
 
         if(showPosition&&positionEntry>0){
@@ -243,7 +246,22 @@ public class CandleChartView extends View {
         if(showMACD){drawMacd(c,L,R,panelTop,panelTop+each);panelTop+=each+gap;}
         if(showATR){drawAtr(c,L,R,panelTop,panelTop+each);}
 
-        if(cx>0){ln(c,cx,T,cx,B,Color.GRAY,1);ln(c,L,cy,R,cy,Color.GRAY,1);}
+        if(cx>0){
+            ln(c,cx,T,cx,B,Color.GRAY,1);
+            ln(c,L,cy,R,cy,Color.GRAY,1);
+            // Crosshair readout: exact chart candle time and price at the cursor.
+            if(cy>=T && cy<=B){
+                double cursorPrice=hi-((cy-oy-T)/Math.max(1f,B-T))*(hi-lo);
+                box(c,f(cursorPrice),cy,Color.rgb(65,78,92),Color.WHITE);
+                int cursorIndex=Math.round((cx-L-ox-step/2)/step);
+                cursorIndex=Math.max(0,Math.min(n-1,cursorIndex));
+                String cursorTime=time.format(new Date(cs.get(cursorIndex).t));
+                float tx=Math.max(L+2,Math.min(R-42,cx-18));
+                p.setColor(Color.rgb(65,78,92));
+                c.drawRoundRect(tx-3,B+2,tx+39,B+21,4,4,p);
+                bold(c,cursorTime,tx,B+15,9,Color.WHITE);
+            }
+        }
     }
 
     private void panelGrid(Canvas c,float L,float R,float T,float B){
