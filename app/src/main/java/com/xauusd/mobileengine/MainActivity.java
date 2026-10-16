@@ -327,7 +327,7 @@ public class MainActivity extends Activity {
                 String market=selectedMarket;
                 Mt5FeedClient.Snapshot feed=Mt5FeedClient.fetch();
                 if(!feed.symbol.equals(Mt5FeedClient.expectedSymbol(market)))throw new java.io.IOException("MT5 symbol mismatch: need "+Mt5FeedClient.expectedSymbol(market)+", received "+feed.symbol);
-                Candle[] c="M5".equals(tf)?feed.m5:feed.m1;
+                Candle[] c=Mt5FeedClient.barsFor(feed,tf);
                 Candle[] m5=feed.m5;
                 if(c.length<2||m5.length<2)throw new java.io.IOException("MT5 candle history insufficient");
                 runOnUiThread(()->{
@@ -371,7 +371,7 @@ public class MainActivity extends Activity {
                 try{
                     Mt5FeedClient.Snapshot feed=Mt5FeedClient.fetch();
                     if(!feed.symbol.equals(Mt5FeedClient.expectedSymbol(market)))throw new java.io.IOException("MT5 symbol mismatch: "+feed.symbol);
-                    Candle[] fresh="M5".equals(tfNow)?feed.m5:feed.m1;
+                    Candle[] fresh=Mt5FeedClient.barsFor(feed,tfNow);
                     Candle[] freshM5=feed.m5;
                     runOnUiThread(()->{
                         if(!market.equals(selectedMarket)||!tfNow.equals(selectedTf))return;
