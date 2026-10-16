@@ -20,7 +20,7 @@ public class CandleChartView extends View {
     private String marketName="XAUUSD";
     private final SimpleDateFormat time = new SimpleDateFormat("HH:mm", Locale.US);
     private double signalEntry, signalSl, signalTp1, signalTp2;
-    private double positionEntry;
+    private double positionEntry;\n    private double brokerEntry;\n    private String brokerEntryLabel="MT5 ENTRY";
     private boolean signalActive=false;
 
     public CandleChartView(Context c) {
@@ -53,7 +53,7 @@ public class CandleChartView extends View {
     }
     /** Fixed entry price captured when READY/Manual/Smart Auto is recorded. */
     public void setPositionEntryLevel(double entry){positionEntry=entry>0?entry:0;invalidate();}
-    public double getPositionEntryLevel(){return positionEntry;}
+    public double getPositionEntryLevel(){return positionEntry;}\n    public void setBrokerEntryLevel(double entry,String label){brokerEntry=entry>0?entry:0;brokerEntryLabel=(label==null||label.trim().isEmpty()?"MT5 ENTRY":label);invalidate();}
     public void setShowEMA9(boolean v){showEMA9=v;invalidate();}
     public void setShowEMA21(boolean v){showEMA21=v;invalidate();}
     public void setShowEMA50(boolean v){showEMA50=v;invalidate();}
@@ -203,22 +203,34 @@ public class CandleChartView extends View {
             }
         }
 
-        // Show one market PRICE line (mid-price), not separate Bid/Ask labels.
-        // Spread remains visible in the app header; candle OHLC remains the chart reference.
-        double mid=(bid>0 && ask>0)?(bid+ask)/2.0:(bid>0?bid:ask);
-        if(showBidAsk && mid>0){
-            float y=py(mid,lo,hi,T,B);
-            ln(c,L,y,R,y,Color.rgb(0,235,190),2);
-            box(c,"PRICE "+f(mid),y,Color.rgb(0,190,160),Color.BLACK);
+        // Exact broker Bid and Ask are drawn as separate moving lines.
+        if(showBidAsk && bid>0){
+            float y=py(bid,lo,hi,T,B);
+            ln(c,L,y,R,y,Color.rgb(0,220,150),2);
+            box(c,"BID "+f(bid),y,Color.rgb(0,150,105),Color.WHITE);
+        }
+        if(showBidAsk && ask>0){
+            float y=py(ask,lo,hi,T,B);
+            ln(c,L,y,R,y,Color.rgb(255,174,55),2);
+            box(c,"ASK "+f(ask),y,Color.rgb(200,120,20),Color.BLACK);
         }
 
         if(showPosition&&positionEntry>0){
             float y=py(positionEntry,lo,hi,T,B);
             if(y>=T&&y<=B){
                 p.setPathEffect(new DashPathEffect(new float[]{9,5},0));
+                ln(c,L,y,R,y,Color.rgb(150,130,255),1);
+                p.setPathEffect(null);
+                box(c,"READY "+f(positionEntry),y,Color.rgb(100,75,190),Color.WHITE);
+            }
+        }
+        if(showPosition&&brokerEntry>0){
+            float y=py(brokerEntry,lo,hi,T,B);
+            if(y>=T&&y<=B){
+                p.setPathEffect(new DashPathEffect(new float[]{9,5},0));
                 ln(c,L,y,R,y,Color.rgb(0,210,255),2);
                 p.setPathEffect(null);
-                box(c,"OPEN ENTRY "+f(positionEntry),y,Color.rgb(0,170,220),Color.BLACK);
+                box(c,brokerEntryLabel+" "+f(brokerEntry),y,Color.rgb(0,170,220),Color.BLACK);
             }
         }
 
