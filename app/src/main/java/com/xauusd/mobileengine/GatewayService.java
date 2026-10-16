@@ -55,11 +55,31 @@ public final class GatewayService extends Service {
             socket.setSoTimeout(4000);
             BufferedReader r=new BufferedReader(new InputStreamReader(socket.getInputStream(),StandardCharsets.UTF_8));
             String requestLine=r.readLine();
-            String line;
-            while((line=r.readLine())!=null && !line.isEmpty()){}
+            String line; int contentLength=0;
+            while((line=r.readLine())!=null && !line.isEmpty()){
+                String lower=line.toLowerCase(Locale.US);
+                if(lower.startsWith("content-length:")){try{contentLength=Integer.parseInt(line.substring(line.indexOf(':')+1).trim());}catch(Exception ignored){}}
+            }
             String path=first(requestLine);
             String out;
-            if(path.startsWith("/next")){
+            if(path.startsWith("/feed") && requestLine!=null && requestLine.startsWith("POST ")){
+                char[] body=new char[Math.max(0,Math.min(contentLength,250000))];
+                int total=0;
+                while(total<body.length){int got=r.read(body,total,body.length-total);if(got<0)break;total+=got;}
+                String json=new String(body,0,total).trim();
+                if(json.startsWith("{") && json.contains("\"bid\"") && json.contains("\"m1\"")){
+                    getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit()
+                        .putString("mt5_feed_json",json).putLong("mt5_feed_at",System.currentTimeMillis()).apply();
+                    out="FEED OK";
+                }else out="FEED ERROR";
+            }else if(path.startsWith("/feed")){
+                SharedPreferences fp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+                String json=fp.getString("mt5_feed_json","");
+                long at=fp.getLong("mt5_feed_at",0L);
+                if(json.isEmpty())out="{\"ok\":false,\"error\":\"WAITING_FOR_MT5_FEED\"}";
+                else if(System.currentTimeMillis()-at>10000L)out="{\"ok\":false,\"error\":\"MT5_FEED_STALE\"}";
+                else out=json;
+            }else if(path.startsWith("/next")){
                 long now=System.currentTimeMillis();
                 getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putLong("ea_last_poll_ms",now).apply();
                 if(now-lastNextPollLog>=30000L){
