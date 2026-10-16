@@ -2,7 +2,7 @@ name: Rayyan4 Emulator Check
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ main, rayyan-entry-ready-menu-fix ]
 
 jobs:
   emulator:
@@ -34,7 +34,8 @@ jobs:
           profile: pixel_5
           emulator-options: -no-window -no-audio -no-boot-anim
           disable-animations: true
-          script: bash .github/scripts/rayyan4-emulator-check.sh
+          script: |
+            bash .github/scripts/rayyan4-emulator-check.sh
 
       - name: Upload APK and emulator screenshots/logs
         if: always()
