@@ -306,6 +306,14 @@ void publishMarketFeed(){
    appendRatesJson(payload,sym,PERIOD_M1);
    payload+=",\"m5\":";
    appendRatesJson(payload,sym,PERIOD_M5);
+   payload+=",\"m15\":";
+   appendRatesJson(payload,sym,PERIOD_M15);
+   payload+=",\"h1\":";
+   appendRatesJson(payload,sym,PERIOD_H1);
+   payload+=",\"h4\":";
+   appendRatesJson(payload,sym,PERIOD_H4);
+   payload+=",\"d1\":";
+   appendRatesJson(payload,sym,PERIOD_D1);
    payload+="}";
    string base=GatewayUrl;
    while(StringLen(base)>0 && StringSubstr(base,StringLen(base)-1,1)=="/")
