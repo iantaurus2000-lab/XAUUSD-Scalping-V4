@@ -323,8 +323,7 @@ void publishMarketFeed(){
    char data[],response[];
    StringToCharArray(payload,data,0,WHOLE_ARRAY,CP_UTF8);
    if(ArraySize(data)>0)ArrayResize(data,ArraySize(data)-1);
-   string headers="Content-Type: application/json\r
-";
+   string headers="Content-Type: application/json\r\n";
    string responseHeaders="";
    ResetLastError();
    int code=WebRequest("POST",base+"/feed",headers,1800,data,response,responseHeaders);
