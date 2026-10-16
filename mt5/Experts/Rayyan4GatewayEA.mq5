@@ -13,7 +13,7 @@ string trackedOrderId="";
 string pendingAckId="";
 string pendingAckResult="";
 string pendingAckDetail="";
-datetime lastDiag=0;
+datetime lastDiag=0;\ndatetime lastFeedPush=0;
 
 int OnInit(){
    EventSetTimer(MathMax(1,PollSeconds));
@@ -39,7 +39,7 @@ void OnTimer(){
       return;
    }
 
-   publishOrderState();
+   publishOrderState();\n   if(TimeCurrent()-lastFeedPush>=2){ publishMarketFeed(); lastFeedPush=TimeCurrent(); }
 
    if(StringLen(cmd)<5){
       if(TimeCurrent()-lastDiag>=10){
@@ -271,6 +271,56 @@ void OnTimer(){
    }
 }
 
+
+// Read-only MT5 chart feed: broker Bid/Ask plus actual M1/M5 OHLC.
+// Isolated from order queue and ACK; it never submits, modifies, or cancels trades.
+void appendRatesJson(string &out,string symbol,ENUM_TIMEFRAMES tf){
+   MqlRates rates[];
+   ArraySetAsSeries(rates,false);
+   int count=CopyRates(symbol,tf,0,120,rates);
+   out+="[";
+   if(count>0){
+      for(int i=0;i<count;i++){
+         if(i>0)out+=",";
+         int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+         out+="{\"t\":"+IntegerToString((long)rates[i].time)+
+              ",\"o\":"+DoubleToString(rates[i].open,digits)+
+              ",\"h\":"+DoubleToString(rates[i].high,digits)+
+              ",\"l\":"+DoubleToString(rates[i].low,digits)+
+              ",\"c\":"+DoubleToString(rates[i].close,digits)+"}";
+      }
+   }
+   out+="]";
+}
+void publishMarketFeed(){
+   string sym=AllowedSymbol;
+   if(!SymbolSelect(sym,true))return;
+   MqlTick tick;
+   if(!SymbolInfoTick(sym,tick) || tick.bid<=0 || tick.ask<tick.bid)return;
+   int digits=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS);
+   string payload="{\"ok\":true,\"symbol\":\""+sym+"\",\"digits\":"+
+      IntegerToString(digits)+
+      ",\"bid\":"+DoubleToString(tick.bid,digits)+
+      ",\"ask\":"+DoubleToString(tick.ask,digits)+
+      ",\"serverTime\":"+IntegerToString((long)TimeCurrent())+",\"m1\":";
+   appendRatesJson(payload,sym,PERIOD_M1);
+   payload+=",\"m5\":";
+   appendRatesJson(payload,sym,PERIOD_M5);
+   payload+="}";
+   string base=GatewayUrl;
+   while(StringLen(base)>0 && StringSubstr(base,StringLen(base)-1,1)=="/")
+      base=StringSubstr(base,0,StringLen(base)-1);
+   char data[],response[];
+   StringToCharArray(payload,data,0,WHOLE_ARRAY,CP_UTF8);
+   if(ArraySize(data)>0)ArrayResize(data,ArraySize(data)-1);
+   string headers="Content-Type: application/json\r\n";
+   string responseHeaders="";
+   ResetLastError();
+   int code=WebRequest("POST",base+"/feed",headers,1800,data,response,responseHeaders);
+   if(code!=200 && TimeCurrent()-lastDiag>=10){
+      Print("RAYYAN4 FEED POST ERROR code=",code," err=",GetLastError());
+   }
+}
 
 // Publish a read-only snapshot of Rayyan-managed order lifecycle. This is
 // separate from /next and /ack; it never changes trade state.
