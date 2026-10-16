@@ -440,8 +440,7 @@ bool gatewayGet(string path,int &httpCode,string &body,string &diagnostic){
 
 int headerContentLength(string headers){
    string lines[];
-   int count=StringSplit(headers,'
-',lines);
+   int count=StringSplit(headers,'\\n',lines);
    for(int i=0;i<count;i++){
       string line=lines[i];
       StringReplace(line,"\r","");
