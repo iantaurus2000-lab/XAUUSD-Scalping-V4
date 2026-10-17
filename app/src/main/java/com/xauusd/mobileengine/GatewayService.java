@@ -19,6 +19,8 @@ public final class GatewayService extends Service {
     private volatile long lastNextPollLog = 0L;
     private volatile long nextBgAttemptAt = 0L;
     private volatile int bgFailureCount = 0;
+    private volatile String lastFeedStatus = "";
+    private volatile long lastFeedStatusAt = 0L;
 
     public static boolean isEaRecentlyOnline(Context c){
         long last=c.getSharedPreferences("rayyan4_gateway",Context.MODE_PRIVATE).getLong("ea_last_poll_ms",0L);
@@ -70,15 +72,26 @@ public final class GatewayService extends Service {
                 if(json.startsWith("{") && json.contains("\"bid\"") && json.contains("\"m1\"")){
                     getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit()
                         .putString("mt5_feed_json",json).putLong("mt5_feed_at",System.currentTimeMillis()).apply();
+                    logFeedStatus("POST RECEIVED bytes="+json.length());
                     out="FEED OK";
-                }else out="FEED ERROR";
+                }else{
+                    logFeedStatus("POST REJECTED contentLength="+contentLength+" bodyChars="+json.length());
+                    out="FEED ERROR";
+                }
             }else if(path.startsWith("/feed")){
                 SharedPreferences fp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
                 String json=fp.getString("mt5_feed_json","");
                 long at=fp.getLong("mt5_feed_at",0L);
-                if(json.isEmpty())out="{\"ok\":false,\"error\":\"WAITING_FOR_MT5_FEED\"}";
-                else if(System.currentTimeMillis()-at>10000L)out="{\"ok\":false,\"error\":\"MT5_FEED_STALE\"}";
-                else out=json;
+                if(json.isEmpty()){
+                    logFeedStatus("WAITING_FOR_MT5_FEED: EA has not posted data");
+                    out="{\"ok\":false,\"error\":\"WAITING_FOR_MT5_FEED\"}";
+                }else if(System.currentTimeMillis()-at>10000L){
+                    logFeedStatus("MT5_FEED_STALE ageMs="+(System.currentTimeMillis()-at));
+                    out="{\"ok\":false,\"error\":\"MT5_FEED_STALE\"}";
+                }else{
+                    logFeedStatus("FEED SERVED bytes="+json.length());
+                    out=json;
+                }
             }else if(path.startsWith("/next")){
                 long now=System.currentTimeMillis();
                 getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putLong("ea_last_poll_ms",now).apply();
@@ -102,6 +115,15 @@ public final class GatewayService extends Service {
             OutputStream o=socket.getOutputStream();
             o.write(h.getBytes(StandardCharsets.UTF_8));o.write(b);o.flush();
         }catch(Exception e){ AppLog.add(this,"GATEWAY","request error: "+e.getMessage()); }
+    }
+
+    private synchronized void logFeedStatus(String value){
+        long now=System.currentTimeMillis();
+        if(!value.equals(lastFeedStatus)||now-lastFeedStatusAt>=30000L){
+            lastFeedStatus=value;
+            lastFeedStatusAt=now;
+            AppLog.add(this,"MT5 FEED",value);
+        }
     }
 
     /**
