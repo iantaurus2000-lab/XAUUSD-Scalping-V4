@@ -14,6 +14,7 @@ string pendingAckId="";
 string pendingAckResult="";
 string pendingAckDetail="";
 datetime lastDiag=0;
+datetime lastFeedDiag=0;
 datetime lastFeedPush=0;
 
 int OnInit(){
@@ -25,6 +26,13 @@ void OnDeinit(const int r){ EventKillTimer(); }
 void OnTick(){}
 
 void OnTimer(){
+   // Market feed and read-only order state must not depend on /next.
+   // A failed command poll must never suppress price/candle publishing.
+   if(TimeCurrent()-lastFeedPush>=5){
+      if(publishMarketFeed()) lastFeedPush=TimeCurrent();
+   }
+   publishOrderState();
+
    int code=-1;
    string cmd="",transportDetail="";
    ResetLastError();
@@ -39,9 +47,6 @@ void OnTimer(){
       }
       return;
    }
-
-   publishOrderState();
-   if(TimeCurrent()-lastFeedPush>=5){ publishMarketFeed(); lastFeedPush=TimeCurrent(); }
 
    if(StringLen(cmd)<5){
       if(TimeCurrent()-lastDiag>=10){
@@ -294,11 +299,28 @@ void appendRatesJson(string &out,string symbol,ENUM_TIMEFRAMES tf){
    }
    out+="]";
 }
-void publishMarketFeed(){
+bool publishMarketFeed(){
    string sym=AllowedSymbol;
-   if(!SymbolSelect(sym,true))return;
+   ResetLastError();
+   if(!SymbolSelect(sym,true)){
+      if(TimeCurrent()-lastFeedDiag>=10){
+         lastFeedDiag=TimeCurrent();
+         Print("RAYYAN4 FEED BLOCKED: SymbolSelect failed symbol=",sym,
+               " err=",GetLastError());
+      }
+      return false;
+   }
    MqlTick tick;
-   if(!SymbolInfoTick(sym,tick) || tick.bid<=0 || tick.ask<tick.bid)return;
+   ResetLastError();
+   if(!SymbolInfoTick(sym,tick) || tick.bid<=0 || tick.ask<tick.bid){
+      if(TimeCurrent()-lastFeedDiag>=10){
+         lastFeedDiag=TimeCurrent();
+         Print("RAYYAN4 FEED BLOCKED: no valid tick symbol=",sym,
+               " bid=",DoubleToString(tick.bid,8)," ask=",DoubleToString(tick.ask,8),
+               " err=",GetLastError()," check Market Watch and broker symbol");
+      }
+      return false;
+   }
    int digits=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS);
    string payload="{\"ok\":true,\"symbol\":\""+sym+"\",\"digits\":"+
       IntegerToString(digits)+
@@ -326,10 +348,25 @@ void publishMarketFeed(){
    string headers="Content-Type: application/json\r\n";
    string responseHeaders="";
    ResetLastError();
-   int code=WebRequest("POST",base+"/feed",headers,1800,data,response,responseHeaders);
-   if(code!=200 && TimeCurrent()-lastDiag>=10){
-      Print("RAYYAN4 FEED POST ERROR code=",code," err=",GetLastError());
+   int code=WebRequest("POST",base+"/feed",headers,3000,data,response,responseHeaders);
+   int err=GetLastError();
+   if(code!=200){
+      if(TimeCurrent()-lastFeedDiag>=10){
+         lastFeedDiag=TimeCurrent();
+         Print("RAYYAN4 FEED POST ERROR code=",code," err=",err,
+               " bytes=",ArraySize(data)," url=",base+"/feed",
+               " allow exact GatewayUrl in MT5 Expert Advisors WebRequest list");
+      }
+      return false;
    }
+   if(TimeCurrent()-lastFeedDiag>=30){
+      lastFeedDiag=TimeCurrent();
+      Print("RAYYAN4 FEED POST OK symbol=",sym,
+            " bid=",DoubleToString(tick.bid,digits),
+            " ask=",DoubleToString(tick.ask,digits),
+            " bytes=",ArraySize(data));
+   }
+   return true;
 }
 
 // Publish a read-only snapshot of Rayyan-managed order lifecycle. This is
