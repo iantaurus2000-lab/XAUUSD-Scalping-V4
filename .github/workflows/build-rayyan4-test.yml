@@ -48,6 +48,9 @@ jobs:
           test -s mt5/Experts/Rayyan4GatewayEA.mq5
           test -s app/src/main/java/com/xauusd/mobileengine/GatewayService.java
           test -s app/src/main/java/com/xauusd/mobileengine/Mt5Gateway.java
+          test -s app/src/main/res/xml/network_security_config.xml
+          grep -q 'networkSecurityConfig="@xml/network_security_config"' app/src/main/AndroidManifest.xml
+          grep -q '127.0.0.1' app/src/main/res/xml/network_security_config.xml
           grep -q '8787' app/src/main/java/com/xauusd/mobileengine/Mt5FeedClient.java
           grep -q 'publishMarketFeed' mt5/Experts/Rayyan4GatewayEA.mq5
           grep -q 'publishOrderState' mt5/Experts/Rayyan4GatewayEA.mq5
