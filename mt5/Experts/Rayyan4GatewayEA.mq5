@@ -136,7 +136,9 @@ void OnTimer(){
 
    MqlTick tick;
    bool haveTick=supported && SymbolInfoTick(sym,tick);
-   int digits=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS);
+    long tickAgeSec=haveTick && tick.time>0 ? (long)(TimeTradeServer()-tick.time) : 999999;
+    bool freshTick=haveTick && tickAgeSec>=0 && tickAgeSec<=120;
+    int digits=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS);
    double point=SymbolInfoDouble(sym,SYMBOL_POINT);
    double minVol=SymbolInfoDouble(sym,SYMBOL_VOLUME_MIN);
    double maxVol=SymbolInfoDouble(sym,SYMBOL_VOLUME_MAX);
@@ -174,8 +176,11 @@ void OnTimer(){
    }else if(!supported){
       resultText="UNSUPPORTED_SYMBOL"; detail=sym;
    }else if(!haveTick){
-      resultText="NO_TICK";
-   }else if(vol<minVol || vol>maxVol){
+       resultText="NO_TICK";
+    }else if(!freshTick){
+       resultText="MARKET_CLOSED";
+       detail=StringFormat("tickAgeSec=%d; latest broker tick older than 120 seconds",(int)tickAgeSec);
+    }else if(vol<minVol || vol>maxVol){
       resultText="BAD_VOLUME";
       detail=StringFormat("vol=%.2f min=%.2f max=%.2f",vol,minVol,maxVol);
    }else if(entry<=0 || sl<=0 || tp<=0){
@@ -324,11 +329,17 @@ bool publishMarketFeed(string sym,int feedIndex){
       return false;
    }
    int digits=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS);
-   string payload="{\"ok\":true,\"symbol\":\""+sym+"\",\"digits\":"+
+   long tickAgeSec=(long)(TimeTradeServer()-tick.time);
+   bool marketOpen=(tick.time>0 && tickAgeSec>=0 && tickAgeSec<=120);
+   string payload="{\"ok\":"+(marketOpen?"true":"false")+
+      ",\"error\":\""+(marketOpen?"":"MARKET_CLOSED")+"\""+
+      ",\"marketOpen\":"+(marketOpen?"true":"false")+
+      ",\"tickAgeSec\":"+IntegerToString((int)tickAgeSec)+
+      ",\"symbol\":\""+sym+"\",\"digits\":"+
       IntegerToString(digits)+
       ",\"bid\":"+DoubleToString(tick.bid,digits)+
       ",\"ask\":"+DoubleToString(tick.ask,digits)+
-      ",\"serverTime\":"+IntegerToString((long)TimeCurrent())+",\"m1\":";
+      ",\"serverTime\":"+IntegerToString((long)TimeCurrent())+",\"m1\":");
    appendRatesJson(payload,sym,PERIOD_M1);
    payload+=",\"m5\":";
    appendRatesJson(payload,sym,PERIOD_M5);
