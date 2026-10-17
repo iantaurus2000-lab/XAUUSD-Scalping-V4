@@ -374,7 +374,8 @@ public class MainActivity extends Activity {
                         setFeedSourceStatus(market,feedSource);chart.setMarket(market);chart.setTick(liveBid,liveAsk,selectedTf);refreshBrokerEntryLine();
                         if(!chart.isEmpty())updateSignal(chart.getDataSnapshot(),m5Data);
                         updateHeaderPrice(liveBid,liveAsk);
-                        spreadView.setText(String.format(Locale.US,"SPREAD  %."+Math.min(priceDigits,6)+"f",liveAsk-liveBid));
+                        double spreadPoints=(liveAsk-liveBid)*Math.pow(10,Math.max(0,Math.min(priceDigits,8)));
+                        spreadView.setText(String.format(Locale.US,"SPREAD  %.0f points",spreadPoints));
                         status.setText("● "+feedSource+" • "+market+" • "+selectedTf);
                     });
                 }catch(Exception e){runOnUiThread(()->{mt5FeedSymbol="";mt5FeedAt=0L;status.setText("● OFFLINE • RETRYING • "+selectedTf);resetEntryReadyUi("feed offline • menunggu data");});}
@@ -543,6 +544,17 @@ public class MainActivity extends Activity {
         return false;
     }
 
+    private String entryBlockReason(SignalResult s,double bid,double ask){
+        if(!"M1".equals(selectedTf))return "pilih M1";
+        if(s==null||!("BUY".equals(s.side)||"SELL".equals(s.side)))return "setup belum directional";
+        if(!s.wickRejection)return "wick belum valid";
+        if(!isEntryReady(s,bid,ask))return "filter entry belum lolos";
+        if(validAutoTarget(s)<=0)return "target/RR tidak valid";
+        if("BUY".equals(s.side)&&!(s.entry<ask&&s.sl<s.entry&&s.tp1>s.entry))return "level BUY tidak valid";
+        if("SELL".equals(s.side)&&!(s.entry>bid&&s.sl>s.entry&&s.tp1<s.entry))return "level SELL tidak valid";
+        return "menunggu konfirmasi";
+    }
+
     private void updateEntryReadyUi(SignalResult signal,double bid,double ask){
         long candleStamp=chart!=null&&!chart.isEmpty()?chart.getDataSnapshot()[chart.getDataSnapshot().length-1].t:-1L;
         String candleKey=selectedMarket+"|"+selectedTf+"|"+candleStamp;
@@ -581,7 +593,7 @@ public class MainActivity extends Activity {
             readySide="WAIT";
             blinkOn=false;
             boolean hasSide=signal!=null&&("BUY".equals(signal.side)||"SELL".equals(signal.side));
-            entryReadyView.setText(hasSide?"WAIT • "+signal.side+" setup belum memenuhi filter/level":"WAIT • menunggu setup valid");
+            entryReadyView.setText(hasSide?"WAIT • "+signal.side+" | "+entryBlockReason(signal,bid,ask):"WAIT • menunggu setup valid");
             entryReadyView.setTextColor(Color.rgb(255,205,95));
             entryReadyView.setBackground(roundBg(Color.rgb(35,38,35),10));
         }
