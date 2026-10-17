@@ -157,7 +157,17 @@ public class CandleChartView extends View {
             lo=cs.get(n-1).l;
             hi=cs.get(n-1).h;
         }
-        double pad=Math.max((hi-lo)*.10,.40);lo-=pad;hi+=pad;
+        // Include live quotes and nearby actionable levels in the candle price scale.
+        double baseRange=Math.max(hi-lo,0.0000001);
+        double[] overlays={bid,ask,signalActive?signalEntry:0,signalActive?signalSl:0,
+            signalActive?signalTp1:0,signalActive?signalTp2:0,
+            showPosition?positionEntry:0,showPosition?brokerEntry:0};
+        for(double level:overlays){
+            if(Double.isFinite(level)&&level>0&&level>=lo-baseRange*1.5&&level<=hi+baseRange*1.5){
+                lo=Math.min(lo,level);hi=Math.max(hi,level);
+            }
+        }
+        double pad=Math.max((hi-lo)*.10,Math.max(Math.abs(hi)*0.00001,0.0000001));lo-=pad;hi+=pad;
 
         // Chart header, matching the reference MT5-like layout.
         p.setColor(Color.rgb(7,15,23));c.drawRect(L,0,R,52,p);
@@ -207,12 +217,16 @@ public class CandleChartView extends View {
         if(showBidAsk && bid>0){
             float y=py(bid,lo,hi,T,B);
             ln(c,L,y,R,y,Color.rgb(0,220,150),2);
-            box(c,"BID "+f(bid),y,Color.rgb(0,150,105),Color.WHITE);
+            float bidLabelY=y;
+            if(ask>0&&Math.abs(py(ask,lo,hi,T,B)-y)<25)bidLabelY=y+13;
+            box(c,"BID "+f(bid),bidLabelY,Color.rgb(0,150,105),Color.WHITE);
         }
         if(showBidAsk && ask>0){
             float y=py(ask,lo,hi,T,B);
             ln(c,L,y,R,y,Color.rgb(255,174,55),2);
-            box(c,"ASK "+f(ask),y,Color.rgb(200,120,20),Color.BLACK);
+            float askLabelY=y;
+            if(bid>0&&Math.abs(py(bid,lo,hi,T,B)-y)<25)askLabelY=y-13;
+            box(c,"ASK "+f(ask),askLabelY,Color.rgb(200,120,20),Color.BLACK);
         }
 
         if(showPosition&&positionEntry>0){
