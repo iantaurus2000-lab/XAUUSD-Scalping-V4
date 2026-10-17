@@ -236,6 +236,9 @@ public class CandleChartView extends View {
                 ln(c,L,y,R,y,Color.rgb(150,130,255),1);
                 p.setPathEffect(null);
                 box(c,"READY "+f(positionEntry),y,Color.rgb(100,75,190),Color.WHITE);
+            }else{
+                String arrow=positionEntry>hi?"↑":"↓";
+                box(c,"READY "+arrow+" "+f(positionEntry),positionEntry>hi?T+12:B-12,Color.rgb(100,75,190),Color.WHITE);
             }
         }
         if(showPosition&&brokerEntry>0){
@@ -245,6 +248,9 @@ public class CandleChartView extends View {
                 ln(c,L,y,R,y,Color.rgb(0,210,255),2);
                 p.setPathEffect(null);
                 box(c,brokerEntryLabel+" "+f(brokerEntry),y,Color.rgb(0,170,220),Color.BLACK);
+            }else{
+                String arrow=brokerEntry>hi?"↑":"↓";
+                box(c,brokerEntryLabel+" "+arrow+" "+f(brokerEntry),brokerEntry>hi?T+36:B-12,Color.rgb(0,170,220),Color.BLACK);
             }
         }
 
