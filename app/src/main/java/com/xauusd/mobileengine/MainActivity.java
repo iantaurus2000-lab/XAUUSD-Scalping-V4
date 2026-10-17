@@ -372,7 +372,7 @@ public class MainActivity extends Activity {
                     final double liveBid=bid,liveAsk=ask;final int priceDigits=digits;final String feedSource=source;
                     runOnUiThread(()->{
                         if(!market.equals(selectedMarket))return;
-                        chart.setMarket(market);chart.setTick(liveBid,liveAsk,selectedTf);refreshBrokerEntryLine();
+                        setFeedSourceStatus(market,feedSource);chart.setMarket(market);chart.setTick(liveBid,liveAsk,selectedTf);refreshBrokerEntryLine();
                         if(!chart.isEmpty())updateSignal(chart.getDataSnapshot(),m5Data);
                         updateHeaderPrice(liveBid,liveAsk);
                         spreadView.setText(String.format(Locale.US,"SPREAD  %."+Math.min(priceDigits,6)+"f",liveAsk-liveBid));
@@ -403,7 +403,7 @@ public class MainActivity extends Activity {
                     runOnUiThread(()->{
                         if(!market.equals(selectedMarket)||!tfNow.equals(selectedTf))return;
                         boolean wasFollowing=chart.isFollow();
-                        chart.setMarket(market);chart.setData(candles);chart.setTick(liveBid,liveAsk,tfNow);
+                        setFeedSourceStatus(market,feedSource);chart.setMarket(market);chart.setData(candles);chart.setTick(liveBid,liveAsk,tfNow);
                         if(wasFollowing)chart.goLive();
                         m5Data=bias;refreshBrokerEntryLine();updateSignal(chart.getDataSnapshot(),m5Data);
                         updateHeaderPrice(liveBid,liveAsk);
