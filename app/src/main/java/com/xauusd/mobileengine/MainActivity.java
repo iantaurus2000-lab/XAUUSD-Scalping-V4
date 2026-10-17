@@ -343,8 +343,7 @@ public class MainActivity extends Activity {
                     if(!feed.symbol.equals(Mt5FeedClient.expectedSymbol(market)))throw new java.io.IOException("MT5 symbol mismatch");
                     c=Mt5FeedClient.barsFor(feed,tf);m5=feed.m5;bid=feed.bid;ask=feed.ask;source="MT5";
                 }catch(Exception mt5Error){
-                    c=BiquoteClient.candles(market,interval);m5=BiquoteClient.candles(market,"5m");
-                    double[] q=BiquoteClient.tick(market);bid=q[0];ask=q[1];source="BIQUOTE • MT5 FEED OFFLINE";
+                    throw new java.io.IOException("MT5 feed unavailable; Biquote fallback disabled to prevent mixed chart prices",mt5Error);
                 }
                 if(c==null||c.length<2||m5==null||m5.length<2)throw new java.io.IOException("Candle history insufficient");
                 final Candle[] candles=c,bias=m5;final double liveBid=bid,liveAsk=ask;final String feedSource=source;
@@ -367,7 +366,7 @@ public class MainActivity extends Activity {
                         if(!feed.symbol.equals(Mt5FeedClient.expectedSymbol(market)))throw new java.io.IOException("MT5 symbol mismatch");
                         bid=feed.bid;ask=feed.ask;digits=feed.digits;source="MT5";
                     }catch(Exception mt5Error){
-                        double[] q=BiquoteClient.tick(market);bid=q[0];ask=q[1];source="BIQUOTE • MT5 OFFLINE";
+                        throw new java.io.IOException("MT5 feed unavailable; Biquote tick fallback disabled",mt5Error);
                     }
                     final double liveBid=bid,liveAsk=ask;final int priceDigits=digits;final String feedSource=source;
                     runOnUiThread(()->{
@@ -395,8 +394,7 @@ public class MainActivity extends Activity {
                         if(!feed.symbol.equals(Mt5FeedClient.expectedSymbol(market)))throw new java.io.IOException("MT5 symbol mismatch");
                         fresh=Mt5FeedClient.barsFor(feed,tfNow);freshM5=feed.m5;bid=feed.bid;ask=feed.ask;source="MT5";
                     }catch(Exception mt5Error){
-                        fresh=BiquoteClient.candles(market,interval(tfNow));freshM5=BiquoteClient.candles(market,"5m");
-                        double[] q=BiquoteClient.tick(market);bid=q[0];ask=q[1];source="BIQUOTE • MT5 FEED OFFLINE";
+                        throw new java.io.IOException("MT5 feed unavailable; Biquote candle fallback disabled to prevent mixed chart prices",mt5Error);
                     }
                     if(fresh==null||fresh.length<2||freshM5==null||freshM5.length<2)throw new java.io.IOException("Candle history insufficient");
                     final Candle[] candles=fresh,bias=freshM5;final double liveBid=bid,liveAsk=ask;final String feedSource=source;
