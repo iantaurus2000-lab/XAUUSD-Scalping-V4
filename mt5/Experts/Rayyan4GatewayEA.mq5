@@ -14,8 +14,8 @@ string pendingAckId="";
 string pendingAckResult="";
 string pendingAckDetail="";
 datetime lastDiag=0;
-datetime lastFeedDiag=0;
-datetime lastFeedPush=0;
+datetime lastFeedDiag[3];
+datetime lastFeedPush[3];
 
 int OnInit(){
    EventSetTimer(MathMax(1,PollSeconds));
@@ -28,8 +28,11 @@ void OnTick(){}
 void OnTimer(){
    // Market feed and read-only order state must not depend on /next.
    // A failed command poll must never suppress price/candle publishing.
-   if(TimeCurrent()-lastFeedPush>=5){
-      if(publishMarketFeed()) lastFeedPush=TimeCurrent();
+   string feedSymbols[3]={"XAUUSDm","BTCUSDm","ETHUSDm"};
+   for(int i=0;i<3;i++){
+      if(TimeCurrent()-lastFeedPush[i]>=5){
+         if(publishMarketFeed(feedSymbols[i],i)) lastFeedPush[i]=TimeCurrent();
+      }
    }
    publishOrderState();
 
@@ -299,12 +302,11 @@ void appendRatesJson(string &out,string symbol,ENUM_TIMEFRAMES tf){
    }
    out+="]";
 }
-bool publishMarketFeed(){
-   string sym=AllowedSymbol;
+bool publishMarketFeed(string sym,int feedIndex){
    ResetLastError();
    if(!SymbolSelect(sym,true)){
-      if(TimeCurrent()-lastFeedDiag>=10){
-         lastFeedDiag=TimeCurrent();
+      if(TimeCurrent()-lastFeedDiag[feedIndex]>=10){
+         lastFeedDiag[feedIndex]=TimeCurrent();
          Print("RAYYAN4 FEED BLOCKED: SymbolSelect failed symbol=",sym,
                " err=",GetLastError());
       }
@@ -313,8 +315,8 @@ bool publishMarketFeed(){
    MqlTick tick;
    ResetLastError();
    if(!SymbolInfoTick(sym,tick) || tick.bid<=0 || tick.ask<tick.bid){
-      if(TimeCurrent()-lastFeedDiag>=10){
-         lastFeedDiag=TimeCurrent();
+      if(TimeCurrent()-lastFeedDiag[feedIndex]>=10){
+         lastFeedDiag[feedIndex]=TimeCurrent();
          Print("RAYYAN4 FEED BLOCKED: no valid tick symbol=",sym,
                " bid=",DoubleToString(tick.bid,8)," ask=",DoubleToString(tick.ask,8),
                " err=",GetLastError()," check Market Watch and broker symbol");
@@ -351,16 +353,16 @@ bool publishMarketFeed(){
    int code=WebRequest("POST",base+"/feed",headers,3000,data,response,responseHeaders);
    int err=GetLastError();
    if(code!=200){
-      if(TimeCurrent()-lastFeedDiag>=10){
-         lastFeedDiag=TimeCurrent();
+      if(TimeCurrent()-lastFeedDiag[feedIndex]>=10){
+         lastFeedDiag[feedIndex]=TimeCurrent();
          Print("RAYYAN4 FEED POST ERROR code=",code," err=",err,
                " bytes=",ArraySize(data)," url=",base+"/feed",
                " allow exact GatewayUrl in MT5 Expert Advisors WebRequest list");
       }
       return false;
    }
-   if(TimeCurrent()-lastFeedDiag>=30){
-      lastFeedDiag=TimeCurrent();
+   if(TimeCurrent()-lastFeedDiag[feedIndex]>=30){
+      lastFeedDiag[feedIndex]=TimeCurrent();
       Print("RAYYAN4 FEED POST OK symbol=",sym,
             " bid=",DoubleToString(tick.bid,digits),
             " ask=",DoubleToString(tick.ask,digits),
