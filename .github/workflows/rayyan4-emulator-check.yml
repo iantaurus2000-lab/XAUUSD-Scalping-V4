@@ -1,8 +1,24 @@
-name: Rayyan4 Emulator Check
+name: Rayyan4 Build and Emulator Check
+
 on:
   workflow_dispatch:
   push:
     branches: [ main, rayyan-entry-ready-menu-fix, rayyan-stage1-professional-chart ]
+    paths:
+      - 'app/**'
+      - 'mt5/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'gradle.properties'
+      - '.github/scripts/**'
+      - '.github/workflows/rayyan4-emulator-check.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rayyan-emulator-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   emulator:
@@ -10,30 +26,26 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10'
-
       - name: Restore stable update signing key
         run: base64 -d app/rayyan4-debug.keystore.b64 > app/rayyan4-debug.keystore
-
+      - name: Run Android unit tests
+        run: gradle :app:testDebugUnitTest --no-daemon
       - name: Build APK
         run: gradle :app:assembleDebug --no-daemon
-
-      - name: Upload APK immediately after successful build
+      - name: Upload APK after successful build
         uses: actions/upload-artifact@v4
         with:
           name: Rayyan4-APK-Build
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
-
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
@@ -45,14 +57,11 @@ jobs:
           disable-animations: true
           script: |
             bash .github/scripts/rayyan4-emulator-check.sh
-
-      - name: Upload APK and emulator screenshots/logs
+      - name: Upload emulator screenshots and logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Rayyan4-Emulator-Report
-          path: |
-            app/build/outputs/apk/debug/app-debug.apk
-            emulator-artifacts/
+          path: emulator-artifacts/
           if-no-files-found: warn
           retention-days: 7

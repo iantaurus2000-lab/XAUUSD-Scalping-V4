@@ -1,16 +1,28 @@
-name: Rayyan4 Test Build • TEST QUEUE ACK
+name: Rayyan4 Component Checks
+
 on:
   workflow_dispatch:
   push:
+    branches: [ main, rayyan-entry-ready-menu-fix, rayyan-stage1-professional-chart ]
     paths:
       - 'app/src/**'
       - 'app/build.gradle'
-      - 'app/build.gradle.kts'
-      - 'app/rayyan4-debug.keystore.b64'
+      - 'build.gradle'
+      - 'settings.gradle'
       - 'gradle.properties'
       - 'mt5/**'
+      - '.github/workflows/build-rayyan4-test.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rayyan-component-checks-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
+  android-unit-tests:
+    name: Android unit tests
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -21,10 +33,22 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10'
-      - name: Restore stable Rayyan4 signing key
-        run: base64 -d app/rayyan4-debug.keystore.b64 > app/rayyan4-debug.keystore
-      - run: gradle :app:assembleDebug --no-daemon
-      - uses: actions/upload-artifact@v4
-        with:
-          name: XAUUSD-Mobile-Engine-RAYYAN4-TEST-QUEUE-ACK
-          path: app/build/outputs/apk/debug/app-debug.apk
+      - name: Run unit tests
+        run: gradle :app:testDebugUnitTest --no-daemon
+
+  mt5-source-contract:
+    name: MT5 source and protocol guard
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify protected integration contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s mt5/Experts/Rayyan4GatewayEA.mq5
+          test -s app/src/main/java/com/xauusd/mobileengine/GatewayService.java
+          test -s app/src/main/java/com/xauusd/mobileengine/Mt5Gateway.java
+          grep -q '8787' app/src/main/java/com/xauusd/mobileengine/Mt5FeedClient.java
+          grep -q 'publishMarketFeed' mt5/Experts/Rayyan4GatewayEA.mq5
+          grep -q 'publishOrderState' mt5/Experts/Rayyan4GatewayEA.mq5
+          echo "Protected files and key integration markers are present."
