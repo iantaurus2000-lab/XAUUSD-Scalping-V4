@@ -129,7 +129,7 @@ public class CandleChartView extends View {
         if(follow)positionLatestCandle();
         if(cs.isEmpty()){
             text(c,marketName+" • "+timeframe,L+7,22,12,Color.rgb(0,235,150));
-            text(c,"Menunggu candle XAUUSD...",L+15,H/2,17,Color.LTGRAY);
+            text(c,"Menunggu candle "+marketName+" dari MT5...",L+15,H/2,17,Color.LTGRAY);
             return;
         }
 

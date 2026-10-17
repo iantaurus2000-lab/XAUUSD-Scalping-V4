@@ -52,6 +52,33 @@ public final class GatewayService extends Service {
         });
     }
 
+    static String decorateFeedSnapshot(String rawJson,long feedAgeMs,boolean feedStale){
+        try{
+            org.json.JSONObject snapshot=new org.json.JSONObject(rawJson);
+            long sourceTickAge=snapshot.optLong("tickAgeSec",0L);
+            long ageSeconds=Math.max(0L,feedAgeMs)/1000L;
+            long effectiveTickAge=Math.max(0L,sourceTickAge)+ageSeconds;
+            snapshot.put("gatewayFeedAgeSec",ageSeconds);
+            snapshot.put("tickAgeSec",effectiveTickAge);
+
+            boolean quoteFresh=snapshot.optBoolean("ok",false)&&!feedStale&&effectiveTickAge<=120L;
+            if(!quoteFresh){
+                snapshot.put("ok",false);
+                snapshot.put("marketOpen",false);
+                if(feedStale){
+                    snapshot.put("error","MT5_FEED_STALE");
+                }else if(effectiveTickAge>120L){
+                    snapshot.put("error","MARKET_CLOSED");
+                }else if(snapshot.optString("error","").isEmpty()){
+                    snapshot.put("error","MARKET_CLOSED");
+                }
+            }
+            return snapshot.toString();
+        }catch(Exception ignored){
+            return "{\"ok\":false,\"error\":\"MT5_FEED_STALE\"}";
+        }
+    }
+
     private void handle(Socket s){
         try(Socket socket=s){
             socket.setSoTimeout(4000);
@@ -93,12 +120,17 @@ public final class GatewayService extends Service {
                 }else if(json.isEmpty()){
                     logFeedStatus("WAITING_FOR_MT5_FEED symbol="+requestedSymbol);
                     out="{\"ok\":false,\"error\":\"WAITING_FOR_MT5_FEED\"}";
-                }else if(System.currentTimeMillis()-at>10000L){
-                    logFeedStatus("MT5_FEED_STALE symbol="+requestedSymbol+" ageMs="+(System.currentTimeMillis()-at));
-                    out="{\"ok\":false,\"error\":\"MT5_FEED_STALE\"}";
                 }else{
-                    logFeedStatus("FEED SERVED symbol="+requestedSymbol+" bytes="+json.length());
-                    out=json;
+                    long feedAgeMs=Math.max(0L,System.currentTimeMillis()-at);
+                    boolean feedStale=feedAgeMs>10000L;
+                    if(feedStale){
+                        logFeedStatus("MT5_FEED_STALE_HISTORY symbol="+requestedSymbol+" ageMs="+feedAgeMs);
+                    }else{
+                        logFeedStatus("FEED SERVED symbol="+requestedSymbol+" bytes="+json.length()+" ageMs="+feedAgeMs);
+                    }
+                    // Keep valid OHLC available for chart rendering even when the live feed is old.
+                    // The returned snapshot is explicitly marked not-tradeable when stale.
+                    out=decorateFeedSnapshot(json,feedAgeMs,feedStale);
                 }
             }else if(path.startsWith("/next")){
                 long now=System.currentTimeMillis();

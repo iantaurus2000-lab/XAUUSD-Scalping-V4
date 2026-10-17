@@ -26,9 +26,10 @@ void OnDeinit(const int r){ EventKillTimer(); }
 void OnTick(){}
 
 void OnTimer(){
-   // Feed publishing is rate-limited to one symbol per timer tick. WebRequest is
-   // synchronous, so the short timeout bounds delay before command polling on Winlator.
-   publishOneMarketFeed();
+   // Refresh all three cached chart snapshots every timer cycle. Previously only
+   // one symbol was sent per cycle, while synchronous requests could stretch a full
+   // round-robin cycle beyond the Gateway's 10-second freshness window.
+   publishAllMarketFeeds();
    publishOrderState();
 
    int code=-1;
@@ -356,35 +357,37 @@ bool publishMarketFeed(string sym,int feedIndex){
    string headers="Content-Type: application/json\r\n";
    string responseHeaders="";
    ResetLastError();
+   ulong postStarted=GetMicrosecondCount();
    int code=WebRequest("POST",base+"/feed",headers,1200,data,response,responseHeaders);
+   ulong postElapsedMs=(GetMicrosecondCount()-postStarted)/1000;
    int err=GetLastError();
    if(code!=200){
       if(TimeCurrent()-lastFeedDiag[feedIndex]>=10){
          lastFeedDiag[feedIndex]=TimeCurrent();
          Print("RAYYAN4 FEED POST ERROR code=",code," err=",err,
-               " bytes=",ArraySize(data)," url=",base+"/feed",
+               " bytes=",ArraySize(data)," elapsedMs=",postElapsedMs," url=",base+"/feed",
                " allow exact GatewayUrl in MT5 Expert Advisors WebRequest list");
       }
       return false;
    }
-   if(TimeCurrent()-lastFeedDiag[feedIndex]>=30){
+   if(TimeCurrent()-lastFeedDiag[feedIndex]>=10){
       lastFeedDiag[feedIndex]=TimeCurrent();
       Print("RAYYAN4 FEED POST OK symbol=",sym,
             " bid=",DoubleToString(tick.bid,digits),
             " ask=",DoubleToString(tick.ask,digits),
+            " tickAgeSec=",tickAgeSec,
+            " elapsedMs=",postElapsedMs,
             " bytes=",ArraySize(data));
    }
    return true;
 }
 
-// Round-robin feed publishing: every symbol gets a turn even when the
-// server clock pauses between ticks. This read-only path does not touch orders or ACKs.
-void publishOneMarketFeed(){
+// Refresh all three read-only chart feeds on each timer cycle so each market's
+// cached snapshot stays inside the Gateway freshness window. Does not touch orders or ACKs.
+void publishAllMarketFeeds(){
    string feedSymbols[3]={"XAUUSDm","BTCUSDm","ETHUSDm"};
-   static int nextFeedIndex=0;
-   int selected=nextFeedIndex;
-   nextFeedIndex=(nextFeedIndex+1)%3;
-   publishMarketFeed(feedSymbols[selected],selected);
+   for(int i=0;i<ArraySize(feedSymbols);i++)
+      publishMarketFeed(feedSymbols[i],i);
 }
 
 // Publish a read-only snapshot of Rayyan-managed order lifecycle. This is
