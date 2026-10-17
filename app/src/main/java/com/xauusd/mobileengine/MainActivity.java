@@ -237,7 +237,7 @@ public class MainActivity extends Activity {
         tp1View.setOnClickListener(v->executeCurrentSignal());
         tp2View.setOnClickListener(v->executeCurrentSignal());
 
-        status=tv("● LIVE • RAYYAN4 • M1",10);status.setBackgroundColor(Color.rgb(3,17,29));status.setSingleLine(true);status.setIncludeFontPadding(false);
+        status=tv("● OFFLINE • menunggu feed MT5",10);status.setBackgroundColor(Color.rgb(3,17,29));status.setSingleLine(true);status.setIncludeFontPadding(false);
         root.addView(status,new LinearLayout.LayoutParams(-1,25));
 
         // BOTTOM NAV - 5 fixed tabs
@@ -296,7 +296,7 @@ public class MainActivity extends Activity {
         }
         if(chart!=null)chart.setTimeframe(tf);
         if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+tf+"\nWick Rejection + Liquidity Sweep + BOS");
-        if(status!=null)status.setText("● "+("M1".equals(tf)?"LIVE":"LOADING")+" • RAYYAN4 • "+tf);
+        if(status!=null)status.setText("● LOADING • MT5 • "+selectedMarket+" • "+tf);
         if(reload)load(interval(tf),tf);
     }
 
@@ -353,7 +353,7 @@ public class MainActivity extends Activity {
                     updateHeaderPrice(liveBid,liveAsk);
                     status.setText("● "+feedSource+" • "+market+" • "+tf);
                 });
-            }catch(Exception e){runOnUiThread(()->{mt5FeedSymbol="";mt5FeedAt=0L;status.setText("● OFFLINE • "+tf+" • RETRYING");resetEntryReadyUi("feed offline • menunggu data");});}
+            }catch(Exception e){runOnUiThread(()->{ if(!tf.equals(selectedTf))return; mt5FeedSymbol="";mt5FeedAt=0L; if(priceView!=null)priceView.setText("--"); if(spreadView!=null)spreadView.setText("SPREAD --"); if(chart!=null)chart.setTick(0,0,tf); status.setText("● OFFLINE • MT5 • "+selectedMarket+" • "+tf+" • RETRYING"); resetEntryReadyUi("feed offline • menunggu data"); });}
         }).start();
 
         if(ex==null){
