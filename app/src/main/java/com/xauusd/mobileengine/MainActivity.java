@@ -546,12 +546,16 @@ public class MainActivity extends Activity {
 
     private String entryBlockReason(SignalResult s,double bid,double ask){
         if(!"M1".equals(selectedTf))return "pilih M1";
+        if(bid<=0||ask<=0||ask<bid)return "quote MT5 tidak valid";
         if(s==null||!("BUY".equals(s.side)||"SELL".equals(s.side)))return "setup belum directional";
+        if(Math.max(0,Math.min(100,s.score))<getMinimumEntryConfidence())return "score di bawah minimum";
+        if(!s.spreadFilter)return "spread melewati batas";
+        if(!s.atrFilter)return "filter ATR gagal";
         if(!s.wickRejection)return "wick belum valid";
-        if(!isEntryReady(s,bid,ask))return "filter entry belum lolos";
+        if(s.entry<=0||s.sl<=0||s.tp1<=0)return "harga Entry/SL/TP belum valid";
+        if("BUY".equals(s.side)&&!(s.entry<ask&&s.sl<s.entry&&s.tp1>s.entry))return "geometri BUY salah";
+        if("SELL".equals(s.side)&&!(s.entry>bid&&s.tp1<s.entry&&s.sl>s.entry))return "geometri SELL salah";
         if(validAutoTarget(s)<=0)return "target/RR tidak valid";
-        if("BUY".equals(s.side)&&!(s.entry<ask&&s.sl<s.entry&&s.tp1>s.entry))return "level BUY tidak valid";
-        if("SELL".equals(s.side)&&!(s.entry>bid&&s.sl>s.entry&&s.tp1<s.entry))return "level SELL tidak valid";
         return "menunggu konfirmasi";
     }
 

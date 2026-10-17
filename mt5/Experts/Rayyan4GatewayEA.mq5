@@ -26,14 +26,9 @@ void OnDeinit(const int r){ EventKillTimer(); }
 void OnTick(){}
 
 void OnTimer(){
-   // Market feed and read-only order state must not depend on /next.
-   // A failed command poll must never suppress price/candle publishing.
-   string feedSymbols[3]={"XAUUSDm","BTCUSDm","ETHUSDm"};
-   for(int i=0;i<3;i++){
-      if(TimeCurrent()-lastFeedPush[i]>=5){
-         if(publishMarketFeed(feedSymbols[i],i)) lastFeedPush[i]=TimeCurrent();
-      }
-   }
+   // Feed publishing is rate-limited to one symbol per timer tick. WebRequest is
+   // synchronous, so the short timeout bounds delay before command polling on Winlator.
+   publishOneMarketFeed();
    publishOrderState();
 
    int code=-1;
@@ -361,7 +356,7 @@ bool publishMarketFeed(string sym,int feedIndex){
    string headers="Content-Type: application/json\r\n";
    string responseHeaders="";
    ResetLastError();
-   int code=WebRequest("POST",base+"/feed",headers,3000,data,response,responseHeaders);
+   int code=WebRequest("POST",base+"/feed",headers,1200,data,response,responseHeaders);
    int err=GetLastError();
    if(code!=200){
       if(TimeCurrent()-lastFeedDiag[feedIndex]>=10){
@@ -380,6 +375,21 @@ bool publishMarketFeed(string sym,int feedIndex){
             " bytes=",ArraySize(data));
    }
    return true;
+}
+
+// Publish at most one market symbol per timer tick. A failed attempt is also
+// rate-limited, so an unavailable local gateway cannot trigger a tight retry loop.
+void publishOneMarketFeed(){
+   string feedSymbols[3]={"XAUUSDm","BTCUSDm","ETHUSDm"};
+   int selected=-1;
+   datetime now=TimeCurrent();
+   for(int i=0;i<3;i++){
+      if(now-lastFeedPush[i]>=5){ selected=i; break; }
+   }
+   if(selected<0)return;
+   // Record attempt time before WebRequest; failures must not cause immediate retries.
+   lastFeedPush[selected]=now;
+   publishMarketFeed(feedSymbols[selected],selected);
 }
 
 // Publish a read-only snapshot of Rayyan-managed order lifecycle. This is
