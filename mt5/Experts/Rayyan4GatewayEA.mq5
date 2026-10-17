@@ -377,18 +377,13 @@ bool publishMarketFeed(string sym,int feedIndex){
    return true;
 }
 
-// Publish at most one market symbol per timer tick. A failed attempt is also
-// rate-limited, so an unavailable local gateway cannot trigger a tight retry loop.
+// Round-robin feed publishing: every symbol gets a turn even when the
+// server clock pauses between ticks. This read-only path does not touch orders or ACKs.
 void publishOneMarketFeed(){
    string feedSymbols[3]={"XAUUSDm","BTCUSDm","ETHUSDm"};
-   int selected=-1;
-   datetime now=TimeCurrent();
-   for(int i=0;i<3;i++){
-      if(now-lastFeedPush[i]>=5){ selected=i; break; }
-   }
-   if(selected<0)return;
-   // Record attempt time before WebRequest; failures must not cause immediate retries.
-   lastFeedPush[selected]=now;
+   static int nextFeedIndex=0;
+   int selected=nextFeedIndex;
+   nextFeedIndex=(nextFeedIndex+1)%3;
    publishMarketFeed(feedSymbols[selected],selected);
 }
 
