@@ -339,7 +339,7 @@ bool publishMarketFeed(string sym,int feedIndex){
       IntegerToString(digits)+
       ",\"bid\":"+DoubleToString(tick.bid,digits)+
       ",\"ask\":"+DoubleToString(tick.ask,digits)+
-      ",\"serverTime\":"+IntegerToString(TimeCurrent())+",\"m1\":");
+      ",\"serverTime\":"+IntegerToString(TimeCurrent())+",\"m1\":";
    appendRatesJson(payload,sym,PERIOD_M1);
    payload+=",\"m5\":";
    appendRatesJson(payload,sym,PERIOD_M5);
