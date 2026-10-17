@@ -69,27 +69,35 @@ public final class GatewayService extends Service {
                 int total=0;
                 while(total<body.length){int got=r.read(body,total,body.length-total);if(got<0)break;total+=got;}
                 String json=new String(body,0,total).trim();
-                if(json.startsWith("{") && json.contains("\"bid\"") && json.contains("\"m1\"")){
+                String feedSymbol="";
+                try { feedSymbol=new org.json.JSONObject(json).optString("symbol",""); } catch(Exception ignored) {}
+                if(json.startsWith("{") && json.contains("\"bid\"") && json.contains("\"m1\"") &&
+                    ("XAUUSDm".equals(feedSymbol)||"BTCUSDm".equals(feedSymbol)||"ETHUSDm".equals(feedSymbol))){
                     getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit()
-                        .putString("mt5_feed_json",json).putLong("mt5_feed_at",System.currentTimeMillis()).apply();
-                    logFeedStatus("POST RECEIVED bytes="+json.length());
+                        .putString("mt5_feed_json_"+feedSymbol,json)
+                        .putLong("mt5_feed_at_"+feedSymbol,System.currentTimeMillis()).apply();
+                    logFeedStatus("POST RECEIVED symbol="+feedSymbol+" bytes="+json.length());
                     out="FEED OK";
                 }else{
                     logFeedStatus("POST REJECTED contentLength="+contentLength+" bodyChars="+json.length());
                     out="FEED ERROR";
                 }
             }else if(path.startsWith("/feed")){
+                String requestedSymbol=query(path,"symbol");
+                if(requestedSymbol.isEmpty())requestedSymbol="XAUUSDm";
                 SharedPreferences fp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-                String json=fp.getString("mt5_feed_json","");
-                long at=fp.getLong("mt5_feed_at",0L);
-                if(json.isEmpty()){
-                    logFeedStatus("WAITING_FOR_MT5_FEED: EA has not posted data");
+                String json=fp.getString("mt5_feed_json_"+requestedSymbol,"");
+                long at=fp.getLong("mt5_feed_at_"+requestedSymbol,0L);
+                if(!("XAUUSDm".equals(requestedSymbol)||"BTCUSDm".equals(requestedSymbol)||"ETHUSDm".equals(requestedSymbol))){
+                    out="{\"ok\":false,\"error\":\"UNSUPPORTED_SYMBOL\"}";
+                }else if(json.isEmpty()){
+                    logFeedStatus("WAITING_FOR_MT5_FEED symbol="+requestedSymbol);
                     out="{\"ok\":false,\"error\":\"WAITING_FOR_MT5_FEED\"}";
                 }else if(System.currentTimeMillis()-at>10000L){
-                    logFeedStatus("MT5_FEED_STALE ageMs="+(System.currentTimeMillis()-at));
+                    logFeedStatus("MT5_FEED_STALE symbol="+requestedSymbol+" ageMs="+(System.currentTimeMillis()-at));
                     out="{\"ok\":false,\"error\":\"MT5_FEED_STALE\"}";
                 }else{
-                    logFeedStatus("FEED SERVED bytes="+json.length());
+                    logFeedStatus("FEED SERVED symbol="+requestedSymbol+" bytes="+json.length());
                     out=json;
                 }
             }else if(path.startsWith("/next")){
