@@ -354,7 +354,7 @@ public class MainActivity extends Activity {
                     updateHeaderPrice(liveBid,liveAsk);
                     status.setText("● "+feedSource+" • "+market+" • "+tf);
                 });
-            }catch(Exception e){runOnUiThread(()->{if(market.equals(selectedMarket))setFeedSourceStatus(market,"OFFLINE");status.setText("● OFFLINE • "+tf+" • RETRYING");resetEntryReadyUi("feed offline • menunggu data");});}
+            }catch(Exception e){runOnUiThread(()->{mt5FeedSymbol="";mt5FeedAt=0L;status.setText("● OFFLINE • "+tf+" • RETRYING");resetEntryReadyUi("feed offline • menunggu data");});}
         }).start();
 
         if(ex==null){
