@@ -17,8 +17,11 @@ public final class Mt5FeedClient {
             symbol=s;bid=b;ask=a;digits=d;serverTime=t;m1=one;m5=five;m15=fifteen;h1=hour;h4=four;d1=day;
         }
     }
-    public static Snapshot fetch() throws Exception {
-        HttpURLConnection c=(HttpURLConnection)new URL("http://127.0.0.1:8787/feed").openConnection();
+    public static Snapshot fetch() throws Exception { return fetch("XAUUSD"); }
+    public static Snapshot fetch(String market) throws Exception {
+        String expected=expectedSymbol(market);
+        HttpURLConnection c=(HttpURLConnection)new URL("http://127.0.0.1:8787/feed?symbol="+
+            URLEncoder.encode(expected,"UTF-8")).openConnection();
         c.setConnectTimeout(1200);c.setReadTimeout(1800);
         try{
             int code=c.getResponseCode();
