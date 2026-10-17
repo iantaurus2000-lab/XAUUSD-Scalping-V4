@@ -258,36 +258,40 @@ public final class GatewayService extends Service {
         if(now<nextBgAttemptAt)return;
         nextBgAttemptAt=now+30000L;
         try{
-            Candle[] m1=BiquoteClient.candles("1m");
-            Candle[] m5=BiquoteClient.candles("5m");
-            double[] t=BiquoteClient.tick();
+            String market=getSharedPreferences("rayyan4_indicators",MODE_PRIVATE).getString("market","XAUUSD");
+            Mt5FeedClient.Snapshot feed=Mt5FeedClient.fetch(market);
+            String expected=Mt5FeedClient.expectedSymbol(market);
+            if(!expected.equals(feed.symbol))throw new java.io.IOException("MT5 feed symbol mismatch expected="+expected+" got="+feed.symbol);
+            Candle[] m1=feed.m1;
+            Candle[] m5=feed.m5;
+            double bid=feed.bid,ask=feed.ask;
             bgFailureCount=0;
             nextBgAttemptAt=System.currentTimeMillis()+30000L;
             if(m1==null||m5==null||m1.length<30||m5.length<30){
-                logBgStatus("DATA_INSUFFICIENT M1="+(m1==null?0:m1.length)+" M5="+(m5==null?0:m5.length));
+                logBgStatus("DATA_INSUFFICIENT "+market+" M1="+(m1==null?0:m1.length)+" M5="+(m5==null?0:m5.length));
                 return;
             }
-            logBgStatus("FEED_OK M1="+m1.length+" M5="+m5.length);
-            SignalResult s=SignalEngine.evaluate(m1,m5,t[0],t[1]);
-            if(s==null){logBgStatus("SIGNAL_RESULT_NULL");return;}
+            logBgStatus("FEED_OK "+market+" "+feed.symbol+" M1="+m1.length+" M5="+m5.length);
+            SignalResult s=SignalEngine.evaluate(m1,m5,bid,ask);
+            if(s==null){logBgStatus("SIGNAL_RESULT_NULL "+market);return;}
             String side=s.side;
-            if(!"BUY".equals(side)&&!"SELL".equals(side))logBgStatus("SIGNAL_WAIT side="+side+" confidence="+s.confidence);
+            if(!"BUY".equals(side)&&!"SELL".equals(side))logBgStatus("SIGNAL_WAIT "+market+" side="+side+" confidence="+s.confidence);
             SharedPreferences p=getSharedPreferences("rayyan4_bg_signal",MODE_PRIVATE);
-            String last=p.getString("side","");
-            long lastAlertAt=p.getLong("last_alert_at",0L);
+            String last=p.getString("side_"+market,"");
+            long lastAlertAt=p.getLong("last_alert_at_"+market,0L);
             long alertNow=System.currentTimeMillis();
             if(("BUY".equals(side)||"SELL".equals(side))&&!side.equals(last)&&alertNow-lastAlertAt>=180000L){
-                p.edit().putString("side",side).putLong("last_alert_at",alertNow).apply();
-                String msg="XAUUSD SCALPING\n\n"+side+
+                p.edit().putString("side_"+market,side).putLong("last_alert_at_"+market,alertNow).apply();
+                String msg=market+" SCALPING\n\n"+side+
                     "\nEntry: "+f(s.entry)+"\nSL: "+f(s.sl)+"\nTP1: "+f(s.tp1)+"\nTP2: "+f(s.tp2)+
                     "\nTF: M1\nBias: M5 "+s.m5Bias+"\nSetup: "+s.setup+"\nConfidence: "+s.confidence+"/5";
-                AppLog.add(this,"BACKGROUND SIGNAL",side+" "+f(s.entry)+" score="+s.score);
+                AppLog.add(this,"BACKGROUND SIGNAL",market+" "+side+" "+f(s.entry)+" score="+s.score);
                 HistoryStore.add(this,"SIGNAL",side,s.entry,s.sl,s.tp1,s.tp2,s.confidence);
                 String token=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE).getString("token","");
                 String chat=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE).getString("chat","");
                 boolean tg=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE).getBoolean("enabled",false);
                 if(tg)TelegramClient.send(token,chat,msg,(ok,detail)->AppLog.add(this,"TELEGRAM",ok?"background sent":"background error"));
-                notifyAlert("XAUUSD "+side,"Entry "+f(s.entry)+" | SL "+f(s.sl)+" | TP1 "+f(s.tp1));
+                notifyAlert(market+" "+side,"Entry "+f(s.entry)+" | SL "+f(s.sl)+" | TP1 "+f(s.tp1));
             }
         }catch(Exception e){
             bgFailureCount=Math.min(bgFailureCount+1,5);
