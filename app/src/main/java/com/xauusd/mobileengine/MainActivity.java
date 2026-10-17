@@ -333,25 +333,42 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void updateQuoteViews(double bid,double ask,int digits){
+        if(priceView==null||spreadView==null)return;
+        if(!Double.isFinite(bid)||!Double.isFinite(ask)||bid<=0||ask<bid){
+            priceView.setText("--");
+            spreadView.setText("SPREAD --");
+            return;
+        }
+        updateHeaderPrice(bid,ask);
+        double spreadPoints=(ask-bid)*Math.pow(10,Math.max(0,Math.min(digits,8)));
+        spreadView.setText(String.format(Locale.US,"SPREAD  %.0f points",spreadPoints));
+    }
+
+    private String chartFeedStatus(String source,String market,String timeframe){
+        if("MT5".equals(source))return "● MT5 • "+market+" • "+timeframe;
+        return "● CHART DATA • MT5 • "+market+" • "+timeframe+" • QUOTE STALE/CLOSED";
+    }
+
     void load(String interval,String tf){
         new Thread(()->{
             try{
                 String market=selectedMarket;
-                Candle[] c; Candle[] m5; double bid,ask; String source;
+                Candle[] c; Candle[] m5; double bid,ask; int digits=2; String source;
                 try{
-                    Mt5FeedClient.Snapshot feed=Mt5FeedClient.fetch(market);
+                    Mt5FeedClient.Snapshot feed=Mt5FeedClient.fetchForChart(market);
                     if(!feed.symbol.equals(Mt5FeedClient.expectedSymbol(market)))throw new java.io.IOException("MT5 symbol mismatch");
-                    c=Mt5FeedClient.barsFor(feed,tf);m5=feed.m5;bid=feed.bid;ask=feed.ask;source="MT5";
+                    c=Mt5FeedClient.barsFor(feed,tf);m5=feed.m5;bid=feed.quoteFresh?feed.bid:0.0;ask=feed.quoteFresh?feed.ask:0.0;digits=feed.digits;source=feed.quoteFresh?"MT5":"MT5 HISTORY";
                 }catch(Exception mt5Error){
                     throw new java.io.IOException("MT5 feed unavailable; Biquote fallback disabled to prevent mixed chart prices",mt5Error);
                 }
                 if(c==null||c.length<2||m5==null||m5.length<2)throw new java.io.IOException("Candle history insufficient");
-                final Candle[] candles=c,bias=m5;final double liveBid=bid,liveAsk=ask;final String feedSource=source;
+                final Candle[] candles=c,bias=m5;final double liveBid=bid,liveAsk=ask;final int priceDigits=digits;final String feedSource=source;
                 runOnUiThread(()->{
                     if(!tf.equals(selectedTf)||!market.equals(selectedMarket))return;
                     setFeedSourceStatus(market,feedSource);chart.setMarket(market);chart.setData(candles);chart.goLive();m5Data=bias;chart.setTick(liveBid,liveAsk,tf);refreshBrokerEntryLine();updateSignal(candles,m5Data);
-                    updateHeaderPrice(liveBid,liveAsk);
-                    status.setText("● "+feedSource+" • "+market+" • "+tf);
+                    updateQuoteViews(liveBid,liveAsk,priceDigits);
+                    status.setText(chartFeedStatus(feedSource,market,tf));
                 });
             }catch(Exception e){runOnUiThread(()->{ if(!tf.equals(selectedTf))return; mt5FeedSymbol="";mt5FeedAt=0L; if(priceView!=null)priceView.setText("--"); if(spreadView!=null)spreadView.setText("SPREAD --"); if(chart!=null)chart.setTick(0,0,tf); status.setText("● OFFLINE • MT5 • "+selectedMarket+" • "+tf+" • RETRYING"); resetEntryReadyUi("feed offline • menunggu data"); });}
         }).start();
@@ -362,9 +379,9 @@ public class MainActivity extends Activity {
                 try{
                     String market=selectedMarket;double bid,ask;int digits=2;String source;
                     try{
-                        Mt5FeedClient.Snapshot feed=Mt5FeedClient.fetch(market);
+                        Mt5FeedClient.Snapshot feed=Mt5FeedClient.fetchForChart(market);
                         if(!feed.symbol.equals(Mt5FeedClient.expectedSymbol(market)))throw new java.io.IOException("MT5 symbol mismatch");
-                        bid=feed.bid;ask=feed.ask;digits=feed.digits;source="MT5";
+                        bid=feed.quoteFresh?feed.bid:0.0;ask=feed.quoteFresh?feed.ask:0.0;digits=feed.digits;source=feed.quoteFresh?"MT5":"MT5 HISTORY";
                     }catch(Exception mt5Error){
                         throw new java.io.IOException("MT5 feed unavailable; Biquote tick fallback disabled",mt5Error);
                     }
@@ -373,10 +390,8 @@ public class MainActivity extends Activity {
                         if(!market.equals(selectedMarket))return;
                         setFeedSourceStatus(market,feedSource);chart.setMarket(market);chart.setTick(liveBid,liveAsk,selectedTf);refreshBrokerEntryLine();
                         if(!chart.isEmpty())updateSignal(chart.getDataSnapshot(),m5Data);
-                        updateHeaderPrice(liveBid,liveAsk);
-                        double spreadPoints=(liveAsk-liveBid)*Math.pow(10,Math.max(0,Math.min(priceDigits,8)));
-                        spreadView.setText(String.format(Locale.US,"SPREAD  %.0f points",spreadPoints));
-                        status.setText("● "+feedSource+" • "+market+" • "+selectedTf);
+                        updateQuoteViews(liveBid,liveAsk,priceDigits);
+                        status.setText(chartFeedStatus(feedSource,market,selectedTf));
                     });
                 }catch(Exception e){runOnUiThread(()->{mt5FeedSymbol="";mt5FeedAt=0L;status.setText("● OFFLINE • RETRYING • "+selectedTf);resetEntryReadyUi("feed offline • menunggu data");});}
             },1,1,TimeUnit.SECONDS);
@@ -389,24 +404,24 @@ public class MainActivity extends Activity {
             candleRefresh.scheduleWithFixedDelay(()->{
                 final String market=selectedMarket;final String tfNow=selectedTf;
                 try{
-                    Candle[] fresh,freshM5;double bid,ask;String source;
+                    Candle[] fresh,freshM5;double bid,ask;int digits=2;String source;
                     try{
-                        Mt5FeedClient.Snapshot feed=Mt5FeedClient.fetch(market);
+                        Mt5FeedClient.Snapshot feed=Mt5FeedClient.fetchForChart(market);
                         if(!feed.symbol.equals(Mt5FeedClient.expectedSymbol(market)))throw new java.io.IOException("MT5 symbol mismatch");
-                        fresh=Mt5FeedClient.barsFor(feed,tfNow);freshM5=feed.m5;bid=feed.bid;ask=feed.ask;source="MT5";
+                        fresh=Mt5FeedClient.barsFor(feed,tfNow);freshM5=feed.m5;bid=feed.quoteFresh?feed.bid:0.0;ask=feed.quoteFresh?feed.ask:0.0;digits=feed.digits;source=feed.quoteFresh?"MT5":"MT5 HISTORY";
                     }catch(Exception mt5Error){
                         throw new java.io.IOException("MT5 feed unavailable; Biquote candle fallback disabled to prevent mixed chart prices",mt5Error);
                     }
                     if(fresh==null||fresh.length<2||freshM5==null||freshM5.length<2)throw new java.io.IOException("Candle history insufficient");
-                    final Candle[] candles=fresh,bias=freshM5;final double liveBid=bid,liveAsk=ask;final String feedSource=source;
+                    final Candle[] candles=fresh,bias=freshM5;final double liveBid=bid,liveAsk=ask;final int priceDigits=digits;final String feedSource=source;
                     runOnUiThread(()->{
                         if(!market.equals(selectedMarket)||!tfNow.equals(selectedTf))return;
                         boolean wasFollowing=chart.isFollow();
                         setFeedSourceStatus(market,feedSource);chart.setMarket(market);chart.setData(candles);chart.setTick(liveBid,liveAsk,tfNow);
                         if(wasFollowing)chart.goLive();
                         m5Data=bias;refreshBrokerEntryLine();updateSignal(chart.getDataSnapshot(),m5Data);
-                        updateHeaderPrice(liveBid,liveAsk);
-                        status.setText("● "+feedSource+" • "+market+" • "+tfNow+" • OHLC refreshed");
+                        updateQuoteViews(liveBid,liveAsk,priceDigits);
+                        status.setText(chartFeedStatus(feedSource,market,tfNow));
                     });
                 }catch(Exception e){
                     runOnUiThread(()->{if(market.equals(selectedMarket)&&tfNow.equals(selectedTf)){setFeedSourceStatus(market,"OFFLINE");status.setText("● OFFLINE • CHART RETRY • "+tfNow);}});
