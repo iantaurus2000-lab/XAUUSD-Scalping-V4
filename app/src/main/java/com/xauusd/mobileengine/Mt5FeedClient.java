@@ -54,14 +54,18 @@ public final class Mt5FeedClient {
         }finally{c.disconnect();}
     }
 
+    static boolean isQuoteFresh(boolean feedOk,long tickAgeSec,double bid,double ask){
+        return feedOk&&tickAgeSec>=0&&tickAgeSec<=120&&
+            Double.isFinite(bid)&&Double.isFinite(ask)&&bid>0&&ask>=bid;
+    }
+
     /** Package-visible for deterministic unit tests of the wire contract. */
     static Snapshot parseResponse(String raw,boolean requireFreshQuote) throws Exception {
         JSONObject j=new JSONObject(raw);
         String symbol=j.getString("symbol");
         double bid=j.optDouble("bid",0),ask=j.optDouble("ask",0);
         long tickAge=j.optLong("tickAgeSec",Long.MAX_VALUE);
-        boolean quoteFresh=j.optBoolean("ok",false)&&tickAge>=0&&tickAge<=120&&
-            Double.isFinite(bid)&&Double.isFinite(ask)&&bid>0&&ask>=bid;
+        boolean quoteFresh=isQuoteFresh(j.optBoolean("ok",false),tickAge,bid,ask);
 
         // Parse OHLC before applying quote freshness: market-closed feeds may still
         // contain valid historical rates which must remain visible in the chart.
