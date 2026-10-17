@@ -45,6 +45,8 @@ public class MainActivity extends Activity {
     private boolean telegramEnabled;
     private String selectedTf="M1";
     private String selectedMarket="XAUUSD";
+    private volatile String mt5FeedSymbol="";
+    private volatile long mt5FeedAt=0L;
     private Candle[] m5Data=new Candle[0];
     private SignalResult lastSignal;
     private final Map<String,Button> tfButtons=new HashMap<>();
@@ -321,6 +323,16 @@ public class MainActivity extends Activity {
         }catch(Exception ignored){chart.setBrokerEntryLevel(0,"MT5 ENTRY");}
     }
 
+    private void setFeedSourceStatus(String market,String source){
+        if("MT5".equals(source)){
+            mt5FeedSymbol=Mt5FeedClient.expectedSymbol(market);
+            mt5FeedAt=System.currentTimeMillis();
+        }else{
+            mt5FeedSymbol="";
+            mt5FeedAt=0L;
+        }
+    }
+
     void load(String interval,String tf){
         new Thread(()->{
             try{
@@ -338,11 +350,11 @@ public class MainActivity extends Activity {
                 final Candle[] candles=c,bias=m5;final double liveBid=bid,liveAsk=ask;final String feedSource=source;
                 runOnUiThread(()->{
                     if(!tf.equals(selectedTf)||!market.equals(selectedMarket))return;
-                    chart.setMarket(market);chart.setData(candles);chart.goLive();m5Data=bias;chart.setTick(liveBid,liveAsk,tf);refreshBrokerEntryLine();updateSignal(candles,m5Data);
+                    setFeedSourceStatus(market,feedSource);chart.setMarket(market);chart.setData(candles);chart.goLive();m5Data=bias;chart.setTick(liveBid,liveAsk,tf);refreshBrokerEntryLine();updateSignal(candles,m5Data);
                     updateHeaderPrice(liveBid,liveAsk);
                     status.setText("● "+feedSource+" • "+market+" • "+tf);
                 });
-            }catch(Exception e){runOnUiThread(()->{status.setText("● OFFLINE • "+tf+" • RETRYING");resetEntryReadyUi("feed offline • menunggu data");});}
+            }catch(Exception e){runOnUiThread(()->{if(market.equals(selectedMarket))setFeedSourceStatus(market,"OFFLINE");status.setText("● OFFLINE • "+tf+" • RETRYING");resetEntryReadyUi("feed offline • menunggu data");});}
         }).start();
 
         if(ex==null){
@@ -366,7 +378,7 @@ public class MainActivity extends Activity {
                         spreadView.setText(String.format(Locale.US,"SPREAD  %."+Math.min(priceDigits,6)+"f",liveAsk-liveBid));
                         status.setText("● "+feedSource+" • "+market+" • "+selectedTf);
                     });
-                }catch(Exception e){runOnUiThread(()->{status.setText("● OFFLINE • RETRYING • "+selectedTf);resetEntryReadyUi("feed offline • menunggu data");});}
+                }catch(Exception e){runOnUiThread(()->{mt5FeedSymbol="";mt5FeedAt=0L;status.setText("● OFFLINE • RETRYING • "+selectedTf);resetEntryReadyUi("feed offline • menunggu data");});}
             },1,1,TimeUnit.SECONDS);
         }
 
@@ -398,7 +410,7 @@ public class MainActivity extends Activity {
                         status.setText("● "+feedSource+" • "+market+" • "+tfNow+" • OHLC refreshed");
                     });
                 }catch(Exception e){
-                    runOnUiThread(()->{if(market.equals(selectedMarket)&&tfNow.equals(selectedTf))status.setText("● OFFLINE • CHART RETRY • "+tfNow);});
+                    runOnUiThread(()->{if(market.equals(selectedMarket)&&tfNow.equals(selectedTf)){setFeedSourceStatus(market,"OFFLINE");status.setText("● OFFLINE • CHART RETRY • "+tfNow);}});
                 }
             },5,5,TimeUnit.SECONDS);
         }
@@ -1617,6 +1629,11 @@ public class MainActivity extends Activity {
         }
         if(volume<=0||entry<=0||sl<=0||tp<=0){Toast.makeText(this,"Nilai order tidak valid",Toast.LENGTH_SHORT).show();return false;}
         String mt5Symbol=mt5SymbolForMarket(selectedMarket);
+        if(!mt5Symbol.equals(mt5FeedSymbol) || System.currentTimeMillis()-mt5FeedAt>8000L){
+            AppLog.add(this,"ORDER_BLOCKED","MT5 FEED OFFLINE/STALE for "+mt5Symbol+"; chart fallback may display but orders are blocked");
+            Toast.makeText(this,"Feed MT5 "+mt5Symbol+" belum aktif/terbaru • order diblokir",Toast.LENGTH_LONG).show();
+            return false;
+        }
         double minLot=minLotForSymbol(mt5Symbol);
         if(volume+1e-8<minLot){
             AppLog.add(this,"ORDER","blocked BAD_VOLUME symbol="+mt5Symbol+" volume="+lotText(volume)+" min="+lotText(minLot));
