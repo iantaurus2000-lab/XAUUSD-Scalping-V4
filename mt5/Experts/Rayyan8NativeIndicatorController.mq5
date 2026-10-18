@@ -9,6 +9,7 @@ input int FiboLookbackBars=60;
 int hEma9=INVALID_HANDLE, hEma21=INVALID_HANDLE, hEma50=INVALID_HANDLE;
 bool onEma9=true,onEma21=true,onEma50=true,onSR=true,onFibo=true;
 string lastCommandId="";
+uint lastScreenshotTick=0;
 string lastShort9="",lastShort21="",lastShort50="";
 datetime lastBar=0;
 
@@ -43,6 +44,17 @@ void OnTimer(){
    if(httpGet("/indicator_next",cmd)&&StringLen(cmd)>5){
       string id=field(cmd,"id");
       if(id!=""&&id!=lastCommandId){
+         string targetSymbol=field(cmd,"symbol");
+         ENUM_TIMEFRAMES targetPeriod=parsePeriod(field(cmd,"tf"));
+         if(targetSymbol!=""&&targetPeriod!=PERIOD_CURRENT&&
+            (ChartSymbol(0)!=targetSymbol||ChartPeriod(0)!=targetPeriod)){
+            if(SymbolSelect(targetSymbol,true)&&ChartSetSymbolPeriod(0,targetSymbol,targetPeriod)){
+               Print("RAYYAN8 chart sync requested ",targetSymbol," ",field(cmd,"tf"));
+               uploadChartSnapshot();
+               return;
+            }
+            Print("RAYYAN8 chart sync failed target=",targetSymbol," tf=",field(cmd,"tf")," err=",GetLastError());
+         }
          onEma9=(field(cmd,"ema9")=="1");
          onEma21=(field(cmd,"ema21")=="1");
          onEma50=(field(cmd,"ema50")=="1");
@@ -58,7 +70,41 @@ void OnTimer(){
    }
    datetime bar=iTime(_Symbol,_Period,0);
    if(bar!=0&&bar!=lastBar){lastBar=bar;applyAll();}
+   uploadChartSnapshot();
 }
+ENUM_TIMEFRAMES parsePeriod(string tf){
+   if(tf=="M1")return PERIOD_M1;
+   if(tf=="M5")return PERIOD_M5;
+   if(tf=="M15")return PERIOD_M15;
+   if(tf=="H1")return PERIOD_H1;
+   if(tf=="H4")return PERIOD_H4;
+   if(tf=="D1")return PERIOD_D1;
+   return PERIOD_CURRENT;
+}
+void uploadChartSnapshot(){
+   if(GetTickCount()-lastScreenshotTick<900)return;
+   lastScreenshotTick=GetTickCount();
+   string filename="rayyan8_chart.png";
+   ResetLastError();
+   if(!ChartScreenShot(0,filename,1000,500,ALIGN_RIGHT)){
+      Print("RAYYAN8 ChartScreenShot failed err=",GetLastError());return;
+   }
+   Sleep(120);
+   int fh=FileOpen(filename,FILE_READ|FILE_BIN|FILE_SHARE_READ);
+   if(fh==INVALID_HANDLE){Print("RAYYAN8 screenshot file open failed err=",GetLastError());return;}
+   ulong size=FileSize(fh);
+   if(size<8||size>2000000){FileClose(fh);Print("RAYYAN8 screenshot size invalid=",size);return;}
+   char data[];ArrayResize(data,(int)size);
+   uint read=FileReadArray(fh,data,0,(uint)size);
+   FileClose(fh);
+   if(read!=size){Print("RAYYAN8 screenshot read mismatch ",read,"/",size);return;}
+   char result[];string responseHeaders="";
+   string headers="Content-Type: image/png\r\n";
+   ResetLastError();
+   int code=WebRequest("POST",GatewayUrl+"/chart/upload",headers,2500,data,result,responseHeaders);
+   if(code!=200)Print("RAYYAN8 chart upload failed HTTP=",code," err=",GetLastError());
+}
+
 bool httpGet(string path,string &out){
    char data[],result[];
    string responseHeaders="";
@@ -86,7 +132,8 @@ void setEma(int handle,string shortName,bool enabled){
    if(handle==INVALID_HANDLE||shortName=="")return;
    // ChartIndicatorGet returns a handle reference; release that reference after checking.
    int found=ChartIndicatorGet(0,0,shortName);
-   if(found!=INVALID_HANDLE){IndicatorRelease(found);present=true;}else present=false;
+   bool present=false;
+   if(found!=INVALID_HANDLE){IndicatorRelease(found);present=true;}
    if(enabled&&!present){
       if(!ChartIndicatorAdd(0,0,handle))Print("RAYYAN8 EMA add failed ",shortName," err=",GetLastError());
    }else if(!enabled&&present){
