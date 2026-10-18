@@ -11,7 +11,7 @@ public class CandleChartView extends View {
     private final ArrayList<Candle> cs = new ArrayList<>();
     private double bid, ask;
     private float cw = 16, ox = 0, oy = 0, lx, ly, ld, cx, cy;
-    private final float leftPad = 54, rightAxis = 108, topPad = 8, bottomPad = 26, lastCandlePad = 52;
+    private final float leftPad = 54, rightAxis = 108, topPad = 8, bottomPad = 26, lastCandlePad = 96;
     private boolean showEMA9=true, showEMA21=true, showEMA50=true;
     private boolean showSR=true, showFibo=true, showRSI=true, showMACD=true, showATR=true;
     private boolean showSignals=true, showWickBos=true, showTradeLevels=true, showPosition=true, showBidAsk=true;
@@ -34,17 +34,34 @@ public class CandleChartView extends View {
         if(!next.equals(marketName)){bid=0;ask=0;positionEntry=0;signalActive=false;}
         marketName=next;invalidate();
     }
-    public void setData(Candle[] a){ cs.clear(); if(a!=null) Collections.addAll(cs,a); invalidate(); }
+    public void setData(Candle[] a){
+        cs.clear();
+        if(a!=null) for(Candle z:a) if(z!=null) cs.add(new Candle(z.t,z.o,z.h,z.l,z.c));
+        invalidate();
+    }
 
-    /** Invalid/empty ticks never erase last valid Bid/Ask lines or candle close. */
-    public void setTick(double b,double a,String tf){
+    /** Broker quotes update only quote lines, never the candle-feed OHLC history. */
+    public void setQuote(double b,double a,String tf){
         if(!QuoteSafety.valid(b,a))return;
         bid=b; ask=a; if(tf!=null) timeframe=tf;
-        if(!cs.isEmpty()){
-            Candle z=cs.get(cs.size()-1); double q=(b+a)/2.0;
-            z.c=q; z.h=Math.max(z.h,q); z.l=Math.min(z.l,q);
-        }
         invalidate();
+    }
+
+    /** Fresh feed quote updates the visible forming candle on each one-second tick. */
+    public void updateLiveBar(double b,double a,long nowMs,String tf){
+        if(!QuoteSafety.valid(b,a))return;
+        if(tf!=null) timeframe=tf;
+        Candle[] next=LiveCandleUpdater.update(cs.toArray(new Candle[0]),
+            LiveCandleUpdater.periodMillis(tf==null?timeframe:tf),(b+a)*0.5,nowMs);
+        cs.clear();
+        if(next!=null) Collections.addAll(cs,next);
+        bid=b; ask=a;
+        invalidate();
+    }
+
+    /** Backwards-compatible feed tick API backed by the forming-bar updater. */
+    public void setTick(double b,double a,String tf){
+        updateLiveBar(b,a,System.currentTimeMillis(),tf);
     }
     public void clearQuote(){bid=0;ask=0;invalidate();}
 
