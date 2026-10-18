@@ -21,6 +21,8 @@ public class MainActivity extends Activity {
     public static boolean isAppVisible(){ return visible; }
     private CandleChartView chart;
     private ImageView chartMirror;
+    private View mainRoot;
+    private String appTheme = RayyanTheme.DEFAULT;
     private String chartDisplayMode = "BIQUOTE";
     private long chartMirrorModified=0L;
     private final Handler chartMirrorHandler=new Handler(Looper.getMainLooper());
@@ -136,7 +138,9 @@ public class MainActivity extends Activity {
         tgPrefs=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE);
         telegramEnabled=tgPrefs.getBoolean("enabled",false);
         selectedMarket=prefs.getString("market","XAUUSD");
-        chartDisplayMode=getSharedPreferences("rayyan4_ui",MODE_PRIVATE).getString("chart_display_mode","BIQUOTE");
+        SharedPreferences uiPrefs=getSharedPreferences("rayyan4_ui",MODE_PRIVATE);
+        chartDisplayMode=uiPrefs.getString("chart_display_mode","BIQUOTE");
+        appTheme=RayyanTheme.normalize(uiPrefs.getString("app_theme",RayyanTheme.DEFAULT));
         // Explicit project request: enable AUTO LIMIT in DEMO-ready mode.
         // Order submission remains guarded by fresh EA polling, signal validity, spread,
         // LIMIT price geometry, lot minimum, duplicate cooldown, and the single-command queue.
@@ -305,6 +309,8 @@ public class MainActivity extends Activity {
         root.addView(nav,new LinearLayout.LayoutParams(-1,53));
 
         setContentView(root);
+        mainRoot = root;
+        applyCurrentAppTheme();
         requestNotificationPermission();
         startGateway();
         selectTimeframe("M1",false);load("1m","M1");
@@ -1333,6 +1339,122 @@ public class MainActivity extends Activity {
         RayyanMenuLayout.showSettings(this,selectedMarket,selectedTf,this::handleMenuAction);
     }
 
+    private void showThemeDialog(){
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(uiDp(16),uiDp(14),uiDp(16),uiDp(10));
+        panel.setBackground(roundBg(Color.rgb(3,18,30),16));
+
+        TextView heading = tv("TEMA APLIKASI",18);
+        heading.setTextColor(Color.CYAN);
+        heading.setTypeface(null,Typeface.BOLD);
+        panel.addView(heading,new LinearLayout.LayoutParams(-1,uiDp(32)));
+        TextView note = tv("Pilih tampilan. Tema default tidak diubah; pergantian tema hanya mengubah warna dan tampilan chart.",12);
+        note.setTextColor(Color.LTGRAY);
+        note.setGravity(Gravity.TOP|Gravity.START);
+        note.setPadding(0,uiDp(2),0,uiDp(8));
+        panel.addView(note,new LinearLayout.LayoutParams(-1,uiDp(54)));
+
+        final AlertDialog[] dialogRef = new AlertDialog[1];
+        final String[][] choices = {
+            {RayyanTheme.DEFAULT,"Default Theme","Tampilan asli APK • tetap dipertahankan"},
+            {RayyanTheme.DARK,"Dark Professional","Grafit gelap • aksen biru • chart kontras"},
+            {RayyanTheme.LIGHT,"Light Professional","Putih bersih • aksen biru • chart terang"}
+        };
+        final int[][] swatches = {
+            {Color.rgb(3,10,18),Color.rgb(0,210,220),Color.rgb(0,225,135)},
+            {Color.rgb(8,13,23),Color.rgb(71,157,255),Color.rgb(0,225,135)},
+            {Color.rgb(248,251,255),Color.rgb(0,105,190),Color.rgb(0,170,110)}
+        };
+        for(int i=0;i<choices.length;i++){
+            final String code=choices[i][0];
+            final boolean active=code.equals(appTheme);
+            LinearLayout row=new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(uiDp(10),uiDp(8),uiDp(10),uiDp(8));
+            row.setBackground(roundBg(active?Color.rgb(8,55,76):Color.rgb(7,30,47),12));
+
+            LinearLayout labels=new LinearLayout(this);
+            labels.setOrientation(LinearLayout.VERTICAL);
+            labels.setGravity(Gravity.CENTER_VERTICAL);
+            TextView name=tv(choices[i][1],14);
+            name.setTypeface(null,Typeface.BOLD);
+            name.setTextColor(active?Color.CYAN:Color.WHITE);
+            labels.addView(name,new LinearLayout.LayoutParams(-1,uiDp(24)));
+            TextView description=tv(choices[i][2],10);
+            description.setTextColor(Color.LTGRAY);
+            description.setMaxLines(2);
+            labels.addView(description,new LinearLayout.LayoutParams(-1,uiDp(30)));
+            row.addView(labels,new LinearLayout.LayoutParams(0,uiDp(56),1f));
+
+            LinearLayout preview=new LinearLayout(this);
+            preview.setOrientation(LinearLayout.HORIZONTAL);
+            preview.setGravity(Gravity.CENTER);
+            for(int color:swatches[i]){
+                View swatch=new View(this);
+                GradientDrawable chip=new GradientDrawable();
+                chip.setColor(color);
+                chip.setCornerRadius(uiDp(5));
+                chip.setStroke(uiDp(1),Color.rgb(110,145,175));
+                swatch.setBackground(chip);
+                LinearLayout.LayoutParams chipParams=new LinearLayout.LayoutParams(uiDp(15),uiDp(26));
+                chipParams.setMargins(uiDp(2),0,uiDp(2),0);
+                preview.addView(swatch,chipParams);
+            }
+            row.addView(preview,new LinearLayout.LayoutParams(uiDp(58),uiDp(34)));
+            TextView marker=tv(active?"✓":"›",18);
+            marker.setTextColor(active?Color.rgb(0,225,135):Color.LTGRAY);
+            marker.setGravity(Gravity.CENTER);
+            row.addView(marker,new LinearLayout.LayoutParams(uiDp(25),uiDp(44)));
+
+            LinearLayout.LayoutParams rowParams=new LinearLayout.LayoutParams(-1,uiDp(72));
+            rowParams.setMargins(0,0,0,uiDp(7));
+            panel.addView(row,rowParams);
+            row.setClickable(true);
+            row.setFocusable(true);
+            row.setOnClickListener(v->{
+                if(dialogRef[0]!=null&&dialogRef[0].isShowing())dialogRef[0].dismiss();
+                setAppTheme(code);
+            });
+        }
+
+        AlertDialog dialog=new AlertDialog.Builder(this).setView(panel)
+            .setNegativeButton("TUTUP",null).create();
+        dialogRef[0]=dialog;
+        showSizedDialog(dialog,0.62f,430);
+    }
+
+    private void setAppTheme(String theme){
+        appTheme=RayyanTheme.normalize(theme);
+        getSharedPreferences("rayyan4_ui",MODE_PRIVATE).edit().putString("app_theme",appTheme).apply();
+        applyCurrentAppTheme();
+        String label=RayyanTheme.DARK.equals(appTheme)?"Dark Professional"
+            :RayyanTheme.LIGHT.equals(appTheme)?"Light Professional":"Default Theme";
+        Toast.makeText(this,"Tema aktif: "+label,Toast.LENGTH_SHORT).show();
+    }
+
+    private void applyCurrentAppTheme(){
+        int statusBarColor=RayyanTheme.LIGHT.equals(appTheme)?Color.rgb(248,251,255)
+            :RayyanTheme.DARK.equals(appTheme)?Color.rgb(5,9,17):Color.rgb(1,7,13);
+        int navigationBarColor=RayyanTheme.LIGHT.equals(appTheme)?Color.rgb(248,251,255)
+            :RayyanTheme.DARK.equals(appTheme)?Color.rgb(5,9,17):Color.rgb(2,12,22);
+        getWindow().setStatusBarColor(statusBarColor);
+        if(android.os.Build.VERSION.SDK_INT>=21)getWindow().setNavigationBarColor(navigationBarColor);
+        View decor=getWindow().getDecorView();
+        int flags=decor.getSystemUiVisibility();
+        if(RayyanTheme.LIGHT.equals(appTheme)){
+            flags|=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            if(android.os.Build.VERSION.SDK_INT>=26)flags|=View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        }else{
+            flags&=~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            if(android.os.Build.VERSION.SDK_INT>=26)flags&=~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        }
+        decor.setSystemUiVisibility(flags);
+        if(chart!=null)chart.setVisualTheme(appTheme);
+        if(mainRoot!=null)RayyanTheme.apply(this,mainRoot,appTheme);
+    }
+
     private void showNotificationSettingsDialog(){
         SharedPreferences notice=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         LinearLayout box=new LinearLayout(this);
@@ -1417,6 +1539,7 @@ public class MainActivity extends Activity {
         else if("telegram".equals(action)||"settings_telegram".equals(action))showTelegramDialog();
         else if("notifications".equals(action)||"settings_notifications".equals(action))showNotificationSettingsDialog();
         else if("settings".equals(action))showSettingsPanel(null);
+        else if("settings_theme".equals(action))showThemeDialog();
         else if("strategy".equals(action))showStrategyDialog();
         else if("risk".equals(action))showRiskManagementDialog();
     }
@@ -1448,6 +1571,7 @@ public class MainActivity extends Activity {
         dialog.setOnShowListener(ignored->{
             resizeDialogButtons(dialog);
             if(dialog.getWindow()!=null){
+                RayyanTheme.apply(this,dialog.getWindow().getDecorView(),appTheme);
                 dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
                 dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
                 int sw=getResources().getDisplayMetrics().widthPixels;
@@ -1460,6 +1584,7 @@ public class MainActivity extends Activity {
         dialog.show();
         resizeDialogButtons(dialog);
         if(dialog.getWindow()!=null){
+            RayyanTheme.apply(this,dialog.getWindow().getDecorView(),appTheme);
             dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
             int sw=getResources().getDisplayMetrics().widthPixels;
             int sh=getResources().getDisplayMetrics().heightPixels;
