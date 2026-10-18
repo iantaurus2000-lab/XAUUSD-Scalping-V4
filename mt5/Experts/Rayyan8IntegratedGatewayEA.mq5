@@ -508,10 +508,9 @@ void processIndicatorQueue(){
             (ChartSymbol(0)!=targetSymbol||ChartPeriod(0)!=targetPeriod)){
             if(SymbolSelect(targetSymbol,true)&&ChartSetSymbolPeriod(0,targetSymbol,targetPeriod)){
                Print("RAYYAN8 chart sync requested ",targetSymbol," ",field(cmd,"tf"));
-               lastIndicatorCommandId=id;
+               // Leave the indicator command pending until the chart change has
+               // completed; the next timer pass applies its EMA/SR/Fibo flags and ACKs it.
                uploadChartSnapshot();
-               string ackSync="";
-               indicatorGet("/indicator_ack?id="+id,ackSync);
                return;
             }
             Print("RAYYAN8 chart sync failed target=",targetSymbol,
