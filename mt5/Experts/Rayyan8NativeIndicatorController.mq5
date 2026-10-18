@@ -84,7 +84,6 @@ void applyAll(){
 }
 void setEma(int handle,string shortName,bool enabled){
    if(handle==INVALID_HANDLE||shortName=="")return;
-   bool present=(ChartIndicatorGet(0,0,shortName)!=INVALID_HANDLE);
    // ChartIndicatorGet returns a handle reference; release that reference after checking.
    int found=ChartIndicatorGet(0,0,shortName);
    if(found!=INVALID_HANDLE){IndicatorRelease(found);present=true;}else present=false;
@@ -117,8 +116,8 @@ void updateFibo(){
    if(hi<0||lo<0)return;
    datetime th=iTime(_Symbol,_Period,hi),tl=iTime(_Symbol,_Period,lo);
    double ph=iHigh(_Symbol,_Period,hi),pl=iLow(_Symbol,_Period,lo);
-   datetime t1=th<t l?th:tl;
-   datetime t2=th<t l?tl:th;
+   datetime t1=th<tl?th:tl;
+   datetime t2=th<tl?tl:th;
    double p1=th<tl?ph:pl;
    double p2=th<tl?pl:ph;
    if(ObjectFind(0,"RAYYAN8_FIBO")<0)
