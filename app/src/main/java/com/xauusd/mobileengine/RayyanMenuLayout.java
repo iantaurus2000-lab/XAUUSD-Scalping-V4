@@ -69,6 +69,7 @@ public final class RayyanMenuLayout {
         addItems(host, content, Arrays.asList(
             new Item("◈", "Market", "Pilih XAUUSD, BTCUSD, atau ETHUSD", "market"),
             new Item("⌖", "Chart", "Kembali ke chart live", "chart"),
+            new Item("◉", "Tampilan Live Chart", "LIVE BIQUOTE atau tampilan terminal MT5", "live_chart"),
             new Item("▦", "Indicators / Tampilan", "EMA, S/R, Fibonacci, RSI, MACD", "indicators"),
             new Item("↗", "Signal Engine", "Entry, SL, TP, bias dan filter", "signal"),
             new Item("◉", "Confidence Entry", "Ambang minimum 60%, 70%, 80%, atau 90%", "confidence")
@@ -106,7 +107,7 @@ public final class RayyanMenuLayout {
 
         addSection(host, content, "TAMPILAN & MARKET");
         addItems(host, content, Arrays.asList(
-            new Item("◐", "Tema Aplikasi", "Default, Dark Professional, atau Light Professional", "settings_theme"),
+            new Item("◐", "Tema Aplikasi", "Default, Dark, Light, atau Energetic Brown", "settings_theme"),
             new Item("▦", "Indicators / Tampilan", "Atur indikator yang terlihat di chart", "settings_indicators"),
             new Item("◈", "Pilih Market", "XAUUSD, BTCUSD, atau ETHUSD", "settings_market")
         ), actions);
