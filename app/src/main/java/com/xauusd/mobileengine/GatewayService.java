@@ -52,51 +52,90 @@ public final class GatewayService extends Service {
 
     private void handle(Socket s){
         try(Socket socket=s){
-            socket.setSoTimeout(4000);
-            BufferedReader r=new BufferedReader(new InputStreamReader(socket.getInputStream(),StandardCharsets.UTF_8));
-            String requestLine=r.readLine();
-            String line;
-            while((line=r.readLine())!=null && !line.isEmpty()){}
+            socket.setSoTimeout(5000);
+            InputStream in=socket.getInputStream();
+            String requestLine=readHttpLine(in);
+            if(requestLine==null||requestLine.isEmpty())return;
+            String method=requestLine.split(" ")[0];
             String path=first(requestLine);
+            int contentLength=0;
+            String line;
+            while((line=readHttpLine(in))!=null&&!line.isEmpty()){
+                int colon=line.indexOf(':');
+                if(colon>0&&"content-length".equalsIgnoreCase(line.substring(0,colon).trim())){
+                    try{contentLength=Integer.parseInt(line.substring(colon+1).trim());}catch(Exception ignored){}
+                }
+            }
+            if(path.startsWith("/chart/upload")&&"POST".equalsIgnoreCase(method)){
+                if(contentLength<8||contentLength>2000000){
+                    writeResponse(socket,400,"text/plain; charset=utf-8","CHART ERROR SIZE".getBytes(StandardCharsets.UTF_8));return;
+                }
+                byte[] png=readExact(in,contentLength);
+                if(png==null||png.length<8||png[0]!=(byte)0x89||png[1]!=0x50||png[2]!=0x4e||png[3]!=0x47){
+                    writeResponse(socket,400,"text/plain; charset=utf-8","CHART ERROR PNG".getBytes(StandardCharsets.UTF_8));return;
+                }
+                try(FileOutputStream file=openFileOutput("mt5_chart.png",MODE_PRIVATE)){file.write(png);file.flush();}
+                getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit()
+                    .putLong("mt5_chart_received_ms",System.currentTimeMillis()).putInt("mt5_chart_bytes",png.length).apply();
+                writeResponse(socket,200,"text/plain; charset=utf-8","CHART OK".getBytes(StandardCharsets.UTF_8));return;
+            }
+            if(path.startsWith("/chart/latest")){
+                File f=getFileStreamPath("mt5_chart.png");
+                if(!f.isFile()||f.length()<8){
+                    writeResponse(socket,404,"text/plain; charset=utf-8","CHART NOT READY".getBytes(StandardCharsets.UTF_8));return;
+                }
+                byte[] png=new byte[(int)Math.min(f.length(),2000000L)];
+                try(FileInputStream file=new FileInputStream(f)){
+                    int offset=0,n;
+                    while(offset<png.length&&(n=file.read(png,offset,png.length-offset))>0)offset+=n;
+                    if(offset!=png.length)png=Arrays.copyOf(png,offset);
+                }
+                writeResponse(socket,200,"image/png",png);return;
+            }
             String out;
             if(path.startsWith("/next")){
                 long now=System.currentTimeMillis();
                 getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putLong("ea_last_poll_ms",now).apply();
-                if(now-lastNextPollLog>=30000L){
-                    lastNextPollLog=now;
-                    AppLog.add(this,"MT5 GATEWAY","EA polling /next received");
-                }
+                if(now-lastNextPollLog>=30000L){lastNextPollLog=now;AppLog.add(this,"MT5 GATEWAY","EA polling /next received");}
                 out=getPending();
             }else if(path.startsWith("/ack")){
-                String id=query(path,"id");
-                String result=query(path,"result");
-                String detail=query(path,"detail");
-                out=ack(id,result,detail);
+                out=ack(query(path,"id"),query(path,"result"),query(path,"detail"));
             }else if(path.startsWith("/indicator_next")){
-                getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit()
-                    .putLong("indicator_ea_last_poll_ms",System.currentTimeMillis()).apply();
+                getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putLong("indicator_ea_last_poll_ms",System.currentTimeMillis()).apply();
                 out=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).getString("indicator_next","");
             }else if(path.startsWith("/indicator_ack")){
-                String id=query(path,"id");
-                SharedPreferences ip=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+                String id=query(path,"id");SharedPreferences ip=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
                 String queued=ip.getString("indicator_next","");
                 if(id!=null&&!id.isEmpty()&&id.equals(field(queued,"id"))){
-                    ip.edit().remove("indicator_next").putString("indicator_ack_id",id)
-                        .putLong("indicator_ack_at",System.currentTimeMillis()).apply();
-                    out="INDICATOR ACK OK";
+                    ip.edit().remove("indicator_next").putString("indicator_ack_id",id).putLong("indicator_ack_at",System.currentTimeMillis()).apply();out="INDICATOR ACK OK";
                 }else out="INDICATOR ACK STALE";
-            }else if(path.startsWith("/state")){
-                out=receiveState(path);
-            }else if(path.startsWith("/quote")){
-                out=receiveQuote(path);
-            }else{
-                out="Rayyan4 gateway OK";
+            }else if(path.startsWith("/state"))out=receiveState(path);
+            else if(path.startsWith("/quote"))out=receiveQuote(path);
+            else out="Rayyan4 gateway OK";
+            writeResponse(socket,200,"text/plain; charset=utf-8",out.getBytes(StandardCharsets.UTF_8));
+        }catch(Exception e){AppLog.add(this,"GATEWAY","request error: "+e.getMessage());}
+    }
+
+    private String readHttpLine(InputStream in)throws IOException{
+        ByteArrayOutputStream b=new ByteArrayOutputStream();int c,previous=-1;
+        while((c=in.read())!=-1){
+            if(previous==13&&c==10){
+                byte[] a=b.toByteArray();int n=a.length;
+                return new String(a,0,n>0&&a[n-1]==13?n-1:n,StandardCharsets.US_ASCII);
             }
-            byte[] b=out.getBytes(StandardCharsets.UTF_8);
-            String h="HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: "+b.length+"\r\nConnection: close\r\n\r\n";
-            OutputStream o=socket.getOutputStream();
-            o.write(h.getBytes(StandardCharsets.UTF_8));o.write(b);o.flush();
-        }catch(Exception e){ AppLog.add(this,"GATEWAY","request error: "+e.getMessage()); }
+            b.write(c);previous=c;if(b.size()>8192)throw new IOException("HTTP header too large");
+        }
+        return b.size()==0?null:new String(b.toByteArray(),StandardCharsets.US_ASCII);
+    }
+    private byte[] readExact(InputStream in,int length)throws IOException{
+        byte[] data=new byte[length];int offset=0;
+        while(offset<length){int n=in.read(data,offset,length-offset);if(n<0)return null;offset+=n;}
+        return data;
+    }
+    private void writeResponse(Socket socket,int status,String contentType,byte[] body)throws IOException{
+        String reason=status==200?"OK":status==404?"Not Found":"Bad Request";
+        String h="HTTP/1.1 "+status+" "+reason+"\r\nContent-Type: "+contentType+"\r\nContent-Length: "+body.length+"\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n";
+        OutputStream o=socket.getOutputStream();o.write(h.getBytes(StandardCharsets.US_ASCII));o.write(body);o.flush();
     }
 
     /**
