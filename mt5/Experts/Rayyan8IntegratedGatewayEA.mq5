@@ -523,9 +523,14 @@ void processIndicatorQueue(){
          onSR=(field(cmd,"sr")=="1");
          onFibo=(field(cmd,"fibo")=="1");
          applyAll();
-         lastIndicatorCommandId=id;
          string ack="";
-         indicatorGet("/indicator_ack?id="+id,ack);
+         bool ackReceived=indicatorGet("/indicator_ack?id="+id,ack);
+         if(ackReceived&&StringFind(ack,"INDICATOR ACK OK")>=0){
+            lastIndicatorCommandId=id;
+         }else{
+            Print("RAYYAN8 indicator ACK not confirmed id=",id," response=",ack);
+            return;
+         }
          Print("RAYYAN8 indicators ACK id=",id," EMA9=",onEma9,
                " EMA21=",onEma21," EMA50=",onEma50," SR=",onSR," FIBO=",onFibo);
       }
