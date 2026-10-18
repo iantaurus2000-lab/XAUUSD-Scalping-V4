@@ -22,10 +22,6 @@ public class MainActivity extends Activity {
     private CandleChartView chart;
     private ImageView chartMirror;
     private View mainRoot;
-    // Main-screen containers are retained so themes can rearrange presentation without
-    // rebuilding the Activity or touching gateway/order state.
-    private LinearLayout headerLayout, chartToolsLayout, signalCardLayout, limitActionsLayout, bottomNavLayout;
-    private FrameLayout chartAreaLayout;
     private String appTheme = RayyanTheme.DEFAULT;
     private int defaultNavigationBarColor = Color.BLACK;
     private int defaultSystemUiVisibility = 0;
@@ -186,10 +182,8 @@ public class MainActivity extends Activity {
         spreadView = headerUi.spreadView;
         tfButtons.clear();
         tfButtons.putAll(headerUi.timeframeButtons);
-        headerLayout = headerUi.container;
-        root.addView(headerLayout,
+        root.addView(headerUi.container,
             new LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT));
-
         chart=new CandleChartView(this);chart.setMarket(selectedMarket);chart.setTimeframe(selectedTf);loadIndicatorSettings();
         FrameLayout chartArea=new FrameLayout(this);
         chartArea.setBackgroundColor(Color.rgb(2,10,18));
@@ -203,8 +197,7 @@ public class MainActivity extends Activity {
         chartMirror.setClickable(false);chartMirror.setFocusable(false);
         chartMirror.setVisibility(View.GONE);
         chartArea.addView(chartMirror,new FrameLayout.LayoutParams(-1,-1));
-        chartAreaLayout = chartArea;
-        root.addView(chartAreaLayout,new LinearLayout.LayoutParams(-1,0,1));
+        root.addView(chartArea,new LinearLayout.LayoutParams(-1,0,1));
         chartMirrorHandler.removeCallbacks(chartMirrorRefresh);
         chartMirrorHandler.post(chartMirrorRefresh);
 
@@ -214,8 +207,7 @@ public class MainActivity extends Activity {
         for(String s:ls){
             Button b=btn(s);b.setTextSize(9);layers.addView(b,new LinearLayout.LayoutParams(0,38,1));bindQuickLayer(b,s);
         }
-        chartToolsLayout = layers;
-        root.addView(chartToolsLayout);
+        root.addView(layers);
 
         // SIGNAL CARD
         LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);card.setPadding(8,5,8,5);
@@ -254,8 +246,7 @@ public class MainActivity extends Activity {
             levels.addView(v,new LinearLayout.LayoutParams(0,54,1));
         }
         card.addView(levels);
-        signalCardLayout = card;
-        root.addView(signalCardLayout,new LinearLayout.LayoutParams(-1,LinearLayout.LayoutParams.WRAP_CONTENT));
+        root.addView(card,new LinearLayout.LayoutParams(-1,LinearLayout.LayoutParams.WRAP_CONTENT));
 
         // ONE-TAP DEMO LIMIT CONTROLS stay on the main screen, no MT5/EA dialog.
         LinearLayout limitActions=new LinearLayout(this);
@@ -292,8 +283,7 @@ public class MainActivity extends Activity {
         limitActions.addView(sellLimitBtn,new LinearLayout.LayoutParams(0,40,1));
         buyLimitBtn.setOnClickListener(v->prepareLimitButton("BUY LIMIT button tapped","BUY",v));
         sellLimitBtn.setOnClickListener(v->prepareLimitButton("SELL LIMIT button tapped","SELL",v));
-        limitActionsLayout = limitActions;
-        root.addView(limitActionsLayout,new LinearLayout.LayoutParams(-1,46));
+        root.addView(limitActions,new LinearLayout.LayoutParams(-1,46));
         card.setOnClickListener(v->executeCurrentSignal());
         signalSummary.setOnClickListener(v->executeCurrentSignal());
         scoreView.setOnClickListener(v->executeCurrentSignal());
@@ -316,8 +306,7 @@ public class MainActivity extends Activity {
             else if(s.contains("SETTINGS"))q.setOnClickListener(v->showSettingsPanel(q));
             else if(s.contains("CHART"))q.setOnClickListener(v->chart.goLive());
         }
-        bottomNavLayout = nav;
-        root.addView(bottomNavLayout,new LinearLayout.LayoutParams(-1,53));
+        root.addView(nav,new LinearLayout.LayoutParams(-1,53));
 
         setContentView(root);
         mainRoot = root;
@@ -1360,7 +1349,7 @@ public class MainActivity extends Activity {
         heading.setTextColor(Color.CYAN);
         heading.setTypeface(null,Typeface.BOLD);
         panel.addView(heading,new LinearLayout.LayoutParams(-1,uiDp(32)));
-        TextView note = tv("Default/Dark/Light memakai layout lama. Graphite: alat chart di atas grafik. Emerald: chart fokus, tombol LIMIT lebih besar, lalu panel Entry/SL/TP. Jalur order tetap sama.",12);
+        TextView note = tv("Pilih salah satu dari tiga tema. Layout utama tetap sama; Light Professional memakai putih modern dan teks lembut yang tetap jelas dibaca.",12);
         note.setTextColor(Color.LTGRAY);
         note.setGravity(Gravity.TOP|Gravity.START);
         note.setPadding(0,uiDp(2),0,uiDp(8));
@@ -1368,18 +1357,14 @@ public class MainActivity extends Activity {
 
         final AlertDialog[] dialogRef = new AlertDialog[1];
         final String[][] choices = {
-            {RayyanTheme.DEFAULT,"Default Theme","Tampilan asli APK • tetap dipertahankan"},
-            {RayyanTheme.DARK,"Dark Professional","Grafit gelap • aksen biru • chart kontras"},
-            {RayyanTheme.LIGHT,"Light Professional","Putih lembut • teks abu-biru nyaman dibaca"},
-            {RayyanTheme.GRAPHITE,"Graphite Silver","Grafit/perak • alat chart di atas grafik • panel trading rapi"},
-            {RayyanTheme.EMERALD,"Emerald Pro","Hijau zamrud • chart fokus • tombol LIMIT lebih menonjol"}
+            {RayyanTheme.DEFAULT,"Default Theme","Tampilan asli APK • layout tetap dipertahankan"},
+            {RayyanTheme.DARK,"Dark Professional","Gelap nyaman • aksen biru"},
+            {RayyanTheme.LIGHT,"Light Professional","Putih modern • teks abu-biru lembut"}
         };
         final int[][] swatches = {
             {Color.rgb(3,10,18),Color.rgb(0,210,220),Color.rgb(0,225,135)},
             {Color.rgb(8,13,23),Color.rgb(71,157,255),Color.rgb(0,225,135)},
-            {Color.rgb(248,251,255),Color.rgb(0,105,190),Color.rgb(0,170,110)},
-            {Color.rgb(35,42,54),Color.rgb(174,190,211),Color.rgb(225,232,240)},
-            {Color.rgb(3,25,20),Color.rgb(0,205,139),Color.rgb(79,235,174)}
+            {Color.rgb(249,251,253),Color.rgb(91,139,174),Color.rgb(89,164,132)}
         };
         for(int i=0;i<choices.length;i++){
             final String code=choices[i][0];
@@ -1445,9 +1430,7 @@ public class MainActivity extends Activity {
         getSharedPreferences("rayyan4_ui",MODE_PRIVATE).edit().putString("app_theme",appTheme).apply();
         applyCurrentAppTheme();
         String label=RayyanTheme.DARK.equals(appTheme)?"Dark Professional"
-            :RayyanTheme.LIGHT.equals(appTheme)?"Light Professional"
-            :RayyanTheme.GRAPHITE.equals(appTheme)?"Graphite Silver"
-            :RayyanTheme.EMERALD.equals(appTheme)?"Emerald Pro":"Default Theme";
+            :RayyanTheme.LIGHT.equals(appTheme)?"Light Professional":"Default Theme";
         Toast.makeText(this,"Tema aktif: "+label,Toast.LENGTH_SHORT).show();
     }
 
@@ -1460,9 +1443,7 @@ public class MainActivity extends Activity {
             decor.setSystemUiVisibility(defaultSystemUiVisibility);
         }else{
             boolean light=RayyanTheme.LIGHT.equals(appTheme);
-            boolean graphite=RayyanTheme.GRAPHITE.equals(appTheme);
-            boolean emerald=RayyanTheme.EMERALD.equals(appTheme);
-            int barColor=light?Color.rgb(248,251,255):(graphite?Color.rgb(25,31,41):(emerald?Color.rgb(3,25,20):Color.rgb(5,9,17)));
+            int barColor=light?Color.rgb(249,251,253):Color.rgb(5,9,17);
             getWindow().setStatusBarColor(barColor);
             if(android.os.Build.VERSION.SDK_INT>=21)getWindow().setNavigationBarColor(barColor);
             int flags=defaultSystemUiVisibility;
@@ -1476,71 +1457,7 @@ public class MainActivity extends Activity {
             decor.setSystemUiVisibility(flags);
         }
         if(chart!=null)chart.setVisualTheme(appTheme);
-        if(mainRoot!=null){
-            applyThemeLayoutOrder();
-            RayyanTheme.apply(this,mainRoot,appTheme);
-        }
-    }
-
-    /**
-     * Graphite and Emerald have distinct main-screen arrangements. Only existing views
-     * are reordered/resized: signal callbacks, manual LIMIT handlers, data feeds and
-     * gateway/EA request paths remain unchanged.
-     */
-    private void applyThemeLayoutOrder(){
-        if(!(mainRoot instanceof LinearLayout) || headerLayout==null || chartAreaLayout==null
-                || chartToolsLayout==null || signalCardLayout==null || limitActionsLayout==null
-                || status==null || bottomNavLayout==null) return;
-        LinearLayout root=(LinearLayout)mainRoot;
-        View[] defaultOrder={headerLayout,chartAreaLayout,chartToolsLayout,signalCardLayout,
-                limitActionsLayout,status,bottomNavLayout};
-        java.util.IdentityHashMap<View,LinearLayout.LayoutParams> savedParams=new java.util.IdentityHashMap<>();
-        for(View child:defaultOrder){
-            if(child.getParent()==root && child.getLayoutParams() instanceof LinearLayout.LayoutParams){
-                savedParams.put(child,(LinearLayout.LayoutParams)child.getLayoutParams());
-            }
-        }
-        View[] order;
-        if(RayyanTheme.GRAPHITE.equals(appTheme)){
-            // Graphite: compact tools strip immediately below price/timeframes,
-            // chart in the middle, and signal/levels + order buttons grouped below.
-            order=new View[]{headerLayout,chartToolsLayout,chartAreaLayout,status,
-                    signalCardLayout,limitActionsLayout,bottomNavLayout};
-        }else if(RayyanTheme.EMERALD.equals(appTheme)){
-            // Emerald: maximize the uninterrupted chart region; bring the LIMIT controls
-            // forward before the entry/SL/TP panel for a chart-first workflow.
-            order=new View[]{headerLayout,chartAreaLayout,status,chartToolsLayout,
-                    limitActionsLayout,signalCardLayout,bottomNavLayout};
-        }else{
-            // All existing themes retain the original screen layout.
-            order=defaultOrder;
-        }
-        root.removeAllViews();
-        for(View child:order){
-            LinearLayout.LayoutParams params=savedParams.get(child);
-            if(params!=null) root.addView(child,params);
-        }
-        boolean emerald=RayyanTheme.EMERALD.equals(appTheme);
-        LinearLayout.LayoutParams actionsParams=(LinearLayout.LayoutParams)limitActionsLayout.getLayoutParams();
-        if(actionsParams!=null){ actionsParams.height=emerald?52:46; limitActionsLayout.setLayoutParams(actionsParams); }
-        resizeTradeButton(buyLimitBtn,emerald?46:40);
-        resizeTradeButton(sellLimitBtn,emerald?46:40);
-        resizeTradeButton(quickLotInput,emerald?44:40);
-        for(int i=0;i<chartToolsLayout.getChildCount();i++){
-            View child=chartToolsLayout.getChildAt(i);
-            if(child.getLayoutParams() instanceof LinearLayout.LayoutParams){
-                LinearLayout.LayoutParams params=(LinearLayout.LayoutParams)child.getLayoutParams();
-                params.height=emerald?32:38;
-                child.setLayoutParams(params);
-            }
-        }
-    }
-
-    private void resizeTradeButton(View view,int height){
-        if(view==null || !(view.getLayoutParams() instanceof LinearLayout.LayoutParams)) return;
-        LinearLayout.LayoutParams params=(LinearLayout.LayoutParams)view.getLayoutParams();
-        params.height=height;
-        view.setLayoutParams(params);
+        if(mainRoot!=null)RayyanTheme.apply(this,mainRoot,appTheme);
     }
 
     private void showNotificationSettingsDialog(){
