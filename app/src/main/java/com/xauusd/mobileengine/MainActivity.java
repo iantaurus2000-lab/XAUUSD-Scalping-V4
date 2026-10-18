@@ -702,8 +702,7 @@ public class MainActivity extends Activity {
         return "READY".equals(autoEntryBlockReason(signal,bid,ask,m1Context));
     }
 
-    private void updateEntryReadyUi(SignalResult signal,double bid,double ask){
-        long candleStamp=chart!=null&&!chart.isEmpty()?chart.getDataSnapshot()[chart.getDataSnapshot().length-1].t:-1L;
+    private void updateEntryReadyUi(SignalResult signal,double bid,double ask,long candleStamp){
         String candleKey=selectedMarket+"|"+selectedTf+"|"+candleStamp;
         if(!candleKey.equals(readyCandleKey)){
             readyCandleKey=candleKey;
@@ -1216,7 +1215,8 @@ public class MainActivity extends Activity {
         signalSummary.setText((directional?("M1 "+s.side+" • M5 "+s.m5Bias):"WAIT • "+s.m5Bias)+"\n"+s.setup+" • CONF "+s.confidence+"/5");
         entryView.setText("Entry\n"+price(directional?s.entry:0));slView.setText("SL\n"+price(directional?s.sl:0));
         tp1View.setText("TP1\n"+price(directional?s.tp1:0));tp2View.setText("TP2\n"+price(directional?s.tp2:0));
-        updateEntryReadyUi(s,bid,ask);
+        // Use the same M1 bar timestamp as Smart Auto Entry and order lifecycle.
+        updateEntryReadyUi(s,bid,ask,m1[m1.length-1].t);
 
         View v=((ViewGroup)scoreView.getParent()).getChildAt(0);
         if(v instanceof Button){
