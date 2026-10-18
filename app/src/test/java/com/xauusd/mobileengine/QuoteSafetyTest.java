@@ -20,6 +20,14 @@ public class QuoteSafetyTest {
         assertFalse(QuoteSafety.isFresh(0,now,now));
     }
 
+    @Test public void staleOrFutureCandlesBlockEntry(){
+        long now=1_800_000_000_000L;
+        assertTrue(QuoteSafety.isFreshBar(now-60000,now,120000));
+        assertFalse(QuoteSafety.isFreshBar(now-180000,now,120000));
+        assertFalse(QuoteSafety.isFreshBar(now+1000,now,120000));
+        assertFalse(QuoteSafety.isFreshBar(0,now,120000));
+    }
+
     @Test public void spreadGateScalesToAtrAndInstrumentPrice(){
         assertTrue(QuoteSafety.spreadAcceptable(2000.00,2000.02,1.0));
         assertFalse(QuoteSafety.spreadAcceptable(2000.00,2000.50,0.10));

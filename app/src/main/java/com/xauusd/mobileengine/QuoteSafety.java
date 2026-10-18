@@ -18,6 +18,13 @@ public final class QuoteSafety {
         return age>=-5000L&&age<=15000L;
     }
 
+    /** Candle open time must be plausible and inside its freshness window. */
+    public static boolean isFreshBar(long candleOpenMs,long nowMs,long maxAgeMs){
+        if(candleOpenMs<=0L||nowMs<candleOpenMs||maxAgeMs<=0L)return false;
+        long age=nowMs-candleOpenMs;
+        return age<=maxAgeMs;
+    }
+
     /** Reject a spread larger than 20% ATR; small minimum floor scales with price. */
     public static boolean spreadAcceptable(double bid,double ask,double atr){
         if(!valid(bid,ask)||!Double.isFinite(atr)||atr<=0.0)return false;

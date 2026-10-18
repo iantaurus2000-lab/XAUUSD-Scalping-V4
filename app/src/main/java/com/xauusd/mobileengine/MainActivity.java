@@ -23,6 +23,8 @@ public class MainActivity extends Activity {
     private String lastSpreadLabel="";
     private long lastFeedQuoteAt=0L;
     private static final long ORDER_STATE_MAX_AGE_MS=8000L;
+    private static final long M1_BAR_MAX_AGE_MS=120000L;
+    private static final long M5_BAR_MAX_AGE_MS=600000L;
     private Button signalSideButton, buyLimitBtn, sellLimitBtn;
     private TextView entryReadyView;
     private final Handler signalUiHandler = new Handler(Looper.getMainLooper());
@@ -306,7 +308,11 @@ public class MainActivity extends Activity {
         boolean feedFresh=lastFeedQuoteAt>0L&&now>=lastFeedQuoteAt
             &&now-lastFeedQuoteAt<=5000L&&chart!=null
             &&QuoteSafety.valid(chart.getBid(),chart.getAsk());
-        return feedFresh&&freshBrokerQuote(selectedMarket)!=null;
+        boolean m1Fresh=m1Data!=null&&m1Data.length>0
+            &&QuoteSafety.isFreshBar(m1Data[m1Data.length-1].t,now,M1_BAR_MAX_AGE_MS);
+        boolean m5Fresh=m5Data!=null&&m5Data.length>0
+            &&QuoteSafety.isFreshBar(m5Data[m5Data.length-1].t,now,M5_BAR_MAX_AGE_MS);
+        return feedFresh&&m1Fresh&&m5Fresh&&freshBrokerQuote(selectedMarket)!=null;
     }
 
     /** Chart prices remain in the candle feed's scale; spread uses real broker quotes. */
