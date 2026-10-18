@@ -701,6 +701,12 @@ public class MainActivity extends Activity {
         sellLimitBtn.setBackground(entryButtonBg(sellColor,sellActive,10));
         buyLimitBtn.setText(buyActive?"● BUY LIMIT":"○ BUY LIMIT");
         sellLimitBtn.setText(sellActive?"● SELL LIMIT":"○ SELL LIMIT");
+        // UI state mirrors the trading gate: only the side validated by ENTRY READY
+        // is actionable. The click path still revalidates fresh quotes before queueing.
+        buyLimitBtn.setEnabled(buyActive);
+        sellLimitBtn.setEnabled(sellActive);
+        buyLimitBtn.setAlpha(buyActive?1.0f:0.72f);
+        sellLimitBtn.setAlpha(sellActive?1.0f:0.72f);
         buyLimitBtn.setTextColor(buyActive?Color.WHITE:Color.rgb(125,139,148));
         sellLimitBtn.setTextColor(sellActive?Color.WHITE:Color.rgb(125,139,148));
         buyLimitBtn.setEnabled(buyActive);
