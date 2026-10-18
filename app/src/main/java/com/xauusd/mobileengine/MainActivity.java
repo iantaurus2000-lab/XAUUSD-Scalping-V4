@@ -359,20 +359,32 @@ public class MainActivity extends Activity {
         resetEntryReadyUi("harga belum segar");
     }
 
-    /** OPEN ENTRY is tied to fresh MT5 state, then translated to chart-feed price scale. */
+    /** Draw only broker-confirmed orders. A fresh NONE snapshot is authoritative closure. */
     private void syncBrokerEntryLine(){
         if(chart==null)return;
         SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         long now=System.currentTimeMillis(),at=gp.getLong("ea_order_state_at",0L);
+        // A stale heartbeat is not proof of closure: preserve the last confirmed line
+        // until MT5 sends a fresh state. This avoids both ghost-line clearing on outages
+        // and stale-price lines being mistaken for live prices.
         if(at<=0L||now<at||now-at>ORDER_STATE_MAX_AGE_MS)return;
         String state=gp.getString("ea_order_state","UNKNOWN");
+        if("NONE".equals(state)){
+            chart.setPositionEntryLevel(0.0);
+            return;
+        }
+        if(!"PENDING".equals(state)&&!"POSITION".equals(state))return;
         String orderSymbol=gp.getString("ea_order_state_symbol","");
+        if(!mt5SymbolForMarket(selectedMarket).equals(orderSymbol)){
+            chart.setPositionEntryLevel(0.0);
+            return;
+        }
         double mt5Entry=preferenceDouble(gp,"ea_order_state_price",0.0);
-        double[] broker=cachedBrokerQuote(selectedMarket);
+        double[] broker=freshBrokerQuote(selectedMarket);
+        if(broker==null||!QuoteSafety.valid(chart.getBid(),chart.getAsk()))return;
         double line=BrokerOrderLinePolicy.displayPrice(state,mt5SymbolForMarket(selectedMarket),
-            orderSymbol,mt5Entry,chart.getBid(),chart.getAsk(),
-            broker==null?0.0:broker[0],broker==null?0.0:broker[1]);
-        chart.setPositionEntryLevel(line);
+            orderSymbol,mt5Entry,chart.getBid(),chart.getAsk(),broker[0],broker[1]);
+        if(line>0.0)chart.setPositionEntryLevel(line);
     }
 
     void addTfButton(LinearLayout parent,String tf){
@@ -689,6 +701,12 @@ public class MainActivity extends Activity {
         sellLimitBtn.setBackground(entryButtonBg(sellColor,sellActive,10));
         buyLimitBtn.setText(buyActive?"● BUY LIMIT":"○ BUY LIMIT");
         sellLimitBtn.setText(sellActive?"● SELL LIMIT":"○ SELL LIMIT");
+        // UI state mirrors the trading gate: only the side validated by ENTRY READY
+        // is actionable. The click path still revalidates fresh quotes before queueing.
+        buyLimitBtn.setEnabled(buyActive);
+        sellLimitBtn.setEnabled(sellActive);
+        buyLimitBtn.setAlpha(buyActive?1.0f:0.72f);
+        sellLimitBtn.setAlpha(sellActive?1.0f:0.72f);
         buyLimitBtn.setTextColor(buyActive?Color.WHITE:Color.rgb(125,139,148));
         sellLimitBtn.setTextColor(sellActive?Color.WHITE:Color.rgb(125,139,148));
         buyLimitBtn.setEnabled(buyActive);
@@ -873,7 +891,9 @@ public class MainActivity extends Activity {
                 .putString("smart_active_side",sideNow)
                 .putString("smart_active_symbol",activeSymbol).apply();
 
-            if(!gp.getBoolean("smart_reentry_enabled",true))return;
+            // Pending expiry is a safety rule, not a re-entry preference. Even when
+            // SMART RE-ENTRY is disabled, a stale LIMIT must still be cancelled.
+            boolean reentryEnabled=gp.getBoolean("smart_reentry_enabled",true);
             int elapsed=SmartLimitReentry.elapsedM1Bars(startedAt,candleStamp);
             boolean movedAway=hasFreshEntryQuotes()
                 &&SmartLimitReentry.movedAwayInFavor(sideNow,activeEntry,bid,ask,atr);
@@ -885,20 +905,20 @@ public class MainActivity extends Activity {
             double maxDistanceAtr=smartReentryMaxDistanceAtr(gp);
             boolean withinMaxDistance=SmartLimitReentry.withinMaxDistanceFromOriginalEntry(
                 activeEntry,s.entry,atr,maxDistanceAtr);
-            boolean replacement=autoEnabled&&elapsed>=2&&elapsed<smartReentryMaxAgeBars(gp)
+            boolean replacement=reentryEnabled&&autoEnabled&&elapsed>=2&&elapsed<smartReentryMaxAgeBars(gp)
                 &&movedAway&&continuation&&validFresh&&withinMaxDistance
                 &&SmartLimitReentry.materiallyDifferentEntry(activeEntry,s.entry,atr);
             boolean structureInvalid=("BUY".equals(sideNow)&&("SELL".equals(s.side)||"SELL".equals(s.m5Bias)))
                 ||("SELL".equals(sideNow)&&("BUY".equals(s.side)||"BUY".equals(s.m5Bias)));
-            boolean staleRun=elapsed>=2&&movedAway&&!replacement;
+            boolean staleRun=reentryEnabled&&elapsed>=2&&movedAway&&!replacement;
             boolean maxAge=elapsed>=smartReentryMaxAgeBars(gp);
             long retryAfter=gp.getLong("smart_cancel_retry_after_ms",0L);
-            boolean shouldCancel=structureInvalid||replacement||staleRun||maxAge;
+            boolean shouldCancel=structureInvalid||maxAge||(reentryEnabled&&(replacement||staleRun));
             if(shouldCancel&&now>=retryAfter){
                 boolean queued=queueCancelPending(activeId,activeTicket,activeSymbol);
                 if(queued){
                     String cancelCommandId=gp.getString("order_status_id","");
-                    boolean allowReplacement=replacement&&!structureInvalid&&!maxAge;
+                    boolean allowReplacement=reentryEnabled&&replacement&&!structureInvalid&&!maxAge;
                     gp.edit().putString("smart_phase","CANCEL_REQUESTED")
                         .putString("smart_cancel_command_id",cancelCommandId)
                         .putBoolean("smart_reentry_allowed",allowReplacement)
