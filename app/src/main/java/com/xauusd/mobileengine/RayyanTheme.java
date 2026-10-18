@@ -22,18 +22,9 @@ public final class RayyanTheme {
     public static final String DEFAULT = "DEFAULT";
     public static final String DARK = "DARK";
     public static final String LIGHT = "LIGHT";
-    public static final String GRAPHITE = "GRAPHITE";
-    public static final String EMERALD = "EMERALD";
-    public static final String BROWN = "BROWN";
-
-    private static final int NAVY_TEXT = Color.rgb(49, 68, 85);
-    private static final int MUTED_TEXT = Color.rgb(91, 108, 124);
-    private static final int GRAPHITE_TEXT = Color.rgb(38, 48, 61);
-    private static final int GRAPHITE_MUTED = Color.rgb(92, 105, 121);
-    private static final int EMERALD_TEXT = Color.rgb(218, 250, 236);
-    private static final int EMERALD_MUTED = Color.rgb(151, 207, 181);
-    private static final int BROWN_TEXT = Color.rgb(73, 47, 34);
-    private static final int BROWN_MUTED = Color.rgb(125, 91, 70);
+    // Softer slate tones for the modern white theme: clear, but not harsh.
+    private static final int NAVY_TEXT = Color.rgb(78, 93, 109);
+    private static final int MUTED_TEXT = Color.rgb(108, 122, 137);
     private static final int DARK_TEXT = Color.rgb(235, 243, 252);
     private static final int DARK_MUTED = Color.rgb(177, 195, 215);
     private static final int LIGHT_BLUE = Color.rgb(0, 105, 190);
@@ -75,9 +66,6 @@ public final class RayyanTheme {
     public static String normalize(String mode) {
         if (DARK.equalsIgnoreCase(mode)) return DARK;
         if (LIGHT.equalsIgnoreCase(mode)) return LIGHT;
-        if (GRAPHITE.equalsIgnoreCase(mode)) return GRAPHITE;
-        if (EMERALD.equalsIgnoreCase(mode)) return EMERALD;
-        if (BROWN.equalsIgnoreCase(mode)) return BROWN;
         return DEFAULT;
     }
 
@@ -160,49 +148,20 @@ public final class RayyanTheme {
         Color.colorToHSV(color, hsv);
         if (LIGHT.equals(mode)) {
             if (lum < 48) {
-                if (hsv[1] < 0.18f) return Color.rgb(248, 250, 253);
-                if (hsv[0] >= 90 && hsv[0] < 170) return Color.rgb(231, 247, 239);
-                if (hsv[0] >= 170 && hsv[0] < 260) return Color.rgb(234, 242, 252);
-                if (hsv[0] >= 260 && hsv[0] < 330) return Color.rgb(243, 238, 252);
-                return Color.rgb(247, 250, 253);
+                if (hsv[1] < 0.18f) return Color.rgb(249, 251, 253);
+                if (hsv[0] >= 90 && hsv[0] < 170) return Color.rgb(237, 246, 241);
+                if (hsv[0] >= 170 && hsv[0] < 260) return Color.rgb(239, 245, 251);
+                if (hsv[0] >= 260 && hsv[0] < 330) return Color.rgb(245, 242, 249);
+                return Color.rgb(249, 251, 253);
             }
             if (lum < 100) {
-                if (hsv[1] < 0.18f) return Color.rgb(237, 242, 248);
-                if (hsv[0] >= 90 && hsv[0] < 170) return Color.rgb(235, 247, 241);
-                if (hsv[0] >= 170 && hsv[0] < 260) return Color.rgb(235, 243, 253);
-                return Color.rgb(241, 245, 250);
+                if (hsv[1] < 0.18f) return Color.rgb(243, 246, 250);
+                if (hsv[0] >= 90 && hsv[0] < 170) return Color.rgb(239, 247, 242);
+                if (hsv[0] >= 170 && hsv[0] < 260) return Color.rgb(241, 246, 251);
+                return Color.rgb(245, 247, 250);
             }
-            if (lum < 150 && hsv[1] < 0.24f) return Color.rgb(225, 233, 242);
-            if (lum < 165 && hsv[1] < 0.42f) return Color.rgb(232, 239, 247);
-            return color;
-        }
-
-        if (GRAPHITE.equals(mode)) {
-            if (lum < 48) return hsv[1] < 0.18f ? Color.rgb(23, 28, 36) : Color.rgb(34, 43, 55);
-            if (lum < 100) return hsv[1] < 0.22f ? Color.rgb(47, 57, 70) : Color.rgb(54, 68, 84);
-            if (lum < 165 && hsv[1] < 0.25f) return Color.rgb(188, 199, 212);
-            return color;
-        }
-        if (EMERALD.equals(mode)) {
-            if (lum < 48) return hsv[1] < 0.18f ? Color.rgb(3, 19, 17) : Color.rgb(4, 42, 32);
-            if (lum < 100) return hsv[1] < 0.22f ? Color.rgb(8, 49, 40) : Color.rgb(9, 64, 48);
-            if (lum < 165 && hsv[1] < 0.25f) return Color.rgb(22, 88, 66);
-            return color;
-        }
-        if (BROWN.equals(mode)) {
-            if (lum < 48) {
-                if (hsv[1] < 0.18f) return Color.rgb(61, 37, 25);
-                if (hsv[0] >= 35 && hsv[0] < 75) return Color.rgb(91, 48, 22);
-                if (hsv[0] >= 90 && hsv[0] < 170) return Color.rgb(39, 57, 34);
-                return Color.rgb(76, 42, 27);
-            }
-            if (lum < 100) {
-                if (hsv[1] < 0.18f) return Color.rgb(91, 57, 38);
-                if (hsv[0] >= 35 && hsv[0] < 75) return Color.rgb(119, 67, 32);
-                if (hsv[0] >= 90 && hsv[0] < 170) return Color.rgb(58, 78, 43);
-                return Color.rgb(112, 63, 35);
-            }
-            if (lum < 165 && hsv[1] < 0.25f) return Color.rgb(180, 133, 91);
+            if (lum < 150 && hsv[1] < 0.24f) return Color.rgb(234, 239, 245);
+            if (lum < 165 && hsv[1] < 0.42f) return Color.rgb(239, 244, 249);
             return color;
         }
 
@@ -232,27 +191,8 @@ public final class RayyanTheme {
         if (LIGHT.equals(mode)) {
             if (lum > 218 && hsv[1] < 0.20f) return NAVY_TEXT;
             if (lum > 150 && lum <= 218 && hsv[1] < 0.24f) return MUTED_TEXT;
-            if (hsv[0] >= 175 && hsv[0] < 205 && hsv[1] > 0.25f) return Color.rgb(54, 112, 158);
-            if (lum > 190 && hsv[1] > 0.18f) return Color.rgb(74, 100, 122);
-            return color;
-        }
-        if (GRAPHITE.equals(mode)) {
-            if (lum > 215 && hsv[1] < 0.22f) return GRAPHITE_TEXT;
-            if (lum > 150 && hsv[1] < 0.28f) return GRAPHITE_MUTED;
-            if (lum < 50 && hsv[1] < 0.28f) return Color.rgb(235, 241, 249);
-            return color;
-        }
-        if (EMERALD.equals(mode)) {
-            if (lum < 50 && hsv[1] < 0.28f) return EMERALD_TEXT;
-            if (lum >= 60 && lum < 155 && hsv[1] < 0.22f) return EMERALD_MUTED;
-            if (hsv[0] >= 175 && hsv[0] < 205 && hsv[1] > 0.25f) return Color.rgb(65, 231, 175);
-            return color;
-        }
-        if (BROWN.equals(mode)) {
-            if (lum > 215 && hsv[1] < 0.22f) return BROWN_TEXT;
-            if (lum > 150 && hsv[1] < 0.28f) return BROWN_MUTED;
-            if (hsv[0] >= 175 && hsv[0] < 205 && hsv[1] > 0.25f) return Color.rgb(79, 126, 150);
-            if (lum < 50 && hsv[1] < 0.28f) return Color.rgb(255, 237, 211);
+            if (hsv[0] >= 175 && hsv[0] < 205 && hsv[1] > 0.25f) return Color.rgb(76, 124, 158);
+            if (lum > 190 && hsv[1] > 0.18f) return Color.rgb(85, 108, 130);
             return color;
         }
         if (lum < 50 && hsv[1] < 0.28f) return DARK_TEXT;
