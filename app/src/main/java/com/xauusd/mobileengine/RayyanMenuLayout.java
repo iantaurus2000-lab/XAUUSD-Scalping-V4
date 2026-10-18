@@ -107,7 +107,7 @@ public final class RayyanMenuLayout {
 
         addSection(host, content, "TAMPILAN & MARKET");
         addItems(host, content, Arrays.asList(
-            new Item("◐", "Tema Aplikasi", "Default, Dark, Light, atau Graphite Silver / Emerald Pro", "settings_theme"),
+            new Item("◐", "Tema Aplikasi", "Default Theme, Dark Professional, atau Light Professional", "settings_theme"),
             new Item("▦", "Indicators / Tampilan", "Atur indikator yang terlihat di chart", "settings_indicators"),
             new Item("◈", "Pilih Market", "XAUUSD, BTCUSD, atau ETHUSD", "settings_market")
         ), actions);
