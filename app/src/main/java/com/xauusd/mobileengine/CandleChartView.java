@@ -32,11 +32,8 @@ public class CandleChartView extends View {
     public void setVisualTheme(String theme){ visualTheme=RayyanTheme.normalize(theme); invalidate(); }
     private boolean isLightTheme(){ return "LIGHT".equals(visualTheme); }
     private boolean isDarkTheme(){ return "DARK".equals(visualTheme); }
-    private boolean isBrownTheme(){ return "BROWN".equals(visualTheme); }
-    private boolean isGraphiteTheme(){ return RayyanTheme.GRAPHITE.equals(visualTheme); }
-    private boolean isEmeraldTheme(){ return RayyanTheme.EMERALD.equals(visualTheme); }
-    private int chartTextColor(){ return isLightTheme()?Color.rgb(49,68,85):(isGraphiteTheme()?Color.rgb(227,234,243):(isEmeraldTheme()?Color.rgb(218,250,236):(isBrownTheme()?Color.rgb(79,49,34):Color.WHITE))); }
-    private int chartMutedTextColor(){ return isLightTheme()?Color.rgb(91,108,124):(isGraphiteTheme()?Color.rgb(160,174,191):(isEmeraldTheme()?Color.rgb(139,199,172):(isDarkTheme()?Color.rgb(177,195,215):(isBrownTheme()?Color.rgb(145,104,76):Color.LTGRAY)))); }
+    private int chartTextColor(){ return isLightTheme()?Color.rgb(78,93,109):Color.WHITE; }
+    private int chartMutedTextColor(){ return isLightTheme()?Color.rgb(108,122,137):(isDarkTheme()?Color.rgb(177,195,215):Color.LTGRAY); }
     public void setTimeframe(String tf){ timeframe=tf==null?"M1":tf; invalidate(); }
     public void setMarket(String market){
         String next=(market==null||market.trim().isEmpty())?"XAUUSD":market.trim().toUpperCase(Locale.US);
@@ -154,13 +151,13 @@ public class CandleChartView extends View {
     @Override protected void onDraw(Canvas c){
         super.onDraw(c);
         float W=getWidth(),H=getHeight(),L=leftPad,R=W-rightAxis;
-        int chartBg=isLightTheme()?Color.rgb(249,251,254):(isDarkTheme()?Color.rgb(5,9,17):(isGraphiteTheme()?Color.rgb(25,31,41):(isEmeraldTheme()?Color.rgb(3,20,17):(isBrownTheme()?Color.rgb(255,247,235):Color.rgb(4,9,16)))));
-        int axisBg=isLightTheme()?Color.rgb(242,246,251):(isDarkTheme()?Color.rgb(9,17,29):(isGraphiteTheme()?Color.rgb(34,42,54):(isEmeraldTheme()?Color.rgb(5,32,26):(isBrownTheme()?Color.rgb(247,232,211):Color.rgb(9,16,24)))));
-        int axisLine=isLightTheme()?Color.rgb(188,202,218):(isDarkTheme()?Color.rgb(44,62,85):(isGraphiteTheme()?Color.rgb(104,121,143):(isEmeraldTheme()?Color.rgb(18,113,80):(isBrownTheme()?Color.rgb(188,137,91):Color.rgb(55,70,84)))));
-        int chartHeaderBg=isLightTheme()?Color.rgb(255,255,255):(isDarkTheme()?Color.rgb(10,20,36):(isGraphiteTheme()?Color.rgb(29,37,49):(isEmeraldTheme()?Color.rgb(4,27,22):(isBrownTheme()?Color.rgb(255,239,216):Color.rgb(7,15,23)))));
-        int horizontalGrid=isLightTheme()?Color.rgb(220,229,239):(isDarkTheme()?Color.rgb(29,43,61):(isGraphiteTheme()?Color.rgb(53,65,82):(isEmeraldTheme()?Color.rgb(9,59,45):(isBrownTheme()?Color.rgb(226,202,173):Color.rgb(29,39,50)))));
-        int verticalGrid=isLightTheme()?Color.rgb(231,237,244):(isDarkTheme()?Color.rgb(21,35,52):(isGraphiteTheme()?Color.rgb(43,54,70):(isEmeraldTheme()?Color.rgb(6,45,35):(isBrownTheme()?Color.rgb(239,219,194):Color.rgb(21,31,41)))));
-        int chartCrosshair=isLightTheme()?Color.rgb(137,154,173):(isDarkTheme()?Color.rgb(100,120,146):(isGraphiteTheme()?Color.rgb(143,158,179):(isEmeraldTheme()?Color.rgb(45,166,121):(isBrownTheme()?Color.rgb(163,111,67):Color.GRAY))));
+        int chartBg=isLightTheme()?Color.rgb(250,251,253):(isDarkTheme()?Color.rgb(5,9,17):Color.rgb(4,9,16));
+        int axisBg=isLightTheme()?Color.rgb(245,247,250):(isDarkTheme()?Color.rgb(9,17,29):Color.rgb(9,16,24));
+        int axisLine=isLightTheme()?Color.rgb(204,214,225):(isDarkTheme()?Color.rgb(44,62,85):Color.rgb(55,70,84));
+        int chartHeaderBg=isLightTheme()?Color.rgb(255,255,255):(isDarkTheme()?Color.rgb(10,20,36):Color.rgb(7,15,23));
+        int horizontalGrid=isLightTheme()?Color.rgb(226,232,239):(isDarkTheme()?Color.rgb(29,43,61):Color.rgb(29,39,50));
+        int verticalGrid=isLightTheme()?Color.rgb(235,239,245):(isDarkTheme()?Color.rgb(21,35,52):Color.rgb(21,31,41));
+        int chartCrosshair=isLightTheme()?Color.rgb(150,163,177):(isDarkTheme()?Color.rgb(100,120,146):Color.GRAY);
         c.drawColor(chartBg);
         p.setStyle(Paint.Style.FILL);p.setColor(axisBg);c.drawRect(R,0,W,H,p);
         ln(c,R,0,R,H,axisLine,2);
@@ -287,9 +284,9 @@ public class CandleChartView extends View {
     }
 
     private void panelGrid(Canvas c,float L,float R,float T,float B){
-        p.setStyle(Paint.Style.FILL);p.setColor(isLightTheme()?Color.rgb(245,248,252):(isDarkTheme()?Color.rgb(9,16,27):(isGraphiteTheme()?Color.rgb(25,31,41):(isEmeraldTheme()?Color.rgb(3,20,17):(isBrownTheme()?Color.rgb(250,239,223):Color.rgb(6,14,23))))));c.drawRect(L,T,R,B,p);
-        for(int i=0;i<=2;i++){float y=T+i*(B-T)/2;ln(c,L,y,R,y,isLightTheme()?Color.rgb(221,230,240):(isDarkTheme()?Color.rgb(29,43,61):(isGraphiteTheme()?Color.rgb(53,65,82):(isEmeraldTheme()?Color.rgb(9,59,45):(isBrownTheme()?Color.rgb(226,202,173):Color.rgb(29,42,54))))),1);}
-        ln(c,R,T,R,B,isLightTheme()?Color.rgb(188,202,218):(isDarkTheme()?Color.rgb(44,62,85):(isGraphiteTheme()?Color.rgb(104,121,143):(isEmeraldTheme()?Color.rgb(18,113,80):(isBrownTheme()?Color.rgb(188,137,91):Color.rgb(45,60,72))))),1);
+        p.setStyle(Paint.Style.FILL);p.setColor(isLightTheme()?Color.rgb(249,251,253):(isDarkTheme()?Color.rgb(9,16,27):Color.rgb(6,14,23)));c.drawRect(L,T,R,B,p);
+        for(int i=0;i<=2;i++){float y=T+i*(B-T)/2;ln(c,L,y,R,y,isLightTheme()?Color.rgb(226,232,239):(isDarkTheme()?Color.rgb(29,43,61):Color.rgb(29,42,54)),1);}
+        ln(c,R,T,R,B,isLightTheme()?Color.rgb(204,214,225):(isDarkTheme()?Color.rgb(44,62,85):Color.rgb(45,60,72)),1);
     }
 
     private void drawRsi(Canvas c,float L,float R,float T,float B){
