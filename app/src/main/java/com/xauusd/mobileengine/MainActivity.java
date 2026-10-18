@@ -868,10 +868,12 @@ public class MainActivity extends Activity {
         boolean stateFresh=stateAt>0L&&now>=stateAt&&now-stateAt<=8000L&&eaOnline;
         if(!eaOnline){
             smartLogOnce(gp,"EA_OFFLINE","blocked: EA MT5 tidak polling aktif; tidak antre/re-entry");
+            if(status!=null&&autoEnabled)status.setText("● SMART AUTO BLOCKED • EA /next OFFLINE");
             return;
         }
         if(!stateFresh){
             smartLogOnce(gp,"STATE_STALE","blocked: status order EA belum segar; aman menunggu, bukan membuat order baru");
+            if(status!=null&&autoEnabled)status.setText("● SMART AUTO BLOCKED • STATUS ORDER MT5 STALE");
             return;
         }
 
@@ -1124,13 +1126,23 @@ public class MainActivity extends Activity {
         }
 
         // Fail closed if the EA snapshot is not a verified flat state.
-        if(!"NONE".equals(remoteState))return;
+        if(!"NONE".equals(remoteState)){
+            if(status!=null&&autoEnabled)status.setText("● SMART AUTO BLOCKED • EA STATE "+remoteState);
+            return;
+        }
         if(!autoEnabled)return;
-        if(!"NONE".equals(remoteId)&&remoteId.isEmpty())return;
-        if(!queueIsFree(gp))return;
+        if(!queueIsFree(gp)){
+            if(status!=null)status.setText("● SMART AUTO WAIT • GATEWAY QUEUE BUSY");
+            return;
+        }
 
         boolean m1Context="M1".equals(selectedTf)&&m1.length>=30&&m5.length>=30;
-        if(!isAutoEntryEligible(s,bid,ask,m1Context))return;
+        if(!isAutoEntryEligible(s,bid,ask,m1Context)){
+            String reason=autoEntryBlockReason(s,bid,ask,m1Context);
+            smartLogOnce(gp,"FILTER|"+signalKey+"|"+reason,"AUTO tidak entry: "+reason+" • side="+s.side+" score="+s.score+" conf="+s.confidence+"/5");
+            if(status!=null)status.setText("● SMART AUTO WAIT • "+reason);
+            return;
+        }
         // AUTO LIMIT must use the same per-candle direction accepted by READY UI.
         // updateEntryReadyUi runs immediately before processAutoLimit in updateSignal.
         long liveStamp=m1[m1.length-1].t;
