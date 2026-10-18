@@ -557,15 +557,20 @@ public class MainActivity extends Activity {
                 return;
             }
             SignalResult s=SignalEngine.evaluate(liveM1,m5Data,chart.getBid(),chart.getAsk(),broker[0],broker[1]);
-            if(!isAutoEntryEligible(s,chart.getBid(),chart.getAsk(),"M1".equals(selectedTf))){
-                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT: setup belum memenuhi READY Smart Auto Entry");
-                Toast.makeText(this,"Belum ada wick READY • order tidak dikirim",Toast.LENGTH_SHORT).show();
-                return;
-            }
+            // Manual LIMIT is independent from Smart Auto Entry readiness.
+            // It still requires fresh quotes and structurally valid LIMIT/SL/TP levels.
             lastSignal=s;
-            if(!requestedSide.equals(s.side)){
-                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT blocked: sinyal aktif "+s.side+"; tidak mengirim order berlawanan");
-                Toast.makeText(this,"Sinyal aktif "+s.side+" • tombol "+requestedSide+" tidak dikirim",Toast.LENGTH_LONG).show();
+            boolean levelsValid;
+            if("BUY".equals(requestedSide)){
+                levelsValid=s.entry>0&&s.sl>0&&s.tp1>0
+                    &&s.entry<chart.getAsk()&&s.sl<s.entry&&s.tp1>s.entry;
+            }else{
+                levelsValid=s.entry>0&&s.sl>0&&s.tp1>0
+                    &&s.entry>chart.getBid()&&s.sl>s.entry&&s.tp1<s.entry;
+            }
+            if(!levelsValid){
+                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT: level signal tidak valid untuk side ini");
+                Toast.makeText(this,"Level LIMIT/SL/TP belum valid untuk "+requestedSide,Toast.LENGTH_LONG).show();
                 return;
             }
             double lot=readQuickLot();
@@ -720,8 +725,12 @@ public class MainActivity extends Activity {
     private void applyEntryButtonColors(){
         if(buyLimitBtn==null||sellLimitBtn==null)return;
         int buyColor, sellColor;
-        boolean buyActive=entryReady&&"BUY".equals(readySide);
-        boolean sellActive=entryReady&&"SELL".equals(readySide);
+        // Manual controls must not depend on an automatic signal being READY.
+        // Enable both sides once quote/candle prerequisites are fresh; the click
+        // handler rechecks side-specific LIMIT/SL/TP and gateway safety.
+        boolean quotesReady=hasFreshEntryQuotes();
+        boolean buyActive=quotesReady;
+        boolean sellActive=quotesReady;
         if(buyActive){
             buyColor=blinkOn?Color.rgb(0,255,145):Color.rgb(0,112,70);
             sellColor=Color.rgb(38,47,57);
@@ -734,8 +743,8 @@ public class MainActivity extends Activity {
         }
         buyLimitBtn.setBackground(entryButtonBg(buyColor,buyActive,10));
         sellLimitBtn.setBackground(entryButtonBg(sellColor,sellActive,10));
-        buyLimitBtn.setText(buyActive?"● BUY LIMIT":"○ BUY LIMIT");
-        sellLimitBtn.setText(sellActive?"● SELL LIMIT":"○ SELL LIMIT");
+        buyLimitBtn.setText(buyActive?"BUY LIMIT":"○ BUY LIMIT");
+        sellLimitBtn.setText(sellActive?"SELL LIMIT":"○ SELL LIMIT");
         // UI state mirrors the trading gate: only the side validated by ENTRY READY
         // is actionable. The click path still revalidates fresh quotes before queueing.
         buyLimitBtn.setEnabled(buyActive);
