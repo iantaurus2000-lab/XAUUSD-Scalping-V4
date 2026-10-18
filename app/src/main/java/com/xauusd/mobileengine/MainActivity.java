@@ -674,6 +674,10 @@ public class MainActivity extends Activity {
 
     private boolean isAutoEntryEligible(SignalResult signal,double bid,double ask,boolean m1Context){
         if(!m1Context||!isEntryReady(signal,bid,ask)||!signal.wickRejection)return false;
+        // Smart AUTO needs M5 confirmation: a BUY wick is not auto-triggered into
+        // a clear M5 SELL trend, nor a SELL wick into a clear M5 BUY trend.
+        // Neutral M5 remains permissible when the rejection and quote filters pass.
+        if(!m5DoesNotOppose(signal.side,signal.m5Bias))return false;
         double target=validAutoTarget(signal);
         if(target<=0)return false;
         if("BUY".equals(signal.side))
