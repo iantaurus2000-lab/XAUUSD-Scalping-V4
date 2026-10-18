@@ -72,6 +72,19 @@ public final class GatewayService extends Service {
                 String result=query(path,"result");
                 String detail=query(path,"detail");
                 out=ack(id,result,detail);
+            }else if(path.startsWith("/indicator_next")){
+                getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit()
+                    .putLong("indicator_ea_last_poll_ms",System.currentTimeMillis()).apply();
+                out=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).getString("indicator_next","");
+            }else if(path.startsWith("/indicator_ack")){
+                String id=query(path,"id");
+                SharedPreferences ip=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+                String queued=ip.getString("indicator_next","");
+                if(id!=null&&!id.isEmpty()&&id.equals(field(queued,"id"))){
+                    ip.edit().remove("indicator_next").putString("indicator_ack_id",id)
+                        .putLong("indicator_ack_at",System.currentTimeMillis()).apply();
+                    out="INDICATOR ACK OK";
+                }else out="INDICATOR ACK STALE";
             }else if(path.startsWith("/state")){
                 out=receiveState(path);
             }else if(path.startsWith("/quote")){
