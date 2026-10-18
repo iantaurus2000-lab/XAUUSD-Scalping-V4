@@ -23,6 +23,8 @@ public class MainActivity extends Activity {
     private ImageView chartMirror;
     private View mainRoot;
     private String appTheme = RayyanTheme.DEFAULT;
+    private int defaultNavigationBarColor = Color.BLACK;
+    private int defaultSystemUiVisibility = 0;
     private String chartDisplayMode = "BIQUOTE";
     private long chartMirrorModified=0L;
     private final Handler chartMirrorHandler=new Handler(Looper.getMainLooper());
@@ -124,6 +126,8 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle b){
         super.onCreate(b);
+        if(android.os.Build.VERSION.SDK_INT>=21)defaultNavigationBarColor=getWindow().getNavigationBarColor();
+        defaultSystemUiVisibility=getWindow().getDecorView().getSystemUiVisibility();
         installCrashDiagnostics();
         try {
             getSharedPreferences("rayyan4_crashlog", MODE_PRIVATE).edit()
@@ -1435,22 +1439,26 @@ public class MainActivity extends Activity {
     }
 
     private void applyCurrentAppTheme(){
-        int statusBarColor=RayyanTheme.LIGHT.equals(appTheme)?Color.rgb(248,251,255)
-            :RayyanTheme.DARK.equals(appTheme)?Color.rgb(5,9,17):Color.rgb(1,7,13);
-        int navigationBarColor=RayyanTheme.LIGHT.equals(appTheme)?Color.rgb(248,251,255)
-            :RayyanTheme.DARK.equals(appTheme)?Color.rgb(5,9,17):Color.rgb(2,12,22);
-        getWindow().setStatusBarColor(statusBarColor);
-        if(android.os.Build.VERSION.SDK_INT>=21)getWindow().setNavigationBarColor(navigationBarColor);
         View decor=getWindow().getDecorView();
-        int flags=decor.getSystemUiVisibility();
-        if(RayyanTheme.LIGHT.equals(appTheme)){
-            flags|=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-            if(android.os.Build.VERSION.SDK_INT>=26)flags|=View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        if(RayyanTheme.DEFAULT.equals(appTheme)){
+            // Restore the app's original system-bar setup for a genuinely unchanged default theme.
+            getWindow().setStatusBarColor(Color.rgb(1,7,13));
+            if(android.os.Build.VERSION.SDK_INT>=21)getWindow().setNavigationBarColor(defaultNavigationBarColor);
+            decor.setSystemUiVisibility(defaultSystemUiVisibility);
         }else{
-            flags&=~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-            if(android.os.Build.VERSION.SDK_INT>=26)flags&=~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            boolean light=RayyanTheme.LIGHT.equals(appTheme);
+            getWindow().setStatusBarColor(light?Color.rgb(248,251,255):Color.rgb(5,9,17));
+            if(android.os.Build.VERSION.SDK_INT>=21)getWindow().setNavigationBarColor(light?Color.rgb(248,251,255):Color.rgb(5,9,17));
+            int flags=defaultSystemUiVisibility;
+            if(light){
+                flags|=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                if(android.os.Build.VERSION.SDK_INT>=26)flags|=View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            }else{
+                flags&=~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                if(android.os.Build.VERSION.SDK_INT>=26)flags&=~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            }
+            decor.setSystemUiVisibility(flags);
         }
-        decor.setSystemUiVisibility(flags);
         if(chart!=null)chart.setVisualTheme(appTheme);
         if(mainRoot!=null)RayyanTheme.apply(this,mainRoot,appTheme);
     }
