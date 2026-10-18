@@ -1434,10 +1434,25 @@ public class MainActivity extends Activity {
         chart.setShowEMA9(ind("ema9",true));chart.setShowEMA21(ind("ema21",true));chart.setShowEMA50(ind("ema50",true));
         chart.setShowSR(ind("sr",true));chart.setShowFibo(ind("fibo",true));chart.setShowRSI(ind("rsi",true));chart.setShowMACD(ind("macd",true));chart.setShowATR(ind("atr",true));
         chart.setShowSignals(ind("signals",true));chart.setShowWickBos(ind("wickbos",true));chart.setShowTradeLevels(ind("orders",true));chart.setShowPosition(ind("position",true));chart.setShowBidAsk(ind("bidask",true));
+        queueNativeIndicatorState();
+    }
+
+    private void queueNativeIndicatorState(){
+        long id=System.currentTimeMillis();
+        String command="id="+id+
+            ";ema9="+(ind("ema9",true)?"1":"0")+
+            ";ema21="+(ind("ema21",true)?"1":"0")+
+            ";ema50="+(ind("ema50",true)?"1":"0")+
+            ";sr="+(ind("sr",true)?"1":"0")+
+            ";fibo="+(ind("fibo",true)?"1":"0");
+        getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putString("indicator_next",command).apply();
+        AppLog.add(this,"MT5 INDICATORS","queued native chart state id="+id);
     }
 
     void setInd(String key,boolean enabled){
         prefs.edit().putBoolean(key,enabled).apply();
+        if("ema9".equals(key)||"ema21".equals(key)||"ema50".equals(key)||"sr".equals(key)||"fibo".equals(key))
+            queueNativeIndicatorState();
         switch(key){
             case "ema9":chart.setShowEMA9(enabled);break;case "ema21":chart.setShowEMA21(enabled);break;case "ema50":chart.setShowEMA50(enabled);break;
             case "sr":chart.setShowSR(enabled);break;case "fibo":chart.setShowFibo(enabled);break;case "rsi":chart.setShowRSI(enabled);break;case "macd":chart.setShowMACD(enabled);break;case "atr":chart.setShowATR(enabled);break;
