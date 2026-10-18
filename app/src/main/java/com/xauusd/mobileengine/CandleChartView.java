@@ -10,8 +10,8 @@ public class CandleChartView extends View {
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final ArrayList<Candle> cs = new ArrayList<>();
     private double bid, ask;
-    private float cw = 16, ox = 0, oy = 0, lx, ly, ld, cx, cy;
-    private final float leftPad = 54, rightAxis = 108, topPad = 8, bottomPad = 26, lastCandlePad = 96;
+    private float cw = 14, ox = 0, oy = 0, lx, ly, ld, cx, cy;
+    private final float leftPad = 54, rightAxis = 108, topPad = 8, bottomPad = 26, lastCandlePad = 52;
     private boolean showEMA9=true, showEMA21=true, showEMA50=true;
     private boolean showSR=true, showFibo=true, showRSI=true, showMACD=true, showATR=true;
     private boolean showSignals=true, showWickBos=true, showTradeLevels=true, showPosition=true, showBidAsk=true;
