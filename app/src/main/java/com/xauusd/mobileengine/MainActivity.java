@@ -28,8 +28,10 @@ public class MainActivity extends Activity {
             try{
                 java.io.File f=getFileStreamPath("mt5_chart.png");
                 long modified=f.isFile()?f.lastModified():0L;
-                long age=System.currentTimeMillis()-getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).getLong("mt5_chart_received_ms",0L);
-                if(chartMirror!=null&&modified>0L&&age>=0L&&age<=6000L){
+                // Use the actual mirrored PNG file timestamp. The preference timestamp can
+                // be stale after Activity/Service lifecycle changes and was hiding the MT5 chart.
+                long age=modified>0L?System.currentTimeMillis()-modified:Long.MAX_VALUE;
+                if(chartMirror!=null&&modified>0L&&age>=0L&&age<=30000L){
                     if(modified!=chartMirrorModified){
                         Bitmap b=BitmapFactory.decodeFile(f.getAbsolutePath());
                         if(b!=null){chartMirror.setImageBitmap(b);chartMirrorModified=modified;}
