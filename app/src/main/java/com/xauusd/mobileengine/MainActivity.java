@@ -363,6 +363,10 @@ public class MainActivity extends Activity {
             &&QuoteSafety.valid(chart.getBid(),chart.getAsk());
         double[] broker=freshBrokerQuote(market);
         if(broker!=null){
+            // The MT5 broker quote is the execution reference. Keep the candle history
+            // from the chart feed, but align the live price/header and signal tick to MT5.
+            chart.setTick(broker[0],broker[1],selectedTf);
+            updateHeaderPrice(broker[0],broker[1]);
             SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
             double spread=broker[1]-broker[0];
             double point=preferenceDouble(gp,"broker_quote_point_"+mt5SymbolForMarket(market),0.0);
@@ -672,19 +676,25 @@ public class MainActivity extends Activity {
         return 0;
     }
 
+    private String autoEntryBlockReason(SignalResult signal,double bid,double ask,boolean m1Context){
+        if(!m1Context)return "TF BUKAN M1 / DATA M1-M5 BELUM CUKUP";
+        if(signal==null)return "SIGNAL BELUM TERSEDIA";
+        if(!hasFreshEntryQuotes())return "QUOTE BROKER/CHART STALE";
+        if(!"BUY".equals(signal.side)&&!"SELL".equals(signal.side))return "BELUM ADA ARAH BUY/SELL";
+        if(signal.score<getMinimumEntryConfidence())return "SCORE DI BAWAH MINIMUM "+getMinimumEntryConfidence()+"%";
+        if(!signal.spreadFilter)return "SPREAD FILTER GAGAL";
+        if(!signal.atrFilter)return "ATR FILTER GAGAL";
+        if(!signal.wickRejection)return "WICK REJECTION BELUM VALID";
+        if(!m5DoesNotOppose(signal.side,signal.m5Bias))return "ARAH M5 BERLAWANAN";
+        if(signal.entry<=0||signal.sl<=0||signal.tp1<=0)return "LEVEL ENTRY/SL/TP TIDAK VALID";
+        if("BUY".equals(signal.side)&&!(signal.entry<ask&&signal.sl<signal.entry&&signal.tp1>signal.entry))return "LEVEL BUY LIMIT/SL/TP TIDAK VALID";
+        if("SELL".equals(signal.side)&&!(signal.entry>bid&&signal.tp1<signal.entry&&signal.sl>signal.entry))return "LEVEL SELL LIMIT/SL/TP TIDAK VALID";
+        if(validAutoTarget(signal)<=0)return "TARGET LIMIT TIDAK VALID";
+        return "READY";
+    }
+
     private boolean isAutoEntryEligible(SignalResult signal,double bid,double ask,boolean m1Context){
-        if(!m1Context||!isEntryReady(signal,bid,ask)||!signal.wickRejection)return false;
-        // Smart AUTO needs M5 confirmation: a BUY wick is not auto-triggered into
-        // a clear M5 SELL trend, nor a SELL wick into a clear M5 BUY trend.
-        // Neutral M5 remains permissible when the rejection and quote filters pass.
-        if(!m5DoesNotOppose(signal.side,signal.m5Bias))return false;
-        double target=validAutoTarget(signal);
-        if(target<=0)return false;
-        if("BUY".equals(signal.side))
-            return signal.entry<ask&&signal.sl<signal.entry&&target>signal.entry;
-        if("SELL".equals(signal.side))
-            return signal.entry>bid&&target<signal.entry&&signal.sl>signal.entry;
-        return false;
+        return "READY".equals(autoEntryBlockReason(signal,bid,ask,m1Context));
     }
 
     private void updateEntryReadyUi(SignalResult signal,double bid,double ask){
@@ -725,9 +735,8 @@ public class MainActivity extends Activity {
             readySide="WAIT";
             blinkOn=false;
             boolean hasSide=signal!=null&&("BUY".equals(signal.side)||"SELL".equals(signal.side));
-            entryReadyView.setText(!hasFreshEntryQuotes()
-                ?"WAIT • harga broker/chart belum segar atau pasar tutup"
-                :(hasSide?"WAIT • "+signal.side+" setup belum memenuhi filter/level":"WAIT • menunggu setup valid"));
+            String blockReason=autoEntryBlockReason(signal,bid,ask,"M1".equals(selectedTf));
+            entryReadyView.setText("WAIT • "+blockReason);
             entryReadyView.setTextColor(Color.rgb(255,205,95));
             entryReadyView.setBackground(roundBg(Color.rgb(35,38,35),10));
         }
@@ -757,27 +766,16 @@ public class MainActivity extends Activity {
 
     private void applyEntryButtonColors(){
         if(buyLimitBtn==null||sellLimitBtn==null)return;
-        int buyColor, sellColor;
-        // Manual controls must not depend on an automatic signal being READY.
-        // Enable both sides once quote/candle prerequisites are fresh; the click
-        // handler rechecks side-specific LIMIT/SL/TP and gateway safety.
-        boolean quotesReady=hasFreshEntryQuotes();
-        boolean buyActive=quotesReady;
-        boolean sellActive=quotesReady;
-        if(buyActive){
-            buyColor=blinkOn?Color.rgb(0,255,145):Color.rgb(0,112,70);
-            sellColor=Color.rgb(38,47,57);
-        }else if(sellActive){
-            buyColor=Color.rgb(38,47,57);
-            sellColor=blinkOn?Color.rgb(255,55,75):Color.rgb(132,18,35);
-        }else{
-            buyColor=Color.rgb(32,75,58);
-            sellColor=Color.rgb(76,42,48);
-        }
-        buyLimitBtn.setBackground(entryButtonBg(buyColor,buyActive,10));
-        sellLimitBtn.setBackground(entryButtonBg(sellColor,sellActive,10));
-        buyLimitBtn.setText(buyActive?"BUY LIMIT":"○ BUY LIMIT");
-        sellLimitBtn.setText(sellActive?"SELL LIMIT":"○ SELL LIMIT");
+        // Both controls stay tappable for manual orders. Visual emphasis follows
+        // the actual ENTRY READY side, never quote freshness alone.
+        boolean buyReady=entryReady&&"BUY".equals(readySide)&&hasFreshEntryQuotes();
+        boolean sellReady=entryReady&&"SELL".equals(readySide)&&hasFreshEntryQuotes();
+        int buyColor=buyReady?(blinkOn?Color.rgb(0,255,145):Color.rgb(0,112,70)):Color.rgb(32,75,58);
+        int sellColor=sellReady?(blinkOn?Color.rgb(255,55,75):Color.rgb(132,18,35)):Color.rgb(76,42,48);
+        buyLimitBtn.setBackground(entryButtonBg(buyColor,buyReady,10));
+        sellLimitBtn.setBackground(entryButtonBg(sellColor,sellReady,10));
+        buyLimitBtn.setText(buyReady?(blinkOn?"● BUY LIMIT":"BUY LIMIT"):"○ BUY LIMIT");
+        sellLimitBtn.setText(sellReady?(blinkOn?"● SELL LIMIT":"SELL LIMIT"):"○ SELL LIMIT");
         // UI state mirrors the trading gate: only the side validated by ENTRY READY
         // is actionable. The click path still revalidates fresh quotes before queueing.
         // Keep both manual controls tappable from app launch. This does not bypass
