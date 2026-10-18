@@ -127,12 +127,7 @@ public final class RayyanTheme {
             if (Build.VERSION.SDK_INT >= 24) {
                 ColorStateList fill = shape.getColor();
                 if (fill != null) shape.setColor(mapSurface(fill.getDefaultColor(), mode));
-                int[] strokeWidth = new int[]{0};
-                ColorStateList[] strokeColors = new ColorStateList[]{null};
-                shape.getStroke(strokeWidth, strokeColors);
-                if (strokeWidth[0] > 0 && strokeColors[0] != null) {
-                    shape.setStroke(strokeWidth[0], mapStroke(strokeColors[0].getDefaultColor(), mode));
-                }
+                // Keep the original outline geometry; its blue border remains readable in all themes.
             }
         }
     }
@@ -186,15 +181,6 @@ public final class RayyanTheme {
         if (lum < 155 && hsv[1] < 0.20f) return Color.rgb(27, 38, 55);
         if (lum < 125 && hsv[0] >= 170 && hsv[0] < 260) return Color.rgb(24, 42, 67);
         return color;
-    }
-
-    private static int mapStroke(int color, String mode) {
-        if (LIGHT.equals(mode)) {
-            if (luminance(color) < 100) return Color.rgb(188, 207, 229);
-            return Color.rgb(155, 183, 214);
-        }
-        if (luminance(color) < 100) return Color.rgb(48, 78, 119);
-        return Color.rgb(54, 103, 159);
     }
 
     private static int mapTextColor(int color, String mode, boolean actionBackground) {
