@@ -1360,7 +1360,7 @@ public class MainActivity extends Activity {
         heading.setTextColor(Color.CYAN);
         heading.setTypeface(null,Typeface.BOLD);
         panel.addView(heading,new LinearLayout.LayoutParams(-1,uiDp(32)));
-        TextView note = tv("Graphite Silver: alat chart di atas grafik. Emerald Pro: chart fokus dan panel BUY/SELL LIMIT lebih menonjol. Jalur order tetap sama.",12);
+        TextView note = tv("Default/Dark/Light memakai layout lama. Graphite: alat chart di atas grafik. Emerald: chart fokus, tombol LIMIT lebih besar, lalu panel Entry/SL/TP. Jalur order tetap sama.",12);
         note.setTextColor(Color.LTGRAY);
         note.setGravity(Gravity.TOP|Gravity.START);
         note.setPadding(0,uiDp(2),0,uiDp(8));
