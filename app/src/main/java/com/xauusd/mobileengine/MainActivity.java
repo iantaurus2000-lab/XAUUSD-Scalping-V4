@@ -28,16 +28,19 @@ public class MainActivity extends Activity {
             try{
                 java.io.File f=getFileStreamPath("mt5_chart.png");
                 long modified=f.isFile()?f.lastModified():0L;
-                // Use the actual mirrored PNG file timestamp. The preference timestamp can
-                // be stale after Activity/Service lifecycle changes and was hiding the MT5 chart.
-                long age=modified>0L?System.currentTimeMillis()-modified:Long.MAX_VALUE;
-                if(chartMirror!=null&&modified>0L&&age>=0L&&age<=30000L){
-                    if(modified!=chartMirrorModified){
-                        Bitmap b=BitmapFactory.decodeFile(f.getAbsolutePath());
-                        if(b!=null){chartMirror.setImageBitmap(b);chartMirrorModified=modified;}
+                // Keep the last valid MT5 image visible through brief upload/network pauses.
+                // Never cover the native chart with an empty ImageView if a PNG is partial/corrupt.
+                if(chartMirror!=null&&modified>0L&&modified!=chartMirrorModified){
+                    Bitmap b=BitmapFactory.decodeFile(f.getAbsolutePath());
+                    if(b!=null){
+                        chartMirror.setImageBitmap(b);
+                        chartMirrorModified=modified;
                     }
-                    chartMirror.setVisibility(View.VISIBLE);
-                }else if(chartMirror!=null){chartMirror.setVisibility(View.GONE);}
+                }
+                if(chartMirror!=null){
+                    if(chartMirror.getDrawable()!=null)chartMirror.setVisibility(View.VISIBLE);
+                    else chartMirror.setVisibility(View.GONE);
+                }
             }catch(Exception ignored){}
             chartMirrorHandler.postDelayed(this,750L);
         }
