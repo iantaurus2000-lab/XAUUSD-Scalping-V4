@@ -18,6 +18,7 @@ public class CandleChartView extends View {
     private boolean follow=true;
     private String timeframe="M1";
     private String marketName="XAUUSD";
+    private String visualTheme="DEFAULT";
     private final SimpleDateFormat time = new SimpleDateFormat("HH:mm", Locale.US);
     private double signalEntry, signalSl, signalTp1, signalTp2;
     private double positionEntry;
@@ -28,6 +29,11 @@ public class CandleChartView extends View {
         setBackgroundColor(Color.rgb(4,9,16));
     }
 
+    public void setVisualTheme(String theme){ visualTheme=RayyanTheme.normalize(theme); invalidate(); }
+    private boolean isLightTheme(){ return "LIGHT".equals(visualTheme); }
+    private boolean isDarkTheme(){ return "DARK".equals(visualTheme); }
+    private int chartTextColor(){ return isLightTheme()?Color.rgb(22,43,65):Color.WHITE; }
+    private int chartMutedTextColor(){ return isLightTheme()?Color.rgb(91,110,131):(isDarkTheme()?Color.rgb(177,195,215):Color.LTGRAY); }
     public void setTimeframe(String tf){ timeframe=tf==null?"M1":tf; invalidate(); }
     public void setMarket(String market){
         String next=(market==null||market.trim().isEmpty())?"XAUUSD":market.trim().toUpperCase(Locale.US);
@@ -145,15 +151,22 @@ public class CandleChartView extends View {
     @Override protected void onDraw(Canvas c){
         super.onDraw(c);
         float W=getWidth(),H=getHeight(),L=leftPad,R=W-rightAxis;
-        c.drawColor(Color.rgb(4,9,16));
-        p.setStyle(Paint.Style.FILL);p.setColor(Color.rgb(9,16,24));c.drawRect(R,0,W,H,p);
-        ln(c,R,0,R,H,Color.rgb(55,70,84),2);
-        bold(c,"PRICE",R+8,14,9,Color.LTGRAY);
+        int chartBg=isLightTheme()?Color.rgb(249,251,254):(isDarkTheme()?Color.rgb(5,9,17):Color.rgb(4,9,16));
+        int axisBg=isLightTheme()?Color.rgb(242,246,251):(isDarkTheme()?Color.rgb(9,17,29):Color.rgb(9,16,24));
+        int axisLine=isLightTheme()?Color.rgb(188,202,218):(isDarkTheme()?Color.rgb(44,62,85):Color.rgb(55,70,84));
+        int chartHeaderBg=isLightTheme()?Color.rgb(255,255,255):(isDarkTheme()?Color.rgb(10,20,36):Color.rgb(7,15,23));
+        int horizontalGrid=isLightTheme()?Color.rgb(220,229,239):(isDarkTheme()?Color.rgb(29,43,61):Color.rgb(29,39,50));
+        int verticalGrid=isLightTheme()?Color.rgb(231,237,244):(isDarkTheme()?Color.rgb(21,35,52):Color.rgb(21,31,41));
+        int chartCrosshair=isLightTheme()?Color.rgb(137,154,173):(isDarkTheme()?Color.rgb(100,120,146):Color.GRAY);
+        c.drawColor(chartBg);
+        p.setStyle(Paint.Style.FILL);p.setColor(axisBg);c.drawRect(R,0,W,H,p);
+        ln(c,R,0,R,H,axisLine,2);
+        bold(c,"PRICE",R+8,14,9,chartMutedTextColor());
 
         if(follow)positionLatestCandle();
         if(cs.isEmpty()){
             text(c,marketName+" • "+timeframe,L+7,22,12,Color.rgb(0,235,150));
-            text(c,"Menunggu candle XAUUSD...",L+15,H/2,17,Color.LTGRAY);
+            text(c,"Menunggu candle XAUUSD...",L+15,H/2,17,chartMutedTextColor());
             return;
         }
 
@@ -170,10 +183,10 @@ public class CandleChartView extends View {
         double pad=Math.max((hi-lo)*.10,.40);lo-=pad;hi+=pad;
 
         // Chart header, matching the reference MT5-like layout.
-        p.setColor(Color.rgb(7,15,23));c.drawRect(L,0,R,52,p);
+        p.setColor(chartHeaderBg);c.drawRect(L,0,R,52,p);
         bold(c,marketName+" • "+timeframe+"  ▾",L+7,16,12,Color.rgb(0,238,150));
         Candle last=cs.get(cs.size()-1);
-        text(c,"O "+f(last.o)+"   H "+f(last.h)+"   L "+f(last.l)+"   C "+f(last.c),L+7,34,10,Color.WHITE);
+        text(c,"O "+f(last.o)+"   H "+f(last.h)+"   L "+f(last.l)+"   C "+f(last.c),L+7,34,10,chartTextColor());
         double e9=emaValue(9),e21=emaValue(21),e50=emaValue(50);
         float lx0=L+7;
         if(showEMA9){text(c,"■ EMA 9",lx0,49,9,Color.rgb(255,193,7));text(c,f(e9),lx0+48,49,9,Color.rgb(255,193,7));lx0+=88;}
@@ -182,8 +195,8 @@ public class CandleChartView extends View {
 
         float T=55,B=mainBottom-22;
         // Main grid.
-        for(int i=0;i<=6;i++){float y=T+i*(B-T)/6;ln(c,L,y,R,y,Color.rgb(29,39,50),1);}
-        for(int i=0;i<=8;i++){float x=L+i*(R-L)/8;ln(c,x,T,x,B,Color.rgb(21,31,41),1);}
+        for(int i=0;i<=6;i++){float y=T+i*(B-T)/6;ln(c,L,y,R,y,horizontalGrid,1);}
+        for(int i=0;i<=8;i++){float x=L+i*(R-L)/8;ln(c,x,T,x,B,verticalGrid,1);}
 
         float step=cw+5;int n=cs.size();
         int st=Math.max(0,(int)Math.floor((-ox)/step)-3);
@@ -194,7 +207,7 @@ public class CandleChartView extends View {
             int col=z.c>=z.o?Color.rgb(0,220,145):Color.rgb(245,70,88);
             ln(c,x,yh,x,yl,col,2);p.setColor(col);p.setStyle(Paint.Style.FILL);
             c.drawRect(x-cw/2,Math.min(yo,yc),x+cw/2,Math.max(yo,yc)+1,p);
-            if(i==n-1){p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(3);p.setColor(Color.WHITE);c.drawRect(x-cw/2-2,Math.min(yo,yc)-2,x+cw/2+2,Math.max(yo,yc)+2,p);p.setStyle(Paint.Style.FILL);}
+            if(i==n-1){p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(3);p.setColor(chartTextColor());c.drawRect(x-cw/2-2,Math.min(yo,yc)-2,x+cw/2+2,Math.max(yo,yc)+2,p);p.setStyle(Paint.Style.FILL);}
         }
 
         if(showEMA9)ema(c,9,Color.rgb(255,193,7),L,R,T,B,lo,hi,step);
@@ -249,16 +262,16 @@ public class CandleChartView extends View {
         }
         if(showWickBos){
             text(c,"Liquidity Sweep",L+85,B-10,9,Color.YELLOW);
-            text(c,"Wick Rejection + BOS",L+85,B+4,9,Color.WHITE);
+            text(c,"Wick Rejection + BOS",L+85,B+4,9,chartTextColor());
         }
 
         double unit=niceStep(hi-lo),q0=Math.ceil(lo/unit)*unit;
         for(double q=q0;q<=hi+unit*.25;q+=unit){
-            float y=py(q,lo,hi,T,B);if(y>=T-2&&y<=B+2)text(c,f(q),R+7,y+4,10,Color.WHITE);
+            float y=py(q,lo,hi,T,B);if(y>=T-2&&y<=B+2)text(c,f(q),R+7,y+4,10,chartTextColor());
         }
         for(int i=0;i<6;i++){
             int idx=Math.min(n-1,i*(n-1)/5);float x=L+idx*step+ox+step/2;
-            if(x>=L&&x<=R)text(c,time.format(new Date(cs.get(idx).t)),x-15,B+16,9,Color.LTGRAY);
+            if(x>=L&&x<=R)text(c,time.format(new Date(cs.get(idx).t)),x-15,B+16,9,chartMutedTextColor());
         }
 
         // Indicator sub-panels: real RSI / MACD / ATR plots rather than text-only values.
@@ -267,23 +280,23 @@ public class CandleChartView extends View {
         if(showMACD){drawMacd(c,L,R,panelTop,panelTop+each);panelTop+=each+gap;}
         if(showATR){drawAtr(c,L,R,panelTop,panelTop+each);}
 
-        if(cx>0){ln(c,cx,T,cx,B,Color.GRAY,1);ln(c,L,cy,R,cy,Color.GRAY,1);}
+        if(cx>0){ln(c,cx,T,cx,B,chartCrosshair,1);ln(c,L,cy,R,cy,chartCrosshair,1);}
     }
 
     private void panelGrid(Canvas c,float L,float R,float T,float B){
-        p.setStyle(Paint.Style.FILL);p.setColor(Color.rgb(6,14,23));c.drawRect(L,T,R,B,p);
-        for(int i=0;i<=2;i++){float y=T+i*(B-T)/2;ln(c,L,y,R,y,Color.rgb(29,42,54),1);}
-        ln(c,R,T,R,B,Color.rgb(45,60,72),1);
+        p.setStyle(Paint.Style.FILL);p.setColor(isLightTheme()?Color.rgb(245,248,252):(isDarkTheme()?Color.rgb(9,16,27):Color.rgb(6,14,23)));c.drawRect(L,T,R,B,p);
+        for(int i=0;i<=2;i++){float y=T+i*(B-T)/2;ln(c,L,y,R,y,isLightTheme()?Color.rgb(221,230,240):(isDarkTheme()?Color.rgb(29,43,61):Color.rgb(29,42,54)),1);}
+        ln(c,R,T,R,B,isLightTheme()?Color.rgb(188,202,218):(isDarkTheme()?Color.rgb(44,62,85):Color.rgb(45,60,72)),1);
     }
 
     private void drawRsi(Canvas c,float L,float R,float T,float B){
         panelGrid(c,L,R,T,B);
-        text(c,"RSI (14)  "+f(rsi14()),L+7,T+16,10,Color.WHITE);
+        text(c,"RSI (14)  "+f(rsi14()),L+7,T+16,10,chartTextColor());
         ln(c,L,T+9,R,T+9,Color.rgb(160,90,210),1);
         ln(c,L,T+(B-T)*.5f,R,T+(B-T)*.5f,Color.rgb(120,90,150),1);
         ln(c,L,B-9,R,B-9,Color.rgb(160,90,210),1);
         drawSeries(c,L,R,T+8,B-8,30,70,true);
-        text(c,"70",R+10,T+12,9,Color.WHITE);text(c,"50",R+10,(T+B)/2+3,9,Color.WHITE);text(c,"30",R+10,B-5,9,Color.WHITE);
+        text(c,"70",R+10,T+12,9,chartTextColor());text(c,"50",R+10,(T+B)/2+3,9,chartTextColor());text(c,"30",R+10,B-5,9,chartTextColor());
     }
 
     private void drawSeries(Canvas c,float L,float R,float T,float B,double low,double high,boolean rsi){
@@ -300,7 +313,7 @@ public class CandleChartView extends View {
     private void drawMacd(Canvas c,float L,float R,float T,float B){
         panelGrid(c,L,R,T,B);
         double m=macd12_26(),sig=m*.65;
-        text(c,"MACD (12,26,9)  "+f(m)+"  "+f(sig),L+7,T+16,10,Color.WHITE);
+        text(c,"MACD (12,26,9)  "+f(m)+"  "+f(sig),L+7,T+16,10,chartTextColor());
         float z=(T+B)/2;ln(c,L,z,R,z,Color.rgb(80,95,110),1);
         int n=cs.size();if(n<3)return;float step=(R-L)/Math.max(1,n-1),px=0,py0=0;boolean first=true;
         for(int i=0;i<n;i++){
@@ -308,16 +321,16 @@ public class CandleChartView extends View {
             if(i%1==0){ln(c,x,z,x,y,v>=0?Color.rgb(0,225,150):Color.rgb(245,65,85),3);}
             if(!first)ln(c,px,py0,x,y,Color.rgb(0,190,240),1);px=x;py0=y;first=false;
         }
-        text(c,"0.00",R+10,z+3,9,Color.WHITE);
+        text(c,"0.00",R+10,z+3,9,chartTextColor());
     }
 
     private void drawAtr(Canvas c,float L,float R,float T,float B){
         panelGrid(c,L,R,T,B);
-        text(c,"ATR (14)  "+f(atr14()),L+7,T+16,10,Color.WHITE);
+        text(c,"ATR (14)  "+f(atr14()),L+7,T+16,10,chartTextColor());
         int n=cs.size();if(n<2)return;double max=0;for(int i=Math.max(1,n-20);i<n;i++)max=Math.max(max,trueRange(i));
         max=Math.max(max,.01);float step=(R-L)/Math.max(1,n-1),px=0,py0=0;boolean first=true;
         for(int i=1;i<n;i++){double v=trueRange(i);float x=L+i*step,y=(float)(B-5-(v/max)*(B-T-20));if(!first)ln(c,px,py0,x,y,Color.YELLOW,2);px=x;py0=y;first=false;}
-        text(c,f(max),R+10,T+14,9,Color.WHITE);
+        text(c,f(max),R+10,T+14,9,chartTextColor());
     }
 
     private double trueRange(int i){Candle z=cs.get(i),pr=cs.get(i-1);return Math.max(z.h-z.l,Math.max(Math.abs(z.h-pr.c),Math.abs(z.l-pr.c)));}
