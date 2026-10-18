@@ -74,9 +74,26 @@ public final class GatewayService extends Service {
                 if(png==null||png.length<8||png[0]!=(byte)0x89||png[1]!=0x50||png[2]!=0x4e||png[3]!=0x47){
                     writeResponse(socket,400,"text/plain; charset=utf-8","CHART ERROR PNG".getBytes(StandardCharsets.UTF_8));return;
                 }
-                try(FileOutputStream file=openFileOutput("mt5_chart.png",MODE_PRIVATE)){file.write(png);file.flush();}
+                // Write to a temporary file first so the UI never decodes a half-written PNG.
+                File temp=getFileStreamPath("mt5_chart.tmp");
+                File target=getFileStreamPath("mt5_chart.png");
+                try(FileOutputStream file=new FileOutputStream(temp,false)){
+                    file.write(png);file.flush();file.getFD().sync();
+                }
+                if(!temp.renameTo(target)){
+                    // Some Android filesystems do not replace an existing target on rename.
+                    if(target.exists()&&!target.delete()){
+                        temp.delete();
+                        writeResponse(socket,500,"text/plain; charset=utf-8","CHART ERROR REPLACE".getBytes(StandardCharsets.UTF_8));return;
+                    }
+                    if(!temp.renameTo(target)){
+                        temp.delete();
+                        writeResponse(socket,500,"text/plain; charset=utf-8","CHART ERROR COMMIT".getBytes(StandardCharsets.UTF_8));return;
+                    }
+                }
+                long receivedAt=System.currentTimeMillis();
                 getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit()
-                    .putLong("mt5_chart_received_ms",System.currentTimeMillis()).putInt("mt5_chart_bytes",png.length).apply();
+                    .putLong("mt5_chart_received_ms",receivedAt).putInt("mt5_chart_bytes",png.length).apply();
                 writeResponse(socket,200,"text/plain; charset=utf-8","CHART OK".getBytes(StandardCharsets.UTF_8));return;
             }
             if(path.startsWith("/chart/latest")){
