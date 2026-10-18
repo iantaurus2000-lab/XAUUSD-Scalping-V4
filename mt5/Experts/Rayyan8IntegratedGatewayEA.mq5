@@ -566,21 +566,6 @@ void uploadChartSnapshot(){
    if(code!=200)Print("RAYYAN8 chart upload failed HTTP=",code," err=",GetLastError());
 }
 
-bool httpGet(string path,string &out){
-   char data[],result[];
-   string responseHeaders="";
-   ResetLastError();
-   int code=WebRequest("GET",GatewayUrl+path,"",1800,data,result,responseHeaders);
-   if(code<0){Print("RAYYAN8 indicator gateway error=",GetLastError()," path=",path);return false;}
-   out=CharArrayToString(result,0,-1,CP_UTF8);
-   return code==200;
-}
-string field(string source,string key){
-   string prefix=key+"=";int a=StringFind(source,prefix);if(a<0)return "";
-   a+=StringLen(prefix);int b=StringFind(source,";",a);
-   if(b<0)b=StringLen(source);
-   return StringSubstr(source,a,b-a);
-}
 void applyAll(){
    setEma(hEma9,9,onEma9);
    setEma(hEma21,21,onEma21);
