@@ -38,6 +38,7 @@ public final class RayyanUiLayout {
         void onMenu(View anchor);
         void onTimeframe(String timeframe);
         void onLive();
+        void onLiveMenu(View anchor);
     }
 
     public static final class Header {
@@ -137,10 +138,26 @@ public final class RayyanUiLayout {
         priceBox.addView(priceView, new LinearLayout.LayoutParams(-1, dp(host, 36)));
         head.addView(priceBox, priceParams);
 
-        Button menu = button(host, "☰", 18);
+        LinearLayout rightActions = new LinearLayout(host);
+        rightActions.setOrientation(LinearLayout.VERTICAL);
+        rightActions.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(dp(host, 58), dp(host, 56));
+        rightParams.setMargins(dp(host, 1), 0, 0, 0);
+        head.addView(rightActions, rightParams);
+
+        Button liveMode = button(host, "● LIVE", 10);
+        liveMode.setTextColor(GREEN);
+        liveMode.setBackground(roundBackground(host, LIVE_BG, 9));
+        rightActions.addView(liveMode, new LinearLayout.LayoutParams(-1, dp(host, 25)));
+        liveMode.setOnClickListener(v -> {
+            if (listener != null) listener.onLiveMenu(liveMode);
+        });
+
+        Button menu = button(host, "☰", 15);
         menu.setContentDescription("Menu");
-        LinearLayout.LayoutParams menuParams = new LinearLayout.LayoutParams(dp(host, 42), dp(host, 48));
-        head.addView(menu, menuParams);
+        LinearLayout.LayoutParams menuParams = new LinearLayout.LayoutParams(-1, dp(host, 27));
+        menuParams.setMargins(0, dp(host, 2), 0, 0);
+        rightActions.addView(menu, menuParams);
         menu.setOnClickListener(v -> {
             if (listener != null) listener.onMenu(menu);
         });
