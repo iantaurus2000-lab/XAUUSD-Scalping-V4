@@ -53,6 +53,7 @@ public final class SignalEngine {
         boolean emaBuy=e9>e21&&e21>=e50, emaSell=e9<e21&&e21<=e50;
         // Spread uses the actual MT5 quote. Avoid a fixed $0.50 floor for all
         // instruments; allow at most 20% ATR or a tiny price-relative minimum.
+        double spread=QuoteSafety.valid(spreadBid,spreadAsk)?spreadAsk-spreadBid:0.0;
         boolean spreadOk=QuoteSafety.spreadAcceptable(spreadBid,spreadAsk,atr), atrOk=atr>0;
         boolean bosBuy=z.c>p.h, bosSell=z.c<p.l;
 
