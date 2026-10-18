@@ -40,6 +40,7 @@ void OnTimer(){
    }
 
    publishOrderState();
+   publishMarketQuotes();
 
    if(StringLen(cmd)<5){
       if(TimeCurrent()-lastDiag>=10){
@@ -337,6 +338,36 @@ void publishOrderState(){
          lastDiag=TimeCurrent();
          Print("RAYYAN4 STATE HTTP ERROR code=",code,
                " err=",GetLastError()," detail=",diagnostic);
+      }
+   }
+}
+
+// Publish broker quotes for all supported symbols. If a market is closed and
+// MqlTick.time_msc stops advancing, the APK locks new entries despite /next heartbeat.
+void publishMarketQuotes(){
+   string symbols[3]={"XAUUSDm","BTCUSDm","ETHUSDm"};
+   for(int i=0;i<ArraySize(symbols);i++){
+      string sym=symbols[i];
+      if(!SymbolSelect(sym,true)) continue;
+      MqlTick tick;
+      if(!SymbolInfoTick(sym,tick)||tick.bid<=0||tick.ask<tick.bid||tick.time_msc<=0) continue;
+      int digits=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS);
+      double point=SymbolInfoDouble(sym,SYMBOL_POINT);
+      if(point<=0) continue;
+      string path="/quote?symbol="+urlEncode(sym)+
+         "&bid="+urlEncode(DoubleToString(tick.bid,digits))+
+         "&ask="+urlEncode(DoubleToString(tick.ask,digits))+
+         "&point="+urlEncode(DoubleToString(point,10))+
+         "&digits="+IntegerToString(digits)+
+         "&tickms="+(string)tick.time_msc;
+      int code=-1;
+      string body="",diagnostic="";
+      if(!gatewayGet(path,code,body,diagnostic)||code!=200){
+         if(TimeCurrent()-lastDiag>=10){
+            lastDiag=TimeCurrent();
+            Print("RAYYAN4 QUOTE HTTP ERROR symbol=",sym," code=",code,
+                  " err=",GetLastError()," detail=",diagnostic);
+         }
       }
    }
 }

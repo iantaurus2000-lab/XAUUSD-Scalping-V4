@@ -3,7 +3,13 @@ package com.xauusd.mobileengine;
 public final class SignalEngine {
     private SignalEngine() {}
 
-    public static SignalResult evaluate(Candle[] m1, Candle[] m5, double bid, double ask) {
+    public static SignalResult evaluate(Candle[] m1,Candle[] m5,double bid,double ask){
+        return evaluate(m1,m5,bid,ask,bid,ask);
+    }
+
+    /** Candle-feed prices define levels; independent broker quotes define spread safety. */
+    public static SignalResult evaluate(Candle[] m1,Candle[] m5,double bid,double ask,
+                                        double spreadBid,double spreadAsk) {
         if (m1 == null || m1.length < 30 || m5 == null || m5.length < 30)
             return new SignalResult("WAIT", "NEUTRAL", 0, 0, 0, 0, 0, 0, 1,
                 "Menunggu data M1/M5", false, false, false, false, false, false, false, false);
@@ -45,8 +51,9 @@ public final class SignalEngine {
         boolean rsiBuy=rsi>=50&&rsi<=72, rsiSell=rsi<=50&&rsi>=28;
         boolean macdBuy=macd>0, macdSell=macd<0;
         boolean emaBuy=e9>e21&&e21>=e50, emaSell=e9<e21&&e21<=e50;
-        double spread=ask>0&&bid>0?ask-bid:0;
-        boolean spreadOk=spread<=Math.max(0.50,atr*0.20), atrOk=atr>0;
+        // Spread uses the actual MT5 quote. Avoid a fixed $0.50 floor for all
+        // instruments; allow at most 20% ATR or a tiny price-relative minimum.
+        boolean spreadOk=QuoteSafety.spreadAcceptable(spreadBid,spreadAsk,atr), atrOk=atr>0;
         boolean bosBuy=z.c>p.h, bosSell=z.c<p.l;
 
         // A pronounced rejection wick is the primary trigger. Indicators contribute to

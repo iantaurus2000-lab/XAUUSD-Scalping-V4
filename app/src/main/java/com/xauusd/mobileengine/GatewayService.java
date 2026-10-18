@@ -74,6 +74,8 @@ public final class GatewayService extends Service {
                 out=ack(id,result,detail);
             }else if(path.startsWith("/state")){
                 out=receiveState(path);
+            }else if(path.startsWith("/quote")){
+                out=receiveQuote(path);
             }else{
                 out="Rayyan4 gateway OK";
             }
@@ -116,6 +118,32 @@ public final class GatewayService extends Service {
                 (symbol==null||symbol.isEmpty()?"":" symbol="+symbol));
         }
         return "STATE OK";
+    }
+
+    /** Persist real MT5 Bid/Ask, SYMBOL_POINT and terminal tick time. */
+    private synchronized String receiveQuote(String path){
+        String symbol=query(path,"symbol");
+        if(!"XAUUSDm".equals(symbol)&&!"BTCUSDm".equals(symbol)&&!"ETHUSDm".equals(symbol))
+            return "QUOTE ERROR SYMBOL";
+        try{
+            double bid=Double.parseDouble(query(path,"bid"));
+            double ask=Double.parseDouble(query(path,"ask"));
+            double point=Double.parseDouble(query(path,"point"));
+            int digits=Integer.parseInt(query(path,"digits"));
+            long tickMs=Long.parseLong(query(path,"tickms"));
+            long now=System.currentTimeMillis();
+            if(!QuoteSafety.valid(bid,ask)||point<=0.0||digits<0||digits>8||tickMs<=0L)
+                return "QUOTE ERROR VALUES";
+            getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit()
+                .putString("broker_quote_bid_"+symbol,Double.toString(bid))
+                .putString("broker_quote_ask_"+symbol,Double.toString(ask))
+                .putString("broker_quote_point_"+symbol,Double.toString(point))
+                .putInt("broker_quote_digits_"+symbol,digits)
+                .putLong("broker_quote_tick_ms_"+symbol,tickMs)
+                .putLong("broker_quote_received_ms_"+symbol,now)
+                .apply();
+            return "QUOTE OK";
+        }catch(Exception e){return "QUOTE ERROR FORMAT";}
     }
 
     private String first(String l){

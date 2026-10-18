@@ -20,7 +20,9 @@ public class BiquoteClient {
     public static double[] tick(String market) throws Exception {
         String symbol=normalizeMarket(market);
         JSONObject j=new JSONObject(get("https://biquote.io/api/"+symbol));
-        return new double[]{j.getDouble("bid"),j.getDouble("ask")};
+        double bid=j.getDouble("bid"), ask=j.getDouble("ask");
+        if(!QuoteSafety.valid(bid,ask))throw new IOException("Feed quote invalid for "+symbol);
+        return new double[]{bid,ask};
     }
 
     private static String normalizeMarket(String market) throws Exception {

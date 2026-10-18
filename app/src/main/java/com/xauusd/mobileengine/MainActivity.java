@@ -20,6 +20,9 @@ public class MainActivity extends Activity {
     private CandleChartView chart;
     private TextView priceView, spreadView, status, signalSummary, scoreView, entryView, slView, tp1View, tp2View, marketTitle, marketSubtitle;
     private double lastHeaderPrice=Double.NaN;
+    private String lastSpreadLabel="";
+    private long lastFeedQuoteAt=0L;
+    private static final long ORDER_STATE_MAX_AGE_MS=8000L;
     private Button signalSideButton, buyLimitBtn, sellLimitBtn;
     private TextView entryReadyView;
     private final Handler signalUiHandler = new Handler(Looper.getMainLooper());
@@ -45,6 +48,7 @@ public class MainActivity extends Activity {
     private boolean telegramEnabled;
     private String selectedTf="M1";
     private String selectedMarket="XAUUSD";
+    private Candle[] m1Data=new Candle[0];
     private Candle[] m5Data=new Candle[0];
     private SignalResult lastSignal;
     private final Map<String,Button> tfButtons=new HashMap<>();
@@ -267,7 +271,7 @@ public class MainActivity extends Activity {
     }
 
     void updateHeaderPrice(double bid,double ask){
-        if(priceView==null||!Double.isFinite(bid)||!Double.isFinite(ask)||bid<=0||ask<=0)return;
+        if(priceView==null||!QuoteSafety.valid(bid,ask))return;
         double current=(bid+ask)/2.0;
         int color=Color.CYAN;
         if(!Double.isNaN(lastHeaderPrice)){
@@ -277,6 +281,92 @@ public class MainActivity extends Activity {
         priceView.setText(String.format(Locale.US,"%,.2f",current));
         priceView.setTextColor(color);
         lastHeaderPrice=current;
+    }
+
+    /** Last valid MT5 Bid/Ask/point plus terminal-tick and LAN-receipt freshness. */
+    private double[] cachedBrokerQuote(String market){
+        SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        String symbol=mt5SymbolForMarket(market);
+        double bid=preferenceDouble(gp,"broker_quote_bid_"+symbol,0.0);
+        double ask=preferenceDouble(gp,"broker_quote_ask_"+symbol,0.0);
+        return QuoteSafety.valid(bid,ask)?new double[]{bid,ask}:null;
+    }
+
+    private double[] freshBrokerQuote(String market){
+        SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        String symbol=mt5SymbolForMarket(market);
+        long received=gp.getLong("broker_quote_received_ms_"+symbol,0L);
+        long tickAt=gp.getLong("broker_quote_tick_ms_"+symbol,0L);
+        if(!QuoteSafety.isFresh(received,tickAt,System.currentTimeMillis()))return null;
+        return cachedBrokerQuote(market);
+    }
+
+    private boolean hasFreshEntryQuotes(){
+        long now=System.currentTimeMillis();
+        boolean feedFresh=lastFeedQuoteAt>0L&&now>=lastFeedQuoteAt
+            &&now-lastFeedQuoteAt<=5000L&&chart!=null
+            &&QuoteSafety.valid(chart.getBid(),chart.getAsk());
+        return feedFresh&&freshBrokerQuote(selectedMarket)!=null;
+    }
+
+    /** Chart prices remain in the candle feed's scale; spread uses real broker quotes. */
+    private void applyQuoteSnapshot(String market,double[] feedTick){
+        if(!market.equals(selectedMarket))return;
+        long now=System.currentTimeMillis();
+        if(feedTick!=null&&feedTick.length>=2&&QuoteSafety.valid(feedTick[0],feedTick[1])){
+            lastFeedQuoteAt=now;
+            chart.setTick(feedTick[0],feedTick[1],selectedTf);
+            updateHeaderPrice(feedTick[0],feedTick[1]);
+        }
+        boolean feedFresh=lastFeedQuoteAt>0L&&now>=lastFeedQuoteAt
+            &&now-lastFeedQuoteAt<=5000L&&chart!=null
+            &&QuoteSafety.valid(chart.getBid(),chart.getAsk());
+        double[] broker=freshBrokerQuote(market);
+        if(broker!=null){
+            SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+            double spread=broker[1]-broker[0];
+            double point=preferenceDouble(gp,"broker_quote_point_"+mt5SymbolForMarket(market),0.0);
+            lastSpreadLabel=point>0.0
+                ?String.format(Locale.US,"SPREAD %.2f • %.0f MT5 points",spread,spread/point)
+                :String.format(Locale.US,"SPREAD %.2f • MT5",spread);
+            if(spreadView!=null)spreadView.setText(feedFresh?lastSpreadLabel:lastSpreadLabel+" • CHART FEED STALE");
+        }else if(spreadView!=null){
+            spreadView.setText(lastSpreadLabel.isEmpty()?"SPREAD -- • MT5 STALE":lastSpreadLabel+" • MT5 STALE");
+        }
+        if(!feedFresh||broker==null){
+            status.setText(!feedFresh?"● CHART FEED STALE • ENTRY LOCKED • "+selectedTf
+                :"● MT5 QUOTE STALE • ENTRY LOCKED • "+selectedTf);
+            resetEntryReadyUi(!feedFresh?"chart price stale":"harga MT5 belum segar");
+        }else{
+            status.setText("● MT5 + CHART LIVE • "+market+" • "+selectedTf);
+        }
+        syncBrokerEntryLine();
+        if(m1Data!=null&&m1Data.length>=30&&m5Data!=null&&m5Data.length>=30)
+            updateSignal(m1Data,m5Data);
+    }
+
+    /** Keep last prices/spread visible when the feed pauses, but block all new entries. */
+    private void markQuoteStale(){
+        if(spreadView!=null)spreadView.setText(lastSpreadLabel.isEmpty()
+            ?"SPREAD -- • STALE":lastSpreadLabel+" • STALE");
+        if(status!=null)status.setText("● QUOTE STALE • ENTRY LOCKED • "+selectedTf);
+        resetEntryReadyUi("harga belum segar");
+    }
+
+    /** OPEN ENTRY is tied to fresh MT5 state, then translated to chart-feed price scale. */
+    private void syncBrokerEntryLine(){
+        if(chart==null)return;
+        SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        long now=System.currentTimeMillis(),at=gp.getLong("ea_order_state_at",0L);
+        if(at<=0L||now<at||now-at>ORDER_STATE_MAX_AGE_MS)return;
+        String state=gp.getString("ea_order_state","UNKNOWN");
+        String orderSymbol=gp.getString("ea_order_state_symbol","");
+        double mt5Entry=preferenceDouble(gp,"ea_order_state_price",0.0);
+        double[] broker=cachedBrokerQuote(selectedMarket);
+        double line=BrokerOrderLinePolicy.displayPrice(state,mt5SymbolForMarket(selectedMarket),
+            orderSymbol,mt5Entry,chart.getBid(),chart.getAsk(),
+            broker==null?0.0:broker[0],broker==null?0.0:broker[1]);
+        chart.setPositionEntryLevel(line);
     }
 
     void addTfButton(LinearLayout parent,String tf){
@@ -308,11 +398,13 @@ public class MainActivity extends Activity {
             try{
                 String market=selectedMarket;
                 Candle[] c=BiquoteClient.candles(market,interval);
+                Candle[] m1="M1".equals(tf)?c:BiquoteClient.candles(market,"1m");
                 Candle[] m5="M5".equals(tf)?c:BiquoteClient.candles(market,"5m");
                 runOnUiThread(()->{
-                    if(!tf.equals(selectedTf))return;
-                    chart.setData(c);chart.goLive();m5Data=m5;updateSignal(c,m5Data);
-                    status.setText("● LIVE • RAYYAN4 • "+tf);
+                    if(!tf.equals(selectedTf)||!market.equals(selectedMarket))return;
+                    chart.setData(c);chart.goLive();m1Data=m1;m5Data=m5;
+                    syncBrokerEntryLine();updateSignal(m1Data,m5Data);
+                    status.setText("● CHART LOADED • "+market+" • "+tf);
                 });
             }catch(Exception e){runOnUiThread(()->{status.setText("● OFFLINE • "+tf+" • RETRYING");resetEntryReadyUi("feed offline • menunggu data");});}
         }).start();
@@ -320,18 +412,14 @@ public class MainActivity extends Activity {
         if(ex==null){
             ex=Executors.newSingleThreadScheduledExecutor();
             ex.scheduleAtFixedRate(()->{
-                try{
-                    String market=selectedMarket;
-                    double[] t=BiquoteClient.tick(market);
-                    runOnUiThread(()->{
-                        if(!market.equals(selectedMarket))return;
-                        chart.setTick(t[0],t[1],selectedTf);
-                        if(!chart.isEmpty())updateSignal(chart.getDataSnapshot(),m5Data);
-                        updateHeaderPrice(t[0],t[1]);
-                        spreadView.setText(String.format(Locale.US,"SPREAD  %.2f",t[1]-t[0]));
-                        status.setText("● LIVE • RAYYAN4 • "+selectedTf);
-                    });
-                }catch(Exception e){runOnUiThread(()->{status.setText("● OFFLINE • RETRYING • "+selectedTf);resetEntryReadyUi("feed offline • menunggu data");});}
+                String market=selectedMarket;
+                double[] feedTick=null;
+                try{feedTick=BiquoteClient.tick(market);}catch(Exception ignored){}
+                final double[] fallbackTick=feedTick;
+                runOnUiThread(()->{
+                    if(!market.equals(selectedMarket))return;
+                    applyQuoteSnapshot(market,fallbackTick);
+                });
             },1,1,TimeUnit.SECONDS);
         }
 
@@ -346,15 +434,16 @@ public class MainActivity extends Activity {
                 final String tfNow=selectedTf;
                 try{
                     Candle[] fresh=BiquoteClient.candles(market,interval(tfNow));
+                    Candle[] freshM1="M1".equals(tfNow)?fresh:BiquoteClient.candles(market,"1m");
                     Candle[] freshM5="M5".equals(tfNow)?fresh:BiquoteClient.candles(market,"5m");
                     runOnUiThread(()->{
                         if(!market.equals(selectedMarket)||!tfNow.equals(selectedTf))return;
                         boolean wasFollowing=chart.isFollow();
                         chart.setData(fresh);
                         if(wasFollowing)chart.goLive();
-                        m5Data=freshM5;
-                        updateSignal(chart.getDataSnapshot(),m5Data);
-                        status.setText("● LIVE • "+market+" • "+tfNow+" • OHLC refreshed");
+                        m1Data=freshM1;m5Data=freshM5;
+                        syncBrokerEntryLine();updateSignal(m1Data,m5Data);
+                        status.setText("● OHLC REFRESHED • "+market+" • "+tfNow);
                     });
                 }catch(Exception e){
                     runOnUiThread(()->{
@@ -395,20 +484,26 @@ public class MainActivity extends Activity {
     }
 
     void executeLimitForSide(String requestedSide){
-        // Guard the entire button path: malformed live candle/signal data must
-        // show an error instead of terminating MainActivity.
+        // Keep signal levels in their candle-feed scale, but require an up-to-date
+        // broker quote and chart quote before enqueuing a LIMIT.
         try {
-            if(chart==null || chart.isEmpty() || m5Data==null || m5Data.length<30){
+            double[] broker=freshBrokerQuote(selectedMarket);
+            if(broker==null||!hasFreshEntryQuotes()){
+                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT: broker/chart quote tidak segar");
+                Toast.makeText(this,"Harga broker/chart belum segar • order diblokir",Toast.LENGTH_LONG).show();
+                return;
+            }
+            if(chart==null || chart.isEmpty() || m1Data==null || m1Data.length<30 || m5Data==null || m5Data.length<30){
                 AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT: data M1/M5 belum siap");
                 Toast.makeText(this,"Data M1/M5 belum siap",Toast.LENGTH_SHORT).show();
                 return;
             }
-            Candle[] liveM1=chart.getDataSnapshot();
+            Candle[] liveM1=m1Data;
             if(liveM1==null || liveM1.length<30){
                 Toast.makeText(this,"Data candle M1 belum cukup",Toast.LENGTH_SHORT).show();
                 return;
             }
-            SignalResult s=SignalEngine.evaluate(liveM1,m5Data,chart.getBid(),chart.getAsk());
+            SignalResult s=SignalEngine.evaluate(liveM1,m5Data,chart.getBid(),chart.getAsk(),broker[0],broker[1]);
             if(!isAutoEntryEligible(s,chart.getBid(),chart.getAsk(),"M1".equals(selectedTf))){
                 AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT: setup belum memenuhi READY Smart Auto Entry");
                 Toast.makeText(this,"Belum ada wick READY • order tidak dikirim",Toast.LENGTH_SHORT).show();
@@ -442,13 +537,18 @@ public class MainActivity extends Activity {
     void executeCurrentSignal(){
         // Manual chart-tap entry only. AUTO LIMIT has its own direct path below and must never wait for a confirmation dialog.
         // Re-evaluate the signal immediately before queueing so stale levels are not used.
-        if(chart==null || chart.isEmpty() || m5Data==null || m5Data.length<30){
+        if(chart==null || m1Data==null || m1Data.length<30 || m5Data==null || m5Data.length<30){
             Toast.makeText(this,"Data M1/M5 belum siap",Toast.LENGTH_SHORT).show();
             return;
         }
-        Candle[] liveM1=chart.getDataSnapshot();
+        double[] broker=freshBrokerQuote(selectedMarket);
+        if(broker==null||!hasFreshEntryQuotes()){
+            Toast.makeText(this,"Harga broker/chart belum segar • order diblokir",Toast.LENGTH_LONG).show();
+            return;
+        }
+        Candle[] liveM1=m1Data;
         double liveBid=chart.getBid(), liveAsk=chart.getAsk();
-        SignalResult s=SignalEngine.evaluate(liveM1,m5Data,liveBid,liveAsk);
+        SignalResult s=SignalEngine.evaluate(liveM1,m5Data,liveBid,liveAsk,broker[0],broker[1]);
         lastSignal=s;
 
         if(!isAutoEntryEligible(s,liveBid,liveAsk,"M1".equals(selectedTf))){
@@ -464,6 +564,7 @@ public class MainActivity extends Activity {
 
     private boolean isEntryReady(SignalResult signal,double bid,double ask){
         if(signal==null||bid<=0||ask<=0)return false;
+        if(!hasFreshEntryQuotes())return false;
         if(!"BUY".equals(signal.side)&&!"SELL".equals(signal.side))return false;
         int score=Math.max(0,Math.min(100,signal.score));
         if(score<getMinimumEntryConfidence()||!signal.spreadFilter||!signal.atrFilter)return false;
@@ -533,7 +634,9 @@ public class MainActivity extends Activity {
             readySide="WAIT";
             blinkOn=false;
             boolean hasSide=signal!=null&&("BUY".equals(signal.side)||"SELL".equals(signal.side));
-            entryReadyView.setText(hasSide?"WAIT • "+signal.side+" setup belum memenuhi filter/level":"WAIT • menunggu setup valid");
+            entryReadyView.setText(!hasFreshEntryQuotes()
+                ?"WAIT • harga broker/chart belum segar atau pasar tutup"
+                :(hasSide?"WAIT • "+signal.side+" setup belum memenuhi filter/level":"WAIT • menunggu setup valid"));
             entryReadyView.setTextColor(Color.rgb(255,205,95));
             entryReadyView.setBackground(roundBg(Color.rgb(35,38,35),10));
         }
@@ -580,8 +683,12 @@ public class MainActivity extends Activity {
         sellLimitBtn.setBackground(entryButtonBg(sellColor,sellActive,10));
         buyLimitBtn.setText(buyActive?"● BUY LIMIT":"○ BUY LIMIT");
         sellLimitBtn.setText(sellActive?"● SELL LIMIT":"○ SELL LIMIT");
-        buyLimitBtn.setTextColor(buyActive||!entryReady?Color.WHITE:Color.rgb(158,172,181));
-        sellLimitBtn.setTextColor(sellActive||!entryReady?Color.WHITE:Color.rgb(158,172,181));
+        buyLimitBtn.setTextColor(buyActive?Color.WHITE:Color.rgb(125,139,148));
+        sellLimitBtn.setTextColor(sellActive?Color.WHITE:Color.rgb(125,139,148));
+        buyLimitBtn.setEnabled(buyActive);
+        sellLimitBtn.setEnabled(sellActive);
+        buyLimitBtn.setAlpha(buyActive?1.0f:0.62f);
+        sellLimitBtn.setAlpha(sellActive?1.0f:0.62f);
     }
 
     private double preferenceDouble(SharedPreferences p,String key,double fallback){
@@ -649,9 +756,12 @@ public class MainActivity extends Activity {
     private void processAutoLimit(SignalResult s,Candle[] m1,Candle[] m5,
                                   double bid,double ask,long candleStamp){
         SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        if(!gp.getBoolean("auto",false)
-                ||!"READY".equals(gp.getString("operation_mode","REST")))return;
-        if(!"M1".equals(selectedTf)||m1==null||m1.length<30||m5==null||m5.length<30)return;
+        // Keep monitoring/cancelling existing exposure even if AUTO is paused or the
+        // chart timeframe changes. New/replacement entries still require AUTO+READY+M1.
+        boolean autoEnabled=gp.getBoolean("auto",false)
+                &&"READY".equals(gp.getString("operation_mode","REST"))
+                &&"M1".equals(selectedTf);
+        if(m1==null||m1.length<30||m5==null||m5.length<30)return;
 
         long now=System.currentTimeMillis();
         boolean eaOnline=GatewayService.isEaRecentlyOnline(this);
@@ -759,7 +869,8 @@ public class MainActivity extends Activity {
 
             if(!gp.getBoolean("smart_reentry_enabled",true))return;
             int elapsed=SmartLimitReentry.elapsedM1Bars(startedAt,candleStamp);
-            boolean movedAway=SmartLimitReentry.movedAwayInFavor(sideNow,activeEntry,bid,ask,atr);
+            boolean movedAway=hasFreshEntryQuotes()
+                &&SmartLimitReentry.movedAwayInFavor(sideNow,activeEntry,bid,ask,atr);
             boolean continuation=SmartLimitReentry.hasContinuation(m1,sideNow)
                 &&m5DoesNotOppose(sideNow,s.m5Bias);
             boolean validFresh=isAutoEntryEligible(s,bid,ask,true)&&s.side.equals(sideNow)
@@ -768,7 +879,7 @@ public class MainActivity extends Activity {
             double maxDistanceAtr=smartReentryMaxDistanceAtr(gp);
             boolean withinMaxDistance=SmartLimitReentry.withinMaxDistanceFromOriginalEntry(
                 activeEntry,s.entry,atr,maxDistanceAtr);
-            boolean replacement=elapsed>=2&&elapsed<smartReentryMaxAgeBars(gp)
+            boolean replacement=autoEnabled&&elapsed>=2&&elapsed<smartReentryMaxAgeBars(gp)
                 &&movedAway&&continuation&&validFresh&&withinMaxDistance
                 &&SmartLimitReentry.materiallyDifferentEntry(activeEntry,s.entry,atr);
             boolean structureInvalid=("BUY".equals(sideNow)&&("SELL".equals(s.side)||"SELL".equals(s.m5Bias)))
@@ -839,7 +950,7 @@ public class MainActivity extends Activity {
                 if("CANCELLED".equals(result)){
                     // Wait for a fresh EA snapshot proving the original ticket disappeared.
                     if(!stateFresh||!activeId.equals(remoteId)||!"NONE".equals(remoteState))return;
-                    boolean allow=gp.getBoolean("smart_reentry_allowed",false);
+                    boolean allow=autoEnabled&&gp.getBoolean("smart_reentry_allowed",false);
                     boolean candidate=allow&&isAutoEntryEligible(s,bid,ask,true)
                         &&readyCandleKey.equals(selectedMarket+"|"+selectedTf+"|"+candleStamp)
                         &&readyCandleSide.equals(s.side)
@@ -915,6 +1026,7 @@ public class MainActivity extends Activity {
 
         // Fail closed if the EA snapshot is not a verified flat state.
         if(!"NONE".equals(remoteState))return;
+        if(!autoEnabled)return;
         if(!"NONE".equals(remoteId)&&remoteId.isEmpty())return;
         if(!queueIsFree(gp))return;
 
@@ -962,13 +1074,19 @@ public class MainActivity extends Activity {
     }
 
     void updateSignal(Candle[] m1,Candle[] m5){
+        syncBrokerEntryLine();
         if(m1==null||m1.length<30||m5==null||m5.length<30){
             if(scoreView!=null)scoreView.setText("SCORE 0%");
             resetEntryReadyUi("menunggu data M1/M5");
             return;
         }
         double bid=chart==null?0:chart.getBid(),ask=chart==null?0:chart.getAsk();
-        SignalResult previous=lastSignal;lastSignal=SignalEngine.evaluate(m1,m5,bid,ask);SignalResult s=lastSignal;
+        double[] brokerForSignal=freshBrokerQuote(selectedMarket);
+        double spreadBid=brokerForSignal==null?0.0:brokerForSignal[0];
+        double spreadAsk=brokerForSignal==null?0.0:brokerForSignal[1];
+        SignalResult previous=lastSignal;
+        lastSignal=SignalEngine.evaluate(m1,m5,bid,ask,spreadBid,spreadAsk);
+        SignalResult s=lastSignal;
 
         int displayScore=Math.max(0,Math.min(100,s.score));
         scoreView.setText("SCORE "+displayScore+"%");
@@ -1001,9 +1119,7 @@ public class MainActivity extends Activity {
             String readyTrackKey=selectedMarket+"|"+readyCandleKey+"|"+readyCandleSide;
             SharedPreferences trackPrefs=getSharedPreferences("rayyan4_winrate",MODE_PRIVATE);
             if(!readyTrackKey.equals(trackPrefs.getString("last_ready_key",""))){
-                if(WinRateTracker.record(this,"READY",selectedMarket,s.side,s.entry,s.sl,s.tp1,candleStamp)){
-                    chart.setPositionEntryLevel(s.entry);
-                }
+                WinRateTracker.record(this,"READY",selectedMarket,s.side,s.entry,s.sl,s.tp1,candleStamp);
                 trackPrefs.edit().putString("last_ready_key",readyTrackKey).apply();
             }
         }
@@ -1247,7 +1363,7 @@ public class MainActivity extends Activity {
             TextView icon=tv(icons[i],22);icon.setTextColor(Color.rgb(0,225,180));icon.setGravity(Gravity.CENTER);row.addView(icon,new LinearLayout.LayoutParams(42,-1));
             LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setGravity(Gravity.CENTER_VERTICAL);TextView name=tv(market,16);name.setTextColor(Color.WHITE);name.setTypeface(null,Typeface.BOLD);labels.addView(name);TextView sub=tv(details[i],12);sub.setTextColor(Color.LTGRAY);labels.addView(sub);row.addView(labels,new LinearLayout.LayoutParams(0,-1,1));
             TextView mark=tv(selected?"✓ ACTIVE":"SELECT  ›",10);mark.setTextColor(selected?Color.rgb(0,235,160):Color.CYAN);row.addView(mark);
-            row.setOnClickListener(v->{if(market.equals(selectedMarket)){d.dismiss();return;}selectedMarket=market;lastHeaderPrice=Double.NaN;if(priceView!=null){priceView.setText("--");priceView.setTextColor(Color.CYAN);}prefs.edit().putString("market",selectedMarket).apply();if(marketTitle!=null)marketTitle.setText(selectedMarket);if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));if(chart!=null)chart.setMarket(selectedMarket);if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);lastSignal=null;resetEntryReadyUi("menunggu data market");d.dismiss();load(interval(selectedTf),selectedTf);AppLog.add(this,"MARKET","selected "+selectedMarket+" (APK feed only; MT5 symbol mapping deferred)");});
+            row.setOnClickListener(v->{if(market.equals(selectedMarket)){d.dismiss();return;}selectedMarket=market;lastHeaderPrice=Double.NaN;lastSpreadLabel="";lastFeedQuoteAt=0L;m1Data=new Candle[0];m5Data=new Candle[0];if(priceView!=null){priceView.setText("--");priceView.setTextColor(Color.CYAN);}if(spreadView!=null)spreadView.setText("SPREAD --");prefs.edit().putString("market",selectedMarket).apply();if(marketTitle!=null)marketTitle.setText(selectedMarket);if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));if(chart!=null){chart.setMarket(selectedMarket);chart.setData(new Candle[0]);chart.clearQuote();chart.setPositionEntryLevel(0);}if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);lastSignal=null;resetEntryReadyUi("menunggu data market");d.dismiss();load(interval(selectedTf),selectedTf);AppLog.add(this,"MARKET","selected "+selectedMarket+" • broker/chart quotes separated");});
         }
         d.show();if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-36,430),-2);}
     }
@@ -1571,6 +1687,11 @@ public class MainActivity extends Activity {
 
     boolean queueLimit(String side,double volume,double entry,double sl,double tp){
         try {
+        if(chart==null||!hasFreshEntryQuotes()){
+            AppLog.add(this,"ORDER_BLOCKED","queue LIMIT diblokir: kuotasi MT5/chart tidak segar");
+            Toast.makeText(this,"Kuotasi MT5/chart belum segar • order tidak diantrekan",Toast.LENGTH_LONG).show();
+            return false;
+        }
         side=side==null?"":side.trim().toUpperCase(Locale.US);
         if("BUY".equals(side))side="BUY_LIMIT";
         if("SELL".equals(side))side="SELL_LIMIT";
@@ -1624,7 +1745,8 @@ public class MainActivity extends Activity {
         String trackedSide=side.startsWith("BUY")?"BUY":"SELL";
         long trackedCandle=chart!=null&&!chart.isEmpty()?chart.getDataSnapshot()[chart.getDataSnapshot().length-1].t:System.currentTimeMillis();
         WinRateTracker.record(this,queueOrigin,selectedMarket,trackedSide,entry,sl,queueOutcomeTarget>0?queueOutcomeTarget:tp,trackedCandle);
-        if(chart!=null)chart.setPositionEntryLevel(entry);
+        // A queued request is not yet a live broker order. The EA state heartbeat
+        // owns OPEN ENTRY display and removes it after cancel/close/rejection.
         AppLog.add(this,"ORDER","queued "+cmd);notifyLocal("MT5 "+side,"Entry queued for demo EA");
         Toast.makeText(this,"Entry masuk antrean • EA MT5 akan memproses otomatis",Toast.LENGTH_SHORT).show();
         return true;

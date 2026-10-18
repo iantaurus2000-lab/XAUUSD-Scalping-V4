@@ -29,10 +29,16 @@ public class CandleChartView extends View {
     }
 
     public void setTimeframe(String tf){ timeframe=tf==null?"M1":tf; invalidate(); }
-    public void setMarket(String market){ marketName=(market==null||market.trim().isEmpty())?"XAUUSD":market.trim().toUpperCase(Locale.US); invalidate(); }
+    public void setMarket(String market){
+        String next=(market==null||market.trim().isEmpty())?"XAUUSD":market.trim().toUpperCase(Locale.US);
+        if(!next.equals(marketName)){bid=0;ask=0;positionEntry=0;signalActive=false;}
+        marketName=next;invalidate();
+    }
     public void setData(Candle[] a){ cs.clear(); if(a!=null) Collections.addAll(cs,a); invalidate(); }
 
+    /** Invalid/empty ticks never erase last valid Bid/Ask lines or candle close. */
     public void setTick(double b,double a,String tf){
+        if(!QuoteSafety.valid(b,a))return;
         bid=b; ask=a; if(tf!=null) timeframe=tf;
         if(!cs.isEmpty()){
             Candle z=cs.get(cs.size()-1); double q=(b+a)/2.0;
@@ -40,6 +46,7 @@ public class CandleChartView extends View {
         }
         invalidate();
     }
+    public void clearQuote(){bid=0;ask=0;invalidate();}
 
     public void goLive(){ follow=true; oy=0; positionLatestCandle(); invalidate(); }
     public boolean isEmpty(){ return cs.isEmpty(); }
