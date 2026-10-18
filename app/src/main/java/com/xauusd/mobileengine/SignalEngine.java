@@ -71,10 +71,20 @@ public final class SignalEngine {
         boolean spreadOk=QuoteSafety.spreadAcceptable(spreadBid,spreadAsk,atr), atrOk=atr>0;
         boolean bosBuy=z.c>p.h, bosSell=z.c<p.l;
 
-        // Wick / early sweep is the trigger. Indicators give context, not a one-sided veto.
+        // Score BUY and SELL wick evidence independently. If both shapes exist on one
+        // forming candle, select the clearer rejection instead of forcing WAIT or defaulting
+        // toward SELL. The formulas are mirrored so BUY isn't disadvantaged by M5 bias.
+        double buyWickRatio=lower/Math.max(wickBody,1e-12);
+        double sellWickRatio=upper/Math.max(wickBody,1e-12);
+        double buyEvidence=(rejectBuy?2.0:0.0)+(earlyBuy?1.5:0.0)+(swBuy?1.25:0.0)
+            +Math.min(2.0,buyWickRatio*0.35)
+            +Math.max(0.0,Math.min(1.0,recoveryFromLow/Math.max(atr*0.25,1e-12)));
+        double sellEvidence=(rejectSell?2.0:0.0)+(earlySell?1.5:0.0)+(swSell?1.25:0.0)
+            +Math.min(2.0,sellWickRatio*0.35)
+            +Math.max(0.0,Math.min(1.0,recoveryFromHigh/Math.max(atr*0.25,1e-12)));
         String side="WAIT";
-        if (needleBuy && !needleSell) side="BUY";
-        else if (needleSell && !needleBuy) side="SELL";
+        if(needleBuy&&(!needleSell||buyEvidence>sellEvidence+0.10))side="BUY";
+        else if(needleSell&&(!needleBuy||sellEvidence>buyEvidence+0.10))side="SELL";
 
         double entry=0, sl=0, tp1=0, tp2=0, rr=0;
         if ("BUY".equals(side)) {
@@ -107,12 +117,15 @@ public final class SignalEngine {
             +(biasBuy||biasSell?1:0)+(emaBuy||emaSell?1:0)+(rsiBuy||rsiSell?1:0)
             +(macdBuy||macdSell?1:0)+(bosBuy||bosSell?1:0)+(spreadOk?1:0)+(atrOk?1:0);
         int score=Math.min(99,45+points*4);
-        boolean earlyOnly=(earlyBuy&&!rejectBuy)||(earlySell&&!rejectSell);
-        int confidence=needleBuy||needleSell?(earlyOnly?3:(sweepBuy||sweepSell?5:4)):(points>=7?3:points>=5?2:1);
+        boolean selectedEarly=("BUY".equals(side)&&earlyBuy&&!rejectBuy)
+            ||("SELL".equals(side)&&earlySell&&!rejectSell);
+        boolean selectedSweep=("BUY".equals(side)&&sweepBuy)||("SELL".equals(side)&&sweepSell);
+        int confidence="WAIT".equals(side)?(points>=7?3:points>=5?2:1)
+            :(selectedEarly?3:(selectedSweep?5:4));
         String setup="WAIT".equals(side)
             ? (needleBuy && needleSell ? "WICK AMBIGU • WAIT" : "Menunggu wick / sweep valid")
-            : (earlyOnly?"EARLY WICK PRECURSOR + LIQUIDITY SWEEP"
-                :"NEEDLE WICK + REJECTION"+((sweepBuy||sweepSell)?" + LIQUIDITY SWEEP":""));
+            : (selectedEarly?"EARLY WICK PRECURSOR + LIQUIDITY SWEEP"
+                :"NEEDLE WICK + REJECTION"+(selectedSweep?" + LIQUIDITY SWEEP":""));
         return new SignalResult(side,bias,entry,sl,tp1,tp2,rr,score,confidence,setup,
             sweepBuy||sweepSell,needleBuy||needleSell,bosBuy||bosSell,
             emaBuy||emaSell,rsiBuy||rsiSell,macdBuy||macdSell,atrOk,spreadOk);
