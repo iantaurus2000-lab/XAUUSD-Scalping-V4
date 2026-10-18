@@ -85,7 +85,8 @@ public final class RayyanMenuLayout {
         addItems(host, content, Arrays.asList(
             new Item("✦", "Strategy", "Informasi strategi scalping", "strategy"),
             new Item("◒", "Risk Management", "Informasi kontrol risiko", "risk"),
-            new Item("✉", "Telegram", "Notifikasi sinyal", "telegram"),
+            new Item("✉", "Telegram", "Token bot dan Chat ID", "telegram"),
+            new Item("♧", "Notifikasi", "Aktif/nonaktifkan notifikasi aplikasi", "notifications"),
             new Item("⚙", "Settings", "Pengaturan tampilan dan sistem", "settings")
         ), actions);
         addFooter(host, root, "Gateway dan order tetap diatur oleh MainActivity.");
@@ -112,7 +113,8 @@ public final class RayyanMenuLayout {
         addItems(host, content, Arrays.asList(
             new Item("⇄", "Gateway / Queue / ACK", "Periksa status EA dan antrean; tidak mengirim order", "settings_gateway"),
             new Item("✦", "Smart Auto Entry", "Pengaturan Auto Entry dan LIMIT demo", "settings_mt5"),
-            new Item("✉", "Telegram", "Token, Chat ID, dan notifikasi", "settings_telegram"),
+            new Item("✉", "Telegram", "Token bot dan Chat ID", "settings_telegram"),
+            new Item("♧", "Notifikasi", "Aktif/nonaktifkan notifikasi aplikasi", "settings_notifications"),
             new Item("▤", "Log Sistem", "Lihat catatan aktivitas aplikasi", "settings_logs")
         ), actions);
         addFooter(host, root, "Perubahan UI ini tidak mengubah konfigurasi koneksi.");
