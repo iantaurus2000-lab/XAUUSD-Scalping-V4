@@ -10,7 +10,6 @@ int hEma9=INVALID_HANDLE, hEma21=INVALID_HANDLE, hEma50=INVALID_HANDLE;
 bool onEma9=true,onEma21=true,onEma50=true,onSR=true,onFibo=true;
 string lastCommandId="";
 uint lastScreenshotTick=0;
-string lastShort9="",lastShort21="",lastShort50="";
 datetime lastBar=0;
 
 int OnInit(){
@@ -21,9 +20,6 @@ int OnInit(){
       Print("RAYYAN8 INDICATOR INIT ERROR handles=",hEma9,",",hEma21,",",hEma50);
       return INIT_FAILED;
    }
-   lastShort9=IndicatorGetString(hEma9,INDICATOR_SHORTNAME);
-   lastShort21=IndicatorGetString(hEma21,INDICATOR_SHORTNAME);
-   lastShort50=IndicatorGetString(hEma50,INDICATOR_SHORTNAME);
    EventSetTimer(MathMax(1,PollSeconds));
    applyAll();
    Print("RAYYAN8 native indicators controller started. Separate /indicator_next queue; trade EA untouched.");
@@ -121,23 +117,32 @@ string field(string source,string key){
    return StringSubstr(source,a,b-a);
 }
 void applyAll(){
-   setEma(hEma9,lastShort9,onEma9);
-   setEma(hEma21,lastShort21,onEma21);
-   setEma(hEma50,lastShort50,onEma50);
+   setEma(hEma9,9,onEma9);
+   setEma(hEma21,21,onEma21);
+   setEma(hEma50,50,onEma50);
    updateSR();
    updateFibo();
    ChartRedraw(0);
 }
-void setEma(int handle,string shortName,bool enabled){
-   if(handle==INVALID_HANDLE||shortName=="")return;
-   // ChartIndicatorGet returns a handle reference; release that reference after checking.
-   int found=ChartIndicatorGet(0,0,shortName);
-   bool present=false;
-   if(found!=INVALID_HANDLE){IndicatorRelease(found);present=true;}
+void setEma(int handle,int period,bool enabled){
+   if(handle==INVALID_HANDLE)return;
+   string periodText="("+IntegerToString(period)+")";
+   string foundName="";
+   int total=ChartIndicatorsTotal(0,0);
+   for(int i=total-1;i>=0;i--){
+      string name=ChartIndicatorName(0,0,i);
+      if(StringFind(name,periodText)>=0){
+         foundName=name;
+         break;
+      }
+   }
+   bool present=(foundName!="");
    if(enabled&&!present){
-      if(!ChartIndicatorAdd(0,0,handle))Print("RAYYAN8 EMA add failed ",shortName," err=",GetLastError());
+      if(!ChartIndicatorAdd(0,0,handle))
+         Print("RAYYAN8 EMA add failed period=",period," err=",GetLastError());
    }else if(!enabled&&present){
-      if(!ChartIndicatorDelete(0,0,shortName))Print("RAYYAN8 EMA delete failed ",shortName," err=",GetLastError());
+      if(!ChartIndicatorDelete(0,0,foundName))
+         Print("RAYYAN8 EMA delete failed period=",period," name=",foundName," err=",GetLastError());
    }
 }
 void updateSR(){
