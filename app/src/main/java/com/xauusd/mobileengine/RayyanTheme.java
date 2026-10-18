@@ -22,9 +22,12 @@ public final class RayyanTheme {
     public static final String DEFAULT = "DEFAULT";
     public static final String DARK = "DARK";
     public static final String LIGHT = "LIGHT";
+    public static final String BROWN = "BROWN";
 
-    private static final int NAVY_TEXT = Color.rgb(23, 44, 66);
-    private static final int MUTED_TEXT = Color.rgb(91, 111, 132);
+    private static final int NAVY_TEXT = Color.rgb(49, 68, 85);
+    private static final int MUTED_TEXT = Color.rgb(91, 108, 124);
+    private static final int BROWN_TEXT = Color.rgb(73, 47, 34);
+    private static final int BROWN_MUTED = Color.rgb(125, 91, 70);
     private static final int DARK_TEXT = Color.rgb(235, 243, 252);
     private static final int DARK_MUTED = Color.rgb(177, 195, 215);
     private static final int LIGHT_BLUE = Color.rgb(0, 105, 190);
@@ -66,6 +69,7 @@ public final class RayyanTheme {
     public static String normalize(String mode) {
         if (DARK.equalsIgnoreCase(mode)) return DARK;
         if (LIGHT.equalsIgnoreCase(mode)) return LIGHT;
+        if (BROWN.equalsIgnoreCase(mode)) return BROWN;
         return DEFAULT;
     }
 
@@ -165,6 +169,23 @@ public final class RayyanTheme {
             return color;
         }
 
+        if (BROWN.equals(mode)) {
+            if (lum < 48) {
+                if (hsv[1] < 0.18f) return Color.rgb(61, 37, 25);
+                if (hsv[0] >= 35 && hsv[0] < 75) return Color.rgb(91, 48, 22);
+                if (hsv[0] >= 90 && hsv[0] < 170) return Color.rgb(39, 57, 34);
+                return Color.rgb(76, 42, 27);
+            }
+            if (lum < 100) {
+                if (hsv[1] < 0.18f) return Color.rgb(91, 57, 38);
+                if (hsv[0] >= 35 && hsv[0] < 75) return Color.rgb(119, 67, 32);
+                if (hsv[0] >= 90 && hsv[0] < 170) return Color.rgb(58, 78, 43);
+                return Color.rgb(112, 63, 35);
+            }
+            if (lum < 165 && hsv[1] < 0.25f) return Color.rgb(180, 133, 91);
+            return color;
+        }
+
         if (lum < 42) {
             if (hsv[1] < 0.18f) return Color.rgb(10, 15, 24);
             if (hsv[0] >= 170 && hsv[0] < 260) return Color.rgb(15, 29, 48);
@@ -191,7 +212,15 @@ public final class RayyanTheme {
         if (LIGHT.equals(mode)) {
             if (lum > 218 && hsv[1] < 0.20f) return NAVY_TEXT;
             if (lum > 150 && lum <= 218 && hsv[1] < 0.24f) return MUTED_TEXT;
-            if (hsv[0] >= 175 && hsv[0] < 205 && hsv[1] > 0.25f) return LIGHT_BLUE;
+            if (hsv[0] >= 175 && hsv[0] < 205 && hsv[1] > 0.25f) return Color.rgb(54, 112, 158);
+            if (lum > 190 && hsv[1] > 0.18f) return Color.rgb(74, 100, 122);
+            return color;
+        }
+        if (BROWN.equals(mode)) {
+            if (lum > 215 && hsv[1] < 0.22f) return BROWN_TEXT;
+            if (lum > 150 && hsv[1] < 0.28f) return BROWN_MUTED;
+            if (hsv[0] >= 175 && hsv[0] < 205 && hsv[1] > 0.25f) return Color.rgb(79, 126, 150);
+            if (lum < 50 && hsv[1] < 0.28f) return Color.rgb(255, 237, 211);
             return color;
         }
         if (lum < 50 && hsv[1] < 0.28f) return DARK_TEXT;
