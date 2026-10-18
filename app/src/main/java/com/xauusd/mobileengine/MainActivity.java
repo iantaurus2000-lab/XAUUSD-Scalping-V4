@@ -825,7 +825,9 @@ public class MainActivity extends Activity {
     }
 
     private String makeSignalKey(SignalResult s,long candleStamp){
-        return selectedMarket+"|"+s.side+"|"+s.m5Bias+"|"+s.setup+"|"+candleStamp+"|"+String.format(Locale.US,"%.2f",s.entry);
+        // One same-side automatic entry per M1 candle. A different price/setup label
+        // from every live tick must not create another SELL/BUY order on that same bar.
+        return selectedMarket+"|"+s.side+"|"+candleStamp;
     }
 
     private boolean queueAutoSignal(SignalResult s,Candle[] m1,SharedPreferences gp,
@@ -992,13 +994,16 @@ public class MainActivity extends Activity {
             boolean entryChanged=validFresh&&SmartLimitReentry.materiallyDifferentEntry(activeEntry,s.entry,atr);
             // A distinct, validated wick setup may replace a pending LIMIT in the same candle.
             // Later-bar same-side replacements still require movement and continuation checks.
-            boolean replacement=reentryEnabled&&autoEnabled&&elapsed<smartReentryMaxAgeBars(gp)
-                &&validFresh&&withinMaxDistance&&(sideChanged||entryChanged)
-                &&(elapsed==0||sideChanged||(movedAway&&continuation));
-            boolean structureInvalid=("BUY".equals(sideNow)&&("SELL".equals(s.side)||"SELL".equals(s.m5Bias)))
-                ||("SELL".equals(sideNow)&&("BUY".equals(s.side)||"BUY".equals(s.m5Bias)));
-            // Expire an untouched pending LIMIT at the start of the next M1 candle.
-            boolean maxAge=elapsed>=1;
+            int maxPendingBars=Math.max(2,smartReentryMaxAgeBars(gp));
+            // Keep an untouched LIMIT through candle changes; the expected pullback may
+            // touch it on the next candle. Expiry uses the configured age (minimum 2 bars).
+            boolean maxAge=elapsed>=maxPendingBars;
+            // A fresh opposite-side wick is a valid same-candle replacement candidate.
+            // Same-side price drift alone cannot repeatedly cancel/requeue the same setup.
+            boolean replacement=reentryEnabled&&autoEnabled&&elapsed<maxPendingBars
+                &&validFresh&&(sideChanged
+                    ||(entryChanged&&withinMaxDistance&&movedAway&&continuation));
+            boolean structureInvalid=validFresh&&!s.side.equals(sideNow);
             long retryAfter=gp.getLong("smart_cancel_retry_after_ms",0L);
             boolean shouldCancel=structureInvalid||maxAge||(reentryEnabled&&replacement);
             if(shouldCancel&&now>=retryAfter){
@@ -1009,8 +1014,8 @@ public class MainActivity extends Activity {
                     gp.edit().putString("smart_phase","CANCEL_REQUESTED")
                         .putString("smart_cancel_command_id",cancelCommandId)
                         .putBoolean("smart_reentry_allowed",allowReplacement)
-                        .putString("smart_cancel_reason",structureInvalid?"M1/M5 structure invalid"
-                            :(replacement?"fresh trend pullback setup":"stale LIMIT without valid re-entry"))
+                        .putString("smart_cancel_reason",structureInvalid?"fresh opposite-side wick validated"
+                            :(replacement?"new validated wick setup":"pending LIMIT reached configured age"))
                         .apply();
                     AppLog.add(this,"SMART LIMIT","cancel requested id="+activeId+
                         " ageM1="+elapsed+" replacement="+allowReplacement);
