@@ -378,11 +378,40 @@ public class MainActivity extends Activity {
                 :"● MT5 QUOTE STALE • ENTRY LOCKED • "+selectedTf);
             resetEntryReadyUi(!feedFresh?"chart price stale":"harga MT5 belum segar");
         }else{
-            status.setText("● MT5 + CHART LIVE • "+market+" • "+selectedTf);
+            updateLiveGatewayStatus(market);
         }
         syncBrokerEntryLine();
         if(m1Data!=null&&m1Data.length>=30&&m5Data!=null&&m5Data.length>=30)
             updateSignal(m1Data,m5Data);
+    }
+
+    /** Show the real blocker for AUTO without changing the trade safety gates. */
+    private void updateLiveGatewayStatus(String market){
+        if(status==null)return;
+        SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        if(!gp.getBoolean("auto",false)){
+            status.setText("● QUOTE LIVE • SMART AUTO OFF • "+market+" • "+selectedTf);
+            return;
+        }
+        if(!"READY".equals(gp.getString("operation_mode","REST"))){
+            status.setText("● QUOTE LIVE • MODE REST • SMART AUTO PAUSED");
+            return;
+        }
+        if(!"M1".equals(selectedTf)){
+            status.setText("● QUOTE LIVE • SMART AUTO MENUNGGU M1");
+            return;
+        }
+        if(!GatewayService.isEaRecentlyOnline(this)){
+            status.setText("● QUOTE LIVE • TRADE EA OFFLINE • AUTO MENUNGGU");
+            return;
+        }
+        long now=System.currentTimeMillis();
+        long stateAt=gp.getLong("ea_order_state_at",0L);
+        if(stateAt<=0L||now<stateAt||now-stateAt>8000L){
+            status.setText("● QUOTE LIVE • STATUS ORDER EA BELUM SEGAR");
+            return;
+        }
+        status.setText("● MT5 + CHART LIVE • SMART AUTO MEMANTAU • "+market+" • M1");
     }
 
     /** Keep last prices/spread visible when the feed pauses, but block all new entries. */
@@ -747,16 +776,14 @@ public class MainActivity extends Activity {
         sellLimitBtn.setText(sellActive?"SELL LIMIT":"○ SELL LIMIT");
         // UI state mirrors the trading gate: only the side validated by ENTRY READY
         // is actionable. The click path still revalidates fresh quotes before queueing.
-        buyLimitBtn.setEnabled(buyActive);
-        sellLimitBtn.setEnabled(sellActive);
-        buyLimitBtn.setAlpha(buyActive?1.0f:0.72f);
-        sellLimitBtn.setAlpha(sellActive?1.0f:0.72f);
-        buyLimitBtn.setTextColor(buyActive?Color.WHITE:Color.rgb(125,139,148));
-        sellLimitBtn.setTextColor(sellActive?Color.WHITE:Color.rgb(125,139,148));
-        buyLimitBtn.setEnabled(buyActive);
-        sellLimitBtn.setEnabled(sellActive);
-        buyLimitBtn.setAlpha(buyActive?1.0f:0.62f);
-        sellLimitBtn.setAlpha(sellActive?1.0f:0.62f);
+        // Keep both manual controls tappable from app launch. This does not bypass
+        // price/order validation: executeLimitForSide and queueLimit still fail closed.
+        buyLimitBtn.setEnabled(true);
+        sellLimitBtn.setEnabled(true);
+        buyLimitBtn.setAlpha(1.0f);
+        sellLimitBtn.setAlpha(1.0f);
+        buyLimitBtn.setTextColor(Color.WHITE);
+        sellLimitBtn.setTextColor(Color.WHITE);
     }
 
     private double preferenceDouble(SharedPreferences p,String key,double fallback){
