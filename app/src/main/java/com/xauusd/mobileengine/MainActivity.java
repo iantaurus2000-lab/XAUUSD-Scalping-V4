@@ -1361,13 +1361,15 @@ public class MainActivity extends Activity {
             {RayyanTheme.DEFAULT,"Default Theme","Tampilan asli APK • tetap dipertahankan"},
             {RayyanTheme.DARK,"Dark Professional","Grafit gelap • aksen biru • chart kontras"},
             {RayyanTheme.LIGHT,"Light Professional","Putih lembut • teks abu-biru nyaman dibaca"},
-            {RayyanTheme.BROWN,"Energetic Brown","Cokelat hangat • amber segar • nuansa energik"}
+            {RayyanTheme.GRAPHITE,"Graphite Silver","Grafit dan perak • elegan • kontras lembut"},
+            {RayyanTheme.EMERALD,"Emerald Pro","Hijau zamrud • hitam • aksen hijau segar"}
         };
         final int[][] swatches = {
             {Color.rgb(3,10,18),Color.rgb(0,210,220),Color.rgb(0,225,135)},
             {Color.rgb(8,13,23),Color.rgb(71,157,255),Color.rgb(0,225,135)},
             {Color.rgb(248,251,255),Color.rgb(0,105,190),Color.rgb(0,170,110)},
-            {Color.rgb(70,39,25),Color.rgb(235,145,54),Color.rgb(112,159,91)}
+            {Color.rgb(35,42,54),Color.rgb(174,190,211),Color.rgb(225,232,240)},
+            {Color.rgb(3,25,20),Color.rgb(0,205,139),Color.rgb(79,235,174)}
         };
         for(int i=0;i<choices.length;i++){
             final String code=choices[i][0];
@@ -1434,7 +1436,8 @@ public class MainActivity extends Activity {
         applyCurrentAppTheme();
         String label=RayyanTheme.DARK.equals(appTheme)?"Dark Professional"
             :RayyanTheme.LIGHT.equals(appTheme)?"Light Professional"
-            :RayyanTheme.BROWN.equals(appTheme)?"Energetic Brown":"Default Theme";
+            :RayyanTheme.GRAPHITE.equals(appTheme)?"Graphite Silver"
+            :RayyanTheme.EMERALD.equals(appTheme)?"Emerald Pro":"Default Theme";
         Toast.makeText(this,"Tema aktif: "+label,Toast.LENGTH_SHORT).show();
     }
 
@@ -1447,8 +1450,9 @@ public class MainActivity extends Activity {
             decor.setSystemUiVisibility(defaultSystemUiVisibility);
         }else{
             boolean light=RayyanTheme.LIGHT.equals(appTheme);
-            boolean brown=RayyanTheme.BROWN.equals(appTheme);
-            int barColor=light?Color.rgb(248,251,255):(brown?Color.rgb(64,35,23):Color.rgb(5,9,17));
+            boolean graphite=RayyanTheme.GRAPHITE.equals(appTheme);
+            boolean emerald=RayyanTheme.EMERALD.equals(appTheme);
+            int barColor=light?Color.rgb(248,251,255):(graphite?Color.rgb(25,31,41):(emerald?Color.rgb(3,25,20):Color.rgb(5,9,17)));
             getWindow().setStatusBarColor(barColor);
             if(android.os.Build.VERSION.SDK_INT>=21)getWindow().setNavigationBarColor(barColor);
             int flags=defaultSystemUiVisibility;
