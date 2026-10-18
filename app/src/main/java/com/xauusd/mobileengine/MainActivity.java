@@ -180,6 +180,8 @@ public class MainActivity extends Activity {
         chartArea.addView(chart,new FrameLayout.LayoutParams(-1,-1));
         chartMirror=new ImageView(this);
         chartMirror.setScaleType(ImageView.ScaleType.FIT_XY);
+        // Small right gutter keeps the mirrored price scale/candles away from the screen edge.
+        chartMirror.setPadding(0,0,uiDp(18),0);
         chartMirror.setBackgroundColor(Color.rgb(2,10,18));
         chartMirror.setContentDescription("Tampilan chart asli MT5 dari Winlator");
         chartMirror.setClickable(false);chartMirror.setFocusable(false);
@@ -360,7 +362,12 @@ public class MainActivity extends Activity {
         long now=System.currentTimeMillis();
         if(feedTick!=null&&feedTick.length>=2&&QuoteSafety.valid(feedTick[0],feedTick[1])){
             lastFeedQuoteAt=now;
-            chart.setTick(feedTick[0],feedTick[1],selectedTf);
+            double feedMid=(feedTick[0]+feedTick[1])*0.5;
+            // Keep the forming M1/M5 bars synchronized with the one-second quote loop.
+            // This removes the old 15-second OHLC lag from wick detection and LIMIT pricing.
+            m1Data=LiveCandleUpdater.update(m1Data,60_000L,feedMid,now);
+            m5Data=LiveCandleUpdater.update(m5Data,300_000L,feedMid,now);
+            if(chart!=null)chart.updateLiveBar(feedTick[0],feedTick[1],now,selectedTf);
             updateHeaderPrice(feedTick[0],feedTick[1]);
         }
         boolean feedFresh=lastFeedQuoteAt>0L&&now>=lastFeedQuoteAt
@@ -370,7 +377,7 @@ public class MainActivity extends Activity {
         if(broker!=null){
             // The MT5 broker quote is the execution reference. Keep the candle history
             // from the chart feed, but align the live price/header and signal tick to MT5.
-            chart.setTick(broker[0],broker[1],selectedTf);
+            chart.setQuote(broker[0],broker[1],selectedTf);
             updateHeaderPrice(broker[0],broker[1]);
             SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
             double spread=broker[1]-broker[0];
@@ -690,7 +697,9 @@ public class MainActivity extends Activity {
         if(!signal.spreadFilter)return "SPREAD FILTER GAGAL";
         if(!signal.atrFilter)return "ATR FILTER GAGAL";
         if(!signal.wickRejection)return "WICK REJECTION BELUM VALID";
-        if(!m5DoesNotOppose(signal.side,signal.m5Bias))return "ARAH M5 BERLAWANAN";
+        // A confirmed sweep/rejection can be an early counter-bias scalp; M5 is context,
+        // not a blanket veto against BUY wick setups.
+        if(!m5DoesNotOppose(signal.side,signal.m5Bias)&&!signal.liquiditySweep)return "ARAH M5 BERLAWANAN";
         if(signal.entry<=0||signal.sl<=0||signal.tp1<=0)return "LEVEL ENTRY/SL/TP TIDAK VALID";
         if("BUY".equals(signal.side)&&!(signal.entry<ask&&signal.sl<signal.entry&&signal.tp1>signal.entry))return "LEVEL BUY LIMIT/SL/TP TIDAK VALID";
         if("SELL".equals(signal.side)&&!(signal.entry>bid&&signal.tp1<signal.entry&&signal.sl>signal.entry))return "LEVEL SELL LIMIT/SL/TP TIDAK VALID";
@@ -710,14 +719,9 @@ public class MainActivity extends Activity {
         }
         boolean nextReady=isAutoEntryEligible(signal,bid,ask,"M1".equals(selectedTf));
         String nextSide=nextReady?signal.side:"WAIT";
-        // Once one direction has claimed READY in this candle, a reversal cannot
-        // light the opposite button until the next M1 candle opens.
-        if(nextReady && !"WAIT".equals(readyCandleSide) && !readyCandleSide.equals(nextSide)){
-            nextReady=false;
-            nextSide="WAIT";
-        }else if(nextReady && "WAIT".equals(readyCandleSide)){
-            readyCandleSide=nextSide;
-        }
+        // READY follows the newest valid wick direction, including a fresh opposite-side
+        // rejection later in the same candle. Order lifecycle guards prevent duplicates.
+        readyCandleSide=nextReady?nextSide:"WAIT";
         if(nextReady){
             boolean sideChanged=!readySide.equals(nextSide);
             if(!entryReady||sideChanged){
@@ -821,7 +825,7 @@ public class MainActivity extends Activity {
     }
 
     private String makeSignalKey(SignalResult s,long candleStamp){
-        return selectedMarket+"|"+s.side+"|"+s.m5Bias+"|"+s.setup+"|"+candleStamp;
+        return selectedMarket+"|"+s.side+"|"+s.m5Bias+"|"+s.setup+"|"+candleStamp+"|"+String.format(Locale.US,"%.2f",s.entry);
     }
 
     private boolean queueAutoSignal(SignalResult s,Candle[] m1,SharedPreferences gp,
@@ -978,26 +982,30 @@ public class MainActivity extends Activity {
                 &&SmartLimitReentry.movedAwayInFavor(sideNow,activeEntry,bid,ask,atr);
             boolean continuation=SmartLimitReentry.hasContinuation(m1,sideNow)
                 &&m5DoesNotOppose(sideNow,s.m5Bias);
-            boolean validFresh=isAutoEntryEligible(s,bid,ask,true)&&s.side.equals(sideNow)
+            boolean validFresh=isAutoEntryEligible(s,bid,ask,true)
                 &&readyCandleKey.equals(selectedMarket+"|"+selectedTf+"|"+candleStamp)
                 &&readyCandleSide.equals(s.side);
             double maxDistanceAtr=smartReentryMaxDistanceAtr(gp);
             boolean withinMaxDistance=SmartLimitReentry.withinMaxDistanceFromOriginalEntry(
                 activeEntry,s.entry,atr,maxDistanceAtr);
-            boolean replacement=reentryEnabled&&autoEnabled&&elapsed>=2&&elapsed<smartReentryMaxAgeBars(gp)
-                &&movedAway&&continuation&&validFresh&&withinMaxDistance
-                &&SmartLimitReentry.materiallyDifferentEntry(activeEntry,s.entry,atr);
+            boolean sideChanged=validFresh&&!s.side.equals(sideNow);
+            boolean entryChanged=validFresh&&SmartLimitReentry.materiallyDifferentEntry(activeEntry,s.entry,atr);
+            // A distinct, validated wick setup may replace a pending LIMIT in the same candle.
+            // Later-bar same-side replacements still require movement and continuation checks.
+            boolean replacement=reentryEnabled&&autoEnabled&&elapsed<smartReentryMaxAgeBars(gp)
+                &&validFresh&&withinMaxDistance&&(sideChanged||entryChanged)
+                &&(elapsed==0||sideChanged||(movedAway&&continuation));
             boolean structureInvalid=("BUY".equals(sideNow)&&("SELL".equals(s.side)||"SELL".equals(s.m5Bias)))
                 ||("SELL".equals(sideNow)&&("BUY".equals(s.side)||"BUY".equals(s.m5Bias)));
-            boolean staleRun=reentryEnabled&&elapsed>=2&&movedAway&&!replacement;
-            boolean maxAge=elapsed>=smartReentryMaxAgeBars(gp);
+            // Expire an untouched pending LIMIT at the start of the next M1 candle.
+            boolean maxAge=elapsed>=1;
             long retryAfter=gp.getLong("smart_cancel_retry_after_ms",0L);
-            boolean shouldCancel=structureInvalid||maxAge||(reentryEnabled&&(replacement||staleRun));
+            boolean shouldCancel=structureInvalid||maxAge||(reentryEnabled&&replacement);
             if(shouldCancel&&now>=retryAfter){
                 boolean queued=queueCancelPending(activeId,activeTicket,activeSymbol);
                 if(queued){
                     String cancelCommandId=gp.getString("order_status_id","");
-                    boolean allowReplacement=reentryEnabled&&replacement&&!structureInvalid&&!maxAge;
+                    boolean allowReplacement=reentryEnabled&&replacement;
                     gp.edit().putString("smart_phase","CANCEL_REQUESTED")
                         .putString("smart_cancel_command_id",cancelCommandId)
                         .putBoolean("smart_reentry_allowed",allowReplacement)
@@ -1056,18 +1064,17 @@ public class MainActivity extends Activity {
                     // Wait for a fresh EA snapshot proving the original ticket disappeared.
                     if(!stateFresh||!activeId.equals(remoteId)||!"NONE".equals(remoteState))return;
                     boolean allow=autoEnabled&&gp.getBoolean("smart_reentry_allowed",false);
-                    boolean candidate=allow&&isAutoEntryEligible(s,bid,ask,true)
+                    boolean replacementSideChanged=!s.side.equals(sideNow);
+                    boolean candidate=allow&&hasFreshEntryQuotes()
+                        &&isAutoEntryEligible(s,bid,ask,true)
                         &&readyCandleKey.equals(selectedMarket+"|"+selectedTf+"|"+candleStamp)
                         &&readyCandleSide.equals(s.side)
-                        &&s.side.equals(sideNow)
-                        &&m5DoesNotOppose(sideNow,s.m5Bias)
-                        &&SmartLimitReentry.hasContinuation(m1,sideNow)
                         &&SmartLimitReentry.elapsedM1Bars(startedAt,candleStamp)
                             <smartReentryMaxAgeBars(gp)
-                        &&SmartLimitReentry.movedAwayInFavor(sideNow,activeEntry,bid,ask,atr)
                         &&SmartLimitReentry.withinMaxDistanceFromOriginalEntry(activeEntry,s.entry,atr,
                             smartReentryMaxDistanceAtr(gp))
-                        &&SmartLimitReentry.materiallyDifferentEntry(activeEntry,s.entry,atr);
+                        &&(replacementSideChanged
+                            ||SmartLimitReentry.materiallyDifferentEntry(activeEntry,s.entry,atr));
                     if(candidate){
                         String nextKey=makeSignalKey(s,candleStamp);
                         double lot=lotForMarket();
@@ -1242,8 +1249,10 @@ public class MainActivity extends Activity {
 
         boolean changed=previous==null||!s.side.equals(previous.side);
         String candleKey=selectedMarket+"|"+selectedTf+"|"+candleStamp;
+        String noticeKey=candleKey+"|"+s.side;
+        String noticePrefKey="signal_notified_candle_"+s.side.toLowerCase(Locale.US);
         SharedPreferences noticePrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        boolean alreadyNotified=candleKey.equals(noticePrefs.getString("signal_notified_candle",""));
+        boolean alreadyNotified=noticeKey.equals(noticePrefs.getString(noticePrefKey,""));
         // The lifecycle manager owns one Rayyan LIMIT/position at a time. It
         // queues, cancels, and re-enters only after fresh EA state plus matching ACK.
         processAutoLimit(s,m1,m5,bid,ask,candleStamp);
@@ -1251,7 +1260,7 @@ public class MainActivity extends Activity {
             String msg=selectedMarket+" SCALPING\n\n"+s.side+"\nEntry: "+price(s.entry)+"\nSL: "+price(s.sl)+"\nTP1: "+price(s.tp1)+"\nTP2: "+price(s.tp2)+"\nTF: M1\nBias: M5 "+s.m5Bias+"\nSetup: "+s.setup+"\nConfidence: "+s.confidence+"/5";
             AppLog.add(this,"SIGNAL",s.side+" "+price(s.entry)+" score="+s.score);
             if(!alreadyNotified){
-                noticePrefs.edit().putString("signal_notified_candle",candleKey).apply();
+                noticePrefs.edit().putString(noticePrefKey,noticeKey).apply();
                 if(GatewayService.isEaRecentlyOnline(this)){
                     if(telegramEnabled)sendTelegram(msg);
                     notifyLocal(selectedMarket+" SIGNAL "+s.side,"Maksimal satu notifikasi per candle • Entry "+price(s.entry)+" | SL "+price(s.sl)+" | TP1 "+price(s.tp1));
@@ -1291,6 +1300,35 @@ public class MainActivity extends Activity {
 
     private void showSettingsPanel(View anchor){
         RayyanMenuLayout.showSettings(this,selectedMarket,selectedTf,this::handleMenuAction);
+    }
+
+    private void showNotificationSettingsDialog(){
+        SharedPreferences notice=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        LinearLayout box=new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(14));
+        box.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("NOTIFIKASI APLIKASI",18);
+        title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(42)));
+        TextView note=tv("Aktif/nonaktifkan notifikasi sinyal dan antrean di HP. Pengaturan Telegram tetap terpisah.",12);
+        note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
+        box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(54)));
+        Switch enabled=new Switch(this);
+        enabled.setText("Notifikasi aplikasi");
+        enabled.setTextColor(Color.WHITE);
+        enabled.setTextSize(15);
+        enabled.setPadding(0,uiDp(8),0,uiDp(8));
+        enabled.setChecked(notice.getBoolean("notifications_enabled",true));
+        box.addView(enabled,new LinearLayout.LayoutParams(-1,uiDp(58)));
+        AlertDialog dialog=new AlertDialog.Builder(this).setView(box)
+            .setPositiveButton("SIMPAN",(d,w)->{
+                boolean on=enabled.isChecked();
+                notice.edit().putBoolean("notifications_enabled",on).apply();
+                AppLog.add(this,"NOTIFICATIONS",on?"enabled":"disabled");
+                Toast.makeText(this,on?"Notifikasi aplikasi AKTIF":"Notifikasi aplikasi NONAKTIF",Toast.LENGTH_SHORT).show();
+            }).setNegativeButton("BATAL",null).create();
+        showSizedDialog(dialog,0.46f,400);
     }
 
     private void showStrategyDialog(){
@@ -1346,6 +1384,7 @@ public class MainActivity extends Activity {
         else if("orders".equals(action)||"settings_logs".equals(action))showLogDialog("ORDERS / SYSTEM LOG");
         else if("mt5".equals(action)||"settings_mt5".equals(action))showMt5Dialog();
         else if("telegram".equals(action)||"settings_telegram".equals(action))showTelegramDialog();
+        else if("notifications".equals(action)||"settings_notifications".equals(action))showNotificationSettingsDialog();
         else if("settings".equals(action))showSettingsPanel(null);
         else if("strategy".equals(action))showStrategyDialog();
         else if("risk".equals(action))showRiskManagementDialog();
@@ -1628,6 +1667,8 @@ public class MainActivity extends Activity {
     void sendTelegram(String msg){TelegramClient.send(tgPrefs.getString("token",""),tgPrefs.getString("chat",""),msg,(ok,detail)->AppLog.add(this,"TELEGRAM",ok?"sent":"error"));}
 
     void notifyLocal(String title,String msg){
+        SharedPreferences appNotice=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        if(!appNotice.getBoolean("notifications_enabled",true))return;
         NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);String id="rayyan4_alerts";
         if(Build.VERSION.SDK_INT>=26)nm.createNotificationChannel(new NotificationChannel(id,"Rayyan4 Alerts",NotificationManager.IMPORTANCE_HIGH));
         nm.notify((int)(System.currentTimeMillis()&0x7fffffff),new Notification.Builder(this,id).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle(title).setContentText(msg).setAutoCancel(true).setPriority(Notification.PRIORITY_HIGH).build());
