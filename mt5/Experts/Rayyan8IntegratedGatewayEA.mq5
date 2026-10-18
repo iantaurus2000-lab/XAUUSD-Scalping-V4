@@ -1,4 +1,5 @@
 #property strict
+// RAYYAN8 integrated build: trading gateway + native indicators/chart snapshot.
 #include <Trade/Trade.mqh>
 CTrade trade;
 #define RAYYAN_MAGIC 4104407
