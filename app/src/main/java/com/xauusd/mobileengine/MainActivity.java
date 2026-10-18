@@ -175,9 +175,6 @@ public class MainActivity extends Activity {
                         selectTimeframe(selectedTf, false);
                     }
                 }
-                @Override public void onLiveMenu(View anchor) {
-                    showChartDisplayDialog();
-                }
             });
         marketTitle = headerUi.marketTitle;
         marketSubtitle = headerUi.marketSubtitle;
@@ -1363,12 +1360,14 @@ public class MainActivity extends Activity {
         final String[][] choices = {
             {RayyanTheme.DEFAULT,"Default Theme","Tampilan asli APK • tetap dipertahankan"},
             {RayyanTheme.DARK,"Dark Professional","Grafit gelap • aksen biru • chart kontras"},
-            {RayyanTheme.LIGHT,"Light Professional","Putih bersih • aksen biru • chart terang"}
+            {RayyanTheme.LIGHT,"Light Professional","Putih lembut • teks abu-biru nyaman dibaca"},
+            {RayyanTheme.BROWN,"Energetic Brown","Cokelat hangat • amber segar • nuansa energik"}
         };
         final int[][] swatches = {
             {Color.rgb(3,10,18),Color.rgb(0,210,220),Color.rgb(0,225,135)},
             {Color.rgb(8,13,23),Color.rgb(71,157,255),Color.rgb(0,225,135)},
-            {Color.rgb(248,251,255),Color.rgb(0,105,190),Color.rgb(0,170,110)}
+            {Color.rgb(248,251,255),Color.rgb(0,105,190),Color.rgb(0,170,110)},
+            {Color.rgb(70,39,25),Color.rgb(235,145,54),Color.rgb(112,159,91)}
         };
         for(int i=0;i<choices.length;i++){
             final String code=choices[i][0];
@@ -1434,7 +1433,8 @@ public class MainActivity extends Activity {
         getSharedPreferences("rayyan4_ui",MODE_PRIVATE).edit().putString("app_theme",appTheme).apply();
         applyCurrentAppTheme();
         String label=RayyanTheme.DARK.equals(appTheme)?"Dark Professional"
-            :RayyanTheme.LIGHT.equals(appTheme)?"Light Professional":"Default Theme";
+            :RayyanTheme.LIGHT.equals(appTheme)?"Light Professional"
+            :RayyanTheme.BROWN.equals(appTheme)?"Energetic Brown":"Default Theme";
         Toast.makeText(this,"Tema aktif: "+label,Toast.LENGTH_SHORT).show();
     }
 
@@ -1447,8 +1447,10 @@ public class MainActivity extends Activity {
             decor.setSystemUiVisibility(defaultSystemUiVisibility);
         }else{
             boolean light=RayyanTheme.LIGHT.equals(appTheme);
-            getWindow().setStatusBarColor(light?Color.rgb(248,251,255):Color.rgb(5,9,17));
-            if(android.os.Build.VERSION.SDK_INT>=21)getWindow().setNavigationBarColor(light?Color.rgb(248,251,255):Color.rgb(5,9,17));
+            boolean brown=RayyanTheme.BROWN.equals(appTheme);
+            int barColor=light?Color.rgb(248,251,255):(brown?Color.rgb(64,35,23):Color.rgb(5,9,17));
+            getWindow().setStatusBarColor(barColor);
+            if(android.os.Build.VERSION.SDK_INT>=21)getWindow().setNavigationBarColor(barColor);
             int flags=defaultSystemUiVisibility;
             if(light){
                 flags|=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
@@ -1548,6 +1550,7 @@ public class MainActivity extends Activity {
         else if("notifications".equals(action)||"settings_notifications".equals(action))showNotificationSettingsDialog();
         else if("settings".equals(action))showSettingsPanel(null);
         else if("settings_theme".equals(action))showThemeDialog();
+        else if("live_chart".equals(action))showChartDisplayDialog();
         else if("strategy".equals(action))showStrategyDialog();
         else if("risk".equals(action))showRiskManagementDialog();
     }
