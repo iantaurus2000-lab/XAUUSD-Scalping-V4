@@ -5,6 +5,8 @@ import android.os.*;
 import android.content.*;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.view.*;
@@ -18,6 +20,26 @@ public class MainActivity extends Activity {
     private static volatile boolean visible = false;
     public static boolean isAppVisible(){ return visible; }
     private CandleChartView chart;
+    private ImageView chartMirror;
+    private long chartMirrorModified=0L;
+    private final Handler chartMirrorHandler=new Handler(Looper.getMainLooper());
+    private final Runnable chartMirrorRefresh=new Runnable(){
+        @Override public void run(){
+            try{
+                java.io.File f=getFileStreamPath("mt5_chart.png");
+                long modified=f.isFile()?f.lastModified():0L;
+                long age=System.currentTimeMillis()-getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).getLong("mt5_chart_received_ms",0L);
+                if(chartMirror!=null&&modified>0L&&age>=0L&&age<=6000L){
+                    if(modified!=chartMirrorModified){
+                        Bitmap b=BitmapFactory.decodeFile(f.getAbsolutePath());
+                        if(b!=null){chartMirror.setImageBitmap(b);chartMirrorModified=modified;}
+                    }
+                    chartMirror.setVisibility(View.VISIBLE);
+                }else if(chartMirror!=null){chartMirror.setVisibility(View.GONE);}
+            }catch(Exception ignored){}
+            chartMirrorHandler.postDelayed(this,750L);
+        }
+    };
     private TextView priceView, spreadView, status, signalSummary, scoreView, entryView, slView, tp1View, tp2View, marketTitle, marketSubtitle;
     private double lastHeaderPrice=Double.NaN;
     private String lastSpreadLabel="";
@@ -148,7 +170,19 @@ public class MainActivity extends Activity {
             new LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         chart=new CandleChartView(this);chart.setMarket(selectedMarket);chart.setTimeframe(selectedTf);loadIndicatorSettings();
-        root.addView(chart,new LinearLayout.LayoutParams(-1,0,1));
+        FrameLayout chartArea=new FrameLayout(this);
+        chartArea.setBackgroundColor(Color.rgb(2,10,18));
+        chartArea.addView(chart,new FrameLayout.LayoutParams(-1,-1));
+        chartMirror=new ImageView(this);
+        chartMirror.setScaleType(ImageView.ScaleType.FIT_XY);
+        chartMirror.setBackgroundColor(Color.rgb(2,10,18));
+        chartMirror.setContentDescription("Tampilan chart asli MT5 dari Winlator");
+        chartMirror.setClickable(false);chartMirror.setFocusable(false);
+        chartMirror.setVisibility(View.GONE);
+        chartArea.addView(chartMirror,new FrameLayout.LayoutParams(-1,-1));
+        root.addView(chartArea,new LinearLayout.LayoutParams(-1,0,1));
+        chartMirrorHandler.removeCallbacks(chartMirrorRefresh);
+        chartMirrorHandler.post(chartMirrorRefresh);
 
         // CHART TOOLS
         LinearLayout layers=new LinearLayout(this);layers.setPadding(4,3,4,3);layers.setBackgroundColor(Color.rgb(3,14,24));
@@ -401,6 +435,7 @@ public class MainActivity extends Activity {
             e.getValue().setBackground(roundBg(active?Color.rgb(15,150,235):Color.rgb(7,34,60),12));
         }
         if(chart!=null)chart.setTimeframe(tf);
+        queueNativeIndicatorState();
         if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+tf+"\nWick Rejection + Liquidity Sweep + BOS");
         if(status!=null)status.setText("● "+("M1".equals(tf)?"LIVE":"LOADING")+" • RAYYAN4 • "+tf);
         if(reload)load(interval(tf),tf);
@@ -1389,7 +1424,7 @@ public class MainActivity extends Activity {
             TextView icon=tv(icons[i],22);icon.setTextColor(Color.rgb(0,225,180));icon.setGravity(Gravity.CENTER);row.addView(icon,new LinearLayout.LayoutParams(42,-1));
             LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setGravity(Gravity.CENTER_VERTICAL);TextView name=tv(market,16);name.setTextColor(Color.WHITE);name.setTypeface(null,Typeface.BOLD);labels.addView(name);TextView sub=tv(details[i],12);sub.setTextColor(Color.LTGRAY);labels.addView(sub);row.addView(labels,new LinearLayout.LayoutParams(0,-1,1));
             TextView mark=tv(selected?"✓ ACTIVE":"SELECT  ›",10);mark.setTextColor(selected?Color.rgb(0,235,160):Color.CYAN);row.addView(mark);
-            row.setOnClickListener(v->{if(market.equals(selectedMarket)){d.dismiss();return;}selectedMarket=market;lastHeaderPrice=Double.NaN;lastSpreadLabel="";lastFeedQuoteAt=0L;m1Data=new Candle[0];m5Data=new Candle[0];if(priceView!=null){priceView.setText("--");priceView.setTextColor(Color.CYAN);}if(spreadView!=null)spreadView.setText("SPREAD --");prefs.edit().putString("market",selectedMarket).apply();if(marketTitle!=null)marketTitle.setText(selectedMarket);if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));if(chart!=null){chart.setMarket(selectedMarket);chart.setData(new Candle[0]);chart.clearQuote();chart.setPositionEntryLevel(0);}if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);lastSignal=null;resetEntryReadyUi("menunggu data market");d.dismiss();load(interval(selectedTf),selectedTf);AppLog.add(this,"MARKET","selected "+selectedMarket+" • broker/chart quotes separated");});
+            row.setOnClickListener(v->{if(market.equals(selectedMarket)){d.dismiss();return;}selectedMarket=market;lastHeaderPrice=Double.NaN;lastSpreadLabel="";lastFeedQuoteAt=0L;m1Data=new Candle[0];m5Data=new Candle[0];if(priceView!=null){priceView.setText("--");priceView.setTextColor(Color.CYAN);}if(spreadView!=null)spreadView.setText("SPREAD --");prefs.edit().putString("market",selectedMarket).apply();queueNativeIndicatorState();if(marketTitle!=null)marketTitle.setText(selectedMarket);if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));if(chart!=null){chart.setMarket(selectedMarket);chart.setData(new Candle[0]);chart.clearQuote();chart.setPositionEntryLevel(0);}if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);lastSignal=null;resetEntryReadyUi("menunggu data market");d.dismiss();load(interval(selectedTf),selectedTf);AppLog.add(this,"MARKET","selected "+selectedMarket+" • broker/chart quotes separated");});
         }
         d.show();if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-36,430),-2);}
     }
@@ -1440,6 +1475,8 @@ public class MainActivity extends Activity {
     private void queueNativeIndicatorState(){
         long id=System.currentTimeMillis();
         String command="id="+id+
+            ";symbol="+mt5SymbolForMarket(selectedMarket)+
+            ";tf="+selectedTf+
             ";ema9="+(ind("ema9",true)?"1":"0")+
             ";ema21="+(ind("ema21",true)?"1":"0")+
             ";ema50="+(ind("ema50",true)?"1":"0")+
@@ -2017,5 +2054,6 @@ public class MainActivity extends Activity {
         ackHandler.post(ackWatcher);
     }
 
-    @Override protected void onDestroy(){signalUiHandler.removeCallbacks(entryBlinkRunnable);if(ex!=null)ex.shutdownNow();if(candleRefresh!=null)candleRefresh.shutdownNow();super.onDestroy();}
+    @Override protected void onDestroy(){
+        chartMirrorHandler.removeCallbacks(chartMirrorRefresh);signalUiHandler.removeCallbacks(entryBlinkRunnable);if(ex!=null)ex.shutdownNow();if(candleRefresh!=null)candleRefresh.shutdownNow();super.onDestroy();}
 }
