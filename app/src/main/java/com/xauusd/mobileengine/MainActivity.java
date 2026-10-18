@@ -21,6 +21,7 @@ public class MainActivity extends Activity {
     public static boolean isAppVisible(){ return visible; }
     private CandleChartView chart;
     private ImageView chartMirror;
+    private String chartDisplayMode = "BIQUOTE";
     private long chartMirrorModified=0L;
     private final Handler chartMirrorHandler=new Handler(Looper.getMainLooper());
     private final Runnable chartMirrorRefresh=new Runnable(){
@@ -38,8 +39,9 @@ public class MainActivity extends Activity {
                     }
                 }
                 if(chartMirror!=null){
-                    if(chartMirror.getDrawable()!=null)chartMirror.setVisibility(View.VISIBLE);
-                    else chartMirror.setVisibility(View.GONE);
+                    boolean showMt5 = "MT5".equals(chartDisplayMode) && chartMirror.getDrawable()!=null;
+                    chartMirror.setVisibility(showMt5 ? View.VISIBLE : View.GONE);
+                    if(chart!=null)chart.setVisibility(showMt5 ? View.GONE : View.VISIBLE);
                 }
             }catch(Exception ignored){}
             chartMirrorHandler.postDelayed(this,750L);
@@ -134,6 +136,7 @@ public class MainActivity extends Activity {
         tgPrefs=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE);
         telegramEnabled=tgPrefs.getBoolean("enabled",false);
         selectedMarket=prefs.getString("market","XAUUSD");
+        chartDisplayMode=getSharedPreferences("rayyan4_ui",MODE_PRIVATE).getString("chart_display_mode","BIQUOTE");
         // Explicit project request: enable AUTO LIMIT in DEMO-ready mode.
         // Order submission remains guarded by fresh EA polling, signal validity, spread,
         // LIMIT price geometry, lot minimum, duplicate cooldown, and the single-command queue.
@@ -163,6 +166,9 @@ public class MainActivity extends Activity {
                         chart.goLive();
                         selectTimeframe(selectedTf, false);
                     }
+                }
+                @Override public void onLiveMenu(View anchor) {
+                    showChartDisplayDialog();
                 }
             });
         marketTitle = headerUi.marketTitle;
@@ -302,6 +308,26 @@ public class MainActivity extends Activity {
         requestNotificationPermission();
         startGateway();
         selectTimeframe("M1",false);load("1m","M1");
+    }
+
+    private void showChartDisplayDialog(){
+        final String[] choices={"LIVE BIQUOTE • Tampilan profesional","CHART MT5 • Tampilan terminal MT5"};
+        int selected="MT5".equals(chartDisplayMode)?1:0;
+        new AlertDialog.Builder(this).setTitle("PILIH TAMPILAN LIVE")
+            .setSingleChoiceItems(choices,selected,(dialog,which)->{
+                setChartDisplayMode(which==1?"MT5":"BIQUOTE");
+                dialog.dismiss();
+            }).setNegativeButton("BATAL",null).show();
+    }
+
+    private void setChartDisplayMode(String mode){
+        chartDisplayMode="MT5".equals(mode)?"MT5":"BIQUOTE";
+        getSharedPreferences("rayyan4_ui",MODE_PRIVATE).edit()
+            .putString("chart_display_mode",chartDisplayMode).apply();
+        boolean showMt5="MT5".equals(chartDisplayMode)&&chartMirror!=null&&chartMirror.getDrawable()!=null;
+        if(chart!=null)chart.setVisibility(showMt5?View.GONE:View.VISIBLE);
+        if(chartMirror!=null)chartMirror.setVisibility(showMt5?View.VISIBLE:View.GONE);
+        Toast.makeText(this,"Tampilan: "+("MT5".equals(chartDisplayMode)?"Chart MT5":"LIVE BIQUOTE"),Toast.LENGTH_SHORT).show();
     }
 
     LinearLayout priceBox(){
