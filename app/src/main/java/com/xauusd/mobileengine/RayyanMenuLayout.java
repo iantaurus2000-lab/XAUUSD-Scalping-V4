@@ -106,6 +106,7 @@ public final class RayyanMenuLayout {
 
         addSection(host, content, "TAMPILAN & MARKET");
         addItems(host, content, Arrays.asList(
+            new Item("◐", "Tema Aplikasi", "Default, Dark Professional, atau Light Professional", "settings_theme"),
             new Item("▦", "Indicators / Tampilan", "Atur indikator yang terlihat di chart", "settings_indicators"),
             new Item("◈", "Pilih Market", "XAUUSD, BTCUSD, atau ETHUSD", "settings_market")
         ), actions);
@@ -207,6 +208,8 @@ public final class RayyanMenuLayout {
     }
 
     private static void showDialog(Activity host, LinearLayout content, String tag) {
+        RayyanTheme.apply(host, content,
+                host.getSharedPreferences("rayyan4_ui", Activity.MODE_PRIVATE).getString("app_theme", RayyanTheme.DEFAULT));
         AlertDialog dialog = new AlertDialog.Builder(host).setView(content).create();
         activeDialog = dialog;
         dialog.setOnShowListener(ignored -> {
