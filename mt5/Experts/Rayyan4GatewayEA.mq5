@@ -19,6 +19,8 @@ string pendingAckId="";
 string pendingAckResult="";
 string pendingAckDetail="";
 datetime lastDiag=0;
+uint quoteDiagAtMs[3];
+string quoteDiagState[3];
 void manageTP2RetraceProtection();
 
 int OnInit(){
@@ -465,18 +467,41 @@ void publishOrderState(){
    }
 }
 
-// Publish broker quotes for all supported symbols. If a market is closed and
-// MqlTick.time_msc stops advancing, the APK locks new entries despite /next heartbeat.
+void quoteDiagnostic(int index,string symbol,string state,string detail){
+   uint nowMs=GetTickCount();
+   if(state!=quoteDiagState[index] || (uint)(nowMs-quoteDiagAtMs[index])>=30000){
+      quoteDiagAtMs[index]=nowMs;
+      quoteDiagState[index]=state;
+      Print("RAYYAN4 QUOTE DIAG symbol=",symbol," state=",state," ",detail);
+   }
+}
+
+// /next heartbeat is separate from quote freshness. Log silent symbol/tick failures.
 void publishMarketQuotes(){
    string symbols[3]={"XAUUSDm","BTCUSDm","ETHUSDm"};
    for(int i=0;i<ArraySize(symbols);i++){
       string sym=symbols[i];
-      if(!SymbolSelect(sym,true)) continue;
+      if(!SymbolSelect(sym,true)){
+         quoteDiagnostic(i,sym,"SYMBOL_SELECT_FAILED","check exact broker symbol name and Market Watch");
+         continue;
+      }
       MqlTick tick;
-      if(!SymbolInfoTick(sym,tick)||tick.bid<=0||tick.ask<tick.bid||tick.time_msc<=0) continue;
+      if(!SymbolInfoTick(sym,tick)){
+         quoteDiagnostic(i,sym,"NO_TICK","SymbolInfoTick returned false; check symbol subscription and market session");
+         continue;
+      }
+      if(tick.bid<=0||tick.ask<tick.bid||tick.time_msc<=0){
+         quoteDiagnostic(i,sym,"INVALID_TICK",
+            "bid="+DoubleToString(tick.bid,8)+" ask="+DoubleToString(tick.ask,8)+
+            " tickms="+(string)tick.time_msc);
+         continue;
+      }
       int digits=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS);
       double point=SymbolInfoDouble(sym,SYMBOL_POINT);
-      if(point<=0) continue;
+      if(point<=0){
+         quoteDiagnostic(i,sym,"INVALID_POINT","SYMBOL_POINT="+DoubleToString(point,10));
+         continue;
+      }
       string path="/quote?symbol="+urlEncode(sym)+
          "&bid="+urlEncode(DoubleToString(tick.bid,digits))+
          "&ask="+urlEncode(DoubleToString(tick.ask,digits))+
@@ -485,12 +510,16 @@ void publishMarketQuotes(){
          "&tickms="+(string)tick.time_msc;
       int code=-1;
       string body="",diagnostic="";
-      if(!gatewayGet(path,code,body,diagnostic)||code!=200){
-         if(TimeCurrent()-lastDiag>=10){
-            lastDiag=TimeCurrent();
-            Print("RAYYAN4 QUOTE HTTP ERROR symbol=",sym," code=",code,
-                  " err=",GetLastError()," detail=",diagnostic);
-         }
+      bool sent=gatewayGet(path,code,body,diagnostic);
+      if(!sent || code!=200 || body!="QUOTE OK"){
+         quoteDiagnostic(i,sym,"PUBLISH_FAILED",
+            "transport="+(string)sent+" http="+IntegerToString(code)+
+            " body="+body+" err="+IntegerToString(GetLastError())+" detail="+diagnostic);
+      }else{
+         quoteDiagnostic(i,sym,"QUOTE_PUBLISHED",
+            "bid="+DoubleToString(tick.bid,digits)+" ask="+DoubleToString(tick.ask,digits)+
+            " digits="+IntegerToString(digits)+" point="+DoubleToString(point,10)+
+            " tickms="+(string)tick.time_msc);
       }
    }
 }
