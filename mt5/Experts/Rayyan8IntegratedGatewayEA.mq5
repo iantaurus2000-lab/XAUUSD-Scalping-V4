@@ -359,12 +359,14 @@ void manageTP2RetraceProtection(){
       double tp1=0.0;
       if(tp1Key!="" && GlobalVariableCheck(tp1Key))
          tp1=GlobalVariableGet(tp1Key);
-      if(tp1<=0.0){
+      bool tp1Valid=(posType==POSITION_TYPE_BUY
+         ? (sl<entry && entry<tp1 && tp1<tp2)
+         : (tp2<tp1 && tp1<entry && entry<sl));
+      // Recompute TP1 when actual fill/slippage makes the submitted level inconsistent.
+      if(!tp1Valid){
          tp1=(posType==POSITION_TYPE_BUY ? entry+risk*fallbackR : entry-risk*fallbackR);
-         int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
-         tp1=NormalizeDouble(tp1,digits);
+         tp1=NormalizeDouble(tp1,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS));
       }
-      // Do nothing if this target is inconsistent with the actual broker position.
       if(posType==POSITION_TYPE_BUY && !(sl<entry && entry<tp1 && tp1<tp2)) continue;
       if(posType==POSITION_TYPE_SELL && !(tp2<tp1 && tp1<entry && entry<sl)) continue;
 
