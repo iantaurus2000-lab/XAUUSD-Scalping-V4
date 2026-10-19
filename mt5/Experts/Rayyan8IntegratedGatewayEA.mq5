@@ -165,6 +165,13 @@ void OnTimer(){
    string requestedSym=field(cmd,"symbol");
    string sym=(requestedSym=="" ? AllowedSymbol : requestedSym);
    bool supported=(sym=="XAUUSDm" || sym=="BTCUSDm" || sym=="ETHUSDm");
+   Print("RAYYAN4 COMMAND RECEIVED id=",id," type=",type," side=",side,
+         " symbol=",sym," supported=",supported,
+         " volume=",DoubleToString(vol,2),
+         " entry=",DoubleToString(entry,8)," sl=",DoubleToString(sl,8),
+         " tp=",DoubleToString(tp,8)," tp1=",DoubleToString(tp1,8),
+         " server=",AccountInfoString(ACCOUNT_SERVER),
+         " login=",AccountInfoInteger(ACCOUNT_LOGIN));
    if(supported) SymbolSelect(sym,true);
 
    MqlTick tick;

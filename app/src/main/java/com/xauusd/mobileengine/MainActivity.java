@@ -638,29 +638,35 @@ public class MainActivity extends Activity {
                 return;
             }
             SignalResult s=SignalEngine.evaluate(liveM1,m5Data,chart.getBid(),chart.getAsk(),broker[0],broker[1]);
-            // Manual LIMIT is independent from Smart Auto Entry readiness.
-            // It still requires fresh quotes and structurally valid LIMIT/SL/TP levels.
             lastSignal=s;
-            boolean levelsValid;
-            if("BUY".equals(requestedSide)){
-                levelsValid=s.entry>0&&s.sl>0&&s.tp1>0
-                    &&s.entry<chart.getAsk()&&s.sl<s.entry&&s.tp1>s.entry;
-            }else{
-                levelsValid=s.entry>0&&s.sl>0&&s.tp1>0
-                    &&s.entry>chart.getBid()&&s.sl>s.entry&&s.tp1<s.entry;
+            double liveBid=chart.getBid(),liveAsk=chart.getAsk();
+
+            // Manual and Smart Auto share one complete entry filter. Manual chooses
+            // when to submit, but cannot bypass spread, ATR, wick, confidence, M5 or LIMIT checks.
+            String blockReason=autoEntryBlockReason(s,liveBid,liveAsk,"M1".equals(selectedTf));
+            if(!"READY".equals(blockReason)){
+                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT • shared filter="+blockReason+
+                    " • "+spreadAuditText(liveM1));
+                Toast.makeText(this,"Order diblokir • "+blockReason,Toast.LENGTH_LONG).show();
+                return;
             }
-            if(!levelsValid){
-                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT: level signal tidak valid untuk side ini");
-                Toast.makeText(this,"Level LIMIT/SL/TP belum valid untuk "+requestedSide,Toast.LENGTH_LONG).show();
+            if(!requestedSide.equals(s.side)){
+                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT • arah berbeda dari signal READY="+s.side+
+                    " • tidak melewati filter bersama");
+                Toast.makeText(this,"Arah signal READY adalah "+s.side+" • "+requestedSide+" diblokir",Toast.LENGTH_LONG).show();
+                return;
+            }
+            double target=validAutoTarget(s);
+            if(target<=0.0){
+                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT • target TP tidak valid");
+                Toast.makeText(this,"Target TP tidak valid",Toast.LENGTH_LONG).show();
                 return;
             }
             double lot=readQuickLot();
-            if(lot<=0)return;
+            if(lot<=0){AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT • lot tidak valid");return;}
             String orderSide="BUY".equals(requestedSide)?"BUY_LIMIT":"SELL_LIMIT";
-            // Start the gateway only after the order is successfully queued.
-            // A rejected/invalid order must leave the APK open without starting
-            // unnecessary background work.
-            boolean queued = queueLimit(orderSide,lot,s.entry,s.sl,s.tp2>0?s.tp2:s.tp1);
+            // Queue TP1 metadata just like Smart Auto, keeping EA exit protection consistent.
+            boolean queued = queueLimit(orderSide,lot,s.entry,s.sl,target,s.tp1);
             if(queued){
                 AppLog.add(this,"ORDER","button accepted queue; starting Gateway");
                 startGateway();
@@ -690,15 +696,23 @@ public class MainActivity extends Activity {
         SignalResult s=SignalEngine.evaluate(liveM1,m5Data,liveBid,liveAsk,broker[0],broker[1]);
         lastSignal=s;
 
-        if(!isAutoEntryEligible(s,liveBid,liveAsk,"M1".equals(selectedTf))){
-            Toast.makeText(this,"Setup belum memenuhi READY Smart Auto Entry • tidak dieksekusi",Toast.LENGTH_SHORT).show();
+        String blockReason=autoEntryBlockReason(s,liveBid,liveAsk,"M1".equals(selectedTf));
+        if(!"READY".equals(blockReason)){
+            AppLog.add(this,"ORDER_BLOCKED","Manual chart entry • shared filter="+blockReason+
+                " • "+spreadAuditText(liveM1));
+            Toast.makeText(this,"Setup diblokir • "+blockReason,Toast.LENGTH_LONG).show();
             return;
         }
 
-        startGateway();
         String side="BUY".equals(s.side)?"BUY_LIMIT":"SELL_LIMIT";
         double lot=lotForMarket();
-        queueLimit(side,lot,s.entry,s.sl,s.tp2>0?s.tp2:s.tp1);
+        double target=validAutoTarget(s);
+        if(target<=0.0||lot<=0.0){
+            AppLog.add(this,"ORDER_BLOCKED","Manual chart entry • lot/target tidak valid");
+            return;
+        }
+        boolean queued=queueLimit(side,lot,s.entry,s.sl,target,s.tp1);
+        if(queued)startGateway();
     }
 
     private boolean isEntryReady(SignalResult signal,double bid,double ask){
@@ -730,8 +744,9 @@ public class MainActivity extends Activity {
         if(!hasFreshEntryQuotes())return "QUOTE BROKER/CHART STALE";
         if(!"BUY".equals(signal.side)&&!"SELL".equals(signal.side))return "BELUM ADA ARAH BUY/SELL";
         if(signal.score<getMinimumEntryConfidence())return "SCORE DI BAWAH MINIMUM "+getMinimumEntryConfidence()+"%";
-        if(!signal.spreadFilter)return "SPREAD FILTER GAGAL";
+        // ATR validity comes first because spread acceptance also requires valid ATR.
         if(!signal.atrFilter)return "ATR FILTER GAGAL";
+        if(!signal.spreadFilter)return "SPREAD FILTER GAGAL";
         if(!signal.wickRejection)return "WICK REJECTION BELUM VALID";
         // A confirmed sweep/rejection can be an early counter-bias scalp; M5 is context,
         // not a blanket veto against BUY wick setups.
@@ -745,6 +760,21 @@ public class MainActivity extends Activity {
 
     private boolean isAutoEntryEligible(SignalResult signal,double bid,double ask,boolean m1Context){
         return "READY".equals(autoEntryBlockReason(signal,bid,ask,m1Context));
+    }
+
+    /** Actual MT5 spread and the active ATR threshold, included in block/queue audit logs. */
+    private String spreadAuditText(Candle[] m1){
+        double[] q=freshBrokerQuote(selectedMarket);
+        if(q==null||!QuoteSafety.valid(q[0],q[1]))return "brokerQuote=STALE_OR_MISSING";
+        double atr=SmartLimitReentry.atr(m1,14);
+        double spread=q[1]-q[0];
+        double max=QuoteSafety.maxAllowedSpread(q[0],q[1],atr);
+        double point=brokerPoint(getSharedPreferences("rayyan4_gateway",MODE_PRIVATE));
+        String ratio=atr>0.0?String.format(Locale.US,"%.1f%%",100.0*spread/atr):"N/A";
+        String points=point>0.0?String.format(Locale.US,"%.1f",spread/point):"N/A";
+        return String.format(Locale.US,
+            "brokerSymbol=%s BID=%.5f ASK=%.5f spread=%.5f points=%s ATR=%.5f maxSpread=%.5f spread/ATR=%s",
+            mt5SymbolForMarket(selectedMarket),q[0],q[1],spread,points,atr,max,ratio);
     }
 
     private void updateEntryReadyUi(SignalResult signal,double bid,double ask,long candleStamp){
@@ -1409,7 +1439,8 @@ public class MainActivity extends Activity {
                 "FILTER BLOCK • reason="+reason+" • side="+s.side+" score="+s.score+
                 " conf="+s.confidence+"/5 wick="+s.wickRejection+" sweep="+s.liquiditySweep+
                 " M5="+s.m5Bias+" spreadOK="+s.spreadFilter+" atrOK="+s.atrFilter+
-                " entry="+price(s.entry)+" bid="+price(bid)+" ask="+price(ask));
+                " entry="+price(s.entry)+" bid="+price(bid)+" ask="+price(ask)+
+                " • "+spreadAuditText(m1));
             if(status!=null)status.setText("● SMART AUTO WAIT • "+reason);
             return;
         }
@@ -2380,6 +2411,11 @@ public class MainActivity extends Activity {
         // A queued request is not yet a live broker order. The EA state heartbeat
         // owns OPEN ENTRY display and removes it after cancel/close/rejection.
         AppLog.add(this,"ORDER","queued "+cmd);
+        AppLog.add(this,"ORDER AUDIT","STAGE APK_QUEUE_ACCEPTED id="+id+" origin="+queueOrigin+
+            " symbol="+mt5Symbol+" side="+side+" volume="+lotText(volume)+
+            " entry="+price(entry)+" SL="+price(sl)+" TP="+price(tp)+
+            " • QUEUED means APK accepted only; broker/MT5 has NOT confirmed"+
+            " • "+spreadAuditText(m1Data));
         if("SMART_AUTO".equals(queueOrigin))
             AppLog.add(this,"SMART AUTO DIAG","STAGE APK_QUEUE_ACCEPTED • id="+id+" • queue=QUEUED • broker has NOT confirmed the order yet");
         notifyLocal("MT5 "+side,"Entry queued for demo EA");
