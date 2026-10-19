@@ -10,8 +10,8 @@ public class CandleChartView extends View {
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final ArrayList<Candle> cs = new ArrayList<>();
     private double bid, ask;
-    private float cw = 14, ox = 0, oy = 0, lx, ly, ld, cx, cy;
-    private final float leftPad = 54, rightAxis = 108, topPad = 8, bottomPad = 26, lastCandlePad = 52;
+    private float cw = 17, ox = 0, oy = 0, lx, ly, ld, cx, cy;
+    private final float leftPad = 54, rightAxis = 108, topPad = 8, bottomPad = 26, lastCandlePad = 32;
     private boolean showEMA9=true, showEMA21=true, showEMA50=true;
     private boolean showSR=true, showFibo=true, showRSI=true, showMACD=true, showATR=true;
     private boolean showSignals=true, showWickBos=true, showTradeLevels=true, showPosition=true, showBidAsk=true;
@@ -100,7 +100,7 @@ public class CandleChartView extends View {
 
     private void positionLatestCandle(){
         if(cs.isEmpty()){ox=0;return;}
-        float L=leftPad,R=getWidth()-rightAxis,step=cw+5;
+        float L=leftPad,R=getWidth()-rightAxis,step=cw+6;
         float latest=L+(cs.size()-1)*step+step/2;
         ox=R-lastCandlePad-latest;
     }
@@ -198,7 +198,7 @@ public class CandleChartView extends View {
         for(int i=0;i<=6;i++){float y=T+i*(B-T)/6;ln(c,L,y,R,y,horizontalGrid,1);}
         for(int i=0;i<=8;i++){float x=L+i*(R-L)/8;ln(c,x,T,x,B,verticalGrid,1);}
 
-        float step=cw+5;int n=cs.size();
+        float step=cw+6;int n=cs.size();
         int st=Math.max(0,(int)Math.floor((-ox)/step)-3);
         int en=Math.min(n,(int)Math.ceil((R-L-ox)/step)+3);
         for(int i=st;i<en;i++){
