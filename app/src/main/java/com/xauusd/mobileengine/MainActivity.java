@@ -2263,6 +2263,24 @@ public class MainActivity extends Activity {
         auto.setMinHeight(uiDp(52));auto.setMinimumHeight(uiDp(52));
         auto.setChecked(gatewayPrefs.getBoolean("auto",false));
 
+        Spinner entryActionMode=new Spinner(this);
+        String[] entryActions={
+            "OPEN ACTION 1 • sapuan pertama, LIMIT 10 MT5 points",
+            "OPEN ACTION 2 • tunggu pantulan, lalu pasang LIMIT"
+        };
+        ArrayAdapter<String> entryActionAdapter=new ArrayAdapter<>(
+            this,android.R.layout.simple_spinner_dropdown_item,entryActions);
+        entryActionMode.setAdapter(entryActionAdapter);
+        entryActionMode.setMinimumHeight(uiDp(50));
+        entryActionMode.setBackground(roundBg(Color.rgb(7,30,47),12));
+        entryActionMode.setSelection(OPEN_ACTION_WAIT_BOUNCE.equals(
+            gatewayPrefs.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST))?1:0);
+
+        TextView entryActionHint=tv("Mode 1: pasang LIMIT dekat harga setelah wick + liquidity sweep valid. Mode 2: tunggu harga bergerak searah minimal 0,15 ATR atau 10 points, baru pasang LIMIT. SL tetap pada struktur wick; TP dihitung ulang 2R/3,5R.",11);
+        entryActionHint.setTextColor(Color.LTGRAY);
+        entryActionHint.setGravity(Gravity.TOP|Gravity.START);
+        entryActionHint.setPadding(uiDp(8),uiDp(5),uiDp(8),uiDp(5));
+
         Switch smartReentry=new Switch(this);
         smartReentry.setText("SMART LIMIT RE-ENTRY • evaluasi 3 candle M1");
         smartReentry.setTextSize(13);
@@ -2317,6 +2335,10 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams hintParams=new LinearLayout.LayoutParams(-1,-2);
         hintParams.setMargins(0,uiDp(5),0,uiDp(6));fields.addView(modeHint,hintParams);
         fields.addView(auto,new LinearLayout.LayoutParams(-1,uiDp(54)));
+        fields.addView(entryActionMode,new LinearLayout.LayoutParams(-1,uiDp(52)));
+        LinearLayout.LayoutParams actionHintParams=new LinearLayout.LayoutParams(-1,-2);
+        actionHintParams.setMargins(0,uiDp(2),0,uiDp(4));
+        fields.addView(entryActionHint,actionHintParams);
         fields.addView(smartReentry,new LinearLayout.LayoutParams(-1,uiDp(54)));
         fields.addView(maxDistance,new LinearLayout.LayoutParams(-1,uiDp(54)));
         fields.addView(maxAge,new LinearLayout.LayoutParams(-1,uiDp(54)));
@@ -2380,7 +2402,7 @@ public class MainActivity extends Activity {
 
         save.setOnClickListener(v->{
             if(!validSmartReentryLimits(maxDistance,maxAge))return;
-            if(!saveAutoEntrySettings(auto,smartReentry,mode,vol,gatewayPrefs,selectedMt5Symbol))return;
+            if(!saveAutoEntrySettings(auto,smartReentry,mode,entryActionMode,vol,gatewayPrefs,selectedMt5Symbol))return;
             persistSmartReentryLimits(maxDistance,maxAge,gatewayPrefs);
             Toast.makeText(this,"Pengaturan AUTO ENTRY dan batas Smart LIMIT tersimpan untuk "+selectedMt5Symbol,Toast.LENGTH_SHORT).show();
             dialog.dismiss();
@@ -2389,7 +2411,7 @@ public class MainActivity extends Activity {
         send.setOnClickListener(v->{
             try{
                 if(!validSmartReentryLimits(maxDistance,maxAge))return;
-                if(!saveAutoEntrySettings(auto,smartReentry,mode,vol,gatewayPrefs,selectedMt5Symbol))return;
+                if(!saveAutoEntrySettings(auto,smartReentry,mode,entryActionMode,vol,gatewayPrefs,selectedMt5Symbol))return;
                 persistSmartReentryLimits(maxDistance,maxAge,gatewayPrefs);
                 if(!GatewayService.isEaRecentlyOnline(this)){
                     queuedStatus.setTextColor(Color.rgb(255,190,70));
