@@ -847,12 +847,15 @@ public class MainActivity extends Activity {
         return side;
     }
 
-    /** Deduplicated per signal/reason: explains why READY did or did not reach the broker. */
+    /** Deduplicate independently by diagnostic category; READY logs must not reset FILTER logs. */
     private void autoDiagnostic(SharedPreferences p,String eventKey,String message){
         if(eventKey==null)eventKey="";
-        if(!eventKey.equals(p.getString("smart_diag_last_event",""))){
+        int split=eventKey.indexOf('|');
+        String category=split>0?eventKey.substring(0,split):eventKey;
+        String prefKey="smart_diag_last_"+category;
+        if(!eventKey.equals(p.getString(prefKey,""))){
             AppLog.add(this,"SMART AUTO DIAG",message);
-            p.edit().putString("smart_diag_last_event",eventKey)
+            p.edit().putString(prefKey,eventKey)
                 .putString("smart_diag_last_message",message)
                 .putLong("smart_diag_last_at",System.currentTimeMillis()).apply();
         }
