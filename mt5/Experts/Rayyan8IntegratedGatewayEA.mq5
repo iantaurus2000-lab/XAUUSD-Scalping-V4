@@ -8,6 +8,12 @@ input string GatewayUrl="http://192.168.0.109:8787";
 input string AllowedSymbol="XAUUSDm";
 input bool DemoOnly=true;
 input int PollSeconds=1;
+// If a managed position approaches TP2 then reverses back to its TP1 level,
+// close at market to protect the first-target profit instead of waiting for SL.
+input bool EnableTP2RetraceProtection=true;
+input double TP2ApproachPercent=85.0;  // Arm after travelling 85% from entry toward TP2.
+input double TP1FallbackRiskMultiple=2.0; // Used only if an order had no explicit TP1.
+
 
 string lastId="";
 string trackedOrderId="";
@@ -51,9 +57,11 @@ void OnDeinit(const int r){
    if(hEma21!=INVALID_HANDLE)IndicatorRelease(hEma21);
    if(hEma50!=INVALID_HANDLE)IndicatorRelease(hEma50);
 }
-void OnTick(){}
+void OnTick(){ manageTP2RetraceProtection(); }
 
 void OnTimer(){
+   // Protection is independent of gateway availability; do not wait for /next.
+   manageTP2RetraceProtection();
    processIndicatorQueue();
    uploadChartSnapshot();
    int code=-1;
@@ -148,6 +156,7 @@ void OnTimer(){
    double entry=StringToDouble(field(cmd,"entry"));
    double sl=StringToDouble(field(cmd,"sl"));
    double tp=StringToDouble(field(cmd,"tp"));
+   double tp1=StringToDouble(field(cmd,"tp1"));
 
    bool ok=false;
    string resultText="REJECT";
@@ -177,6 +186,7 @@ void OnTimer(){
       else if(side=="SELL_LIMIT") shift=tick.bid-refBid;
       if(side=="BUY_LIMIT" || side=="SELL_LIMIT"){
          entry+=shift; sl+=shift; tp+=shift;
+         if(tp1>0.0) tp1+=shift;
          Print("RAYYAN4 PRICE MAP side=",side,
                " refBid=",DoubleToString(refBid, digits),
                " refAsk=",DoubleToString(refAsk, digits),
@@ -191,6 +201,7 @@ void OnTimer(){
    entry=NormalizeDouble(entry,digits);
    sl=NormalizeDouble(sl,digits);
    tp=NormalizeDouble(tp,digits);
+   if(tp1>0.0) tp1=NormalizeDouble(tp1,digits);
 
    if(DemoOnly && AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
       resultText="NOT_DEMO";
@@ -294,13 +305,123 @@ void OnTimer(){
       }
    }
 
-   if(resultText=="EXECUTED") trackedOrderId=id;
+   if(resultText=="EXECUTED"){
+      trackedOrderId=id;
+      if(tp1>0.0 && ((side=="BUY_LIMIT" && entry<tp1 && tp1<tp)
+                    ||(side=="SELL_LIMIT" && tp<tp1 && tp1<entry))){
+         GlobalVariableSet("R8_TP1_"+id,tp1);
+         Print("RAYYAN8 TP1 protection target saved id=",id," tp1=",DoubleToString(tp1,digits));
+      }
+   }
    Print("RAYYAN4 id=",id," side=",side," result=",resultText,
          " detail=",detail," retcode=",trade.ResultRetcode());
    pendingAckId=id; pendingAckResult=resultText; pendingAckDetail=detail;
    if(sendAck(pendingAckId,pendingAckResult,pendingAckDetail)){
       lastId=pendingAckId;
       pendingAckId=""; pendingAckResult=""; pendingAckDetail="";
+   }
+}
+
+
+// TP2-approach retrace protection for Rayyan-managed positions only.
+// A position must have our dedicated magic. The comment/ID is used to recover the
+// explicitly mapped TP1; non-AUTO/manual Rayyan orders fall back to a 2R TP1.
+void manageTP2RetraceProtection(){
+   if(!EnableTP2RetraceProtection) return;
+   if(DemoOnly && AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO) return;
+   if(!TerminalInfoInteger(TERMINAL_CONNECTED)
+      || !TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)
+      || !MQLInfoInteger(MQL_TRADE_ALLOWED)
+      || !AccountInfoInteger(ACCOUNT_TRADE_ALLOWED)
+      || !AccountInfoInteger(ACCOUNT_TRADE_EXPERT)) return;
+
+   double armPct=MathMax(50.0,MathMin(99.0,TP2ApproachPercent))/100.0;
+   double fallbackR=MathMax(0.5,MathMin(5.0,TP1FallbackRiskMultiple));
+   for(int i=PositionsTotal()-1;i>=0;i--){
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0 || !PositionSelectByTicket(ticket)) continue;
+      if(PositionGetInteger(POSITION_MAGIC)!=RAYYAN_MAGIC) continue;
+
+      string symbol=PositionGetString(POSITION_SYMBOL);
+      string comment=PositionGetString(POSITION_COMMENT);
+      string orderId=(StringFind(comment,"R4-")==0 ? StringSubstr(comment,3) : trackedOrderId);
+      long positionId=PositionGetInteger(POSITION_IDENTIFIER);
+      string armedKey="R8_TP2A_"+(string)positionId;
+      string tp1Key=(orderId!="" ? "R8_TP1_"+orderId : "");
+      ENUM_POSITION_TYPE posType=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      double entry=PositionGetDouble(POSITION_PRICE_OPEN);
+      double sl=PositionGetDouble(POSITION_SL);
+      double tp2=PositionGetDouble(POSITION_TP);
+      double risk=MathAbs(entry-sl);
+      if(entry<=0.0 || sl<=0.0 || tp2<=0.0 || risk<=0.0) continue;
+
+      double tp1=0.0;
+      if(tp1Key!="" && GlobalVariableCheck(tp1Key))
+         tp1=GlobalVariableGet(tp1Key);
+      if(tp1<=0.0){
+         tp1=(posType==POSITION_TYPE_BUY ? entry+risk*fallbackR : entry-risk*fallbackR);
+         int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+         tp1=NormalizeDouble(tp1,digits);
+      }
+      // Do nothing if this target is inconsistent with the actual broker position.
+      if(posType==POSITION_TYPE_BUY && !(sl<entry && entry<tp1 && tp1<tp2)) continue;
+      if(posType==POSITION_TYPE_SELL && !(tp2<tp1 && tp1<entry && entry<sl)) continue;
+
+      MqlTick tick;
+      if(!SymbolInfoTick(symbol,tick) || tick.bid<=0.0 || tick.ask<tick.bid) continue;
+      double armPrice=(posType==POSITION_TYPE_BUY
+         ? entry+(tp2-entry)*armPct
+         : entry-(entry-tp2)*armPct);
+      bool armed=GlobalVariableCheck(armedKey) && GlobalVariableGet(armedKey)>0.0;
+      bool reached=(posType==POSITION_TYPE_BUY ? tick.bid>=armPrice : tick.ask<=armPrice);
+      if(!armed && reached){
+         GlobalVariableSet(armedKey,(double)TimeCurrent());
+         armed=true;
+         Print("RAYYAN8 TP2 PROTECTION ARMED symbol=",symbol," side=",
+               (posType==POSITION_TYPE_BUY?"BUY":"SELL"),
+               " entry=",DoubleToString(entry,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+               " tp1=",DoubleToString(tp1,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+               " tp2=",DoubleToString(tp2,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+               " trigger=",DoubleToString(armPrice,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+               " currentBid=",DoubleToString(tick.bid,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+               " currentAsk=",DoubleToString(tick.ask,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)));
+      }
+      if(!armed) continue;
+      bool retracedToTP1=(posType==POSITION_TYPE_BUY ? tick.bid<=tp1 : tick.ask>=tp1);
+      if(!retracedToTP1) continue;
+
+      trade.SetAsyncMode(false);
+      trade.SetExpertMagicNumber(RAYYAN_MAGIC);
+      trade.SetTypeFillingBySymbol(symbol);
+      ResetLastError();
+      bool closed=trade.PositionClose(ticket);
+      uint rc=trade.ResultRetcode();
+      int lastError=GetLastError();
+      if(closed && (rc==TRADE_RETCODE_DONE || rc==TRADE_RETCODE_DONE_PARTIAL)){
+         Print("RAYYAN8 TP2 RETRACE EXIT symbol=",symbol," side=",
+               (posType==POSITION_TYPE_BUY?"BUY":"SELL"),
+               " reason=TP2 approach then retrace to TP1",
+               " ticket=",ticket," tp1=",DoubleToString(tp1,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+               " bid=",DoubleToString(tick.bid,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+               " ask=",DoubleToString(tick.ask,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+               " retcode=",rc);
+         if(!PositionSelectByTicket(ticket)){
+            GlobalVariableDel(armedKey);
+            if(tp1Key!="" && GlobalVariableCheck(tp1Key)) GlobalVariableDel(tp1Key);
+         }
+      }else{
+         string failKey="R8_TP2F_"+(string)positionId;
+         double lastLog=GlobalVariableCheck(failKey)?GlobalVariableGet(failKey):0.0;
+         if((double)TimeCurrent()-lastLog>=10.0){
+            GlobalVariableSet(failKey,(double)TimeCurrent());
+            Print("RAYYAN8 TP2 RETRACE EXIT FAILED symbol=",symbol," ticket=",ticket,
+                  " retcode=",rc," desc=",trade.ResultRetcodeDescription()," lastError=",lastError,
+                  " price=",DoubleToString((posType==POSITION_TYPE_BUY?tick.bid:tick.ask),
+                    (int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+                  " tp1=",DoubleToString(tp1,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+                  " • broker SL/TP remain active");
+         }
+      }
    }
 }
 
