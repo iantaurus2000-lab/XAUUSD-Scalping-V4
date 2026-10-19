@@ -21,6 +21,7 @@ string pendingAckId="";
 string pendingAckResult="";
 string pendingAckDetail="";
 datetime lastDiag=0;
+void manageTP2RetraceProtection();
 // RAYYAN8 integrated native chart controller. The indicator queue is independent.
 input int SRLookbackBars=80;
 input int FiboLookbackBars=60;
