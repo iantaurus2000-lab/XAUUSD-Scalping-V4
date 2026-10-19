@@ -862,8 +862,28 @@ public class MainActivity extends Activity {
     }
 
     private void queueBlockDiagnostic(String reason){
-        if("SMART_AUTO".equals(queueOrigin))
-            AppLog.add(this,"SMART AUTO DIAG","QUEUE_REJECTED • "+reason+" • command not queued");
+        if(!"SMART_AUTO".equals(queueOrigin))return;
+        String code="GENERAL";
+        if(reason.startsWith("quote/chart stale"))code="QUOTE_STALE";
+        else if(reason.startsWith("invalid side"))code="INVALID_SIDE";
+        else if(reason.startsWith("invalid order"))code="INVALID_VALUES";
+        else if(reason.startsWith("BUY LIMIT entry"))code="BUY_LIMIT_PRICE";
+        else if(reason.startsWith("BUY geometry"))code="BUY_LIMIT_GEOMETRY";
+        else if(reason.startsWith("SELL LIMIT entry"))code="SELL_LIMIT_PRICE";
+        else if(reason.startsWith("SELL geometry"))code="SELL_LIMIT_GEOMETRY";
+        else if(reason.startsWith("queue stale"))code="QUEUE_STALE";
+        else if(reason.startsWith("gateway queue busy"))code="QUEUE_BUSY";
+        else if(reason.startsWith("exception"))code="QUEUE_EXCEPTION";
+        long candle=System.currentTimeMillis();
+        try{
+            if(chart!=null&&!chart.isEmpty()){
+                Candle[] bars=chart.getDataSnapshot();
+                if(bars!=null&&bars.length>0)candle=bars[bars.length-1].t;
+            }
+        }catch(Exception ignored){}
+        SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        autoDiagnostic(p,"QUEUE_BLOCK_"+code+"|"+selectedMarket+"|"+candle,
+            "QUEUE_REJECTED • "+reason+" • command not queued • market="+selectedMarket);
     }
 
     private void smartLogOnce(SharedPreferences p,String key,String message){
