@@ -28,10 +28,10 @@ public class QuoteSafetyTest {
         assertFalse(QuoteSafety.isFreshBar(0,now,120000));
     }
 
-    @Test public void stageOneLightSpreadGateUsesFortyPercentOfAtr(){
+    @Test public void stageOneLightSpreadGateUsesFiftyPercentOfAtr(){
         assertTrue(QuoteSafety.spreadAcceptable(2000.00,2000.02,1.0));
-        assertTrue(QuoteSafety.spreadAcceptable(4139.01,4139.25,0.61));
-        assertFalse(QuoteSafety.spreadAcceptable(4139.01,4139.25,0.59));
+        assertTrue(QuoteSafety.spreadAcceptable(4139.01,4139.25,0.48));
+        assertFalse(QuoteSafety.spreadAcceptable(4139.01,4139.25,0.47));
         assertFalse(QuoteSafety.spreadAcceptable(2000.00,2000.50,0.10));
         assertFalse(QuoteSafety.spreadAcceptable(2000.00,2000.10,0.0));
         assertFalse(QuoteSafety.spreadAcceptable(10.0,9.0,1.0));
