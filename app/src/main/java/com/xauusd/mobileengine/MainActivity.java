@@ -2254,7 +2254,7 @@ public class MainActivity extends Activity {
         TextView panelTitle=tv("AUTO ENTRY / MT5 • DEMO",18);
         panelTitle.setTextColor(Color.CYAN);panelTitle.setTypeface(null,Typeface.BOLD);
         root.addView(panelTitle,new LinearLayout.LayoutParams(-1,uiDp(36)));
-        TextView panelNote=tv("Pemicu M1 + bias M5 • kirim hanya saat EA terhubung",12);
+        TextView panelNote=tv("M1 + bias M5 • proteksi exit TP2→TP1 dikelola EA Rayyan",12);
         panelNote.setTextColor(Color.LTGRAY);
         root.addView(panelNote,new LinearLayout.LayoutParams(-1,uiDp(32)));
 
