@@ -847,6 +847,22 @@ public class MainActivity extends Activity {
         return side;
     }
 
+    /** Deduplicated per signal/reason: explains why READY did or did not reach the broker. */
+    private void autoDiagnostic(SharedPreferences p,String eventKey,String message){
+        if(eventKey==null)eventKey="";
+        if(!eventKey.equals(p.getString("smart_diag_last_event",""))){
+            AppLog.add(this,"SMART AUTO DIAG",message);
+            p.edit().putString("smart_diag_last_event",eventKey)
+                .putString("smart_diag_last_message",message)
+                .putLong("smart_diag_last_at",System.currentTimeMillis()).apply();
+        }
+    }
+
+    private void queueBlockDiagnostic(String reason){
+        if("SMART_AUTO".equals(queueOrigin))
+            AppLog.add(this,"SMART AUTO DIAG","QUEUE_REJECTED • "+reason+" • command not queued");
+    }
+
     private void smartLogOnce(SharedPreferences p,String key,String message){
         if(!key.equals(p.getString("smart_last_log_key",""))){
             AppLog.add(this,"SMART LIMIT",message);
@@ -1028,7 +1044,11 @@ public class MainActivity extends Activity {
         boolean autoEnabled=gp.getBoolean("auto",false)
                 &&"READY".equals(gp.getString("operation_mode","REST"))
                 &&"M1".equals(selectedTf);
-        if(m1==null||m1.length<30||m5==null||m5.length<30)return;
+        if(m1==null||m1.length<30||m5==null||m5.length<30){
+            autoDiagnostic(gp,"DATA_M1M5_SHORT|"+selectedMarket+"|"+selectedTf,
+                "ENTRY BLOCKED • data M1/M5 kurang dari 30 candle • market="+selectedMarket+" TF="+selectedTf);
+            return;
+        }
 
         long now=System.currentTimeMillis();
         boolean eaOnline=GatewayService.isEaRecentlyOnline(this);
@@ -1037,12 +1057,15 @@ public class MainActivity extends Activity {
         String remoteId=gp.getString("ea_order_state_id","");
         boolean stateFresh=stateAt>0L&&now>=stateAt&&now-stateAt<=8000L&&eaOnline;
         if(!eaOnline){
-            smartLogOnce(gp,"EA_OFFLINE","blocked: EA MT5 tidak polling aktif; tidak antre/re-entry");
+            autoDiagnostic(gp,"EA_OFFLINE|"+(readyCandidate?signalKey:selectedMarket+"|"+selectedTf),
+                "ENTRY BLOCKED • EA MT5 /next offline • ready="+readyCandidate+" • tidak mengirim order");
             if(status!=null&&autoEnabled)status.setText("● SMART AUTO BLOCKED • EA /next OFFLINE");
             return;
         }
         if(!stateFresh){
-            smartLogOnce(gp,"STATE_STALE","blocked: status order EA belum segar; aman menunggu, bukan membuat order baru");
+            autoDiagnostic(gp,"STATE_STALE|"+(readyCandidate?signalKey:selectedMarket+"|"+selectedTf),
+                "ENTRY BLOCKED • status order MT5 stale/heartbeat >8s • state="+remoteState+
+                " ageMs="+(stateAt>0?Math.max(0L,now-stateAt):-1L)+" • tidak membuat order duplikat");
             if(status!=null&&autoEnabled)status.setText("● SMART AUTO BLOCKED • STATUS ORDER MT5 STALE");
             return;
         }
@@ -1057,7 +1080,27 @@ public class MainActivity extends Activity {
         String sideNow=normalizedStateSide(activeSide);
         double atr=SmartLimitReentry.atr(m1,14);
         String signalKey=makeSignalKey(s,candleStamp);
+        boolean readyCandidate=isAutoEntryEligible(s,bid,ask,"M1".equals(selectedTf));
+        if(readyCandidate){
+            autoDiagnostic(gp,"READY_SEEN|"+signalKey,
+                "READY TERDETEKSI • "+signalKey+" • score="+s.score+" conf="+s.confidence+
+                "/5 wick="+s.wickRejection+" sweep="+s.liquiditySweep+" spreadOK="+s.spreadFilter+
+                " M5="+s.m5Bias+" • tahap berikutnya memerlukan gate Smart Auto");
+        }
+        if(readyCandidate&&autoEnabled){
+            autoDiagnostic(gp,"READY_AUTO_ON|"+signalKey,
+                "READY + SMART AUTO ON • memeriksa EA heartbeat, state order, Open Action, antrean, lot, cooldown");
+        }
 
+        // READY can coexist with an already active order/position; this lifecycle lock is deliberate.
+        if(readyCandidate&&("PENDING".equals(remoteState)||"POSITION".equals(remoteState))){
+            autoDiagnostic(gp,"ACTIVE_EXPOSURE|"+signalKey+"|"+remoteId+"|"+remoteState,
+                "READY TIDAK DIKIRIM • MT5 masih "+remoteState+" • id="+remoteId+
+                " • phase="+gp.getString("smart_phase","IDLE")+" • menunggu exposure selesai agar tidak double-entry");
+        }else if(readyCandidate&&!"NONE".equals(remoteState)){
+            autoDiagnostic(gp,"STATE_NOT_FLAT|"+signalKey+"|"+remoteState,
+                "READY DITAHAN • EA state="+remoteState+" bukan NONE • menunggu state MT5 terkonfirmasi");
+        }
         // EA has positively confirmed a pending order or an open position.
         if("PENDING".equals(remoteState)||"POSITION".equals(remoteState)){
             if(activeId.isEmpty()||"IDLE".equals(phase)){
@@ -1087,6 +1130,10 @@ public class MainActivity extends Activity {
             }
 
             if("POSITION".equals(remoteState)){
+                autoDiagnostic(gp,"MT5_POSITION|"+activeId+"|"+gp.getString("ea_order_state_ticket",""),
+                    "STAGE MT5_POSITION • EA melaporkan posisi terbuka • id="+activeId+
+                    " ticket="+gp.getString("ea_order_state_ticket","")+" symbol="+activeSymbol+
+                    " • verifikasi volume/harga/SL/TP pada tab Trade MT5");
                 if(!"POSITION".equals(phase)){
                     gp.edit().putString("smart_phase","POSITION").apply();
                     AppLog.add(this,"SMART LIMIT","position detected; AUTO locked until EA reports no position");
@@ -1094,6 +1141,10 @@ public class MainActivity extends Activity {
                 return;
             }
 
+            autoDiagnostic(gp,"MT5_PENDING|"+activeId+"|"+gp.getString("ea_order_state_ticket",""),
+                "STAGE MT5_PENDING • EA melaporkan pending order ada di MT5 • id="+activeId+
+                " ticket="+gp.getString("ea_order_state_ticket","")+" symbol="+activeSymbol+
+                " • pending belum sama dengan posisi terisi");
             // A pending order can be cancelled only after the exact order ticket and
             // original R4-id are confirmed by the EA state heartbeat.
             if("CANCEL_REQUESTED".equals(phase)){
@@ -1308,8 +1359,23 @@ public class MainActivity extends Activity {
             if(status!=null&&autoEnabled)status.setText("● SMART AUTO BLOCKED • EA STATE "+remoteState);
             return;
         }
-        if(!autoEnabled)return;
+        if(!autoEnabled){
+            String why=!gp.getBoolean("auto",false)?"AUTO_SWITCH_OFF":
+                !"READY".equals(gp.getString("operation_mode","REST"))?"OPERATION_MODE_REST":
+                !"M1".equals(selectedTf)?"TIMEFRAME_NOT_M1":"AUTO_GATE_DISABLED";
+            if(readyCandidate)autoDiagnostic(gp,"AUTO_GATE|"+signalKey+"|"+why,
+                "READY DITAHAN • "+why+" • aktifkan Smart Auto + MODE SIAP TRADING + chart M1");
+            return;
+        }
         if(!queueIsFree(gp)){
+            String command=gp.getString("next","");
+            String queuedId="";
+            for(String part:command.split(";"))if(part.startsWith("id=")){queuedId=part.substring(3);break;}
+            autoDiagnostic(gp,"QUEUE_BUSY|"+signalKey+"|"+queuedId,
+                "READY TIDAK DIKIRIM • Gateway antrean masih terisi • id="+queuedId+
+                " • order_status="+gp.getString("order_status","UNKNOWN")+
+                " • detail="+gp.getString("order_status_detail","")+
+                " • antrean tidak ditimpa demi mencegah order ganda");
             if(status!=null)status.setText("● SMART AUTO WAIT • GATEWAY QUEUE BUSY");
             return;
         }
@@ -1317,15 +1383,35 @@ public class MainActivity extends Activity {
         boolean m1Context="M1".equals(selectedTf)&&m1.length>=30&&m5.length>=30;
         if(!isAutoEntryEligible(s,bid,ask,m1Context)){
             String reason=autoEntryBlockReason(s,bid,ask,m1Context);
-            smartLogOnce(gp,"FILTER|"+signalKey+"|"+reason,"AUTO tidak entry: "+reason+" • side="+s.side+" score="+s.score+" conf="+s.confidence+"/5");
+            autoDiagnostic(gp,"FILTER|"+signalKey+"|"+reason,
+                "FILTER BLOCK • reason="+reason+" • side="+s.side+" score="+s.score+
+                " conf="+s.confidence+"/5 wick="+s.wickRejection+" sweep="+s.liquiditySweep+
+                " M5="+s.m5Bias+" spreadOK="+s.spreadFilter+" atrOK="+s.atrFilter+
+                " entry="+price(s.entry)+" bid="+price(bid)+" ask="+price(ask));
             if(status!=null)status.setText("● SMART AUTO WAIT • "+reason);
             return;
         }
         // Two explicit open-action modes share the existing EA/ACK and anti-duplicate guards.
         // Both require a true sweep; the second waits for a favourable bounce first.
         if(!isOpenActionEntryReady(s,m1,bid,ask,candleStamp,gp)){
-            if(status!=null&&!OPEN_ACTION_WAIT_BOUNCE.equals(gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST)))
-                status.setText("● SMART AUTO WAIT • MENUNGGU SAPUAN WICK VALID");
+            String mode=gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST);
+            String waitSide=gp.getString("open_action_wait_side","");
+            String waitMarket=gp.getString("open_action_wait_market","");
+            long waitStart=gp.getLong("open_action_wait_candle_ms",0L);
+            boolean bounceDone=gp.getBoolean("open_action_wait_bounce_confirmed",false);
+            int waitBars=waitStart>0?SmartLimitReentry.elapsedM1Bars(waitStart,candleStamp):-1;
+            String gate=!s.wickRejection?"WICK_REJECTION_FALSE":
+                !s.liquiditySweep?"LIQUIDITY_SWEEP_REQUIRED":
+                OPEN_ACTION_WAIT_BOUNCE.equals(mode)
+                    ?(bounceDone?"BOUNCE_CONFIRMED_BUT_ORDER_GATES_RECHECK":"WAITING_FOR_PRICE_BOUNCE")
+                    :"SWEEP_FIRST_GATE_NOT_CONFIRMED";
+            autoDiagnostic(gp,"OPEN_ACTION|"+signalKey+"|"+mode+"|"+gate+"|"+waitBars,
+                "OPEN ACTION BLOCK • reason="+gate+" mode="+mode+" side="+s.side+
+                " wick="+s.wickRejection+" sweep="+s.liquiditySweep+
+                " waitMarket="+waitMarket+" waitSide="+waitSide+" bounceConfirmed="+bounceDone+
+                " waitM1Bars="+waitBars+" • READY visual tidak otomatis berarti Open Action terpenuhi");
+            if(status!=null)status.setText(OPEN_ACTION_WAIT_BOUNCE.equals(mode)
+                ?"● SMART AUTO WAIT • MENUNGGU PANTULAN":"● SMART AUTO WAIT • MENUNGGU SWEEP VALID");
             return;
         }
         // AUTO LIMIT must use the same per-candle direction accepted by READY UI.
@@ -1335,31 +1421,52 @@ public class MainActivity extends Activity {
         if(!liveCandleKey.equals(readyCandleKey)
                 ||"WAIT".equals(readyCandleSide)
                 ||!readyCandleSide.equals(s.side)){
-            smartLogOnce(gp,"READY_DIRECTION_MISMATCH|"+liveCandleKey,
-                "blocked: AUTO LIMIT direction does not match candle-locked READY; waiting for next M1 candle");
+            autoDiagnostic(gp,"READY_DIRECTION_MISMATCH|"+signalKey+"|"+liveCandleKey,
+                "READY DITAHAN • arah signal="+s.side+" tidak sama dengan arah READY terkunci="+readyCandleSide+
+                " • signalKey="+liveCandleKey+" • menunggu READY/candle sinkron");
             return;
         }
         double lot=lotForMarket();
         double minLot=minLotForSymbol(mt5SymbolForMarket(selectedMarket));
         if(!Double.isFinite(lot)||lot<=0||lot+1e-8<minLot){
-            smartLogOnce(gp,"LOT_INVALID|"+selectedMarket,"blocked: lot "+lotText(lot)+" di bawah minimum "+lotText(minLot));
+            autoDiagnostic(gp,"LOT_INVALID|"+signalKey+"|"+lotText(lot)+"|"+lotText(minLot),
+                "READY DITAHAN • lot invalid/di bawah minimum • lot="+lotText(lot)+
+                " minimum="+lotText(minLot)+" symbol="+mt5SymbolForMarket(selectedMarket));
             return;
         }
         if(signalKey.equals(gp.getString("auto_last_signal_key",""))
                 ||signalKey.equals(gp.getString("smart_blocked_signal_key",""))){
-            smartLogOnce(gp,"DUPLICATE_SIGNAL|"+signalKey,"blocked: sinyal/Setup ini sudah diproses; menunggu candle/setup baru");
+            String duplicateOf=signalKey.equals(gp.getString("auto_last_signal_key",""))
+                ?"auto_last_signal_key":"smart_blocked_signal_key";
+            autoDiagnostic(gp,"DUPLICATE_SIGNAL|"+signalKey+"|"+duplicateOf,
+                "READY DITAHAN • setup ini sudah diproses pada candle yang sama • gate="+duplicateOf+
+                " • menunggu setup/candle baru untuk mencegah duplicate entry");
             return;
         }
         long lastAuto=gp.getLong("auto_last_order_ms",0L);
         if(now-lastAuto<60000L){
-            smartLogOnce(gp,"COOLDOWN|"+signalKey,"blocked: cooldown 60 detik setelah command terakhir");
+            long remainingMs=60000L-(now-lastAuto);
+            autoDiagnostic(gp,"COOLDOWN|"+signalKey+"|"+(lastAuto/1000L),
+                "READY DITAHAN • cooldown global aktif • tersisa sekitar "+((remainingMs+999L)/1000L)+
+                " detik dari 60 detik • waktu perintah terakhir="+lastAuto+
+                " • gate ini sedang dipantau pada Tahap 1");
             return;
         }
         double target=validAutoTarget(s);
-        if(target<=0)return;
+        if(target<=0){
+            autoDiagnostic(gp,"TARGET_INVALID|"+signalKey,
+                "READY DITAHAN • target TP tidak valid • entry="+price(s.entry)+
+                " TP1="+price(s.tp1)+" TP2="+price(s.tp2)+" side="+s.side);
+            return;
+        }
         if(!queueAutoSignal(s,m1,gp,lot,candleStamp,signalKey)){
-            smartLogOnce(gp,"QUEUE_REJECTED|"+signalKey,"queue rejected; no immediate automatic resend");
+            autoDiagnostic(gp,"QUEUE_REJECTED|"+signalKey+"|"+gp.getString("order_status","UNKNOWN"),
+                "READY LOLOS FILTER, TETAPI APK GAGAL MEMASUKKAN ANTREAN • order_status="+
+                gp.getString("order_status","UNKNOWN")+" detail="+gp.getString("order_status_detail","")+
+                " • cek log QUEUE_REJECTED untuk validasi harga/lot/antrean");
         }else{
+            autoDiagnostic(gp,"APK_QUEUE_ACCEPTED|"+gp.getString("order_status_id",""),
+                "STAGE APK_QUEUE_ACCEPTED • perintah disimpan di antrean APK; ini BELUM berarti order diterima/terisi MT5");
             gp.edit().remove("smart_last_log_key").apply();
         }
     }
@@ -2172,6 +2279,7 @@ public class MainActivity extends Activity {
         try {
         if(chart==null||!hasFreshEntryQuotes()){
             AppLog.add(this,"ORDER_BLOCKED","queue LIMIT diblokir: kuotasi MT5/chart tidak segar");
+            queueBlockDiagnostic("quote/chart stale");
             Toast.makeText(this,"Kuotasi MT5/chart belum segar • order tidak diantrekan",Toast.LENGTH_LONG).show();
             return false;
         }
@@ -2179,9 +2287,13 @@ public class MainActivity extends Activity {
         if("BUY".equals(side))side="BUY_LIMIT";
         if("SELL".equals(side))side="SELL_LIMIT";
         if(!"BUY_LIMIT".equals(side)&&!"SELL_LIMIT".equals(side)){
+            queueBlockDiagnostic("invalid side="+side);
             Toast.makeText(this,"Side harus BUY_LIMIT atau SELL_LIMIT",Toast.LENGTH_SHORT).show();return false;
         }
-        if(volume<=0||entry<=0||sl<=0||tp<=0){Toast.makeText(this,"Nilai order tidak valid",Toast.LENGTH_SHORT).show();return false;}
+        if(volume<=0||entry<=0||sl<=0||tp<=0){
+            queueBlockDiagnostic("invalid order geometry/values volume="+volume+" entry="+entry+" sl="+sl+" tp="+tp);
+            Toast.makeText(this,"Nilai order tidak valid",Toast.LENGTH_SHORT).show();return false;
+        }
         String mt5Symbol=mt5SymbolForMarket(selectedMarket);
         double minLot=minLotForSymbol(mt5Symbol);
         if(volume+1e-8<minLot){
@@ -2190,12 +2302,24 @@ public class MainActivity extends Activity {
             return false;
         }
         if("BUY_LIMIT".equals(side)){
-            if(entry>=chart.getAsk()){Toast.makeText(this,"BUY LIMIT harus di bawah ASK",Toast.LENGTH_SHORT).show();return false;}
-            if(!(sl<entry&&tp>entry)){Toast.makeText(this,"BUY LIMIT: SL < Entry < TP",Toast.LENGTH_SHORT).show();return false;}
+            if(entry>=chart.getAsk()){
+                queueBlockDiagnostic("BUY LIMIT entry="+price(entry)+" >= ask="+price(chart.getAsk()));
+                Toast.makeText(this,"BUY LIMIT harus di bawah ASK",Toast.LENGTH_SHORT).show();return false;
+            }
+            if(!(sl<entry&&tp>entry)){
+                queueBlockDiagnostic("BUY geometry invalid SL < Entry < TP • SL="+price(sl)+" Entry="+price(entry)+" TP="+price(tp));
+                Toast.makeText(this,"BUY LIMIT: SL < Entry < TP",Toast.LENGTH_SHORT).show();return false;
+            }
         }
         if("SELL_LIMIT".equals(side)){
-            if(entry<=chart.getBid()){Toast.makeText(this,"SELL LIMIT harus di atas BID",Toast.LENGTH_SHORT).show();return false;}
-            if(!(tp<entry&&sl>entry)){Toast.makeText(this,"SELL LIMIT: TP < Entry < SL",Toast.LENGTH_SHORT).show();return false;}
+            if(entry<=chart.getBid()){
+                queueBlockDiagnostic("SELL LIMIT entry="+price(entry)+" <= bid="+price(chart.getBid()));
+                Toast.makeText(this,"SELL LIMIT harus di atas BID",Toast.LENGTH_SHORT).show();return false;
+            }
+            if(!(tp<entry&&sl>entry)){
+                queueBlockDiagnostic("SELL geometry invalid TP < Entry < SL • TP="+price(tp)+" Entry="+price(entry)+" SL="+price(sl));
+                Toast.makeText(this,"SELL LIMIT: TP < Entry < SL",Toast.LENGTH_SHORT).show();return false;
+            }
         }
         SharedPreferences gatewayPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         String existing=gatewayPrefs.getString("next","");
@@ -2211,10 +2335,12 @@ public class MainActivity extends Activity {
                     .putString("order_status_detail","Perintah belum diambil EA dalam 15 detik; periksa tab Trade dan Experts MT5 sebelum mengirim ulang")
                     .putLong("order_status_at",System.currentTimeMillis()).apply();
                 AppLog.add(this,"ORDER","stale queue cleared without ACK id="+existingId+"; verify MT5 before resending");
+                queueBlockDiagnostic("queue stale >15s id="+existingId+"; cleared but MT5 must be checked before resend");
                 Toast.makeText(this,"Perintah kedaluwarsa >15 detik. Cek MT5 Trade/Experts sebelum entry baru.",Toast.LENGTH_LONG).show();
                 return false;
             }
             AppLog.add(this,"ORDER","queue busy; refusing to overwrite unacknowledged command");
+            queueBlockDiagnostic("gateway queue busy; refusing to overwrite unacknowledged command");
             Toast.makeText(this,"Antrean masih berisi order, tunggu ACK MT5",Toast.LENGTH_SHORT).show();
             return false;
         }
@@ -2231,10 +2357,14 @@ public class MainActivity extends Activity {
         WinRateTracker.record(this,queueOrigin,selectedMarket,trackedSide,entry,sl,queueOutcomeTarget>0?queueOutcomeTarget:tp,trackedCandle);
         // A queued request is not yet a live broker order. The EA state heartbeat
         // owns OPEN ENTRY display and removes it after cancel/close/rejection.
-        AppLog.add(this,"ORDER","queued "+cmd);notifyLocal("MT5 "+side,"Entry queued for demo EA");
+        AppLog.add(this,"ORDER","queued "+cmd);
+        if("SMART_AUTO".equals(queueOrigin))
+            AppLog.add(this,"SMART AUTO DIAG","STAGE APK_QUEUE_ACCEPTED • id="+id+" • queue=QUEUED • broker has NOT confirmed the order yet");
+        notifyLocal("MT5 "+side,"Entry queued for demo EA");
         Toast.makeText(this,"Entry masuk antrean • EA MT5 akan memproses otomatis",Toast.LENGTH_SHORT).show();
         return true;
         } catch(Exception e) {
+            queueBlockDiagnostic("exception="+e.getClass().getSimpleName()+" "+e.getMessage());
             AppLog.add(this,"ORDER","queue error: "+e.getClass().getSimpleName()+" "+e.getMessage());
             Toast.makeText(this,"Gagal antre order: "+e.getMessage(),Toast.LENGTH_LONG).show();
             return false;
