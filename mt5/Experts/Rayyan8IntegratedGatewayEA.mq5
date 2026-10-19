@@ -30,6 +30,12 @@ int OnInit(){
    hEma50=iMA(_Symbol,_Period,50,0,MODE_EMA,PRICE_CLOSE);
    if(hEma9==INVALID_HANDLE||hEma21==INVALID_HANDLE||hEma50==INVALID_HANDLE)
       Print("RAYYAN8 INDICATOR WARNING handles=",hEma9,",",hEma21,",",hEma50);
+   // Keep the latest candle aligned to the right and enlarge candle spacing
+   // for the APK's mirrored screenshot. These are chart-only settings.
+   ChartSetInteger(0,CHART_AUTOSCROLL,true);
+   ChartSetInteger(0,CHART_SHIFT,false);
+   ChartSetInteger(0,CHART_SCALE,4);
+   ChartRedraw(0);
    EventSetTimer(MathMax(1,PollSeconds));
    applyAll();
    Print("RAYYAN8 INTEGRATED START Gateway=",GatewayUrl,
