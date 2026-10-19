@@ -880,7 +880,7 @@ public class MainActivity extends Activity {
         queueOrigin="SMART_AUTO";
         queueOutcomeTarget=orderSignal.tp1;
         boolean queued;
-        try { queued=queueLimit(orderSide,lot,orderSignal.entry,orderSignal.sl,target); }
+        try { queued=queueLimit(orderSide,lot,orderSignal.entry,orderSignal.sl,target,orderSignal.tp1); }
         finally { queueOrigin="MANUAL"; queueOutcomeTarget=0; }
         if(!queued)return false;
         String orderId=gp.getString("order_status_id","");
@@ -2164,6 +2164,11 @@ public class MainActivity extends Activity {
     }
 
     boolean queueLimit(String side,double volume,double entry,double sl,double tp){
+        return queueLimit(side,volume,entry,sl,tp,0.0);
+    }
+
+    /** Optional TP1 is passed only when the caller has a validated first target. */
+    private boolean queueLimit(String side,double volume,double entry,double sl,double tp,double tp1){
         try {
         if(chart==null||!hasFreshEntryQuotes()){
             AppLog.add(this,"ORDER_BLOCKED","queue LIMIT diblokir: kuotasi MT5/chart tidak segar");
@@ -2214,7 +2219,8 @@ public class MainActivity extends Activity {
             return false;
         }
         String id=Long.toString(System.currentTimeMillis());
-        String cmd="id="+id+";type=LIMIT;symbol="+mt5Symbol+";side="+side+";volume="+volume+";entry="+entry+";sl="+sl+";tp="+tp+";refBid="+chart.getBid()+";refAsk="+chart.getAsk();
+        String tp1Field=tp1>0.0?";tp1="+Double.toString(tp1):"";
+        String cmd="id="+id+";type=LIMIT;symbol="+mt5Symbol+";side="+side+";volume="+volume+";entry="+entry+";sl="+sl+";tp="+tp+tp1Field+";refBid="+chart.getBid()+";refAsk="+chart.getAsk();
         gatewayPrefs.edit().putString("next",cmd).putFloat("lot_"+mt5Symbol,(float)volume)
             .putString("order_status_id",id).putString("order_status","QUEUED")
             .putString("order_status_detail","Menunggu EA MT5 mengambil perintah")
