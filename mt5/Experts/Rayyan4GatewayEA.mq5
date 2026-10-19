@@ -322,8 +322,13 @@ void manageTP2RetraceProtection(){
       if(entry<=0.0 || sl<=0.0 || tp2<=0.0 || risk<=0.0) continue;
 
       double tp1=0.0;
-      if(tp1Key!="" && GlobalVariableCheck(tp1Key)) tp1=GlobalVariableGet(tp1Key);
-      if(tp1<=0.0){
+      if(tp1Key!="" && GlobalVariableCheck(tp1Key))
+         tp1=GlobalVariableGet(tp1Key);
+      bool tp1Valid=(posType==POSITION_TYPE_BUY
+         ? (sl<entry && entry<tp1 && tp1<tp2)
+         : (tp2<tp1 && tp1<entry && entry<sl));
+      // Recompute TP1 when actual fill/slippage makes the submitted level inconsistent.
+      if(!tp1Valid){
          tp1=(posType==POSITION_TYPE_BUY ? entry+risk*fallbackR : entry-risk*fallbackR);
          tp1=NormalizeDouble(tp1,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS));
       }
