@@ -19,6 +19,7 @@ string pendingAckId="";
 string pendingAckResult="";
 string pendingAckDetail="";
 datetime lastDiag=0;
+void manageTP2RetraceProtection();
 
 int OnInit(){
    EventSetTimer(MathMax(1,PollSeconds));
