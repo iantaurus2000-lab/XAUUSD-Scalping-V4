@@ -58,6 +58,9 @@ public class MainActivity extends Activity {
     private static final long ORDER_STATE_MAX_AGE_MS=8000L;
     private static final long M1_BAR_MAX_AGE_MS=120000L;
     private static final long M5_BAR_MAX_AGE_MS=600000L;
+    private static final String OPEN_ACTION_SWEEP_FIRST="SWEEP_FIRST";
+    private static final String OPEN_ACTION_WAIT_BOUNCE="WAIT_BOUNCE";
+    private static final int AUTO_ENTRY_OFFSET_POINTS=10;
     private Button signalSideButton, buyLimitBtn, sellLimitBtn;
     private TextView entryReadyView;
     private final Handler signalUiHandler = new Handler(Looper.getMainLooper());
@@ -190,8 +193,9 @@ public class MainActivity extends Activity {
         chartArea.addView(chart,new FrameLayout.LayoutParams(-1,-1));
         chartMirror=new ImageView(this);
         chartMirror.setScaleType(ImageView.ScaleType.FIT_XY);
-        // Small right gutter keeps the mirrored price scale/candles away from the screen edge.
-        chartMirror.setPadding(0,0,uiDp(18),0);
+        // Use the full mirrored MT5 frame so the broker's right price scale sits at
+        // the actual right edge; right-side candle positioning is configured by the EA.
+        chartMirror.setPadding(0,0,0,0);
         chartMirror.setBackgroundColor(Color.rgb(2,10,18));
         chartMirror.setContentDescription("Tampilan chart asli MT5 dari Winlator");
         chartMirror.setClickable(false);chartMirror.setFocusable(false);
@@ -864,13 +868,19 @@ public class MainActivity extends Activity {
 
     private boolean queueAutoSignal(SignalResult s,Candle[] m1,SharedPreferences gp,
                                     double lot,long candleStamp,String signalKey){
-        double target=validAutoTarget(s);
+        SignalResult orderSignal=createOpenActionOrderSignal(s,gp);
+        if(orderSignal==null){
+            smartLogOnce(gp,"OPEN_ACTION_LEVELS|"+signalKey,
+                "AUTO tidak mengirim: offset LIMIT tidak valid untuk quote/SL; menunggu setup baru");
+            return false;
+        }
+        double target=validAutoTarget(orderSignal);
         if(target<=0)return false;
-        String orderSide="BUY".equals(s.side)?"BUY_LIMIT":"SELL_LIMIT";
+        String orderSide="BUY".equals(orderSignal.side)?"BUY_LIMIT":"SELL_LIMIT";
         queueOrigin="SMART_AUTO";
-        queueOutcomeTarget=s.tp1;
+        queueOutcomeTarget=orderSignal.tp1;
         boolean queued;
-        try { queued=queueLimit(orderSide,lot,s.entry,s.sl,target); }
+        try { queued=queueLimit(orderSide,lot,orderSignal.entry,orderSignal.sl,target); }
         finally { queueOrigin="MANUAL"; queueOutcomeTarget=0; }
         if(!queued)return false;
         String orderId=gp.getString("order_status_id","");
@@ -879,17 +889,135 @@ public class MainActivity extends Activity {
             .putLong("auto_last_order_ms",now)
             .putString("smart_phase","QUEUED")
             .putString("smart_active_id",orderId)
-            .putString("smart_active_side",s.side)
+            .putString("smart_active_side",orderSignal.side)
             .putString("smart_active_symbol",mt5SymbolForMarket(selectedMarket))
-            .putString("smart_active_entry",Double.toString(s.entry))
+            .putString("smart_active_entry",Double.toString(orderSignal.entry))
             .putString("smart_active_ticket","")
             .putLong("smart_active_start_candle_ms",candleStamp)
             .putLong("smart_active_queue_ms",now)
             .putBoolean("smart_reentry_allowed",false)
             .remove("smart_cancel_command_id")
+            .remove("open_action_wait_market")
+            .remove("open_action_wait_side")
+            .remove("open_action_wait_anchor")
+            .remove("open_action_wait_candle_ms")
+            .remove("open_action_wait_bounce_confirmed")
             .apply();
-        AppLog.add(this,"AUTO LIMIT","queued "+signalKey+"; lifecycle locked pending EA state");
+        AppLog.add(this,"AUTO LIMIT","queued "+signalKey+" mode="+gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST)
+            +" offset="+AUTO_ENTRY_OFFSET_POINTS+" MT5 points entry="+price(orderSignal.entry)
+            +" SL="+price(orderSignal.sl)+" TP="+price(target)+"; locked pending EA state");
         return true;
+    }
+
+    /** Use broker SYMBOL_POINT, not a guessed pip size, for all open-action offsets. */
+    private double brokerPoint(SharedPreferences gp){
+        String symbol=mt5SymbolForMarket(selectedMarket);
+        double point=preferenceDouble(gp,"broker_quote_point_"+symbol,0.0);
+        if(point>0.0)return point;
+        int digits=gp.getInt("broker_quote_digits_"+symbol,-1);
+        return digits>=0&&digits<=10?Math.pow(10.0,-digits):0.0;
+    }
+
+    private double normalizeBrokerPrice(double value,SharedPreferences gp){
+        int digits=gp.getInt("broker_quote_digits_"+mt5SymbolForMarket(selectedMarket),3);
+        digits=Math.max(0,Math.min(10,digits));
+        return Double.parseDouble(String.format(Locale.US,"%."+digits+"f",value));
+    }
+
+    /**
+     * Mode 1 triggers on the first valid wick+sweep. Mode 2 records that first sweep
+     * and waits for a subsequent favourable move of max(0.15 ATR, 10 MT5 points).
+     * The wait state is persisted so a short UI pause does not erase the setup.
+     */
+    private boolean isOpenActionEntryReady(SignalResult s,Candle[] m1,double bid,double ask,
+                                           long candleStamp,SharedPreferences gp){
+        if(s==null||(!"BUY".equals(s.side)&&!"SELL".equals(s.side))||!s.wickRejection)
+            return false;
+        String mode=gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST);
+        if(!OPEN_ACTION_WAIT_BOUNCE.equals(mode)){
+            return s.liquiditySweep;
+        }
+        String symbol=selectedMarket;
+        String side=s.side;
+        String waitMarket=gp.getString("open_action_wait_market","");
+        String waitSide=gp.getString("open_action_wait_side","");
+        long started=gp.getLong("open_action_wait_candle_ms",0L);
+        if(!symbol.equals(waitMarket)||!side.equals(waitSide)||started<=0L){
+            if(!s.liquiditySweep)return false;
+            double anchor=(bid+ask)*0.5;
+            if(!Double.isFinite(anchor)||anchor<=0)return false;
+            gp.edit().putString("open_action_wait_market",symbol)
+                .putString("open_action_wait_side",side)
+                .putString("open_action_wait_anchor",Double.toString(anchor))
+                .putLong("open_action_wait_candle_ms",candleStamp)
+                .putBoolean("open_action_wait_bounce_confirmed",false).apply();
+            smartLogOnce(gp,"OPEN_ACTION_BOUNCE|"+symbol+"|"+side+"|"+candleStamp,
+                "OPEN ACTION: sweep "+side+" tersimpan; menunggu pantulan harga sebelum antre LIMIT");
+            if(status!=null)status.setText("● OPEN ACTION WAIT • MENUNGGU PANTULAN "+side);
+            return false;
+        }
+        if(gp.getBoolean("open_action_wait_bounce_confirmed",false))return true;
+        int elapsed=SmartLimitReentry.elapsedM1Bars(started,candleStamp);
+        if(elapsed>2){
+            gp.edit().remove("open_action_wait_market").remove("open_action_wait_side")
+                .remove("open_action_wait_anchor").remove("open_action_wait_candle_ms")
+                .remove("open_action_wait_bounce_confirmed").apply();
+            smartLogOnce(gp,"OPEN_ACTION_BOUNCE_EXPIRED|"+symbol+"|"+side+"|"+candleStamp,
+                "OPEN ACTION: pantulan tidak terkonfirmasi dalam 2 candle M1; tunggu sapuan baru");
+            return false;
+        }
+        double point=brokerPoint(gp),atr=SmartLimitReentry.atr(m1,14);
+        if(point<=0.0||atr<=0.0||!QuoteSafety.valid(bid,ask))return false;
+        double anchor=preferenceDouble(gp,"open_action_wait_anchor",0.0);
+        double current=(bid+ask)*0.5;
+        double threshold=Math.max(atr*0.15,point*AUTO_ENTRY_OFFSET_POINTS);
+        boolean bounced="BUY".equals(side)?current>=anchor+threshold:current<=anchor-threshold;
+        if(bounced){
+            gp.edit().putBoolean("open_action_wait_bounce_confirmed",true).apply();
+            AppLog.add(this,"OPEN ACTION","bounce confirmed side="+side+" movement="+
+                String.format(Locale.US,"%.5f",Math.abs(current-anchor))+" threshold="+
+                String.format(Locale.US,"%.5f",threshold));
+            return true;
+        }
+        if(status!=null)status.setText("● OPEN ACTION WAIT • "+side+" MENUNGGU PANTULAN");
+        return false;
+    }
+
+    /**
+     * Re-anchor the LIMIT near the live broker quote so it is more likely to be
+     * retested. SL remains at the wick structure; TP1/TP2 are recalculated at 2R/3.5R.
+     */
+    private SignalResult createOpenActionOrderSignal(SignalResult s,SharedPreferences gp){
+        if(s==null||chart==null||!QuoteSafety.valid(chart.getBid(),chart.getAsk()))return null;
+        double point=brokerPoint(gp);
+        if(point<=0.0)return null;
+        double bid=chart.getBid(),ask=chart.getAsk();
+        double entry="BUY".equals(s.side)?ask-point*AUTO_ENTRY_OFFSET_POINTS
+            :"SELL".equals(s.side)?bid+point*AUTO_ENTRY_OFFSET_POINTS:0.0;
+        if(entry<=0.0)return null;
+        entry=normalizeBrokerPrice(entry,gp);
+        double sl=s.sl,tp1,tp2,risk;
+        if("BUY".equals(s.side)){
+            if(!(entry<ask&&sl>0.0&&sl<entry))return null;
+            risk=entry-sl;
+            tp1=entry+2.0*risk;
+            tp2=entry+3.5*risk;
+        }else if("SELL".equals(s.side)){
+            if(!(entry>bid&&sl>entry))return null;
+            risk=sl-entry;
+            tp1=entry-2.0*risk;
+            tp2=entry-3.5*risk;
+            if(tp2<=0.0)return null;
+        }else return null;
+        sl=normalizeBrokerPrice(sl,gp);
+        tp1=normalizeBrokerPrice(tp1,gp);
+        tp2=normalizeBrokerPrice(tp2,gp);
+        if("BUY".equals(s.side)&&!(sl<entry&&tp1>entry&&tp2>tp1))return null;
+        if("SELL".equals(s.side)&&!(tp2<tp1&&tp1<entry&&entry<sl))return null;
+        return new SignalResult(s.side,s.m5Bias,entry,sl,tp1,tp2,3.5,s.score,s.confidence,
+            s.setup+" • OPEN ACTION "+AUTO_ENTRY_OFFSET_POINTS+"pt",
+            s.liquiditySweep,s.wickRejection,s.bos,s.emaFilter,s.rsiFilter,s.macdFilter,
+            s.atrFilter,s.spreadFilter);
     }
 
     private void processAutoLimit(SignalResult s,Candle[] m1,Candle[] m5,
@@ -1018,7 +1146,8 @@ public class MainActivity extends Activity {
                 &&m5DoesNotOppose(sideNow,s.m5Bias);
             boolean validFresh=isAutoEntryEligible(s,bid,ask,true)
                 &&readyCandleKey.equals(selectedMarket+"|"+selectedTf+"|"+candleStamp)
-                &&readyCandleSide.equals(s.side);
+                &&readyCandleSide.equals(s.side)
+                &&isOpenActionEntryReady(s,m1,bid,ask,candleStamp,gp);
             double maxDistanceAtr=smartReentryMaxDistanceAtr(gp);
             boolean withinMaxDistance=SmartLimitReentry.withinMaxDistanceFromOriginalEntry(
                 activeEntry,s.entry,atr,maxDistanceAtr);
@@ -1106,6 +1235,7 @@ public class MainActivity extends Activity {
                         &&isAutoEntryEligible(s,bid,ask,true)
                         &&readyCandleKey.equals(selectedMarket+"|"+selectedTf+"|"+candleStamp)
                         &&readyCandleSide.equals(s.side)
+                        &&isOpenActionEntryReady(s,m1,bid,ask,candleStamp,gp)
                         &&SmartLimitReentry.elapsedM1Bars(startedAt,candleStamp)
                             <smartReentryMaxAgeBars(gp)
                         &&SmartLimitReentry.withinMaxDistanceFromOriginalEntry(activeEntry,s.entry,atr,
@@ -1189,6 +1319,13 @@ public class MainActivity extends Activity {
             String reason=autoEntryBlockReason(s,bid,ask,m1Context);
             smartLogOnce(gp,"FILTER|"+signalKey+"|"+reason,"AUTO tidak entry: "+reason+" • side="+s.side+" score="+s.score+" conf="+s.confidence+"/5");
             if(status!=null)status.setText("● SMART AUTO WAIT • "+reason);
+            return;
+        }
+        // Two explicit open-action modes share the existing EA/ACK and anti-duplicate guards.
+        // Both require a true sweep; the second waits for a favourable bounce first.
+        if(!isOpenActionEntryReady(s,m1,bid,ask,candleStamp,gp)){
+            if(status!=null&&!OPEN_ACTION_WAIT_BOUNCE.equals(gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST)))
+                status.setText("● SMART AUTO WAIT • MENUNGGU SAPUAN WICK VALID");
             return;
         }
         // AUTO LIMIT must use the same per-candle direction accepted by READY UI.
@@ -1910,7 +2047,8 @@ public class MainActivity extends Activity {
      * Save the market-specific lot used by AUTO LIMIT as well as the selected mode.
      * AUTO computes Entry/SL/TP from the live signal; those manual fields are not used.
      */
-    private boolean saveAutoEntrySettings(Switch auto,Switch smartReentry,Spinner mode,EditText volume,
+    private boolean saveAutoEntrySettings(Switch auto,Switch smartReentry,Spinner mode,
+                                          Spinner entryActionMode,EditText volume,
                                           SharedPreferences gatewayPrefs,String symbol){
         final double lot;
         try{
@@ -1926,13 +2064,17 @@ public class MainActivity extends Activity {
             return false;
         }
         String operation=mode.getSelectedItemPosition()==1?"READY":"REST";
+        String entryAction=entryActionMode!=null&&entryActionMode.getSelectedItemPosition()==1
+            ?OPEN_ACTION_WAIT_BOUNCE:OPEN_ACTION_SWEEP_FIRST;
         gatewayPrefs.edit().putFloat("lot_"+symbol,(float)lot)
             .putBoolean("auto",auto.isChecked())
             .putBoolean("smart_reentry_enabled",smartReentry.isChecked())
+            .putString("open_action_entry_mode",entryAction)
             .putString("operation_mode",operation).apply();
         AppLog.add(this,"MODE",operation.equals("READY")?"SIAP TRADING":"ISTIRAHAT");
         AppLog.add(this,"AUTO LIMIT","settings saved symbol="+symbol+" lot="+lotText(lot)
             +" auto="+auto.isChecked()+" mode="+operation);
+        AppLog.add(this,"OPEN ACTION ENTRY","mode="+entryAction+" offset="+AUTO_ENTRY_OFFSET_POINTS+" MT5 points");
         return true;
     }
 
