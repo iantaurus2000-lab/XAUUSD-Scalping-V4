@@ -762,17 +762,36 @@ public class MainActivity extends Activity {
         return "READY".equals(autoEntryBlockReason(signal,bid,ask,m1Context));
     }
 
+    /** Show why broker quote freshness failed instead of collapsing missing and stale into one label. */
+    private String brokerQuoteAuditText(){
+        SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        String symbol=mt5SymbolForMarket(selectedMarket);
+        long now=System.currentTimeMillis();
+        long received=gp.getLong("broker_quote_received_ms_"+symbol,0L);
+        long tickAt=gp.getLong("broker_quote_tick_ms_"+symbol,0L);
+        double bid=preferenceDouble(gp,"broker_quote_bid_"+symbol,0.0);
+        double ask=preferenceDouble(gp,"broker_quote_ask_"+symbol,0.0);
+        String state=(received<=0L||tickAt<=0L)?"MISSING"
+            :(QuoteSafety.isFresh(received,tickAt,now)?"FRESH":"STALE");
+        String receiptAge=received<=0L?"NA":Long.toString(now-received);
+        String tickAge=tickAt<=0L?"NA":Long.toString(now-tickAt);
+        return String.format(Locale.US,
+            "brokerQuote=%s symbol=%s cachedBid=%.5f cachedAsk=%.5f receiptAgeMs=%s tickAgeMs=%s",
+            state,symbol,bid,ask,receiptAge,tickAge);
+    }
+
     /** Actual MT5 spread and the active ATR threshold, included in block/queue audit logs. */
     private String spreadAuditText(Candle[] m1){
         double[] q=freshBrokerQuote(selectedMarket);
-        if(q==null||!QuoteSafety.valid(q[0],q[1]))return "brokerQuote=STALE_OR_MISSING";
+        String quoteAudit=brokerQuoteAuditText();
+        if(q==null||!QuoteSafety.valid(q[0],q[1]))return quoteAudit;
         double atr=SmartLimitReentry.atr(m1,14);
         double spread=q[1]-q[0];
         double max=QuoteSafety.maxAllowedSpread(q[0],q[1],atr);
         double point=brokerPoint(getSharedPreferences("rayyan4_gateway",MODE_PRIVATE));
         String ratio=atr>0.0?String.format(Locale.US,"%.1f%%",100.0*spread/atr):"N/A";
         String points=point>0.0?String.format(Locale.US,"%.1f",spread/point):"N/A";
-        return String.format(Locale.US,
+        return quoteAudit+" "+String.format(Locale.US,
             "brokerSymbol=%s BID=%.5f ASK=%.5f spread=%.5f points=%s ATR=%.5f maxSpread=%.5f spread/ATR=%s",
             mt5SymbolForMarket(selectedMarket),q[0],q[1],spread,points,atr,max,ratio);
     }
