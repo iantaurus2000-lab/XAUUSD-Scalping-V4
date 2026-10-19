@@ -1059,6 +1059,18 @@ public class MainActivity extends Activity {
         String remoteState=gp.getString("ea_order_state","UNKNOWN");
         String remoteId=gp.getString("ea_order_state_id","");
         boolean stateFresh=stateAt>0L&&now>=stateAt&&now-stateAt<=8000L&&eaOnline;
+        String signalKey=makeSignalKey(s,candleStamp);
+        boolean readyCandidate=isAutoEntryEligible(s,bid,ask,"M1".equals(selectedTf));
+        if(readyCandidate){
+            autoDiagnostic(gp,"READY_SEEN|"+signalKey,
+                "READY TERDETEKSI • "+signalKey+" • score="+s.score+" conf="+s.confidence+
+                "/5 wick="+s.wickRejection+" sweep="+s.liquiditySweep+" spreadOK="+s.spreadFilter+
+                " M5="+s.m5Bias+" • tahap berikutnya memerlukan gate Smart Auto");
+        }
+        if(readyCandidate&&autoEnabled){
+            autoDiagnostic(gp,"READY_AUTO_ON|"+signalKey,
+                "READY + SMART AUTO ON • memeriksa EA heartbeat, state order, Open Action, antrean, lot, cooldown");
+        }
         if(!eaOnline){
             autoDiagnostic(gp,"EA_OFFLINE|"+(readyCandidate?signalKey:selectedMarket+"|"+selectedTf),
                 "ENTRY BLOCKED • EA MT5 /next offline • ready="+readyCandidate+" • tidak mengirim order");
@@ -1082,19 +1094,6 @@ public class MainActivity extends Activity {
         long startedAt=gp.getLong("smart_active_start_candle_ms",candleStamp);
         String sideNow=normalizedStateSide(activeSide);
         double atr=SmartLimitReentry.atr(m1,14);
-        String signalKey=makeSignalKey(s,candleStamp);
-        boolean readyCandidate=isAutoEntryEligible(s,bid,ask,"M1".equals(selectedTf));
-        if(readyCandidate){
-            autoDiagnostic(gp,"READY_SEEN|"+signalKey,
-                "READY TERDETEKSI • "+signalKey+" • score="+s.score+" conf="+s.confidence+
-                "/5 wick="+s.wickRejection+" sweep="+s.liquiditySweep+" spreadOK="+s.spreadFilter+
-                " M5="+s.m5Bias+" • tahap berikutnya memerlukan gate Smart Auto");
-        }
-        if(readyCandidate&&autoEnabled){
-            autoDiagnostic(gp,"READY_AUTO_ON|"+signalKey,
-                "READY + SMART AUTO ON • memeriksa EA heartbeat, state order, Open Action, antrean, lot, cooldown");
-        }
-
         // READY can coexist with an already active order/position; this lifecycle lock is deliberate.
         if(readyCandidate&&("PENDING".equals(remoteState)||"POSITION".equals(remoteState))){
             autoDiagnostic(gp,"ACTIVE_EXPOSURE|"+signalKey+"|"+remoteId+"|"+remoteState,
