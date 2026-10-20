@@ -618,8 +618,8 @@ public class MainActivity extends Activity {
     }
 
     void executeLimitForSide(String requestedSide){
-        // Keep signal levels in their candle-feed scale, but require an up-to-date
-        // broker quote and chart quote before enqueuing a LIMIT.
+        // Require fresh broker/chart quotes; Manual and Smart Auto use the same
+        // Open Action gate and the same broker-mapped wick-tip LIMIT levels.
         try {
             double[] broker=freshBrokerQuote(selectedMarket);
             if(broker==null||!hasFreshEntryQuotes()){
@@ -656,7 +656,20 @@ public class MainActivity extends Activity {
                 Toast.makeText(this,"Arah signal READY adalah "+s.side+" • "+requestedSide+" diblokir",Toast.LENGTH_LONG).show();
                 return;
             }
-            double target=validAutoTarget(s);
+            SharedPreferences actionPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+            long candleStamp=liveM1[liveM1.length-1].t;
+            if(!isOpenActionEntryReady(s,liveM1,liveBid,liveAsk,candleStamp,actionPrefs)){
+                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT • OPEN ACTION belum valid");
+                Toast.makeText(this,"Menunggu sapuan candle / pantulan wick",Toast.LENGTH_LONG).show();
+                return;
+            }
+            SignalResult orderSignal=createOpenActionOrderSignal(s,actionPrefs,liveM1);
+            if(orderSignal==null){
+                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT • level wick-tip/quote broker tidak valid");
+                Toast.makeText(this,"Harga wick-tip belum valid untuk LIMIT broker",Toast.LENGTH_LONG).show();
+                return;
+            }
+            double target=validAutoTarget(orderSignal);
             if(target<=0.0){
                 AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT • target TP tidak valid");
                 Toast.makeText(this,"Target TP tidak valid",Toast.LENGTH_LONG).show();
@@ -666,7 +679,7 @@ public class MainActivity extends Activity {
             if(lot<=0){AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT • lot tidak valid");return;}
             String orderSide="BUY".equals(requestedSide)?"BUY_LIMIT":"SELL_LIMIT";
             // Queue TP1 metadata just like Smart Auto, keeping EA exit protection consistent.
-            boolean queued = queueLimit(orderSide,lot,s.entry,s.sl,target,s.tp1);
+            boolean queued = queueLimit(orderSide,lot,orderSignal.entry,orderSignal.sl,target,orderSignal.tp1);
             if(queued){
                 AppLog.add(this,"ORDER","button accepted queue; starting Gateway");
                 startGateway();
@@ -704,14 +717,26 @@ public class MainActivity extends Activity {
             return;
         }
 
-        String side="BUY".equals(s.side)?"BUY_LIMIT":"SELL_LIMIT";
+        SharedPreferences actionPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        long candleStamp=liveM1[liveM1.length-1].t;
+        if(!isOpenActionEntryReady(s,liveM1,liveBid,liveAsk,candleStamp,actionPrefs)){
+            AppLog.add(this,"ORDER_BLOCKED","Manual chart entry • OPEN ACTION belum valid");
+            Toast.makeText(this,"Menunggu sapuan candle / pantulan wick",Toast.LENGTH_LONG).show();
+            return;
+        }
+        SignalResult orderSignal=createOpenActionOrderSignal(s,actionPrefs,liveM1);
+        if(orderSignal==null){
+            AppLog.add(this,"ORDER_BLOCKED","Manual chart entry • level wick-tip/quote broker tidak valid");
+            return;
+        }
+        String side="BUY".equals(orderSignal.side)?"BUY_LIMIT":"SELL_LIMIT";
         double lot=lotForMarket();
-        double target=validAutoTarget(s);
+        double target=validAutoTarget(orderSignal);
         if(target<=0.0||lot<=0.0){
             AppLog.add(this,"ORDER_BLOCKED","Manual chart entry • lot/target tidak valid");
             return;
         }
-        boolean queued=queueLimit(side,lot,s.entry,s.sl,target,s.tp1);
+        boolean queued=queueLimit(side,lot,orderSignal.entry,orderSignal.sl,target,orderSignal.tp1);
         if(queued)startGateway();
     }
 
@@ -748,9 +773,11 @@ public class MainActivity extends Activity {
         if(!signal.atrFilter)return "ATR FILTER GAGAL";
         if(!signal.spreadFilter)return "SPREAD FILTER GAGAL";
         if(!signal.wickRejection)return "WICK REJECTION BELUM VALID";
-        // A confirmed sweep/rejection can be an early counter-bias scalp; M5 is context,
-        // not a blanket veto against BUY wick setups.
-        if(!m5DoesNotOppose(signal.side,signal.m5Bias)&&!signal.liquiditySweep)return "ARAH M5 BERLAWANAN";
+        // M5 is context, not a veto: a clean M1 wick rejection can turn against M5.
+        // Without a real rejection, low-confidence counter-bias precursors stay blocked.
+        if(!m5DoesNotOppose(signal.side,signal.m5Bias)
+                &&!signal.liquiditySweep&&signal.confidence<4)
+            return "ARAH M5 BERLAWANAN • WICK BELUM KUAT";
         if(signal.entry<=0||signal.sl<=0||signal.tp1<=0)return "LEVEL ENTRY/SL/TP TIDAK VALID";
         if("BUY".equals(signal.side)&&!(signal.entry<ask&&signal.sl<signal.entry&&signal.tp1>signal.entry))return "LEVEL BUY LIMIT/SL/TP TIDAK VALID";
         if("SELL".equals(signal.side)&&!(signal.entry>bid&&signal.tp1<signal.entry&&signal.sl>signal.entry))return "LEVEL SELL LIMIT/SL/TP TIDAK VALID";
@@ -837,13 +864,10 @@ public class MainActivity extends Activity {
                 if(OPEN_ACTION_WAIT_BOUNCE.equals(actionMode)){
                     boolean armed=selectedMarket.equals(actionPrefs.getString("open_action_wait_market",""))
                         &&signal.side.equals(actionPrefs.getString("open_action_wait_side",""));
-                    if(!signal.liquiditySweep&&!armed)blockReason="LIQUIDITY SWEEP BELUM VALID";
-                    else if(armed)blockReason="MENUNGGU SATU PANTULAN KE UJUNG WICK";
-                    else blockReason="MENUNGGU LIQUIDITY SWEEP";
-                }else if(!signal.liquiditySweep){
-                    blockReason="LIQUIDITY SWEEP BELUM VALID";
+                    if(armed)blockReason="MENUNGGU PANTULAN DARI UJUNG WICK";
+                    else blockReason="MENUNGGU WICK / EXTREME BARU";
                 }else{
-                    blockReason="MENUNGGU SAPUAN 1/3 CANDLE";
+                    blockReason="MENUNGGU SAPUAN RANGE 1/3 CANDLE";
                 }
             }
             entryReadyView.setText("WAIT • "+blockReason);
@@ -1042,8 +1066,9 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * SWEEP_FIRST waits for a one-third candle excursion after the new M1 opens.
-     * WAIT_BOUNCE remembers the real wick extreme and accepts one recoil only.
+     * OPEN ACTION 1 waits for M1 wick rejection plus a one-third excursion from the
+     * candle open. This is a candle-range sweep, not a mandatory prior-liquidity sweep.
+     * OPEN ACTION 2 remembers the wick extreme and accepts one recoil only.
      */
     private boolean isOpenActionEntryReady(SignalResult s,Candle[] m1,double bid,double ask,
                                            long candleStamp,SharedPreferences gp){
@@ -1056,17 +1081,7 @@ public class MainActivity extends Activity {
         double atr=SmartLimitReentry.atr(m1,14);
         Candle live=m1[m1.length-1];
 
-        // Prior candle rejection already determines the staged limit. READY is immediate;
-        // shared trade filters and MT5 acknowledgement/duplicate guards remain active.
-        if(s.setup!=null&&s.setup.startsWith("PREVIOUS CANDLE SWEEP")){
-            smartLogOnce(gp,"OPEN_ACTION_PREV_CANDLE_READY|"+symbol+"|"+side+"|"+candleStamp,
-                "OPEN ACTION SAPUAN READY • previous candle anchor • side="+side+
-                " entry="+price(s.entry)+" • pending limit outside previous candle");
-            return true;
-        }
-
         if(!OPEN_ACTION_WAIT_BOUNCE.equals(mode)){
-            if(!s.liquiditySweep)return false;
             boolean travelled=OpenActionEntryPolicy.hasOneThirdCandleTravel(m1,side,atr);
             if(!travelled){
                 double threshold=OpenActionEntryPolicy.oneThirdTravelThreshold(m1[m1.length-2],atr);
@@ -1092,7 +1107,6 @@ public class MainActivity extends Activity {
         boolean sameSetup=symbol.equals(waitMarket)&&side.equals(waitSide)&&started>0L;
 
         if(!sameSetup){
-            if(!s.liquiditySweep)return false;
             double tip="BUY".equals(side)?live.l:live.h;
             double wickLength="BUY".equals(side)
                 ?Math.max(0.0,Math.min(live.o,live.c)-live.l)
@@ -1202,10 +1216,14 @@ public class MainActivity extends Activity {
             sl="BUY".equals(s.side)?brokerTip-stopDistance:brokerTip+stopDistance;
             setupSuffix=" • OPEN ACTION WICK TIP / ONE BOUNCE";
         }else{
-            entry="BUY".equals(s.side)?ask-point*AUTO_ENTRY_OFFSET_POINTS
-                :"SELL".equals(s.side)?bid+point*AUTO_ENTRY_OFFSET_POINTS:0.0;
-            sl=s.sl;
-            setupSuffix=" • OPEN ACTION SAPUAN 1/3";
+            if(m1==null||m1.length<2||atr<=0.0)return null;
+            Candle live=m1[m1.length-1];
+            // Candle-feed OHLC may be offset from MT5 quotes. Move the wick-tip entry
+            // and protective SL into the current broker-price coordinate before sending.
+            double priceShift=((bid+ask)*0.5)-live.c;
+            entry=s.entry+priceShift;
+            sl=s.sl+priceShift;
+            setupSuffix=" • OPEN ACTION SAPUAN 1/3 • WICK TIP";
         }
         if(entry<=0.0||!Double.isFinite(entry)||!Double.isFinite(sl))return null;
         entry=normalizeBrokerPrice(entry,gp);
@@ -2603,8 +2621,8 @@ public class MainActivity extends Activity {
 
         Spinner entryActionMode=new Spinner(this);
         String[] entryActions={
-            "OPEN ACTION 1 • sapuan pertama, LIMIT 10 MT5 points",
-            "OPEN ACTION 2 • tunggu pantulan, lalu pasang LIMIT"
+            "OPEN ACTION 1 • sapuan candle 1/3 + wick tip",
+            "OPEN ACTION 2 • satu pantulan dari ujung wick"
         };
         ArrayAdapter<String> entryActionAdapter=new ArrayAdapter<>(
             this,android.R.layout.simple_spinner_dropdown_item,entryActions);
@@ -2614,7 +2632,7 @@ public class MainActivity extends Activity {
         entryActionMode.setSelection(OPEN_ACTION_WAIT_BOUNCE.equals(
             gatewayPrefs.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST))?1:0);
 
-        TextView entryActionHint=tv("Mode 1: pasang LIMIT dekat harga setelah wick + liquidity sweep valid. Mode 2: tunggu harga bergerak searah minimal 0,15 ATR atau 10 points, baru pasang LIMIT. SL tetap pada struktur wick; TP dihitung ulang 2R/3,5R.",11);
+        TextView entryActionHint=tv("Mode 1: tunggu wick rejection dan sapuan minimal 1/3 range candle M1; LIMIT di dekat ujung wick. Mode 2: tunggu satu pantulan dari ujung wick lalu pasang LIMIT. Liquidity sweep swing tidak wajib. SL di luar wick; TP 2R/3,5R.",11);
         entryActionHint.setTextColor(Color.LTGRAY);
         entryActionHint.setGravity(Gravity.TOP|Gravity.START);
         entryActionHint.setPadding(uiDp(8),uiDp(5),uiDp(8),uiDp(5));
