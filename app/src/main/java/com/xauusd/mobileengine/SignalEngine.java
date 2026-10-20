@@ -14,9 +14,8 @@ public final class SignalEngine {
     }
 
     /**
-     * followSweepExtremes is Open Action 1: once price travels one-third of the adaptive
-     * prior candle range from this M1 open, follow the active candle extreme immediately.
-     * No wick-rejection/swing-liquidity confirmation is needed in this mode.
+     * followSweepExtremes is Open Action 1: require adaptive extension and recoil from
+     * the live M1 extreme before signaling. No fixed one-third-candle threshold is used.
      */
     public static SignalResult evaluate(Candle[] m1,Candle[] m5,double bid,double ask,
                                         double spreadBid,double spreadAsk,
