@@ -17,8 +17,22 @@ public final class SignalEngine {
         Candle z = m1[m1.length - 1], p = m1[m1.length - 2];
         double atr = atr(m1, 14);
         double body = Math.abs(z.c - z.o);
-        double upper = z.h - Math.max(z.o, z.c);
-        double lower = Math.min(z.o, z.c) - z.l;
+        double upper = Math.max(0.0, z.h - Math.max(z.o, z.c));
+        double lower = Math.max(0.0, Math.min(z.o, z.c) - z.l);
+        double candleRange = Math.max(0.0, z.h - z.l);
+        double rangeAtrRatio = atr > 0.0 ? candleRange / atr : 0.0;
+        // Adaptive wick sensor: short candles need smaller absolute wicks; long candles
+        // still need a meaningful rejection rather than a body-dominated spike.
+        double wickBodyMultiplier = rangeAtrRatio >= 1.25 ? 1.15
+            : rangeAtrRatio <= 0.55 ? 0.90 : 1.00;
+        double wickRangeFraction = rangeAtrRatio >= 1.25 ? 0.22
+            : rangeAtrRatio <= 0.55 ? 0.14 : 0.18;
+        double minWickAtrFraction = rangeAtrRatio >= 1.25 ? 0.08
+            : rangeAtrRatio <= 0.55 ? 0.035 : 0.055;
+        double closeRetrace = rangeAtrRatio >= 1.25 ? 0.30
+            : rangeAtrRatio <= 0.55 ? 0.20 : 0.25;
+        double wickBody = Math.max(body, Math.max(atr * 0.015, Math.abs(z.c) * 1e-7));
+        double minWickLength = Math.max(atr * minWickAtrFraction, candleRange * wickRangeFraction);
         double e9 = ema(m1, 9), e21 = ema(m1, 21), e50 = ema(m1, 50);
         double e9_5 = ema(m5, 9), e21_5 = ema(m5, 21), e50_5 = ema(m5, 50);
         boolean biasBuy = e9_5 > e21_5 && e21_5 > e50_5;
@@ -29,7 +43,6 @@ public final class SignalEngine {
         int n = m1.length;
         Candle wick = z;
         double wickBody = Math.max(body, Math.max(atr * 0.025, Math.abs(z.c) * 1e-7));
-        double localRange = Math.max(z.h - z.l, atr);
         double priorLow = Double.POSITIVE_INFINITY;
         double priorHigh = Double.NEGATIVE_INFINITY;
         // Use a short recent swing window, excluding the still-forming candle.
@@ -37,27 +50,32 @@ public final class SignalEngine {
             priorLow = Math.min(priorLow, m1[i].l);
             priorHigh = Math.max(priorHigh, m1[i].h);
         }
-        boolean swBuy = Double.isFinite(priorLow) && z.l < priorLow;
-        boolean swSell = Double.isFinite(priorHigh) && z.h > priorHigh;
+        // Accept a near-sweep/reclaim within 0.08 ATR instead of demanding a strict
+        // one-tick break of the previous swing. This lowers missed wick setups without
+        // removing the requirement for a directional wick/rejection.
+        double sweepTolerance = atr > 0.0 ? Math.max(atr * 0.08, Math.abs(z.c) * 1e-7) : 0.0;
+        boolean swBuy = Double.isFinite(priorLow) && z.l <= priorLow + sweepTolerance;
+        boolean swSell = Double.isFinite(priorHigh) && z.h >= priorHigh - sweepTolerance;
 
         // Early precursor: a swing is swept and price starts recoiling. This can become READY
         // on the first small rebound, before a large finished wick is visible.
         double recoveryFromLow = z.c - z.l;
         double recoveryFromHigh = z.h - z.c;
+        double earlyRecoilMin = Math.max(atr * 0.015, candleRange * 0.015);
         boolean earlyBuy = swBuy && atr > 0.0
-            && recoveryFromLow >= Math.max(atr * 0.025, localRange * 0.025)
-            && z.c <= priorLow + atr * 0.35;
+            && recoveryFromLow >= earlyRecoilMin
+            && z.c <= priorLow + atr * 0.45;
         boolean earlySell = swSell && atr > 0.0
-            && recoveryFromHigh >= Math.max(atr * 0.025, localRange * 0.025)
-            && z.c >= priorHigh - atr * 0.35;
+            && recoveryFromHigh >= earlyRecoilMin
+            && z.c >= priorHigh - atr * 0.45;
 
-        // Earlier mature-wick threshold reduces late signals but retains shape validation.
-        boolean rejectBuy = lower >= wickBody * 1.35
-            && lower >= localRange * 0.28
-            && z.c >= z.l + (z.h-z.l)*0.38;
-        boolean rejectSell = upper >= wickBody * 1.35
-            && upper >= localRange * 0.28
-            && z.c <= z.l + (z.h-z.l)*0.62;
+        // Candle-size-aware wick thresholds reduce missed short/medium candle rejections.
+        boolean rejectBuy = lower >= wickBody * wickBodyMultiplier
+            && lower >= minWickLength
+            && (candleRange <= 0.0 || z.c >= z.l + candleRange * closeRetrace);
+        boolean rejectSell = upper >= wickBody * wickBodyMultiplier
+            && upper >= minWickLength
+            && (candleRange <= 0.0 || z.c <= z.h - candleRange * closeRetrace);
         boolean needleBuy = rejectBuy || earlyBuy;
         boolean needleSell = rejectSell || earlySell;
         boolean sweepBuy = needleBuy && swBuy;
@@ -88,22 +106,20 @@ public final class SignalEngine {
 
         double entry=0, sl=0, tp1=0, tp2=0, rr=0;
         if ("BUY".equals(side)) {
-            double bodyLow=Math.min(wick.o,wick.c);
             double minOffset=Math.max(atr*0.02,Math.abs(ask)*0.000001);
-            entry=(earlyBuy&&!rejectBuy)
-                ? wick.l+Math.max(atr*0.045,minOffset)
-                : wick.l+(bodyLow-wick.l)*0.30;
-            if(ask>0) entry=Math.min(entry,ask-minOffset);
+            double wickOffset=OpenActionEntryPolicy.wickTipOffset(
+                lower,atr,Math.max(Math.abs(wick.l)*1e-7,Math.abs(ask)*1e-7));
+            // Place the LIMIT in the outer 10% of the lower wick, independent of candle body size.
+            entry=wick.l+Math.max(0.0,wickOffset);
             sl=wick.l-Math.max(atr*0.12,spread*2);
             double risk=entry-sl;
             if(risk>0){tp1=entry+risk*2.0;tp2=entry+risk*3.5;rr=3.5;}
         } else if ("SELL".equals(side)) {
-            double bodyHigh=Math.max(wick.o,wick.c);
             double minOffset=Math.max(atr*0.02,Math.abs(bid)*0.000001);
-            entry=(earlySell&&!rejectSell)
-                ? wick.h-Math.max(atr*0.045,minOffset)
-                : wick.h-(wick.h-bodyHigh)*0.30;
-            if(bid>0) entry=Math.max(entry,bid+minOffset);
+            double wickOffset=OpenActionEntryPolicy.wickTipOffset(
+                upper,atr,Math.max(Math.abs(wick.h)*1e-7,Math.abs(bid)*1e-7));
+            // Sell LIMIT mirrors BUY: keep the price within the outer 10% of the upper wick.
+            entry=wick.h-Math.max(0.0,wickOffset);
             sl=wick.h+Math.max(atr*0.12,spread*2);
             double risk=sl-entry;
             if(risk>0){tp1=entry-risk*2.0;tp2=entry-risk*3.5;rr=3.5;}
