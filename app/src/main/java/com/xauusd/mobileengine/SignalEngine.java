@@ -42,7 +42,6 @@ public final class SignalEngine {
         // Evaluate the live M1 bar from one-second feed updates, not a 15-second-old snapshot.
         int n = m1.length;
         Candle wick = z;
-        double wickBody = Math.max(body, Math.max(atr * 0.025, Math.abs(z.c) * 1e-7));
         double priorLow = Double.POSITIVE_INFINITY;
         double priorHigh = Double.NEGATIVE_INFINITY;
         // Use a short recent swing window, excluding the still-forming candle.
