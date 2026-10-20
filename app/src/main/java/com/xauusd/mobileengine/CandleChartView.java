@@ -23,10 +23,28 @@ public class CandleChartView extends View {
     private double signalEntry, signalSl, signalTp1, signalTp2;
     private double positionEntry;
     private boolean signalActive=false;
+    private final Handler countdownHandler = new Handler(Looper.getMainLooper());
+    private final Runnable countdownTick = new Runnable() {
+        @Override public void run() {
+            invalidate();
+            if (isAttachedToWindow()) countdownHandler.postDelayed(this, 1000L);
+        }
+    };
 
     public CandleChartView(Context c) {
         super(c);
         setBackgroundColor(Color.rgb(4,9,16));
+    }
+
+    @Override protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        countdownHandler.removeCallbacks(countdownTick);
+        countdownHandler.post(countdownTick);
+    }
+
+    @Override protected void onDetachedFromWindow() {
+        countdownHandler.removeCallbacks(countdownTick);
+        super.onDetachedFromWindow();
     }
 
     public void setVisualTheme(String theme){ visualTheme=RayyanTheme.normalize(theme); invalidate(); }
@@ -274,6 +292,9 @@ public class CandleChartView extends View {
             if(x>=L&&x<=R)text(c,time.format(new Date(cs.get(idx).t)),x-15,B+16,9,chartMutedTextColor());
         }
 
+        // Circular live candle countdown in the price axis header, away from candles/prices.
+        drawCandleCountdown(c, R + (W-R)/2f, 29f, 22f, last);
+
         // Indicator sub-panels: real RSI / MACD / ATR plots rather than text-only values.
         float panelTop=mainBottom+2;
         if(showRSI){drawRsi(c,L,R,panelTop,panelTop+each);panelTop+=each+gap;}
@@ -281,6 +302,70 @@ public class CandleChartView extends View {
         if(showATR){drawAtr(c,L,R,panelTop,panelTop+each);}
 
         if(cx>0){ln(c,cx,T,cx,B,chartCrosshair,1);ln(c,L,cy,R,cy,chartCrosshair,1);}
+    }
+
+    private long periodForTimeframe() {
+        String tf = timeframe == null ? "M1" : timeframe.toUpperCase(Locale.US);
+        switch (tf) {
+            case "M1": return 60_000L;
+            case "M5": return 5 * 60_000L;
+            case "M15": return 15 * 60_000L;
+            case "M30": return 30 * 60_000L;
+            case "H1": return 60 * 60_000L;
+            case "H4": return 4 * 60 * 60_000L;
+            case "D1": return 24 * 60 * 60_000L;
+            default: return 60_000L;
+        }
+    }
+
+    private void drawCandleCountdown(Canvas c, float cx, float cy, float radius, Candle latest) {
+        if (latest == null || latest.t <= 0L) return;
+        long period = periodForTimeframe();
+        long now = System.currentTimeMillis();
+        long elapsed = Math.floorMod(now - latest.t, period);
+        long remaining = period - elapsed;
+        if (remaining <= 0L || remaining > period) remaining = period;
+
+        int ring = isLightTheme() ? Color.rgb(35, 112, 174) : Color.rgb(0, 215, 155);
+        int face = isLightTheme() ? Color.rgb(255,255,255) : Color.rgb(8,22,34);
+        int fg = chartTextColor();
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(face);
+        c.drawCircle(cx, cy, radius, p);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(3.2f);
+        p.setColor(isLightTheme() ? Color.rgb(218,226,235) : Color.rgb(45,65,80));
+        c.drawCircle(cx, cy, radius-1.6f, p);
+        p.setStrokeCap(Paint.Cap.ROUND);
+        p.setColor(ring);
+        float progress = (float)(remaining / (double)period);
+        c.drawArc(cx-radius+2,cy-radius+2,cx+radius-2,cy+radius-2,
+            -90f,360f*progress,false,p);
+        p.setStrokeCap(Paint.Cap.BUTT);
+        p.setStyle(Paint.Style.FILL);
+        String label;
+        if (period <= 60_000L) {
+            label = String.format(Locale.US, "%02d", Math.max(0L, (remaining+999L)/1000L));
+        } else if (period < 60*60_000L) {
+            long totalSeconds=(remaining+999L)/1000L;
+            label=String.format(Locale.US,"%02d:%02d",totalSeconds/60,totalSeconds%60);
+        } else {
+            long totalMinutes=(remaining+59_999L)/60_000L;
+            label=String.format(Locale.US,"%02d:%02d",totalMinutes/60,totalMinutes%60);
+        }
+        float size=label.length()>4?9f:label.length()>2?11f:16f;
+        p.setTypeface(Typeface.DEFAULT_BOLD);
+        p.setTextSize(size);
+        p.setColor(fg);
+        float tw=p.measureText(label);
+        c.drawText(label,cx-tw/2f,cy+size*.34f,p);
+        p.setTypeface(Typeface.DEFAULT);
+        p.setTextSize(8f);
+        p.setColor(chartMutedTextColor());
+        String tf=timeframe==null?"M1":timeframe.toUpperCase(Locale.US);
+        float tfw=p.measureText(tf);
+        // TF is drawn just below the circle, still inside the reserved price-axis gutter.
+        c.drawText(tf,cx-tfw/2f,cy+radius+10f,p);
     }
 
     private void panelGrid(Canvas c,float L,float R,float T,float B){
