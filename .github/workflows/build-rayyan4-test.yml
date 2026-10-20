@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - rayyan9-spread-filter-manual-auto
+      - rayyan9-market-exhaustion-market-order
   workflow_dispatch:
 jobs:
   validate-and-build:
