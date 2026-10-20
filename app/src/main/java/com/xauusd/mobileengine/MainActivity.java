@@ -1062,8 +1062,11 @@ public class MainActivity extends Activity {
             if(!travelled){
                 double threshold=OpenActionEntryPolicy.oneThirdTravelThreshold(m1[m1.length-2],atr);
                 double excursion="BUY".equals(side)?live.o-live.l:live.h-live.o;
-                String size=atr>0.0?(live.h-live.l)>=atr*1.25?"LONG"
-                    :(live.h-live.l)<=atr*0.55?"SHORT":"NORMAL":"ATR_PENDING";
+                String size;
+                if(atr<=0.0)size="ATR_PENDING";
+                else if(live.h-live.l>=atr*1.25)size="LONG";
+                else if(live.h-live.l<=atr*0.55)size="SHORT";
+                else size="NORMAL";
                 smartLogOnce(gp,"OPEN_ACTION_SWEEP_WAIT|"+symbol+"|"+side+"|"+candleStamp,
                     "OPEN ACTION SAPUAN WAIT • side="+side+" excursion="+price(Math.max(0.0,excursion))+
                     " threshold="+price(threshold)+" prevRange="+price(m1[m1.length-2].h-m1[m1.length-2].l)+
