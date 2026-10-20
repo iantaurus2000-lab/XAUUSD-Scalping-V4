@@ -225,6 +225,10 @@ void OnTimer(){
    }else if((side=="SELL_LIMIT" || side=="SELL") && !(tp<entry && sl>entry)){
       resultText="BAD_STOPS";
       detail="SELL requires TP<Entry<SL";
+   }else if(type=="MARKET" && tp1>0.0
+            && ((side=="BUY" && tp1<=entry) || (side=="SELL" && tp1>=entry))){
+      resultText="BAD_TP1";
+      detail=StringFormat("market TP1 invalid side=%s entry=%.8f tp1=%.8f",side,entry,tp1);
    }else if(point<=0){
       resultText="BAD_SYMBOL";
    }else if(stopsLevel>0 && MathAbs(entry-sl)/point<stopsLevel){
