@@ -39,6 +39,18 @@ public final class OpenActionEntryPolicy {
         return Double.isFinite(excursion) && excursion >= threshold;
     }
 
+    /**
+     * Adaptive exhaustion travel distance: require a meaningful extension, but not a fixed
+     * one-third candle rule. The live extreme must then recoil before Open Action 1 can fire.
+     */
+    public static double exhaustionTravelThreshold(Candle previous, double atr) {
+        if (previous == null || !Double.isFinite(atr) || atr <= 0.0
+                || !Double.isFinite(previous.h) || !Double.isFinite(previous.l)
+                || previous.h < previous.l) return 0.0;
+        double previousRange = previous.h - previous.l;
+        return Math.max(atr * 0.20, Math.min(previousRange * 0.22, atr * 0.65));
+    }
+
     /** Adaptive one-bounce distance, smaller than the former fixed 0.15 ATR/10-point gate. */
     public static double bounceThreshold(double atr, double wickLength, double point) {
         if (!Double.isFinite(atr) || atr <= 0.0 || !Double.isFinite(wickLength)
