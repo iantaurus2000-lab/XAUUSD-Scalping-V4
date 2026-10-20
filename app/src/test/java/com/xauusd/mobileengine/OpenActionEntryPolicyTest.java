@@ -30,13 +30,10 @@ public class OpenActionEntryPolicyTest {
         assertEquals(0.01, longWickOffset, 1e-9);
     }
 
-    @Test public void invalidSideOrInvalidAtrDoesNotPassSweepGate() {
-        Candle[] bars = {
-            new Candle(60_000L, 100, 101, 99, 100),
-            new Candle(120_000L, 100, 101, 99, 100)
-        };
-        assertFalse(OpenActionEntryPolicy.hasOneThirdCandleTravel(bars, "WAIT", 1.0));
-        assertFalse(OpenActionEntryPolicy.hasOneThirdCandleTravel(bars, "BUY", 0.0));
+    @Test public void invalidAtrDoesNotPassExhaustionGate() {
+        Candle previous = new Candle(60_000L, 100.0, 101.0, 100.0, 100.5);
+        assertEquals(0.0, OpenActionEntryPolicy.exhaustionTravelThreshold(previous, 0.0), 1e-9);
+        assertEquals(0.0, OpenActionEntryPolicy.exhaustionTravelThreshold(previous, Double.NaN), 1e-9);
     }
     @Test public void bounceThresholdAdaptsToWickLengthAndStaysBelowOldFixedGate() {
         double shortWick = OpenActionEntryPolicy.bounceThreshold(1.0, 0.10, 0.001);
