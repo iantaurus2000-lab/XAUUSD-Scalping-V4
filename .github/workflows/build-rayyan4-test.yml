@@ -1,14 +1,6 @@
 name: Rayyan4 Test Build • TEST QUEUE ACK
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - 'app/src/**'
-      - 'app/build.gradle'
-      - 'app/build.gradle.kts'
-      - 'app/rayyan4-debug.keystore.b64'
-      - 'gradle.properties'
-      - 'mt5/**'
 jobs:
   build:
     runs-on: ubuntu-24.04
