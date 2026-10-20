@@ -112,17 +112,25 @@ public final class SignalEngine {
             +Math.max(0.0,Math.min(1.0,recoveryFromHigh/Math.max(atr*0.25,1e-12)));
         String side="WAIT";
         if(followSweepExtremes){
-            boolean downTravel=OpenActionEntryPolicy.hasOneThirdCandleTravel(m1,"BUY",atr);
-            boolean upTravel=OpenActionEntryPolicy.hasOneThirdCandleTravel(m1,"SELL",atr);
             double downExcursion=Math.max(0.0,z.o-z.l);
             double upExcursion=Math.max(0.0,z.h-z.o);
-            if(downTravel&&upTravel){
+            double downRecoil=Math.max(0.0,z.c-z.l);
+            double upRecoil=Math.max(0.0,z.h-z.c);
+            double travelThreshold=OpenActionEntryPolicy.exhaustionTravelThreshold(p,atr);
+            double recoilThreshold=Math.max(Math.abs(spreadAsk-spreadBid)*1.5,atr*0.04);
+            boolean downExhausted=travelThreshold>0.0&&downExcursion>=travelThreshold
+                &&downRecoil>=recoilThreshold;
+            boolean upExhausted=travelThreshold>0.0&&upExcursion>=travelThreshold
+                &&upRecoil>=recoilThreshold;
+            if(downExhausted&&upExhausted){
                 double ambiguity=Math.max(atr*0.01,Math.abs(z.c)*1e-8);
-                if(downExcursion>upExcursion+ambiguity)side="BUY";
-                else if(upExcursion>downExcursion+ambiguity)side="SELL";
-            }else if(downTravel)side="BUY";
-            else if(upTravel)side="SELL";
-            // READY direction follows the actively extending extreme, not a completed wick.
+                double buyEvidenceNow=downRecoil+downExcursion*0.15;
+                double sellEvidenceNow=upRecoil+upExcursion*0.15;
+                if(buyEvidenceNow>sellEvidenceNow+ambiguity)side="BUY";
+                else if(sellEvidenceNow>buyEvidenceNow+ambiguity)side="SELL";
+            }else if(downExhausted)side="BUY";
+            else if(upExhausted)side="SELL";
+            // Only signal after meaningful extension AND recoil from the active extreme.
             needleBuy="BUY".equals(side);
             needleSell="SELL".equals(side);
             sweepBuy=needleBuy&&swBuy;
@@ -168,9 +176,9 @@ public final class SignalEngine {
         int confidence="WAIT".equals(side)?(points>=7?3:points>=5?2:1)
             :(selectedEarly?3:(selectedSweep?5:4));
         String setup="WAIT".equals(side)
-            ? (followSweepExtremes ? "Menunggu sapuan candle 1/3"
+            ? (followSweepExtremes ? "Menunggu exhaustion + recoil"
                 : (needleBuy && needleSell ? "WICK AMBIGU • WAIT" : "Menunggu wick rejection valid"))
-            : (followSweepExtremes ? "CANDLE EXTREME SWEEP • "+side
+            : (followSweepExtremes ? "CANDLE EXHAUSTION RECOIL • "+side
                 : (selectedEarly?"EARLY WICK PRECURSOR":"NEEDLE WICK + REJECTION"));
         return new SignalResult(side,bias,entry,sl,tp1,tp2,rr,score,confidence,setup,
             selectedSweep,selectedRejection,bosBuy||bosSell,
