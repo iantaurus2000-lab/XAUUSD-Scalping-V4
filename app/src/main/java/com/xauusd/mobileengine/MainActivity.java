@@ -956,7 +956,7 @@ public class MainActivity extends Activity {
 
     private boolean queueAutoSignal(SignalResult s,Candle[] m1,SharedPreferences gp,
                                     double lot,long candleStamp,String signalKey){
-        SignalResult orderSignal=createOpenActionOrderSignal(s,gp);
+        SignalResult orderSignal=createOpenActionOrderSignal(s,gp,m1);
         if(orderSignal==null){
             smartLogOnce(gp,"OPEN_ACTION_LEVELS|"+signalKey,
                 "AUTO tidak mengirim: offset LIMIT tidak valid untuk quote/SL; menunggu setup baru");
@@ -988,8 +988,10 @@ public class MainActivity extends Activity {
             .remove("open_action_wait_market")
             .remove("open_action_wait_side")
             .remove("open_action_wait_anchor")
+            .remove("open_action_wait_wick_length")
             .remove("open_action_wait_candle_ms")
             .remove("open_action_wait_bounce_confirmed")
+            .remove("open_action_wait_bounce_price")
             .apply();
         AppLog.add(this,"AUTO LIMIT","queued "+signalKey+" mode="+gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST)
             +" offset="+AUTO_ENTRY_OFFSET_POINTS+" MT5 points entry="+price(orderSignal.entry)
@@ -1012,81 +1014,161 @@ public class MainActivity extends Activity {
         return Double.parseDouble(String.format(Locale.US,"%."+digits+"f",value));
     }
 
+    private void clearOpenActionWait(SharedPreferences gp){
+        gp.edit().remove("open_action_wait_market").remove("open_action_wait_side")
+            .remove("open_action_wait_anchor").remove("open_action_wait_wick_length")
+            .remove("open_action_wait_candle_ms").remove("open_action_wait_bounce_confirmed")
+            .remove("open_action_wait_bounce_price").apply();
+    }
+
     /**
-     * Mode 1 triggers on the first valid wick+sweep. Mode 2 records that first sweep
-     * and waits for a subsequent favourable move of max(0.15 ATR, 10 MT5 points).
-     * The wait state is persisted so a short UI pause does not erase the setup.
+     * SWEEP_FIRST waits for a one-third candle excursion after the new M1 opens.
+     * WAIT_BOUNCE remembers the real wick extreme and accepts one recoil only.
      */
     private boolean isOpenActionEntryReady(SignalResult s,Candle[] m1,double bid,double ask,
                                            long candleStamp,SharedPreferences gp){
-        if(s==null||(!"BUY".equals(s.side)&&!"SELL".equals(s.side))||!s.wickRejection)
+        if(s==null||m1==null||m1.length<2
+                ||(!"BUY".equals(s.side)&&!"SELL".equals(s.side))||!s.wickRejection)
             return false;
         String mode=gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST);
-        if(!OPEN_ACTION_WAIT_BOUNCE.equals(mode)){
-            return s.liquiditySweep;
-        }
         String symbol=selectedMarket;
         String side=s.side;
+        double atr=SmartLimitReentry.atr(m1,14);
+        Candle live=m1[m1.length-1];
+
+        if(!OPEN_ACTION_WAIT_BOUNCE.equals(mode)){
+            if(!s.liquiditySweep)return false;
+            boolean travelled=OpenActionEntryPolicy.hasOneThirdCandleTravel(m1,side,atr);
+            if(!travelled){
+                double threshold=OpenActionEntryPolicy.oneThirdTravelThreshold(m1[m1.length-2],atr);
+                double excursion="BUY".equals(side)?live.o-live.l:live.h-live.o;
+                String size=atr>0.0?(live.h-live.l)>=atr*1.25?"LONG"
+                    :(live.h-live.l)<=atr*0.55?"SHORT":"NORMAL":"ATR_PENDING";
+                smartLogOnce(gp,"OPEN_ACTION_SWEEP_WAIT|"+symbol+"|"+side+"|"+candleStamp,
+                    "OPEN ACTION SAPUAN WAIT • side="+side+" excursion="+price(Math.max(0.0,excursion))+
+                    " threshold="+price(threshold)+" prevRange="+price(m1[m1.length-2].h-m1[m1.length-2].l)+
+                    " ATR="+price(atr)+" candleSize="+size+
+                    ("BUY".equals(side)?" • BUY menunggu turun 1/3 range":" • SELL menunggu naik 1/3 range"));
+                if(status!=null)status.setText("● OPEN ACTION WAIT • "+side+" 1/3 CANDLE");
+            }
+            return travelled;
+        }
+
         String waitMarket=gp.getString("open_action_wait_market","");
         String waitSide=gp.getString("open_action_wait_side","");
         long started=gp.getLong("open_action_wait_candle_ms",0L);
-        if(!symbol.equals(waitMarket)||!side.equals(waitSide)||started<=0L){
+        boolean sameSetup=symbol.equals(waitMarket)&&side.equals(waitSide)&&started>0L;
+
+        if(!sameSetup){
             if(!s.liquiditySweep)return false;
-            double anchor=(bid+ask)*0.5;
-            if(!Double.isFinite(anchor)||anchor<=0)return false;
+            double tip="BUY".equals(side)?live.l:live.h;
+            double wickLength="BUY".equals(side)
+                ?Math.max(0.0,Math.min(live.o,live.c)-live.l)
+                :Math.max(0.0,live.h-Math.max(live.o,live.c));
+            if(!Double.isFinite(tip)||tip<=0.0)return false;
+            clearOpenActionWait(gp);
             gp.edit().putString("open_action_wait_market",symbol)
                 .putString("open_action_wait_side",side)
-                .putString("open_action_wait_anchor",Double.toString(anchor))
+                .putString("open_action_wait_anchor",Double.toString(tip))
+                .putString("open_action_wait_wick_length",Double.toString(wickLength))
                 .putLong("open_action_wait_candle_ms",candleStamp)
                 .putBoolean("open_action_wait_bounce_confirmed",false).apply();
-            smartLogOnce(gp,"OPEN_ACTION_BOUNCE|"+symbol+"|"+side+"|"+candleStamp,
-                "OPEN ACTION: sweep "+side+" tersimpan; menunggu pantulan harga sebelum antre LIMIT");
-            if(status!=null)status.setText("● OPEN ACTION WAIT • MENUNGGU PANTULAN "+side);
+            smartLogOnce(gp,"OPEN_ACTION_BOUNCE_ARMED|"+symbol+"|"+side+"|"+candleStamp,
+                "OPEN ACTION PANTULAN ARMED • side="+side+" wickTip="+price(tip)+
+                " wickLength="+price(wickLength)+" • menunggu satu pantulan dari ujung wick");
+            if(status!=null)status.setText("● OPEN ACTION WAIT • PANTULAN "+side);
+            return false;
+        }
+
+        int elapsed=SmartLimitReentry.elapsedM1Bars(started,candleStamp);
+        if(elapsed>2){
+            clearOpenActionWait(gp);
+            smartLogOnce(gp,"OPEN_ACTION_BOUNCE_EXPIRED|"+symbol+"|"+side+"|"+candleStamp,
+                "OPEN ACTION PANTULAN EXPIRED • tidak ada pantulan valid dalam 2 candle M1; tunggu sweep baru");
             return false;
         }
         if(gp.getBoolean("open_action_wait_bounce_confirmed",false))return true;
-        int elapsed=SmartLimitReentry.elapsedM1Bars(started,candleStamp);
-        if(elapsed>2){
-            gp.edit().remove("open_action_wait_market").remove("open_action_wait_side")
-                .remove("open_action_wait_anchor").remove("open_action_wait_candle_ms")
-                .remove("open_action_wait_bounce_confirmed").apply();
-            smartLogOnce(gp,"OPEN_ACTION_BOUNCE_EXPIRED|"+symbol+"|"+side+"|"+candleStamp,
-                "OPEN ACTION: pantulan tidak terkonfirmasi dalam 2 candle M1; tunggu sapuan baru");
-            return false;
-        }
-        double point=brokerPoint(gp),atr=SmartLimitReentry.atr(m1,14);
-        if(point<=0.0||atr<=0.0||!QuoteSafety.valid(bid,ask))return false;
+
+        double point=brokerPoint(gp);
         double anchor=preferenceDouble(gp,"open_action_wait_anchor",0.0);
-        double current=(bid+ask)*0.5;
-        double threshold=Math.max(atr*0.15,point*AUTO_ENTRY_OFFSET_POINTS);
+        double wickLength=preferenceDouble(gp,"open_action_wait_wick_length",0.0);
+        if(point<=0.0||atr<=0.0||anchor<=0.0||!Double.isFinite(live.c))return false;
+
+        // While waiting, follow a newly extended low/high. Once a bounce is confirmed,
+        // the tip is frozen so later oscillations cannot create a second bounce signal.
+        double newTip="BUY".equals(side)?live.l:live.h;
+        double epsilon=Math.max(point,Math.abs(anchor)*1e-8);
+        boolean extended="BUY".equals(side)?newTip<anchor-epsilon:newTip>anchor+epsilon;
+        if(extended){
+            anchor=newTip;
+            wickLength="BUY".equals(side)
+                ?Math.max(0.0,Math.min(live.o,live.c)-live.l)
+                :Math.max(0.0,live.h-Math.max(live.o,live.c));
+            gp.edit().putString("open_action_wait_anchor",Double.toString(anchor))
+                .putString("open_action_wait_wick_length",Double.toString(wickLength))
+                .putBoolean("open_action_wait_bounce_confirmed",false).apply();
+        }
+
+        double threshold=OpenActionEntryPolicy.bounceThreshold(atr,wickLength,point);
+        double current=live.c; // Use the same candle-feed price scale as the saved wick tip.
+        if(threshold<=0.0)return false;
         boolean bounced="BUY".equals(side)?current>=anchor+threshold:current<=anchor-threshold;
         if(bounced){
-            gp.edit().putBoolean("open_action_wait_bounce_confirmed",true).apply();
-            AppLog.add(this,"OPEN ACTION","bounce confirmed side="+side+" movement="+
-                String.format(Locale.US,"%.5f",Math.abs(current-anchor))+" threshold="+
-                String.format(Locale.US,"%.5f",threshold));
+            gp.edit().putBoolean("open_action_wait_bounce_confirmed",true)
+                .putString("open_action_wait_bounce_price",Double.toString(current)).apply();
+            AppLog.add(this,"OPEN ACTION","ONE BOUNCE CONFIRMED side="+side+
+                " wickTip="+price(anchor)+" current="+price(current)+
+                " movement="+price(Math.abs(current-anchor))+" threshold="+price(threshold)+
+                " • wick tip frozen; next LIMIT targets wick edge");
             return true;
         }
-        if(status!=null)status.setText("● OPEN ACTION WAIT • "+side+" MENUNGGU PANTULAN");
+        if(status!=null)status.setText("● OPEN ACTION WAIT • PANTULAN "+side+" KE UJUNG WICK");
         return false;
     }
 
     /**
-     * Re-anchor the LIMIT near the live broker quote so it is more likely to be
-     * retested. SL remains at the wick structure; TP1/TP2 are recalculated at 2R/3.5R.
+     * In WAIT_BOUNCE, place the pending LIMIT beside the saved wick tip, with SL
+     * beyond that tip. Sweep-first retains the existing near-market LIMIT approach.
      */
-    private SignalResult createOpenActionOrderSignal(SignalResult s,SharedPreferences gp){
+    private SignalResult createOpenActionOrderSignal(SignalResult s,SharedPreferences gp,Candle[] m1){
         if(s==null||chart==null||!QuoteSafety.valid(chart.getBid(),chart.getAsk()))return null;
         double point=brokerPoint(gp);
         if(point<=0.0)return null;
         double bid=chart.getBid(),ask=chart.getAsk();
-        double entry="BUY".equals(s.side)?ask-point*AUTO_ENTRY_OFFSET_POINTS
-            :"SELL".equals(s.side)?bid+point*AUTO_ENTRY_OFFSET_POINTS:0.0;
-        if(entry<=0.0)return null;
+        boolean wickTipMode=OPEN_ACTION_WAIT_BOUNCE.equals(
+            gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST));
+        double entry,sl;
+        double atr=SmartLimitReentry.atr(m1,14);
+        String setupSuffix;
+
+        if(wickTipMode){
+            if(m1==null||m1.length<2||atr<=0.0)return null;
+            Candle live=m1[m1.length-1];
+            double savedTip=preferenceDouble(gp,"open_action_wait_anchor",0.0);
+            double wickLength=preferenceDouble(gp,"open_action_wait_wick_length",0.0);
+            double offset=OpenActionEntryPolicy.wickTipOffset(wickLength,atr,point);
+            if(savedTip<=0.0||offset<=0.0)return null;
+
+            // Candle OHLC comes from the chart feed, while current Bid/Ask are from MT5.
+            // Translate the saved feed wick edge to the current broker price coordinate.
+            double priceShift=((bid+ask)*0.5)-live.c;
+            double brokerTip=savedTip+priceShift;
+            entry="BUY".equals(s.side)?brokerTip+offset:brokerTip-offset;
+            double stopDistance=Math.max(atr*0.12,(ask-bid)*2.0);
+            sl="BUY".equals(s.side)?brokerTip-stopDistance:brokerTip+stopDistance;
+            setupSuffix=" • OPEN ACTION WICK TIP / ONE BOUNCE";
+        }else{
+            entry="BUY".equals(s.side)?ask-point*AUTO_ENTRY_OFFSET_POINTS
+                :"SELL".equals(s.side)?bid+point*AUTO_ENTRY_OFFSET_POINTS:0.0;
+            sl=s.sl;
+            setupSuffix=" • OPEN ACTION SAPUAN 1/3";
+        }
+        if(entry<=0.0||!Double.isFinite(entry)||!Double.isFinite(sl))return null;
         entry=normalizeBrokerPrice(entry,gp);
-        double sl=s.sl,tp1,tp2,risk;
+        sl=normalizeBrokerPrice(sl,gp);
+        double tp1,tp2,risk;
         if("BUY".equals(s.side)){
-            if(!(entry<ask&&sl>0.0&&sl<entry))return null;
+            if(!(entry<ask&&sl<entry))return null;
             risk=entry-sl;
             tp1=entry+2.0*risk;
             tp2=entry+3.5*risk;
@@ -1103,9 +1185,8 @@ public class MainActivity extends Activity {
         if("BUY".equals(s.side)&&!(sl<entry&&tp1>entry&&tp2>tp1))return null;
         if("SELL".equals(s.side)&&!(tp2<tp1&&tp1<entry&&entry<sl))return null;
         return new SignalResult(s.side,s.m5Bias,entry,sl,tp1,tp2,3.5,s.score,s.confidence,
-            s.setup+" • OPEN ACTION "+AUTO_ENTRY_OFFSET_POINTS+"pt",
-            s.liquiditySweep,s.wickRejection,s.bos,s.emaFilter,s.rsiFilter,s.macdFilter,
-            s.atrFilter,s.spreadFilter);
+            s.setup+setupSuffix,s.liquiditySweep,s.wickRejection,s.bos,s.emaFilter,s.rsiFilter,
+            s.macdFilter,s.atrFilter,s.spreadFilter);
     }
 
     private void processAutoLimit(SignalResult s,Candle[] m1,Candle[] m5,
