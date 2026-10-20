@@ -124,8 +124,8 @@ public final class SignalEngine {
                 wick = p;
                 needleBuy = "BUY".equals(side);
                 needleSell = "SELL".equals(side);
-                sweepBuy = needleBuy;
-                sweepSell = needleSell;
+                // The carried candle pattern is a wick setup, not proof of a liquidity sweep.
+                // Keep sweep flags tied only to actual current-bar swing evidence.
             }
         }
 
@@ -175,10 +175,10 @@ public final class SignalEngine {
         int confidence="WAIT".equals(side)?(points>=7?3:points>=5?2:1)
             :(selectedEarly?3:(selectedSweep?5:4));
         String setup="WAIT".equals(side)
-            ? (needleBuy && needleSell ? "WICK AMBIGU • WAIT" : "Menunggu wick / sweep valid")
-            : (previousBarSetup ? "PREVIOUS CANDLE SWEEP • "+side+" LIMIT OUTSIDE RANGE"
-                : (selectedEarly?"EARLY WICK PRECURSOR + LIQUIDITY SWEEP"
-                    :"NEEDLE WICK + REJECTION"+(selectedSweep?" + LIQUIDITY SWEEP":"")));
+            ? (needleBuy && needleSell ? "WICK AMBIGU • WAIT" : "Menunggu wick rejection valid")
+            : (previousBarSetup ? "PREVIOUS CANDLE WICK • "+side+" LIMIT OUTSIDE RANGE"
+                : (selectedEarly?"EARLY WICK PRECURSOR"
+                    :"NEEDLE WICK + REJECTION"));
         return new SignalResult(side,bias,entry,sl,tp1,tp2,rr,score,confidence,setup,
             selectedSweep,selectedNeedle,bosBuy||bosSell,
             emaBuy||emaSell,rsiBuy||rsiSell,macdBuy||macdSell,atrOk,spreadOk);
