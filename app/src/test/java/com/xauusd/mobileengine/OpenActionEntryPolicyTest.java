@@ -50,4 +50,14 @@ public class OpenActionEntryPolicyTest {
         assertFalse(OpenActionEntryPolicy.hasOneThirdCandleTravel(bars, "WAIT", 1.0));
         assertFalse(OpenActionEntryPolicy.hasOneThirdCandleTravel(bars, "BUY", 0.0));
     }
+    @Test public void bounceThresholdAdaptsToWickLengthAndStaysBelowOldFixedGate() {
+        double shortWick = OpenActionEntryPolicy.bounceThreshold(1.0, 0.10, 0.001);
+        double longWick = OpenActionEntryPolicy.bounceThreshold(1.0, 0.80, 0.001);
+        assertEquals(0.025, shortWick, 1e-9);
+        assertEquals(0.08, longWick, 1e-9);
+        assertTrue(shortWick < 0.15);
+        assertTrue(longWick < 0.15);
+        assertEquals(0.0, OpenActionEntryPolicy.bounceThreshold(0.0, 0.1, 0.001), 1e-9);
+    }
+
 }
