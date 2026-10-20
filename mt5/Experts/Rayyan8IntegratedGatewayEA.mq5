@@ -24,6 +24,9 @@ datetime lastDiag=0;
 uint quoteDiagAtMs[3];
 string quoteDiagState[3];
 void manageTP2RetraceProtection();
+void updateChartCountdown();
+void uploadChartSnapshot();
+uint lastScreenshotTick=0;
 // RAYYAN8 integrated native chart controller. The indicator queue is independent.
 input int SRLookbackBars=80;
 input int FiboLookbackBars=60;
@@ -66,6 +69,7 @@ void OnTimer(){
    // Protection is independent of gateway availability; do not wait for /next.
    manageTP2RetraceProtection();
    processIndicatorQueue();
+   updateChartCountdown();
    uploadChartSnapshot();
    int code=-1;
    string cmd="",transportDetail="";
@@ -332,6 +336,66 @@ void OnTimer(){
    }
 }
 
+
+
+// Native MT5 candle countdown displayed in the captured chart and updated each timer pass.
+void updateChartCountdown(){
+   datetime bar=iTime(_Symbol,_Period,0);
+   int periodSeconds=PeriodSeconds(_Period);
+   if(bar<=0 || periodSeconds<=0) return;
+   int remain=(int)MathMax(0,periodSeconds-(TimeCurrent()-bar));
+   string label=StringFormat("%s  %02d:%02d",EnumToString(_Period),remain/60,remain%60);
+   const string name="RAYYAN_MT5_BAR_TIMER";
+   if(ObjectFind(0,name)<0){
+      if(!ObjectCreate(0,name,OBJ_LABEL,0,0,0)){
+         Print("RAYYAN TIMER CREATE FAILED err=",GetLastError()); return;
+      }
+      ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_RIGHT_UPPER);
+      ObjectSetInteger(0,name,OBJPROP_ANCHOR,ANCHOR_RIGHT_UPPER);
+      ObjectSetInteger(0,name,OBJPROP_XDISTANCE,12);
+      ObjectSetInteger(0,name,OBJPROP_YDISTANCE,20);
+      ObjectSetInteger(0,name,OBJPROP_COLOR,clrWhite);
+      ObjectSetInteger(0,name,OBJPROP_FONTSIZE,10);
+      ObjectSetString(0,name,OBJPROP_FONT,"Arial");
+      ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
+   }
+   ObjectSetString(0,name,OBJPROP_TEXT,label);
+   ChartRedraw(0);
+}
+
+void uploadChartSnapshot(){
+   if(GetTickCount()-lastScreenshotTick<900) return;
+   lastScreenshotTick=GetTickCount();
+   string filename="rayyan_mt5_chart.png";
+   ResetLastError();
+   if(!ChartScreenShot(0,filename,1000,500,ALIGN_RIGHT)){
+      Print("RAYYAN CHART SCREENSHOT FAILED err=",GetLastError()); return;
+   }
+   Sleep(100);
+   int fh=FileOpen(filename,FILE_READ|FILE_BIN|FILE_SHARE_READ);
+   if(fh==INVALID_HANDLE){Print("RAYYAN CHART FILE OPEN FAILED err=",GetLastError());return;}
+   ulong size=FileSize(fh);
+   if(size<8||size>2000000){FileClose(fh);Print("RAYYAN CHART IMAGE SIZE INVALID=",size);return;}
+   char data[]; ArrayResize(data,(int)size);
+   uint read=FileReadArray(fh,data,0,(uint)size);
+   FileClose(fh);
+   if(read!=size){Print("RAYYAN CHART READ MISMATCH ",read,"/",size);return;}
+   char result[]; string responseHeaders="";
+   string headers="Content-Type: image/png\r\n";
+   ResetLastError();
+   int code=WebRequest("POST",GatewayUrl+"/chart/upload",headers,2500,data,result,responseHeaders);
+   if(code!=200){
+      if(TimeCurrent()-lastDiag>=10){
+         lastDiag=TimeCurrent();
+         Print("RAYYAN CHART PUBLISH FAILED HTTP=",code," err=",GetLastError());
+      }
+   }else{
+      Print("RAYYAN MT5 CHART PUBLISHED symbol=",_Symbol," tf=",EnumToString(_Period),
+            " bid=",DoubleToString(SymbolInfoDouble(_Symbol,SYMBOL_BID),_Digits),
+            " ask=",DoubleToString(SymbolInfoDouble(_Symbol,SYMBOL_ASK),_Digits));
+   }
+}
 
 // TP2-approach retrace protection for Rayyan-managed positions only.
 // A position must have our dedicated magic. The comment/ID is used to recover the
