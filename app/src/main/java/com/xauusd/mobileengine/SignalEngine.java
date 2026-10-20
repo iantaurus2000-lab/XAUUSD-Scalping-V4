@@ -10,6 +10,17 @@ public final class SignalEngine {
     /** Candle-feed prices define entry levels; independent MT5 quotes define spread safety. */
     public static SignalResult evaluate(Candle[] m1,Candle[] m5,double bid,double ask,
                                         double spreadBid,double spreadAsk) {
+        return evaluate(m1,m5,bid,ask,spreadBid,spreadAsk,false);
+    }
+
+    /**
+     * followSweepExtremes is Open Action 1: once price travels one-third of the adaptive
+     * prior candle range from this M1 open, follow the active candle extreme immediately.
+     * No wick-rejection/swing-liquidity confirmation is needed in this mode.
+     */
+    public static SignalResult evaluate(Candle[] m1,Candle[] m5,double bid,double ask,
+                                        double spreadBid,double spreadAsk,
+                                        boolean followSweepExtremes) {
         if (m1 == null || m1.length < 30 || m5 == null || m5.length < 30)
             return new SignalResult("WAIT", "NEUTRAL", 0, 0, 0, 0, 0, 0, 1,
                 "Menunggu data M1/M5", false, false, false, false, false, false, false, false);
@@ -100,21 +111,39 @@ public final class SignalEngine {
             +Math.min(2.0,sellWickRatio*0.35)
             +Math.max(0.0,Math.min(1.0,recoveryFromHigh/Math.max(atr*0.25,1e-12)));
         String side="WAIT";
-        if(needleBuy&&(!needleSell||buyEvidence>sellEvidence+0.10))side="BUY";
-        else if(needleSell&&(!needleBuy||sellEvidence>buyEvidence+0.10))side="SELL";
+        if(followSweepExtremes){
+            boolean downTravel=OpenActionEntryPolicy.hasOneThirdCandleTravel(m1,"BUY",atr);
+            boolean upTravel=OpenActionEntryPolicy.hasOneThirdCandleTravel(m1,"SELL",atr);
+            double downExcursion=Math.max(0.0,z.o-z.l);
+            double upExcursion=Math.max(0.0,z.h-z.o);
+            if(downTravel&&upTravel){
+                double ambiguity=Math.max(atr*0.01,Math.abs(z.c)*1e-8);
+                if(downExcursion>upExcursion+ambiguity)side="BUY";
+                else if(upExcursion>downExcursion+ambiguity)side="SELL";
+            }else if(downTravel)side="BUY";
+            else if(upTravel)side="SELL";
+            // READY direction follows the actively extending extreme, not a completed wick.
+            needleBuy="BUY".equals(side);
+            needleSell="SELL".equals(side);
+            sweepBuy=needleBuy&&swBuy;
+            sweepSell=needleSell&&swSell;
+        }else{
+            if(needleBuy&&(!needleSell||buyEvidence>sellEvidence+0.10))side="BUY";
+            else if(needleSell&&(!needleBuy||sellEvidence>buyEvidence+0.10))side="SELL";
+        }
 
         // Do not carry the previous candle's side into a new M1 bar. ENTRY READY
-        // must be based on a wick/rejection formed by the currently active candle.
+        // must be based on the active candle rather than replaying the prior candle.
         double entry=0, sl=0, tp1=0, tp2=0, rr=0;
         if ("BUY".equals(side)) {
-            double wickOffset=OpenActionEntryPolicy.wickTipOffset(
+            double wickOffset=followSweepExtremes ? 0.0 : OpenActionEntryPolicy.wickTipOffset(
                 lower,atr,Math.max(Math.abs(wick.l)*1e-7,Math.abs(ask)*1e-7));
             entry=wick.l+Math.max(0.0,wickOffset);
             sl=wick.l-Math.max(atr*0.12,spread*2);
             double risk=entry-sl;
             if(risk>0){tp1=entry+risk*2.0;tp2=entry+risk*3.5;rr=3.5;}
         } else if ("SELL".equals(side)) {
-            double wickOffset=OpenActionEntryPolicy.wickTipOffset(
+            double wickOffset=followSweepExtremes ? 0.0 : OpenActionEntryPolicy.wickTipOffset(
                 upper,atr,Math.max(Math.abs(wick.h)*1e-7,Math.abs(bid)*1e-7));
             entry=wick.h-Math.max(0.0,wickOffset);
             sl=wick.h+Math.max(atr*0.12,spread*2);
@@ -138,9 +167,10 @@ public final class SignalEngine {
         int confidence="WAIT".equals(side)?(points>=7?3:points>=5?2:1)
             :(selectedEarly?3:(selectedSweep?5:4));
         String setup="WAIT".equals(side)
-            ? (needleBuy && needleSell ? "WICK AMBIGU • WAIT" : "Menunggu wick rejection valid")
-            : (selectedEarly?"EARLY WICK PRECURSOR"
-                :"NEEDLE WICK + REJECTION");
+            ? (followSweepExtremes ? "Menunggu sapuan candle 1/3"
+                : (needleBuy && needleSell ? "WICK AMBIGU • WAIT" : "Menunggu wick rejection valid"))
+            : (followSweepExtremes ? "CANDLE EXTREME SWEEP • "+side
+                : (selectedEarly?"EARLY WICK PRECURSOR":"NEEDLE WICK + REJECTION"));
         return new SignalResult(side,bias,entry,sl,tp1,tp2,rr,score,confidence,setup,
             selectedSweep,selectedRejection,bosBuy||bosSell,
             emaBuy||emaSell,rsiBuy||rsiSell,macdBuy||macdSell,atrOk,spreadOk);
