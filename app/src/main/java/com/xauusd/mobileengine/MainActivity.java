@@ -1608,8 +1608,8 @@ public class MainActivity extends Activity {
             if(status!=null)status.setText("● SMART AUTO WAIT • "+reason);
             return;
         }
-        // Two explicit open-action modes share the existing EA/ACK and anti-duplicate guards.
-        // Both require a true sweep; the second waits for a favourable bounce first.
+        // Open Action uses wick rejection + candle-range travel, not a mandatory
+        // prior swing-liquidity sweep. Mode 2 waits for one recoil from the wick tip.
         if(!isOpenActionEntryReady(s,m1,bid,ask,candleStamp,gp)){
             String mode=gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST);
             String waitSide=gp.getString("open_action_wait_side","");
@@ -1618,17 +1618,16 @@ public class MainActivity extends Activity {
             boolean bounceDone=gp.getBoolean("open_action_wait_bounce_confirmed",false);
             int waitBars=waitStart>0?SmartLimitReentry.elapsedM1Bars(waitStart,candleStamp):-1;
             String gate=!s.wickRejection?"WICK_REJECTION_FALSE":
-                !s.liquiditySweep?"LIQUIDITY_SWEEP_REQUIRED":
                 OPEN_ACTION_WAIT_BOUNCE.equals(mode)
                     ?(bounceDone?"BOUNCE_CONFIRMED_BUT_ORDER_GATES_RECHECK":"WAITING_FOR_PRICE_BOUNCE")
-                    :"SWEEP_FIRST_GATE_NOT_CONFIRMED";
+                    :"CANDLE_TRAVEL_1_3_NOT_CONFIRMED";
             autoDiagnostic(gp,"OPEN_ACTION|"+signalKey+"|"+mode+"|"+gate+"|"+waitBars,
                 "OPEN ACTION BLOCK • reason="+gate+" mode="+mode+" side="+s.side+
-                " wick="+s.wickRejection+" sweep="+s.liquiditySweep+
+                " wick="+s.wickRejection+" sweepContext="+s.liquiditySweep+
                 " waitMarket="+waitMarket+" waitSide="+waitSide+" bounceConfirmed="+bounceDone+
                 " waitM1Bars="+waitBars+" • READY visual tidak otomatis berarti Open Action terpenuhi");
             if(status!=null)status.setText(OPEN_ACTION_WAIT_BOUNCE.equals(mode)
-                ?"● SMART AUTO WAIT • MENUNGGU PANTULAN":"● SMART AUTO WAIT • MENUNGGU SWEEP VALID");
+                ?"● SMART AUTO WAIT • MENUNGGU PANTULAN":"● SMART AUTO WAIT • MENUNGGU SAPUAN CANDLE 1/3");
             return;
         }
         // AUTO LIMIT must use the same per-candle direction accepted by READY UI.
