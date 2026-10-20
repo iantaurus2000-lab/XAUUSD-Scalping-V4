@@ -126,7 +126,7 @@ void OnTimer(){
       return;
    }
 
-   if(side=="TEST") { Print("RAYYAN4 REJECT legacy TEST command; use LIMIT only"); return; }
+   if(side=="TEST") { Print("RAYYAN4 REJECT legacy TEST command; use BUY/SELL market or LIMIT side"); return; }
    double vol=StringToDouble(field(cmd,"volume"));
    double entry=StringToDouble(field(cmd,"entry"));
    double sl=StringToDouble(field(cmd,"sl"));
@@ -164,11 +164,13 @@ void OnTimer(){
    double refAsk=StringToDouble(field(cmd,"refAsk"));
    if(haveTick && refBid>0 && refAsk>=refBid){
       double shift=0.0;
-      if(side=="BUY_LIMIT") shift=tick.ask-refAsk;
-      else if(side=="SELL_LIMIT") shift=tick.bid-refBid;
-      if(side=="BUY_LIMIT" || side=="SELL_LIMIT"){
+      if(side=="BUY_LIMIT" || side=="BUY") shift=tick.ask-refAsk;
+      else if(side=="SELL_LIMIT" || side=="SELL") shift=tick.bid-refBid;
+      if(side=="BUY_LIMIT" || side=="SELL_LIMIT" || side=="BUY" || side=="SELL"){
          entry+=shift; sl+=shift; tp+=shift;
          if(tp1>0.0) tp1+=shift;
+         if(side=="BUY") entry=tick.ask;
+         else if(side=="SELL") entry=tick.bid;
          Print("RAYYAN4 PRICE MAP side=",side,
                " refBid=",DoubleToString(refBid, digits),
                " refAsk=",DoubleToString(refAsk, digits),
@@ -202,10 +204,10 @@ void OnTimer(){
    }else if(side=="SELL_LIMIT" && !(entry>tick.bid)){
       resultText="BAD_ENTRY";
       detail=StringFormat("SELL_LIMIT entry=%.5f bid=%.5f",entry,tick.bid);
-   }else if(side=="BUY_LIMIT" && !(sl<entry && tp>entry)){
+   }else if((side=="BUY_LIMIT" || side=="BUY") && !(sl<entry && tp>entry)){
       resultText="BAD_STOPS";
       detail="BUY requires SL<Entry<TP";
-   }else if(side=="SELL_LIMIT" && !(tp<entry && sl>entry)){
+   }else if((side=="SELL_LIMIT" || side=="SELL") && !(tp<entry && sl>entry)){
       resultText="BAD_STOPS";
       detail="SELL requires TP<Entry<SL";
    }else if(point<=0){
@@ -252,6 +254,8 @@ void OnTimer(){
          ResetLastError();
          if(side=="BUY_LIMIT") ok=trade.BuyLimit(vol,entry,sym,sl,tp,ORDER_TIME_GTC,0,"R4-"+id);
          else if(side=="SELL_LIMIT") ok=trade.SellLimit(vol,entry,sym,sl,tp,ORDER_TIME_GTC,0,"R4-"+id);
+         else if(side=="BUY") ok=trade.Buy(vol,sym,0.0,sl,tp,"R4-"+id);
+         else if(side=="SELL") ok=trade.Sell(vol,sym,0.0,sl,tp,"R4-"+id);
          else { resultText="BAD_SIDE"; detail=side; }
 
          uint rc=trade.ResultRetcode();
@@ -259,7 +263,7 @@ void OnTimer(){
          bool connectedAfter=(bool)TerminalInfoInteger(TERMINAL_CONNECTED);
          bool brokerAccepted=(rc==TRADE_RETCODE_PLACED || rc==TRADE_RETCODE_DONE);
          string rcDescription=trade.ResultRetcodeDescription();
-         if(side=="BUY_LIMIT" || side=="SELL_LIMIT"){
+         if(side=="BUY_LIMIT" || side=="SELL_LIMIT" || side=="BUY" || side=="SELL"){
             if(ok && brokerAccepted){
                resultText="EXECUTED";
             }else if(rc==TRADE_RETCODE_CONNECTION){
@@ -289,8 +293,8 @@ void OnTimer(){
 
    if(resultText=="EXECUTED"){
       trackedOrderId=id;
-      if(tp1>0.0 && ((side=="BUY_LIMIT" && entry<tp1 && tp1<tp)
-                    ||(side=="SELL_LIMIT" && tp<tp1 && tp1<entry))){
+      if(tp1>0.0 && (((side=="BUY_LIMIT" || side=="BUY") && entry<tp1 && tp1<tp)
+                    ||((side=="SELL_LIMIT" || side=="SELL") && tp<tp1 && tp1<entry))){
          GlobalVariableSet("R8_TP1_"+id,tp1);
          Print("RAYYAN4 TP1 protection target saved id=",id," tp1=",DoubleToString(tp1,digits));
       }
