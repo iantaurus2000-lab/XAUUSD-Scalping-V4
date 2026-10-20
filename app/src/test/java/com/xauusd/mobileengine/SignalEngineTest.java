@@ -63,7 +63,7 @@ public class SignalEngineTest {
         m1[m1.length-1]=new Candle(now-2_000L,100.9,100.92,100.88,100.90);
         SignalResult s=SignalEngine.evaluate(m1,context(),100.89,100.91,100.89,100.91);
         assertEquals("SELL",s.side);
-        assertTrue(s.setup.startsWith("PREVIOUS CANDLE SWEEP"));
+        assertTrue(s.setup.startsWith("PREVIOUS CANDLE WICK"));
         assertTrue("SELL limit must be above prior high",s.entry>m1[m1.length-2].h);
         assertTrue(s.sl>s.entry&&s.tp1<s.entry);
     }
@@ -75,8 +75,28 @@ public class SignalEngineTest {
         m1[m1.length-1]=new Candle(now-2_000L,100.7,100.72,100.68,100.70);
         SignalResult s=SignalEngine.evaluate(m1,context(),100.69,100.71,100.69,100.71);
         assertEquals("BUY",s.side);
-        assertTrue(s.setup.startsWith("PREVIOUS CANDLE SWEEP"));
+        assertTrue(s.setup.startsWith("PREVIOUS CANDLE WICK"));
         assertTrue("BUY limit must be below prior low",s.entry<m1[m1.length-2].l);
+        assertTrue(s.sl<s.entry&&s.tp1>s.entry);
+    }
+
+    @Test public void recognizesSellWickWithoutLiquiditySweep() {
+        Candle[] m1=history(100.00,100.14,99.95,99.98);
+        SignalResult s=SignalEngine.evaluate(m1,context(),99.97,99.99,99.97,99.99);
+        assertEquals("SELL",s.side);
+        assertTrue("A real upper-wick rejection should qualify without a prior swing sweep",s.wickRejection);
+        assertFalse("No prior swing was taken in this fixture",s.liquiditySweep);
+        assertTrue(s.entry>99.97);
+        assertTrue(s.sl>s.entry&&s.tp1<s.entry);
+    }
+
+    @Test public void recognizesBuyWickWithoutLiquiditySweep() {
+        Candle[] m1=history(100.00,100.05,99.88,100.02);
+        SignalResult s=SignalEngine.evaluate(m1,context(),100.01,100.03,100.01,100.03);
+        assertEquals("BUY",s.side);
+        assertTrue("A real lower-wick rejection should qualify without a prior swing sweep",s.wickRejection);
+        assertFalse("No prior swing was taken in this fixture",s.liquiditySweep);
+        assertTrue(s.entry<100.03);
         assertTrue(s.sl<s.entry&&s.tp1>s.entry);
     }
 
