@@ -1,11 +1,6 @@
 name: Rayyan8 Theme Revision Build
 on:
   workflow_dispatch:
-  push:
-    branches: [ rayyan8-native-mt5-indicators, rayyan9-spread-filter-manual-auto ]
-    paths:
-      - 'app/**'
-      - '.github/workflows/build-rayyan8-theme.yml'
 jobs:
   build:
     runs-on: ubuntu-24.04
