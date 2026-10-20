@@ -88,7 +88,7 @@ public class SignalEngineTest {
     }
 
     @Test public void openActionOneFollowsLiveHighWithoutWaitingForSellRejection() {
-        Candle[] m1=history(100.00,100.25,99.98,100.22);
+        Candle[] m1=history(100.00,100.25,99.98,100.21);
         SignalResult s=SignalEngine.evaluate(m1,context(),100.21,100.23,100.21,100.23,true);
         assertEquals("SELL",s.side);
         assertFalse("Open Action 1 must not require a rejection wick",s.wickRejection);
@@ -98,7 +98,7 @@ public class SignalEngineTest {
     }
 
     @Test public void openActionOneFollowsLiveLowWithoutWaitingForBuyRejection() {
-        Candle[] m1=history(100.00,100.02,99.75,99.78);
+        Candle[] m1=history(100.00,100.02,99.75,99.79);
         SignalResult s=SignalEngine.evaluate(m1,context(),99.77,99.79,99.77,99.79,true);
         assertEquals("BUY",s.side);
         assertFalse("Open Action 1 must not require a rejection wick",s.wickRejection);
