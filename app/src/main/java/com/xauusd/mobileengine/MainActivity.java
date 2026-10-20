@@ -637,7 +637,7 @@ public class MainActivity extends Activity {
                 Toast.makeText(this,"Data candle M1 belum cukup",Toast.LENGTH_SHORT).show();
                 return;
             }
-            SignalResult s=SignalEngine.evaluate(liveM1,m5Data,chart.getBid(),chart.getAsk(),broker[0],broker[1]);
+            SignalResult s=evaluateSignal(liveM1,m5Data,chart.getBid(),chart.getAsk(),broker[0],broker[1]);
             lastSignal=s;
             double liveBid=chart.getBid(),liveAsk=chart.getAsk();
 
@@ -763,6 +763,17 @@ public class MainActivity extends Activity {
         return 0;
     }
 
+    private boolean isOpenActionSweepMode(SharedPreferences gp){
+        return !OPEN_ACTION_WAIT_BOUNCE.equals(
+            gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST));
+    }
+
+    private SignalResult evaluateSignal(Candle[] m1,Candle[] m5,double bid,double ask,
+                                        double spreadBid,double spreadAsk){
+        SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        return SignalEngine.evaluate(m1,m5,bid,ask,spreadBid,spreadAsk,isOpenActionSweepMode(gp));
+    }
+
     private String autoEntryBlockReason(SignalResult signal,double bid,double ask,boolean m1Context){
         if(!m1Context)return "TF BUKAN M1 / DATA M1-M5 BELUM CUKUP";
         if(signal==null)return "SIGNAL BELUM TERSEDIA";
@@ -772,7 +783,11 @@ public class MainActivity extends Activity {
         // ATR validity comes first because spread acceptance also requires valid ATR.
         if(!signal.atrFilter)return "ATR FILTER GAGAL";
         if(!signal.spreadFilter)return "SPREAD FILTER GAGAL";
-        if(!signal.wickRejection)return "WICK REJECTION BELUM VALID";
+        SharedPreferences actionPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        // Open Action 1 follows the actively extending candle extreme; only Open Action 2
+        // waits for a rejection wick and a confirmed bounce.
+        if(!isOpenActionSweepMode(actionPrefs)&&!signal.wickRejection)
+            return "WICK REJECTION BELUM VALID";
         // M5 is context, not a veto: a clean M1 wick rejection can turn against M5.
         // Without a real rejection, low-confidence counter-bias precursors stay blocked.
         if(!m5DoesNotOppose(signal.side,signal.m5Bias)
@@ -1072,10 +1087,11 @@ public class MainActivity extends Activity {
      */
     private boolean isOpenActionEntryReady(SignalResult s,Candle[] m1,double bid,double ask,
                                            long candleStamp,SharedPreferences gp){
-        if(s==null||m1==null||m1.length<2
-                ||(!"BUY".equals(s.side)&&!"SELL".equals(s.side))||!s.wickRejection)
-            return false;
         String mode=gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST);
+        if(s==null||m1==null||m1.length<2
+                ||(!"BUY".equals(s.side)&&!"SELL".equals(s.side))
+                ||(OPEN_ACTION_WAIT_BOUNCE.equals(mode)&&!s.wickRejection))
+            return false;
         String symbol=selectedMarket;
         String side=s.side;
         double atr=SmartLimitReentry.atr(m1,14);
@@ -1617,9 +1633,9 @@ public class MainActivity extends Activity {
             long waitStart=gp.getLong("open_action_wait_candle_ms",0L);
             boolean bounceDone=gp.getBoolean("open_action_wait_bounce_confirmed",false);
             int waitBars=waitStart>0?SmartLimitReentry.elapsedM1Bars(waitStart,candleStamp):-1;
-            String gate=!s.wickRejection?"WICK_REJECTION_FALSE":
-                OPEN_ACTION_WAIT_BOUNCE.equals(mode)
-                    ?(bounceDone?"BOUNCE_CONFIRMED_BUT_ORDER_GATES_RECHECK":"WAITING_FOR_PRICE_BOUNCE")
+            String gate=OPEN_ACTION_WAIT_BOUNCE.equals(mode)
+                    ?(!s.wickRejection?"WICK_REJECTION_FALSE"
+                        :(bounceDone?"BOUNCE_CONFIRMED_BUT_ORDER_GATES_RECHECK":"WAITING_FOR_PRICE_BOUNCE"))
                     :"CANDLE_TRAVEL_1_3_NOT_CONFIRMED";
             autoDiagnostic(gp,"OPEN_ACTION|"+signalKey+"|"+mode+"|"+gate+"|"+waitBars,
                 "OPEN ACTION BLOCK • reason="+gate+" mode="+mode+" side="+s.side+
@@ -1704,7 +1720,7 @@ public class MainActivity extends Activity {
         double spreadBid=brokerForSignal==null?0.0:brokerForSignal[0];
         double spreadAsk=brokerForSignal==null?0.0:brokerForSignal[1];
         SignalResult previous=lastSignal;
-        lastSignal=SignalEngine.evaluate(m1,m5,bid,ask,spreadBid,spreadAsk);
+        lastSignal=evaluateSignal(m1,m5,bid,ask,spreadBid,spreadAsk);
         SignalResult s=lastSignal;
 
         int displayScore=Math.max(0,Math.min(100,s.score));
