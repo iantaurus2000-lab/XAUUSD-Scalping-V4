@@ -58,6 +58,7 @@ void OnDeinit(const int r){
    ObjectDelete(0,"RAYYAN8_SR_RESISTANCE");
    ObjectDelete(0,"RAYYAN8_SR_SUPPORT");
    ObjectDelete(0,"RAYYAN8_FIBO");
+   ObjectDelete(0,"RAYYAN_MT5_BAR_TIMER");
    if(hEma9!=INVALID_HANDLE)IndicatorRelease(hEma9);
    if(hEma21!=INVALID_HANDLE)IndicatorRelease(hEma21);
    if(hEma50!=INVALID_HANDLE)IndicatorRelease(hEma50);
