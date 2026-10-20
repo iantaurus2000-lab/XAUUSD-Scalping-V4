@@ -126,13 +126,14 @@ public final class SignalEngine {
         if(live>0 && atr>0 && Math.abs(live-wick.c)>atr*1.35) {
             side="WAIT"; entry=sl=tp1=tp2=rr=0;
         }
-        int points=(needleBuy||needleSell?6:0)+(sweepBuy||sweepSell?2:0)
+        boolean selectedNeedle=("BUY".equals(side)&&needleBuy)||("SELL".equals(side)&&needleSell);
+        boolean selectedSweep=("BUY".equals(side)&&sweepBuy)||("SELL".equals(side)&&sweepSell);
+        int points=(selectedNeedle?6:0)+(selectedSweep?2:0)
             +(biasBuy||biasSell?1:0)+(emaBuy||emaSell?1:0)+(rsiBuy||rsiSell?1:0)
             +(macdBuy||macdSell?1:0)+(bosBuy||bosSell?1:0)+(spreadOk?1:0)+(atrOk?1:0);
         int score=Math.min(99,45+points*4);
         boolean selectedEarly=("BUY".equals(side)&&earlyBuy&&!rejectBuy)
             ||("SELL".equals(side)&&earlySell&&!rejectSell);
-        boolean selectedSweep=("BUY".equals(side)&&sweepBuy)||("SELL".equals(side)&&sweepSell);
         int confidence="WAIT".equals(side)?(points>=7?3:points>=5?2:1)
             :(selectedEarly?3:(selectedSweep?5:4));
         String setup="WAIT".equals(side)
@@ -140,7 +141,7 @@ public final class SignalEngine {
             : (selectedEarly?"EARLY WICK PRECURSOR + LIQUIDITY SWEEP"
                 :"NEEDLE WICK + REJECTION"+(selectedSweep?" + LIQUIDITY SWEEP":""));
         return new SignalResult(side,bias,entry,sl,tp1,tp2,rr,score,confidence,setup,
-            sweepBuy||sweepSell,needleBuy||needleSell,bosBuy||bosSell,
+            selectedSweep,selectedNeedle,bosBuy||bosSell,
             emaBuy||emaSell,rsiBuy||rsiSell,macdBuy||macdSell,atrOk,spreadOk);
     }
 
