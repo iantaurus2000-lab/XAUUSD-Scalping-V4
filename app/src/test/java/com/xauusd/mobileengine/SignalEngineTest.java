@@ -29,6 +29,8 @@ public class SignalEngineTest {
         assertEquals("BUY",s.side);
         assertTrue(s.liquiditySweep);
         assertTrue(s.entry>0&&s.entry<98.91);
+        assertTrue(s.entry-m1[m1.length-1].l
+            <= (Math.min(m1[m1.length-1].o,m1[m1.length-1].c)-m1[m1.length-1].l)*0.10+1e-9);
         assertTrue(s.sl<s.entry&&s.tp1>s.entry);
         assertTrue(s.setup.contains("EARLY WICK")||s.setup.contains("NEEDLE WICK"));
     }
@@ -39,6 +41,8 @@ public class SignalEngineTest {
         assertEquals("SELL",s.side);
         assertTrue(s.liquiditySweep);
         assertTrue(s.entry>101.09);
+        assertTrue(m1[m1.length-1].h-s.entry
+            <= (m1[m1.length-1].h-Math.max(m1[m1.length-1].o,m1[m1.length-1].c))*0.10+1e-9);
         assertTrue(s.sl>s.entry&&s.tp1<s.entry);
     }
 }
