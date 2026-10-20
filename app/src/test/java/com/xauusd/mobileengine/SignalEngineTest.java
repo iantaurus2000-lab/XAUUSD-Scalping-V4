@@ -87,4 +87,30 @@ public class SignalEngineTest {
         assertTrue(s.sl<s.entry&&s.tp1>s.entry);
     }
 
+    @Test public void openActionOneFollowsLiveHighWithoutWaitingForSellRejection() {
+        Candle[] m1=history(100.00,100.25,99.98,100.22);
+        SignalResult s=SignalEngine.evaluate(m1,context(),100.21,100.23,100.21,100.23,true);
+        assertEquals("SELL",s.side);
+        assertFalse("Open Action 1 must not require a rejection wick",s.wickRejection);
+        assertEquals("CANDLE EXTREME SWEEP • SELL",s.setup);
+        assertEquals("Entry follows the current candle high",m1[m1.length-1].h,s.entry,1e-9);
+        assertTrue(s.sl>s.entry&&s.tp1<s.entry&&s.tp2<s.tp1);
+    }
+
+    @Test public void openActionOneFollowsLiveLowWithoutWaitingForBuyRejection() {
+        Candle[] m1=history(100.00,100.02,99.75,99.78);
+        SignalResult s=SignalEngine.evaluate(m1,context(),99.77,99.79,99.77,99.79,true);
+        assertEquals("BUY",s.side);
+        assertFalse("Open Action 1 must not require a rejection wick",s.wickRejection);
+        assertEquals("CANDLE EXTREME SWEEP • BUY",s.setup);
+        assertEquals("Entry follows the current candle low",m1[m1.length-1].l,s.entry,1e-9);
+        assertTrue(s.sl<s.entry&&s.tp1>s.entry&&s.tp2>s.tp1);
+    }
+
+    @Test public void openActionOneWaitsUntilOneThirdCandleTravel() {
+        Candle[] m1=history(100.00,100.10,99.95,100.08);
+        SignalResult s=SignalEngine.evaluate(m1,context(),100.07,100.09,100.07,100.09,true);
+        assertEquals("WAIT",s.side);
+    }
+
 }
