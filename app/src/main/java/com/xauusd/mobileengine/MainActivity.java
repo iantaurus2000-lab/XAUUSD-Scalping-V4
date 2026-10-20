@@ -1056,6 +1056,15 @@ public class MainActivity extends Activity {
         double atr=SmartLimitReentry.atr(m1,14);
         Candle live=m1[m1.length-1];
 
+        // Prior candle rejection already determines the staged limit. READY is immediate;
+        // shared trade filters and MT5 acknowledgement/duplicate guards remain active.
+        if(s.setup!=null&&s.setup.startsWith("PREVIOUS CANDLE SWEEP")){
+            smartLogOnce(gp,"OPEN_ACTION_PREV_CANDLE_READY|"+symbol+"|"+side+"|"+candleStamp,
+                "OPEN ACTION SAPUAN READY • previous candle anchor • side="+side+
+                " entry="+price(s.entry)+" • pending limit outside previous candle");
+            return true;
+        }
+
         if(!OPEN_ACTION_WAIT_BOUNCE.equals(mode)){
             if(!s.liquiditySweep)return false;
             boolean travelled=OpenActionEntryPolicy.hasOneThirdCandleTravel(m1,side,atr);
