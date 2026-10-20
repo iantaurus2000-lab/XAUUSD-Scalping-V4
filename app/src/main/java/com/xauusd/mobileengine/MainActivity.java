@@ -796,13 +796,16 @@ public class MainActivity extends Activity {
             mt5SymbolForMarket(selectedMarket),q[0],q[1],spread,points,atr,max,ratio);
     }
 
-    private void updateEntryReadyUi(SignalResult signal,double bid,double ask,long candleStamp){
+    private void updateEntryReadyUi(SignalResult signal,double bid,double ask,Candle[] activeM1,long candleStamp){
         String candleKey=selectedMarket+"|"+selectedTf+"|"+candleStamp;
         if(!candleKey.equals(readyCandleKey)){
             readyCandleKey=candleKey;
             readyCandleSide="WAIT";
         }
-        boolean nextReady=isAutoEntryEligible(signal,bid,ask,"M1".equals(selectedTf));
+        boolean baseReady=isAutoEntryEligible(signal,bid,ask,"M1".equals(selectedTf));
+        SharedPreferences actionPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        boolean nextReady=baseReady&&isOpenActionEntryReady(
+            signal,activeM1,bid,ask,candleStamp,actionPrefs);
         String nextSide=nextReady?signal.side:"WAIT";
         // READY follows the newest valid wick direction, including a fresh opposite-side
         // rejection later in the same candle. Order lifecycle guards prevent duplicates.
@@ -829,6 +832,20 @@ public class MainActivity extends Activity {
             blinkOn=false;
             boolean hasSide=signal!=null&&("BUY".equals(signal.side)||"SELL".equals(signal.side));
             String blockReason=autoEntryBlockReason(signal,bid,ask,"M1".equals(selectedTf));
+            if("READY".equals(blockReason)){
+                String actionMode=actionPrefs.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST);
+                if(OPEN_ACTION_WAIT_BOUNCE.equals(actionMode)){
+                    boolean armed=selectedMarket.equals(actionPrefs.getString("open_action_wait_market",""))
+                        &&signal.side.equals(actionPrefs.getString("open_action_wait_side",""));
+                    if(!signal.liquiditySweep&&!armed)blockReason="LIQUIDITY SWEEP BELUM VALID";
+                    else if(armed)blockReason="MENUNGGU SATU PANTULAN KE UJUNG WICK";
+                    else blockReason="MENUNGGU LIQUIDITY SWEEP";
+                }else if(!signal.liquiditySweep){
+                    blockReason="LIQUIDITY SWEEP BELUM VALID";
+                }else{
+                    blockReason="MENUNGGU SAPUAN 1/3 CANDLE";
+                }
+            }
             entryReadyView.setText("WAIT • "+blockReason);
             entryReadyView.setTextColor(Color.rgb(255,205,95));
             entryReadyView.setBackground(roundBg(Color.rgb(35,38,35),10));
@@ -1657,7 +1674,7 @@ public class MainActivity extends Activity {
         entryView.setText("Entry\n"+price(directional?s.entry:0));slView.setText("SL\n"+price(directional?s.sl:0));
         tp1View.setText("TP1\n"+price(directional?s.tp1:0));tp2View.setText("TP2\n"+price(directional?s.tp2:0));
         // Use the same M1 bar timestamp as Smart Auto Entry and order lifecycle.
-        updateEntryReadyUi(s,bid,ask,m1[m1.length-1].t);
+        updateEntryReadyUi(s,bid,ask,m1,m1[m1.length-1].t);
 
         View v=((ViewGroup)scoreView.getParent()).getChildAt(0);
         if(v instanceof Button){
@@ -1728,7 +1745,7 @@ public class MainActivity extends Activity {
         TextView title=tv("ENTRY CONFIDENCE",18); title.setTextColor(Color.CYAN); title.setTypeface(null,Typeface.BOLD); box.addView(title,new LinearLayout.LayoutParams(-1,42));
         TextView note=tv("Pilih ambang confidence minimum",12); note.setTextColor(Color.LTGRAY); box.addView(note,new LinearLayout.LayoutParams(-1,34));
         LinearLayout choices=new LinearLayout(this); choices.setOrientation(LinearLayout.VERTICAL);
-        for(int value:new int[]{60,70,80,90}){ Button option=btn((current==value?"✓  ":"")+"CONFIDENCE "+value+"%"); option.setTextSize(14); option.setBackground(roundBg(current==value?Color.rgb(0,105,83):Color.rgb(7,34,60),12)); LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,58);p.setMargins(0,6,0,6);choices.addView(option,p);option.setOnClickListener(v->{getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putInt("min_entry_score",value).apply();Toast.makeText(this,"Confidence minimum "+value+"%",Toast.LENGTH_SHORT).show();if(lastSignal!=null&&m1Data!=null&&m1Data.length>0)updateEntryReadyUi(lastSignal,chart.getBid(),chart.getAsk(),m1Data[m1Data.length-1].t);((Dialog)box.getTag()).dismiss();}); }
+        for(int value:new int[]{60,70,80,90}){ Button option=btn((current==value?"✓  ":"")+"CONFIDENCE "+value+"%"); option.setTextSize(14); option.setBackground(roundBg(current==value?Color.rgb(0,105,83):Color.rgb(7,34,60),12)); LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,58);p.setMargins(0,6,0,6);choices.addView(option,p);option.setOnClickListener(v->{getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putInt("min_entry_score",value).apply();Toast.makeText(this,"Confidence minimum "+value+"%",Toast.LENGTH_SHORT).show();if(lastSignal!=null&&m1Data!=null&&m1Data.length>0)updateEntryReadyUi(lastSignal,chart.getBid(),chart.getAsk(),m1Data,m1Data[m1Data.length-1].t);((Dialog)box.getTag()).dismiss();}); }
         box.addView(choices); AlertDialog d=new AlertDialog.Builder(this).setView(box).setNegativeButton("Tutup",null).create();box.setTag(d);d.setOnShowListener(x->{if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-40,420),-2);}});d.show();if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-40,420),-2);}
     }
 
