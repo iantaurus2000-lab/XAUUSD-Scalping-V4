@@ -106,7 +106,6 @@ public final class SignalEngine {
 
         double entry=0, sl=0, tp1=0, tp2=0, rr=0;
         if ("BUY".equals(side)) {
-            double minOffset=Math.max(atr*0.02,Math.abs(ask)*0.000001);
             double wickOffset=OpenActionEntryPolicy.wickTipOffset(
                 lower,atr,Math.max(Math.abs(wick.l)*1e-7,Math.abs(ask)*1e-7));
             // Place the LIMIT in the outer 10% of the lower wick, independent of candle body size.
@@ -115,7 +114,6 @@ public final class SignalEngine {
             double risk=entry-sl;
             if(risk>0){tp1=entry+risk*2.0;tp2=entry+risk*3.5;rr=3.5;}
         } else if ("SELL".equals(side)) {
-            double minOffset=Math.max(atr*0.02,Math.abs(bid)*0.000001);
             double wickOffset=OpenActionEntryPolicy.wickTipOffset(
                 upper,atr,Math.max(Math.abs(wick.h)*1e-7,Math.abs(bid)*1e-7));
             // Sell LIMIT mirrors BUY: keep the price within the outer 10% of the upper wick.
