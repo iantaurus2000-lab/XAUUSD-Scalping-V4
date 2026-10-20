@@ -107,7 +107,7 @@ public final class SignalEngine {
         // On the first seconds of a new M1 candle, carry forward the completed candle's
         // rejection as a pending sweep setup. Stage the limit outside the previous range.
         long ageMs = System.currentTimeMillis() - z.t;
-        boolean freshM1 = z.t > 0L && ageMs >= 0L && ageMs <= 12_000L;
+        boolean freshM1 = z.t > 0L && ageMs >= 0L && ageMs < 60_000L;
         if ("WAIT".equals(side) && freshM1 && atr > 0.0) {
             double prevRange = Math.max(0.0, p.h - p.l);
             double prevBody = Math.abs(p.c - p.o);
