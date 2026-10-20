@@ -367,39 +367,6 @@ void updateChartCountdown(){
    ChartRedraw(0);
 }
 
-void uploadChartSnapshot(){
-   if(GetTickCount()-lastScreenshotTick<900) return;
-   lastScreenshotTick=GetTickCount();
-   string filename="rayyan_mt5_chart.png";
-   ResetLastError();
-   if(!ChartScreenShot(0,filename,1000,500,ALIGN_RIGHT)){
-      Print("RAYYAN CHART SCREENSHOT FAILED err=",GetLastError()); return;
-   }
-   Sleep(100);
-   int fh=FileOpen(filename,FILE_READ|FILE_BIN|FILE_SHARE_READ);
-   if(fh==INVALID_HANDLE){Print("RAYYAN CHART FILE OPEN FAILED err=",GetLastError());return;}
-   ulong size=FileSize(fh);
-   if(size<8||size>2000000){FileClose(fh);Print("RAYYAN CHART IMAGE SIZE INVALID=",size);return;}
-   char data[]; ArrayResize(data,(int)size);
-   uint read=FileReadArray(fh,data,0,(uint)size);
-   FileClose(fh);
-   if(read!=size){Print("RAYYAN CHART READ MISMATCH ",read,"/",size);return;}
-   char result[]; string responseHeaders="";
-   string headers="Content-Type: image/png\r\n";
-   ResetLastError();
-   int code=WebRequest("POST",GatewayUrl+"/chart/upload",headers,2500,data,result,responseHeaders);
-   if(code!=200){
-      if(TimeCurrent()-lastDiag>=10){
-         lastDiag=TimeCurrent();
-         Print("RAYYAN CHART PUBLISH FAILED HTTP=",code," err=",GetLastError());
-      }
-   }else{
-      Print("RAYYAN MT5 CHART PUBLISHED symbol=",_Symbol," tf=",EnumToString(_Period),
-            " bid=",DoubleToString(SymbolInfoDouble(_Symbol,SYMBOL_BID),_Digits),
-            " ask=",DoubleToString(SymbolInfoDouble(_Symbol,SYMBOL_ASK),_Digits));
-   }
-}
-
 // TP2-approach retrace protection for Rayyan-managed positions only.
 // A position must have our dedicated magic. The comment/ID is used to recover the
 // explicitly mapped TP1; non-AUTO/manual Rayyan orders fall back to a 2R TP1.
