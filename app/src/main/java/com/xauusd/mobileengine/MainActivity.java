@@ -677,7 +677,10 @@ public class MainActivity extends Activity {
             }
             double lot=readQuickLot();
             if(lot<=0){AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT • lot tidak valid");return;}
-            String orderSide="BUY".equals(requestedSide)?"BUY_LIMIT":"SELL_LIMIT";
+            boolean marketEntry=!OPEN_ACTION_WAIT_BOUNCE.equals(
+                actionPrefs.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST));
+            String orderSide=marketEntry?requestedSide:
+                ("BUY".equals(requestedSide)?"BUY_LIMIT":"SELL_LIMIT");
             // Queue TP1 metadata just like Smart Auto, keeping EA exit protection consistent.
             boolean queued = queueLimit(orderSide,lot,orderSignal.entry,orderSignal.sl,target,orderSignal.tp1);
             if(queued){
@@ -1055,7 +1058,8 @@ public class MainActivity extends Activity {
         String queuedMode=gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST);
         String offsetAudit=OPEN_ACTION_WAIT_BOUNCE.equals(queuedMode)
             ?"saved wick-tip edge + adaptive tick offset":"10 MT5 points from live quote";
-        AppLog.add(this,"AUTO LIMIT","queued "+signalKey+" mode="+queuedMode
+        AppLog.add(this,"AUTO ORDER","queued "+signalKey+" mode="+queuedMode
+            +" execution="+(sweepMarket?"MARKET":"LIMIT")
             +" entryPolicy="+offsetAudit+" entry="+price(orderSignal.entry)
             +" SL="+price(orderSignal.sl)+" TP="+price(target)+"; locked pending EA state");
         return true;
@@ -2539,7 +2543,41 @@ public class MainActivity extends Activity {
         boolean marketOrder="BUY".equals(side)||"SELL".equals(side);
         if(!marketOrder&&!"BUY_LIMIT".equals(side)&&!"SELL_LIMIT".equals(side)){
             queueBlockDiagnostic("invalid side="+side);
-            Toast.makeText(this,"Side harus BUY_LIMIT atau SELL_LIMIT",Toast.LENGTH_SHORT).show();return false;
+            Toast.makeText(this,"Side harus BUY/SELL MARKET atau BUY_LIMIT/SELL_LIMIT",Toast.LENGTH_SHORT).show();return false;
+        }
+
+        // Open Action 1 uses a final fail-closed MT5 quote + spread gate immediately
+        // before enqueueing. The broker quote also becomes the EA's price-map reference.
+        double marketRefBid=0.0,marketRefAsk=0.0,marketMaxSpread=0.0;
+        long marketRefTickMs=0L;
+        if(marketOrder){
+            SharedPreferences quotePrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+            double[] q=freshBrokerQuote(selectedMarket);
+            double atr=m1Data!=null?SmartLimitReentry.atr(m1Data,14):0.0;
+            long received=quotePrefs.getLong("broker_quote_received_ms_"+mt5SymbolForMarket(selectedMarket),0L);
+            long tickMs=quotePrefs.getLong("broker_quote_tick_ms_"+mt5SymbolForMarket(selectedMarket),0L);
+            long now=System.currentTimeMillis();
+            if(q==null||!QuoteSafety.valid(q[0],q[1])
+                    ||!QuoteSafety.isFresh(received,tickMs,now)||atr<=0.0
+                    ||!QuoteSafety.spreadAcceptable(q[0],q[1],atr)){
+                String detail="MARKET blocked • broker quote expired/invalid or spread above limit"
+                    +" • "+spreadAuditText(m1Data);
+                queueBlockDiagnostic(detail);
+                AppLog.add(this,"ORDER_BLOCKED",detail);
+                Toast.makeText(this,"Market Order diblokir • quote stale atau spread melewati batas",Toast.LENGTH_LONG).show();
+                return false;
+            }
+            double brokerEntry="BUY".equals(side)?q[1]:q[0];
+            double shift=brokerEntry-entry;
+            sl+=shift; tp+=shift;
+            if(tp1>0.0)tp1+=shift;
+            entry=brokerEntry;
+            marketRefBid=q[0]; marketRefAsk=q[1]; marketRefTickMs=tickMs;
+            marketMaxSpread=QuoteSafety.maxAllowedSpread(q[0],q[1],atr);
+            if(!Double.isFinite(marketMaxSpread)||marketMaxSpread<=0.0){
+                queueBlockDiagnostic("MARKET blocked • max spread invalid");
+                return false;
+            }
         }
         if(volume<=0||entry<=0||sl<=0||tp<=0){
             queueBlockDiagnostic("invalid order geometry/values volume="+volume+" entry="+entry+" sl="+sl+" tp="+tp);
@@ -2610,7 +2648,14 @@ public class MainActivity extends Activity {
         String id=Long.toString(System.currentTimeMillis());
         String tp1Field=tp1>0.0?";tp1="+Double.toString(tp1):"";
         String commandType=marketOrder?"MARKET":"LIMIT";
-        String cmd="id="+id+";type="+commandType+";symbol="+mt5Symbol+";side="+side+";volume="+volume+";entry="+entry+";sl="+sl+";tp="+tp+tp1Field+";refBid="+chart.getBid()+";refAsk="+chart.getAsk();
+        String refBid=marketOrder?Double.toString(marketRefBid):Double.toString(chart.getBid());
+        String refAsk=marketOrder?Double.toString(marketRefAsk):Double.toString(chart.getAsk());
+        String marketGuardFields=marketOrder
+            ?";maxSpread="+Double.toString(marketMaxSpread)+";refTickMs="+Long.toString(marketRefTickMs)
+            : "";
+        String cmd="id="+id+";type="+commandType+";symbol="+mt5Symbol+";side="+side
+            +";volume="+volume+";entry="+entry+";sl="+sl+";tp="+tp+tp1Field
+            +";refBid="+refBid+";refAsk="+refAsk+marketGuardFields;
         gatewayPrefs.edit().putString("next",cmd).putFloat("lot_"+mt5Symbol,(float)volume)
             .putString("order_status_id",id).putString("order_status","QUEUED")
             .putString("order_status_detail","Menunggu EA MT5 mengambil perintah")
