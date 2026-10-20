@@ -706,7 +706,7 @@ public class MainActivity extends Activity {
         }
         Candle[] liveM1=m1Data;
         double liveBid=chart.getBid(), liveAsk=chart.getAsk();
-        SignalResult s=SignalEngine.evaluate(liveM1,m5Data,liveBid,liveAsk,broker[0],broker[1]);
+        SignalResult s=evaluateSignal(liveM1,m5Data,liveBid,liveAsk,broker[0],broker[1]);
         lastSignal=s;
 
         String blockReason=autoEntryBlockReason(s,liveBid,liveAsk,"M1".equals(selectedTf));
