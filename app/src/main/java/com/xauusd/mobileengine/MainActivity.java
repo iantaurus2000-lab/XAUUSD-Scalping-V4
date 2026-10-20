@@ -1020,7 +1020,10 @@ public class MainActivity extends Activity {
         }
         double target=validAutoTarget(orderSignal);
         if(target<=0)return false;
-        String orderSide="BUY".equals(orderSignal.side)?"BUY_LIMIT":"SELL_LIMIT";
+        boolean sweepMarket=!OPEN_ACTION_WAIT_BOUNCE.equals(
+            gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST));
+        String orderSide=sweepMarket?orderSignal.side:
+            ("BUY".equals(orderSignal.side)?"BUY_LIMIT":"SELL_LIMIT");
         queueOrigin="SMART_AUTO";
         queueOutcomeTarget=orderSignal.tp1;
         boolean queued;
@@ -1098,10 +1101,14 @@ public class MainActivity extends Activity {
         Candle live=m1[m1.length-1];
 
         if(!OPEN_ACTION_WAIT_BOUNCE.equals(mode)){
-            boolean travelled=OpenActionEntryPolicy.hasOneThirdCandleTravel(m1,side,atr);
+            double point=brokerPoint(gp);
+            double spread=Math.max(0.0,ask-bid);
+            double excursion="BUY".equals(side)?live.o-live.l:live.h-live.o;
+            double recoil="BUY".equals(side)?live.c-live.l:live.h-live.c;
+            double threshold=OpenActionEntryPolicy.exhaustionTravelThreshold(m1[m1.length-2],atr);
+            double recoilThreshold=Math.max(point*2.0,Math.max(atr*0.04,spread*1.5));
+            boolean travelled=threshold>0.0&&excursion>=threshold&&recoil>=recoilThreshold;
             if(!travelled){
-                double threshold=OpenActionEntryPolicy.oneThirdTravelThreshold(m1[m1.length-2],atr);
-                double excursion="BUY".equals(side)?live.o-live.l:live.h-live.o;
                 String size;
                 if(atr<=0.0)size="ATR_PENDING";
                 else if(live.h-live.l>=atr*1.25)size="LONG";
@@ -1109,10 +1116,11 @@ public class MainActivity extends Activity {
                 else size="NORMAL";
                 smartLogOnce(gp,"OPEN_ACTION_SWEEP_WAIT|"+symbol+"|"+side+"|"+candleStamp,
                     "OPEN ACTION SAPUAN WAIT • side="+side+" excursion="+price(Math.max(0.0,excursion))+
-                    " threshold="+price(threshold)+" prevRange="+price(m1[m1.length-2].h-m1[m1.length-2].l)+
+                    " threshold="+price(threshold)+" recoil="+price(recoil)+
+                    " recoilNeed="+price(recoilThreshold)+" prevRange="+price(m1[m1.length-2].h-m1[m1.length-2].l)+
                     " ATR="+price(atr)+" candleSize="+size+
-                    ("BUY".equals(side)?" • BUY menunggu turun 1/3 range":" • SELL menunggu naik 1/3 range"));
-                if(status!=null)status.setText("● OPEN ACTION WAIT • "+side+" 1/3 CANDLE");
+                    ("BUY".equals(side)?" • BUY menunggu exhaustion + pantulan dari low":" • SELL menunggu exhaustion + pantulan dari high"));
+                if(status!=null)status.setText("● OPEN ACTION WAIT • "+side+" EXHAUSTION");
             }
             return travelled;
         }
@@ -1241,19 +1249,31 @@ public class MainActivity extends Activity {
             double priceShift=((bid+ask)*0.5)-live.c;
             entry=s.entry+priceShift;
             sl=s.sl+priceShift;
-            setupSuffix=" • OPEN ACTION SAPUAN 1/3 • WICK TIP";
+            double stopDistance=Math.max(atr*0.12,(ask-bid)*2.0);
+            if("BUY".equals(s.side)){
+                entry=ask;
+                double brokerLow=live.l+priceShift;
+                sl=brokerLow-stopDistance;
+            }else{
+                entry=bid;
+                double brokerHigh=live.h+priceShift;
+                sl=brokerHigh+stopDistance;
+            }
+            setupSuffix=" • OPEN ACTION EXHAUSTION • MARKET";
         }
         if(entry<=0.0||!Double.isFinite(entry)||!Double.isFinite(sl))return null;
         entry=normalizeBrokerPrice(entry,gp);
         sl=normalizeBrokerPrice(sl,gp);
         double tp1,tp2,risk;
         if("BUY".equals(s.side)){
-            if(!(entry<ask&&sl<entry))return null;
+            boolean marketEntry=!wickTipMode;
+            if(!(marketEntry?sl<entry:(entry<ask&&sl<entry)))return null;
             risk=entry-sl;
             tp1=entry+2.0*risk;
             tp2=entry+3.5*risk;
         }else if("SELL".equals(s.side)){
-            if(!(entry>bid&&sl>entry))return null;
+            boolean marketEntry=!wickTipMode;
+            if(!(marketEntry?sl>entry:(entry>bid&&sl>entry)))return null;
             risk=sl-entry;
             tp1=entry-2.0*risk;
             tp2=entry-3.5*risk;
@@ -2516,9 +2536,8 @@ public class MainActivity extends Activity {
             return false;
         }
         side=side==null?"":side.trim().toUpperCase(Locale.US);
-        if("BUY".equals(side))side="BUY_LIMIT";
-        if("SELL".equals(side))side="SELL_LIMIT";
-        if(!"BUY_LIMIT".equals(side)&&!"SELL_LIMIT".equals(side)){
+        boolean marketOrder="BUY".equals(side)||"SELL".equals(side);
+        if(!marketOrder&&!"BUY_LIMIT".equals(side)&&!"SELL_LIMIT".equals(side)){
             queueBlockDiagnostic("invalid side="+side);
             Toast.makeText(this,"Side harus BUY_LIMIT atau SELL_LIMIT",Toast.LENGTH_SHORT).show();return false;
         }
@@ -2532,6 +2551,18 @@ public class MainActivity extends Activity {
             AppLog.add(this,"ORDER","blocked BAD_VOLUME symbol="+mt5Symbol+" volume="+lotText(volume)+" min="+lotText(minLot));
             Toast.makeText(this,"Lot minimum "+mt5Symbol+" = "+lotText(minLot)+" • order tidak dikirim",Toast.LENGTH_LONG).show();
             return false;
+        }
+        if("BUY".equals(side)){
+            if(!(sl<entry&&tp>entry)){
+                queueBlockDiagnostic("BUY market geometry invalid SL < Entry < TP");
+                Toast.makeText(this,"BUY MARKET: SL < Entry < TP",Toast.LENGTH_SHORT).show();return false;
+            }
+        }
+        if("SELL".equals(side)){
+            if(!(tp<entry&&sl>entry)){
+                queueBlockDiagnostic("SELL market geometry invalid TP < Entry < SL");
+                Toast.makeText(this,"SELL MARKET: TP < Entry < SL",Toast.LENGTH_SHORT).show();return false;
+            }
         }
         if("BUY_LIMIT".equals(side)){
             if(entry>=chart.getAsk()){
@@ -2578,7 +2609,8 @@ public class MainActivity extends Activity {
         }
         String id=Long.toString(System.currentTimeMillis());
         String tp1Field=tp1>0.0?";tp1="+Double.toString(tp1):"";
-        String cmd="id="+id+";type=LIMIT;symbol="+mt5Symbol+";side="+side+";volume="+volume+";entry="+entry+";sl="+sl+";tp="+tp+tp1Field+";refBid="+chart.getBid()+";refAsk="+chart.getAsk();
+        String commandType=marketOrder?"MARKET":"LIMIT";
+        String cmd="id="+id+";type="+commandType+";symbol="+mt5Symbol+";side="+side+";volume="+volume+";entry="+entry+";sl="+sl+";tp="+tp+tp1Field+";refBid="+chart.getBid()+";refAsk="+chart.getAsk();
         gatewayPrefs.edit().putString("next",cmd).putFloat("lot_"+mt5Symbol,(float)volume)
             .putString("order_status_id",id).putString("order_status","QUEUED")
             .putString("order_status_detail","Menunggu EA MT5 mengambil perintah")
