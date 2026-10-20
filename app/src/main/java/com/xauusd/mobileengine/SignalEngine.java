@@ -15,7 +15,7 @@ public final class SignalEngine {
 
     /**
      * followSweepExtremes is Open Action 1: require adaptive extension and recoil from
-     * the live M1 extreme before signaling. No fixed one-third-candle threshold is used.
+     * the live M1 extreme before signaling.
      */
     public static SignalResult evaluate(Candle[] m1,Candle[] m5,double bid,double ask,
                                         double spreadBid,double spreadAsk,
