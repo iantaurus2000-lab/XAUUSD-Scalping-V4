@@ -3,6 +3,8 @@ package com.xauusd.mobileengine;
 import android.content.Context;
 import android.graphics.*;
 import android.view.*;
+import android.os.Handler;
+import android.os.Looper;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
