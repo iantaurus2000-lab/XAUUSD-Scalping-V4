@@ -1,8 +1,11 @@
-name: Rayyan4 Test Build • TEST QUEUE ACK
+name: Rayyan9 Validation and APK Build
 on:
+  push:
+    branches:
+      - rayyan9-spread-filter-manual-auto
   workflow_dispatch:
 jobs:
-  build:
+  validate-and-build:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -13,12 +16,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10'
-      - name: Restore stable Rayyan4 signing key
+      - name: Restore stable Rayyan signing key
         run: base64 -d app/rayyan4-debug.keystore.b64 > app/rayyan4-debug.keystore
-      - run: gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon
+      - name: Run unit tests
+        run: gradle :app:testDebugUnitTest --no-daemon
+      - name: Build APK
+        run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: XAUUSD-Mobile-Engine-RAYYAN8-FIXED
+          name: XAUUSD-Mobile-Trading-Engine-Rayyan9
           path: |
             app/build/outputs/apk/debug/app-debug.apk
+            mt5/Experts/Rayyan4GatewayEA.mq5
             mt5/Experts/Rayyan8IntegratedGatewayEA.mq5
+          if-no-files-found: error
