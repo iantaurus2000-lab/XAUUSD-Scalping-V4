@@ -1127,6 +1127,18 @@ public class MainActivity extends Activity {
             gp.edit().putString("open_action_wait_anchor",Double.toString(anchor))
                 .putString("open_action_wait_wick_length",Double.toString(wickLength))
                 .putBoolean("open_action_wait_bounce_confirmed",false).apply();
+        }else{
+            // Wick length can grow while the extreme stays fixed. Persist that sensor
+            // update too; otherwise a short initial wick could leave the tip offset at zero.
+            double formingWickLength="BUY".equals(side)
+                ?Math.max(0.0,Math.min(live.o,live.c)-live.l)
+                :Math.max(0.0,live.h-Math.max(live.o,live.c));
+            boolean liveBarContainsTip="BUY".equals(side)
+                ?live.l<=anchor+epsilon:live.h>=anchor-epsilon;
+            if(liveBarContainsTip&&formingWickLength>wickLength){
+                wickLength=formingWickLength;
+                gp.edit().putString("open_action_wait_wick_length",Double.toString(wickLength)).apply();
+            }
         }
 
         double threshold=OpenActionEntryPolicy.bounceThreshold(atr,wickLength,point);
