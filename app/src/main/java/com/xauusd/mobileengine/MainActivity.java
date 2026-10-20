@@ -1088,8 +1088,7 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * OPEN ACTION 1 waits for adaptive travel to an extreme and a confirmed recoil; no
-     * fixed one-third-candle threshold is used.
+     * OPEN ACTION 1 waits for adaptive travel to an extreme and a confirmed recoil.
      * OPEN ACTION 2 still waits for one recoil from a rejected wick extreme.
      */
     private boolean isOpenActionEntryReady(SignalResult s,Candle[] m1,double bid,double ask,
@@ -2726,7 +2725,7 @@ public class MainActivity extends Activity {
         entryActionMode.setSelection(OPEN_ACTION_WAIT_BOUNCE.equals(
             gatewayPrefs.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST))?1:0);
 
-        TextView entryActionHint=tv("Mode 1: tunggu harga mencapai ekstrem M1 lalu pantulan terkonfirmasi sebelum Market Order. Tidak memakai ambang tetap sepertiga candle. Mode 2 tetap menunggu satu pantulan dari ujung wick sebelum LIMIT. SL di luar ekstrem; TP 2R/3,5R.",11);
+        TextView entryActionHint=tv("Mode 1: pantau ekstrem M1 dan tunggu pantulan terkonfirmasi sebelum Market Order. Mode 2 tetap menunggu satu pantulan dari ujung wick sebelum LIMIT. SL di luar ekstrem; TP 2R/3,5R.",11);
         entryActionHint.setTextColor(Color.LTGRAY);
         entryActionHint.setGravity(Gravity.TOP|Gravity.START);
         entryActionHint.setPadding(uiDp(8),uiDp(5),uiDp(8),uiDp(5));
