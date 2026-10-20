@@ -42,7 +42,6 @@ public final class SignalEngine {
         // Evaluate the live M1 bar from one-second feed updates, not a 15-second-old snapshot.
         int n = m1.length;
         Candle wick = z;
-        boolean previousBarSetup = false;
         double priorLow = Double.POSITIVE_INFINITY;
         double priorHigh = Double.NEGATIVE_INFINITY;
         // Use a short recent swing window, excluding the still-forming candle.
@@ -104,58 +103,21 @@ public final class SignalEngine {
         if(needleBuy&&(!needleSell||buyEvidence>sellEvidence+0.10))side="BUY";
         else if(needleSell&&(!needleBuy||sellEvidence>buyEvidence+0.10))side="SELL";
 
-        // On the first seconds of a new M1 candle, carry forward the completed candle's
-        // rejection as a pending sweep setup. Stage the limit outside the previous range.
-        long ageMs = System.currentTimeMillis() - z.t;
-        boolean freshM1 = z.t > 0L && ageMs >= 0L && ageMs < 60_000L;
-        if ("WAIT".equals(side) && freshM1 && atr > 0.0) {
-            double prevRange = Math.max(0.0, p.h - p.l);
-            double prevBody = Math.abs(p.c - p.o);
-            double prevUpper = Math.max(0.0, p.h - Math.max(p.o, p.c));
-            double prevLower = Math.max(0.0, Math.min(p.o, p.c) - p.l);
-            double prevMinWick = Math.max(atr * 0.035, prevRange * 0.14);
-            boolean prevBuy = prevLower >= Math.max(prevBody * 0.90, prevMinWick)
-                && (prevRange <= 0.0 || p.c >= p.l + prevRange * 0.20);
-            boolean prevSell = prevUpper >= Math.max(prevBody * 0.90, prevMinWick)
-                && (prevRange <= 0.0 || p.c <= p.h - prevRange * 0.20);
-            if (prevBuy || prevSell) {
-                side = prevBuy && (!prevSell || prevLower > prevUpper) ? "BUY" : "SELL";
-                previousBarSetup = true;
-                wick = p;
-                needleBuy = "BUY".equals(side);
-                needleSell = "SELL".equals(side);
-                // The carried candle pattern is a wick setup, not proof of a liquidity sweep.
-                // Keep sweep flags tied only to actual current-bar swing evidence.
-            }
-        }
-
+        // Do not carry the previous candle's side into a new M1 bar. ENTRY READY
+        // must be based on a wick/rejection formed by the currently active candle.
         double entry=0, sl=0, tp1=0, tp2=0, rr=0;
         if ("BUY".equals(side)) {
             double wickOffset=OpenActionEntryPolicy.wickTipOffset(
                 lower,atr,Math.max(Math.abs(wick.l)*1e-7,Math.abs(ask)*1e-7));
-            if (previousBarSetup) {
-                double offset=Math.max(OpenActionEntryPolicy.oneThirdTravelThreshold(wick,atr),
-                    Math.max(spread,Math.max(Math.abs(wick.l)*1e-7,Math.abs(ask)*1e-7)*3.0));
-                entry=wick.l-offset;
-                sl=entry-Math.max(atr*0.12,spread*2);
-            } else {
-                entry=wick.l+Math.max(0.0,wickOffset);
-                sl=wick.l-Math.max(atr*0.12,spread*2);
-            }
+            entry=wick.l+Math.max(0.0,wickOffset);
+            sl=wick.l-Math.max(atr*0.12,spread*2);
             double risk=entry-sl;
             if(risk>0){tp1=entry+risk*2.0;tp2=entry+risk*3.5;rr=3.5;}
         } else if ("SELL".equals(side)) {
             double wickOffset=OpenActionEntryPolicy.wickTipOffset(
                 upper,atr,Math.max(Math.abs(wick.h)*1e-7,Math.abs(bid)*1e-7));
-            if (previousBarSetup) {
-                double offset=Math.max(OpenActionEntryPolicy.oneThirdTravelThreshold(wick,atr),
-                    Math.max(spread,Math.max(Math.abs(wick.h)*1e-7,Math.abs(bid)*1e-7)*3.0));
-                entry=wick.h+offset;
-                sl=entry+Math.max(atr*0.12,spread*2);
-            } else {
-                entry=wick.h-Math.max(0.0,wickOffset);
-                sl=wick.h+Math.max(atr*0.12,spread*2);
-            }
+            entry=wick.h-Math.max(0.0,wickOffset);
+            sl=wick.h+Math.max(atr*0.12,spread*2);
             double risk=sl-entry;
             if(risk>0){tp1=entry-risk*2.0;tp2=entry-risk*3.5;rr=3.5;}
         }
@@ -165,6 +127,7 @@ public final class SignalEngine {
             side="WAIT"; entry=sl=tp1=tp2=rr=0;
         }
         boolean selectedNeedle=("BUY".equals(side)&&needleBuy)||("SELL".equals(side)&&needleSell);
+        boolean selectedRejection=("BUY".equals(side)&&rejectBuy)||("SELL".equals(side)&&rejectSell);
         boolean selectedSweep=("BUY".equals(side)&&sweepBuy)||("SELL".equals(side)&&sweepSell);
         int points=(selectedNeedle?6:0)+(selectedSweep?2:0)
             +(biasBuy||biasSell?1:0)+(emaBuy||emaSell?1:0)+(rsiBuy||rsiSell?1:0)
@@ -176,11 +139,10 @@ public final class SignalEngine {
             :(selectedEarly?3:(selectedSweep?5:4));
         String setup="WAIT".equals(side)
             ? (needleBuy && needleSell ? "WICK AMBIGU • WAIT" : "Menunggu wick rejection valid")
-            : (previousBarSetup ? "PREVIOUS CANDLE WICK • "+side+" LIMIT OUTSIDE RANGE"
-                : (selectedEarly?"EARLY WICK PRECURSOR"
-                    :"NEEDLE WICK + REJECTION"));
+            : (selectedEarly?"EARLY WICK PRECURSOR"
+                :"NEEDLE WICK + REJECTION");
         return new SignalResult(side,bias,entry,sl,tp1,tp2,rr,score,confidence,setup,
-            selectedSweep,selectedNeedle,bosBuy||bosSell,
+            selectedSweep,selectedRejection,bosBuy||bosSell,
             emaBuy||emaSell,rsiBuy||rsiSell,macdBuy||macdSell,atrOk,spreadOk);
     }
 
