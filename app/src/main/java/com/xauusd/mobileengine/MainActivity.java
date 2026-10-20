@@ -1010,8 +1010,11 @@ public class MainActivity extends Activity {
             .remove("open_action_wait_bounce_confirmed")
             .remove("open_action_wait_bounce_price")
             .apply();
-        AppLog.add(this,"AUTO LIMIT","queued "+signalKey+" mode="+gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST)
-            +" offset="+AUTO_ENTRY_OFFSET_POINTS+" MT5 points entry="+price(orderSignal.entry)
+        String queuedMode=gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST);
+        String offsetAudit=OPEN_ACTION_WAIT_BOUNCE.equals(queuedMode)
+            ?"saved wick-tip edge + adaptive tick offset":"10 MT5 points from live quote";
+        AppLog.add(this,"AUTO LIMIT","queued "+signalKey+" mode="+queuedMode
+            +" entryPolicy="+offsetAudit+" entry="+price(orderSignal.entry)
             +" SL="+price(orderSignal.sl)+" TP="+price(target)+"; locked pending EA state");
         return true;
     }
