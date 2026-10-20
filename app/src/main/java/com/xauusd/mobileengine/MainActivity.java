@@ -882,7 +882,7 @@ public class MainActivity extends Activity {
                     if(armed)blockReason="MENUNGGU PANTULAN DARI UJUNG WICK";
                     else blockReason="MENUNGGU WICK / EXTREME BARU";
                 }else{
-                    blockReason="MENUNGGU SAPUAN RANGE 1/3 CANDLE";
+                    blockReason="MENUNGGU EXHAUSTION + PANTULAN";
                 }
             }
             entryReadyView.setText("WAIT • "+blockReason);
@@ -1656,14 +1656,14 @@ public class MainActivity extends Activity {
             String gate=OPEN_ACTION_WAIT_BOUNCE.equals(mode)
                     ?(!s.wickRejection?"WICK_REJECTION_FALSE"
                         :(bounceDone?"BOUNCE_CONFIRMED_BUT_ORDER_GATES_RECHECK":"WAITING_FOR_PRICE_BOUNCE"))
-                    :"CANDLE_TRAVEL_1_3_NOT_CONFIRMED";
+                    :"EXHAUSTION_RECOIL_NOT_CONFIRMED";
             autoDiagnostic(gp,"OPEN_ACTION|"+signalKey+"|"+mode+"|"+gate+"|"+waitBars,
                 "OPEN ACTION BLOCK • reason="+gate+" mode="+mode+" side="+s.side+
                 " wick="+s.wickRejection+" sweepContext="+s.liquiditySweep+
                 " waitMarket="+waitMarket+" waitSide="+waitSide+" bounceConfirmed="+bounceDone+
                 " waitM1Bars="+waitBars+" • READY visual tidak otomatis berarti Open Action terpenuhi");
             if(status!=null)status.setText(OPEN_ACTION_WAIT_BOUNCE.equals(mode)
-                ?"● SMART AUTO WAIT • MENUNGGU PANTULAN":"● SMART AUTO WAIT • MENUNGGU SAPUAN CANDLE 1/3");
+                ?"● SMART AUTO WAIT • MENUNGGU PANTULAN":"● SMART AUTO WAIT • MENUNGGU EXHAUSTION + PANTULAN");
             return;
         }
         // AUTO LIMIT must use the same per-candle direction accepted by READY UI.
@@ -2670,7 +2670,7 @@ public class MainActivity extends Activity {
 
         Spinner entryActionMode=new Spinner(this);
         String[] entryActions={
-            "OPEN ACTION 1 • sapuan candle 1/3 + wick tip",
+            "OPEN ACTION 1 • exhaustion + pantulan ekstrem",
             "OPEN ACTION 2 • satu pantulan dari ujung wick"
         };
         ArrayAdapter<String> entryActionAdapter=new ArrayAdapter<>(
@@ -2681,7 +2681,7 @@ public class MainActivity extends Activity {
         entryActionMode.setSelection(OPEN_ACTION_WAIT_BOUNCE.equals(
             gatewayPrefs.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST))?1:0);
 
-        TextView entryActionHint=tv("Mode 1: ikuti high/low candle M1; ENTRY READY langsung saat sapuan 1/3 range dari open, tanpa menunggu wick rejection. LIMIT mengikuti ujung candle aktif. Mode 2 tetap menunggu satu pantulan dari wick. SL di luar ekstrem; TP 2R/3,5R.",11);
+        TextView entryActionHint=tv("Mode 1: tunggu harga mencapai ekstrem M1 lalu pantulan terkonfirmasi sebelum Market Order. Tidak memakai ambang tetap sepertiga candle. Mode 2 tetap menunggu satu pantulan dari ujung wick sebelum LIMIT. SL di luar ekstrem; TP 2R/3,5R.",11);
         entryActionHint.setTextColor(Color.LTGRAY);
         entryActionHint.setGravity(Gravity.TOP|Gravity.START);
         entryActionHint.setPadding(uiDp(8),uiDp(5),uiDp(8),uiDp(5));
