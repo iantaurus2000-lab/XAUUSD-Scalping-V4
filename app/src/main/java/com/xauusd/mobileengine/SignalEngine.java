@@ -162,8 +162,9 @@ public final class SignalEngine {
             +(biasBuy||biasSell?1:0)+(emaBuy||emaSell?1:0)+(rsiBuy||rsiSell?1:0)
             +(macdBuy||macdSell?1:0)+(bosBuy||bosSell?1:0)+(spreadOk?1:0)+(atrOk?1:0);
         int score=Math.min(99,45+points*4);
-        boolean selectedEarly=("BUY".equals(side)&&earlyBuy&&!rejectBuy)
-            ||("SELL".equals(side)&&earlySell&&!rejectSell);
+        boolean selectedEarly=!followSweepExtremes
+            && (("BUY".equals(side)&&earlyBuy&&!rejectBuy)
+                ||("SELL".equals(side)&&earlySell&&!rejectSell));
         int confidence="WAIT".equals(side)?(points>=7?3:points>=5?2:1)
             :(selectedEarly?3:(selectedSweep?5:4));
         String setup="WAIT".equals(side)
