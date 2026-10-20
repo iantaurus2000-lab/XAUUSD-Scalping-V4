@@ -56,28 +56,15 @@ public class SignalEngineTest {
         assertTrue(s.entry-m1[m1.length-1].l<=wickLength*0.10+1e-9);
     }
 
-    @Test public void stagesSellLimitAbovePreviousCandleOnFreshM1() {
+    @Test public void doesNotCarryPreviousCandleWickIntoNeutralNewCandle() {
         Candle[] m1=history(100.0,100.1,99.9,100.0);
         long now=System.currentTimeMillis();
         m1[m1.length-2]=new Candle(now-60_000L,100.8,101.6,100.7,100.9);
+        // New candle is a small, balanced wick: the old candle's SELL wick must not be replayed.
         m1[m1.length-1]=new Candle(now-2_000L,100.9,100.92,100.88,100.90);
         SignalResult s=SignalEngine.evaluate(m1,context(),100.89,100.91,100.89,100.91);
-        assertEquals("SELL",s.side);
-        assertTrue(s.setup.startsWith("PREVIOUS CANDLE WICK"));
-        assertTrue("SELL limit must be above prior high",s.entry>m1[m1.length-2].h);
-        assertTrue(s.sl>s.entry&&s.tp1<s.entry);
-    }
-
-    @Test public void stagesBuyLimitBelowPreviousCandleOnFreshM1() {
-        Candle[] m1=history(100.0,100.1,99.9,100.0);
-        long now=System.currentTimeMillis();
-        m1[m1.length-2]=new Candle(now-60_000L,100.8,100.9,99.2,100.7);
-        m1[m1.length-1]=new Candle(now-2_000L,100.7,100.72,100.68,100.70);
-        SignalResult s=SignalEngine.evaluate(m1,context(),100.69,100.71,100.69,100.71);
-        assertEquals("BUY",s.side);
-        assertTrue(s.setup.startsWith("PREVIOUS CANDLE WICK"));
-        assertTrue("BUY limit must be below prior low",s.entry<m1[m1.length-2].l);
-        assertTrue(s.sl<s.entry&&s.tp1>s.entry);
+        assertEquals("WAIT",s.side);
+        assertFalse("Prior candle shape alone is not an active-bar rejection",s.wickRejection);
     }
 
     @Test public void recognizesSellWickWithoutLiquiditySweep() {
