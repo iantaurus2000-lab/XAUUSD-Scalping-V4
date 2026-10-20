@@ -1081,9 +1081,9 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * OPEN ACTION 1 waits for M1 wick rejection plus a one-third excursion from the
-     * candle open. This is a candle-range sweep, not a mandatory prior-liquidity sweep.
-     * OPEN ACTION 2 remembers the wick extreme and accepts one recoil only.
+     * OPEN ACTION 1 follows the active candle high/low as soon as one-third travel
+     * from the M1 open is reached; no rejection wick is required.
+     * OPEN ACTION 2 still waits for one recoil from a rejected wick extreme.
      */
     private boolean isOpenActionEntryReady(SignalResult s,Candle[] m1,double bid,double ask,
                                            long candleStamp,SharedPreferences gp){
@@ -2649,7 +2649,7 @@ public class MainActivity extends Activity {
         entryActionMode.setSelection(OPEN_ACTION_WAIT_BOUNCE.equals(
             gatewayPrefs.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST))?1:0);
 
-        TextView entryActionHint=tv("Mode 1: tunggu wick rejection dan sapuan minimal 1/3 range candle M1; LIMIT di dekat ujung wick. Mode 2: tunggu satu pantulan dari ujung wick lalu pasang LIMIT. Liquidity sweep swing tidak wajib. SL di luar wick; TP 2R/3,5R.",11);
+        TextView entryActionHint=tv("Mode 1: ikuti high/low candle M1; ENTRY READY langsung saat sapuan 1/3 range dari open, tanpa menunggu wick rejection. LIMIT mengikuti ujung candle aktif. Mode 2 tetap menunggu satu pantulan dari wick. SL di luar ekstrem; TP 2R/3,5R.",11);
         entryActionHint.setTextColor(Color.LTGRAY);
         entryActionHint.setGravity(Gravity.TOP|Gravity.START);
         entryActionHint.setPadding(uiDp(8),uiDp(5),uiDp(8),uiDp(5));
