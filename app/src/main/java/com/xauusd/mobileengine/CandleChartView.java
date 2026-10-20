@@ -187,7 +187,7 @@ public class CandleChartView extends View {
             text(c,marketName+" • "+timeframe,L+7,22,12,Color.rgb(0,235,150));
             text(c,"Menunggu candle XAUUSD...",L+15,H/2,17,chartMutedTextColor());
             // Render after the empty-state background/text so the countdown cannot be covered.
-            drawCandleCountdown(c, R + (W-R)/2f, 29f, 22f, null);
+            drawCandleCountdown(c, L + 34f, 86f, 28f, null);
             return;
         }
 
@@ -207,7 +207,7 @@ public class CandleChartView extends View {
         // Chart header, matching the reference MT5-like layout.
         p.setColor(chartHeaderBg);c.drawRect(L,0,R,52,p);
         // Draw after the chart header fill so the timer stays visible.
-        drawCandleCountdown(c, R + (W-R)/2f, 29f, 22f, last);
+        drawCandleCountdown(c, L + 34f, 86f, 28f, last);
         bold(c,marketName+" • "+timeframe+"  ▾",L+7,16,12,Color.rgb(0,238,150));
         text(c,"O "+f(last.o)+"   H "+f(last.h)+"   L "+f(last.l)+"   C "+f(last.c),L+7,34,10,chartTextColor());
         double e9=emaValue(9),e21=emaValue(21),e50=emaValue(50);
