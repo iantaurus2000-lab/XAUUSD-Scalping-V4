@@ -164,6 +164,10 @@ void OnTimer(){
    double sl=StringToDouble(field(cmd,"sl"));
    double tp=StringToDouble(field(cmd,"tp"));
    double tp1=StringToDouble(field(cmd,"tp1"));
+   double maxSpread=StringToDouble(field(cmd,"maxSpread"));
+   long refTickMs=(long)StringToInteger(field(cmd,"refTickMs"));
+   long localNowMs=(long)TimeLocal()*1000;
+   long quoteAgeMs=localNowMs-refTickMs;
 
    bool ok=false;
    string resultText="REJECT";
@@ -225,6 +229,17 @@ void OnTimer(){
       resultText="UNSUPPORTED_SYMBOL"; detail=sym;
    }else if(!haveTick){
       resultText="NO_TICK";
+   }else if(tick.bid<=0.0 || tick.ask<tick.bid){
+      resultText="BAD_TICK";
+      detail=StringFormat("bid=%.8f ask=%.8f",tick.bid,tick.ask);
+   }else if(type=="MARKET" && (refTickMs<=0 || quoteAgeMs < -5000 || quoteAgeMs > 15000)){
+      resultText="QUOTE_EXPIRED";
+      detail=StringFormat("refTickMs=%I64d localNowMs=%I64d ageMs=%I64d; market quote age must be within -5s..15s",
+                          refTickMs,localNowMs,quoteAgeMs);
+   }else if(type=="MARKET" && (maxSpread<=0.0 || tick.ask-tick.bid>maxSpread)){
+      resultText="SPREAD_FILTER";
+      detail=StringFormat("spread=%.8f maximum=%.8f bid=%.8f ask=%.8f",
+                          tick.ask-tick.bid,maxSpread,tick.bid,tick.ask);
    }else if(vol<minVol || vol>maxVol){
       resultText="BAD_VOLUME";
       detail=StringFormat("vol=%.2f min=%.2f max=%.2f",vol,minVol,maxVol);
@@ -247,6 +262,9 @@ void OnTimer(){
    }else if(stopsLevel>0 && MathAbs(entry-sl)/point<stopsLevel){
       resultText="STOP_DISTANCE";
       detail=StringFormat("entry-sl=%.0f min=%d points",MathAbs(entry-sl)/point,stopsLevel);
+   }else if(type=="MARKET" && stopsLevel>0 && MathAbs(tp-entry)/point<stopsLevel){
+      resultText="TP_DISTANCE";
+      detail=StringFormat("tp-entry=%.0f min=%d points",MathAbs(tp-entry)/point,stopsLevel);
    }else{
       bool terminalConnected=(bool)TerminalInfoInteger(TERMINAL_CONNECTED);
       bool terminalTradeAllowed=(bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED);
