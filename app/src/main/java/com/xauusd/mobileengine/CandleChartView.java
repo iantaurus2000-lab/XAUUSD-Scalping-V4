@@ -182,6 +182,8 @@ public class CandleChartView extends View {
         p.setStyle(Paint.Style.FILL);p.setColor(axisBg);c.drawRect(R,0,W,H,p);
         ln(c,R,0,R,H,axisLine,2);
         bold(c,"PRICE",R+8,14,9,chartMutedTextColor());
+        // Always render the countdown, even before the first candle arrives.
+        drawCandleCountdown(c, R + (W-R)/2f, 29f, 22f, cs.isEmpty()?null:cs.get(cs.size()-1));
 
         if(follow)positionLatestCandle();
         if(cs.isEmpty()){
@@ -294,9 +296,6 @@ public class CandleChartView extends View {
             if(x>=L&&x<=R)text(c,time.format(new Date(cs.get(idx).t)),x-15,B+16,9,chartMutedTextColor());
         }
 
-        // Circular live candle countdown in the price axis header, away from candles/prices.
-        drawCandleCountdown(c, R + (W-R)/2f, 29f, 22f, last);
-
         // Indicator sub-panels: real RSI / MACD / ATR plots rather than text-only values.
         float panelTop=mainBottom+2;
         if(showRSI){drawRsi(c,L,R,panelTop,panelTop+each);panelTop+=each+gap;}
@@ -321,10 +320,11 @@ public class CandleChartView extends View {
     }
 
     private void drawCandleCountdown(Canvas c, float cx, float cy, float radius, Candle latest) {
-        if (latest == null || latest.t <= 0L) return;
         long period = periodForTimeframe();
         long now = System.currentTimeMillis();
-        long elapsed = Math.floorMod(now - latest.t, period);
+        // Use candle time when available; align to wall-clock periods while the feed loads.
+        long baseTime = latest != null && latest.t > 0L ? latest.t : 0L;
+        long elapsed = Math.floorMod(now - baseTime, period);
         long remaining = period - elapsed;
         if (remaining <= 0L || remaining > period) remaining = period;
 
