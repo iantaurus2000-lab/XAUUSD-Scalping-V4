@@ -31,7 +31,7 @@ int OnInit(){
    Print("RAYYAN4 START Gateway=",GatewayUrl," Symbol=",AllowedSymbol);
    return(INIT_SUCCEEDED);
 }
-void OnDeinit(const int r){ EventKillTimer(); }
+void OnDeinit(const int r){ EventKillTimer(); ObjectDelete(0,"RAYYAN_MT5_BAR_TIMER"); }
 void OnTick(){ manageTP2RetraceProtection(); }
 
 void OnTimer(){
