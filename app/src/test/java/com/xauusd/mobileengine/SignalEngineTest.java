@@ -92,7 +92,7 @@ public class SignalEngineTest {
         SignalResult s=SignalEngine.evaluate(m1,context(),100.21,100.23,100.21,100.23,true);
         assertEquals("SELL",s.side);
         assertFalse("Open Action 1 must not require a rejection wick",s.wickRejection);
-        assertEquals("CANDLE EXTREME SWEEP • SELL",s.setup);
+        assertEquals("CANDLE EXHAUSTION RECOIL • SELL",s.setup);
         assertEquals("Entry follows the current candle high",m1[m1.length-1].h,s.entry,1e-9);
         assertTrue(s.sl>s.entry&&s.tp1<s.entry&&s.tp2<s.tp1);
     }
@@ -102,7 +102,7 @@ public class SignalEngineTest {
         SignalResult s=SignalEngine.evaluate(m1,context(),99.77,99.79,99.77,99.79,true);
         assertEquals("BUY",s.side);
         assertFalse("Open Action 1 must not require a rejection wick",s.wickRejection);
-        assertEquals("CANDLE EXTREME SWEEP • BUY",s.setup);
+        assertEquals("CANDLE EXHAUSTION RECOIL • BUY",s.setup);
         assertEquals("Entry follows the current candle low",m1[m1.length-1].l,s.entry,1e-9);
         assertTrue(s.sl<s.entry&&s.tp1>s.entry&&s.tp2>s.tp1);
     }
