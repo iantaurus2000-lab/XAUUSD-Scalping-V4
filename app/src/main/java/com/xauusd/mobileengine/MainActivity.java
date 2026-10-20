@@ -1084,8 +1084,8 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * OPEN ACTION 1 follows the active candle high/low as soon as one-third travel
-     * from the M1 open is reached; no rejection wick is required.
+     * OPEN ACTION 1 waits for adaptive travel to an extreme and a confirmed recoil; no
+     * fixed one-third-candle threshold is used.
      * OPEN ACTION 2 still waits for one recoil from a rejected wick extreme.
      */
     private boolean isOpenActionEntryReady(SignalResult s,Candle[] m1,double bid,double ask,
