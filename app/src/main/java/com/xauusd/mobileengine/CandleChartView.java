@@ -203,12 +203,12 @@ public class CandleChartView extends View {
         for(Candle z:cs){lo=Math.min(lo,z.l);hi=Math.max(hi,z.h);}
         double pad=Math.max((hi-lo)*.10,.40);lo-=pad;hi+=pad;
 
+        Candle last=cs.get(cs.size()-1);
         // Chart header, matching the reference MT5-like layout.
         p.setColor(chartHeaderBg);c.drawRect(L,0,R,52,p);
-        // IMPORTANT: draw after the chart header fill, which previously painted over the timer.
+        // Draw after the chart header fill so the timer stays visible.
         drawCandleCountdown(c, R + (W-R)/2f, 29f, 22f, last);
         bold(c,marketName+" • "+timeframe+"  ▾",L+7,16,12,Color.rgb(0,238,150));
-        Candle last=cs.get(cs.size()-1);
         text(c,"O "+f(last.o)+"   H "+f(last.h)+"   L "+f(last.l)+"   C "+f(last.c),L+7,34,10,chartTextColor());
         double e9=emaValue(9),e21=emaValue(21),e50=emaValue(50);
         float lx0=L+7;
