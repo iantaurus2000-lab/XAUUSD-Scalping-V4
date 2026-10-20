@@ -49,10 +49,10 @@ public final class SignalEngine {
             priorLow = Math.min(priorLow, m1[i].l);
             priorHigh = Math.max(priorHigh, m1[i].h);
         }
-        // Accept a near-sweep/reclaim within 0.08 ATR instead of demanding a strict
+        // Accept a near-sweep/reclaim within 0.12 ATR instead of demanding a strict
         // one-tick break of the previous swing. This lowers missed wick setups without
         // removing the requirement for a directional wick/rejection.
-        double sweepTolerance = atr > 0.0 ? Math.max(atr * 0.08, Math.abs(z.c) * 1e-7) : 0.0;
+        double sweepTolerance = atr > 0.0 ? Math.max(atr * 0.12, Math.abs(z.c) * 1e-7) : 0.0;
         boolean swBuy = Double.isFinite(priorLow) && z.l <= priorLow + sweepTolerance;
         boolean swSell = Double.isFinite(priorHigh) && z.h >= priorHigh - sweepTolerance;
 
