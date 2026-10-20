@@ -5,8 +5,8 @@ public final class OpenActionEntryPolicy {
     private OpenActionEntryPolicy() {}
 
     /**
-     * Adaptive exhaustion travel distance: require a meaningful extension, but not a fixed
-     * one-third candle rule. The live extreme must then recoil before Open Action 1 can fire.
+     * Adaptive exhaustion travel distance before Open Action 1 can fire; the live extreme
+     * must first extend meaningfully and then recoil.
      */
     public static double exhaustionTravelThreshold(Candle previous, double atr) {
         if (previous == null || !Double.isFinite(atr) || atr <= 0.0
