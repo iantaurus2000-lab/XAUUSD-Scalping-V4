@@ -45,4 +45,15 @@ public class SignalEngineTest {
             <= (m1[m1.length-1].h-Math.max(m1[m1.length-1].o,m1[m1.length-1].c))*0.10+1e-9);
         assertTrue(s.sl>s.entry&&s.tp1<s.entry);
     }
+    @Test public void acceptsNearSweepWhenWickRejectionIsValid() {
+        Candle[] m1=history(100.0,100.1,98.8,98.9);
+        // Previous swing low is 99.80; this wick stops just above it, within tolerance.
+        m1[m1.length-1]=new Candle(40*60_000L,100.10,100.12,99.81,99.96);
+        SignalResult s=SignalEngine.evaluate(m1,context(),99.97,99.99,99.97,99.99);
+        assertEquals("BUY",s.side);
+        assertTrue(s.liquiditySweep);
+        double wickLength=Math.min(m1[m1.length-1].o,m1[m1.length-1].c)-m1[m1.length-1].l;
+        assertTrue(s.entry-m1[m1.length-1].l<=wickLength*0.10+1e-9);
+    }
+
 }
