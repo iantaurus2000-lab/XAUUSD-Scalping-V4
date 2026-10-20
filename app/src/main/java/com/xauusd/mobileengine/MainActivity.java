@@ -1185,14 +1185,16 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * In WAIT_BOUNCE, place the pending LIMIT beside the saved wick tip, with SL
-     * beyond that tip. Sweep-first retains the existing near-market LIMIT approach.
+     * Build the pending LIMIT around the wick tip and translate chart-feed OHLC
+     * into the live MT5 quote coordinate. All submitted LIMIT geometry uses broker Bid/Ask.
      */
     private SignalResult createOpenActionOrderSignal(SignalResult s,SharedPreferences gp,Candle[] m1){
-        if(s==null||chart==null||!QuoteSafety.valid(chart.getBid(),chart.getAsk()))return null;
+        if(s==null||chart==null||m1==null||m1.length<2)return null;
+        double[] broker=freshBrokerQuote(selectedMarket);
+        if(broker==null||!QuoteSafety.valid(broker[0],broker[1]))return null;
         double point=brokerPoint(gp);
         if(point<=0.0)return null;
-        double bid=chart.getBid(),ask=chart.getAsk();
+        double bid=broker[0],ask=broker[1];
         boolean wickTipMode=OPEN_ACTION_WAIT_BOUNCE.equals(
             gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST));
         double entry,sl;
