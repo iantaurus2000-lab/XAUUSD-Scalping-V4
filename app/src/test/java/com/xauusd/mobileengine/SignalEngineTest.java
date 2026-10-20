@@ -107,8 +107,9 @@ public class SignalEngineTest {
         assertTrue(s.sl<s.entry&&s.tp1>s.entry&&s.tp2>s.tp1);
     }
 
-    @Test public void openActionOneWaitsUntilOneThirdCandleTravel() {
-        Candle[] m1=history(100.00,100.10,99.95,100.08);
+    @Test public void openActionOneWaitsUntilExtremeRecoilIsConfirmed() {
+        // Price reaches a local high but has not recoiled enough to confirm BUY/SELL exhaustion.
+        Candle[] m1=history(100.00,100.10,99.95,100.099);
         SignalResult s=SignalEngine.evaluate(m1,context(),100.07,100.09,100.07,100.09,true);
         assertEquals("WAIT",s.side);
     }
