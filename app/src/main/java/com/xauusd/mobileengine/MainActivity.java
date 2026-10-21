@@ -691,7 +691,7 @@ public class MainActivity extends Activity {
             }
         } catch (Throwable e) {
             try { AppLog.add(this,"CRASH_GUARD","LIMIT "+requestedSide+" "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage())); } catch(Throwable ignored) {}
-            try { Toast.makeText(this,"LIMIT gagal diproses • APK tetap dibuka. Periksa Log.",Toast.LENGTH_LONG).show(); } catch(Throwable ignored) {}
+            try { Toast.makeText(this,"Order gagal diproses • APK tetap dibuka. Periksa Log.",Toast.LENGTH_LONG).show(); } catch(Throwable ignored) {}
         }
     }
 
@@ -1035,7 +1035,7 @@ public class MainActivity extends Activity {
         SignalResult orderSignal=createOpenActionOrderSignal(s,gp,m1);
         if(orderSignal==null){
             smartLogOnce(gp,"OPEN_ACTION_LEVELS|"+signalKey,
-                "AUTO tidak mengirim: offset LIMIT tidak valid untuk quote/SL; menunggu setup baru");
+                "AUTO tidak mengirim: level entry/SL/TP atau quote broker tidak valid; menunggu setup baru");
             return false;
         }
         double target=validAutoTarget(orderSignal);
@@ -1074,7 +1074,7 @@ public class MainActivity extends Activity {
             .apply();
         String queuedMode=gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST);
         String offsetAudit=OPEN_ACTION_WAIT_BOUNCE.equals(queuedMode)
-            ?"saved wick-tip edge + adaptive tick offset":"10 MT5 points from live quote";
+            ?"saved wick-tip edge + adaptive tick offset":"live MT5 Bid/Ask market entry";
         AppLog.add(this,"AUTO ORDER","queued "+signalKey+" mode="+queuedMode
             +" execution="+(sweepMarket?"MARKET":"LIMIT")
             +" entryPolicy="+offsetAudit+" entry="+price(orderSignal.entry)
@@ -1674,14 +1674,14 @@ public class MainActivity extends Activity {
             String gate=OPEN_ACTION_WAIT_BOUNCE.equals(mode)
                     ?(!s.wickRejection?"WICK_REJECTION_FALSE"
                         :(bounceDone?"BOUNCE_CONFIRMED_BUT_ORDER_GATES_RECHECK":"WAITING_FOR_PRICE_BOUNCE"))
-                    :"EXHAUSTION_RECOIL_NOT_CONFIRMED";
+                    :"EXHAUSTION_TRAVEL_THRESHOLD_NOT_REACHED";
             autoDiagnostic(gp,"OPEN_ACTION|"+signalKey+"|"+mode+"|"+gate+"|"+waitBars,
                 "OPEN ACTION BLOCK • reason="+gate+" mode="+mode+" side="+s.side+
                 " wick="+s.wickRejection+" sweepContext="+s.liquiditySweep+
                 " waitMarket="+waitMarket+" waitSide="+waitSide+" bounceConfirmed="+bounceDone+
                 " waitM1Bars="+waitBars+" • READY visual tidak otomatis berarti Open Action terpenuhi");
             if(status!=null)status.setText(OPEN_ACTION_WAIT_BOUNCE.equals(mode)
-                ?"● SMART AUTO WAIT • MENUNGGU PANTULAN":"● SMART AUTO WAIT • MENUNGGU EXHAUSTION + PANTULAN");
+                ?"● SMART AUTO WAIT • MENUNGGU PANTULAN":"● SMART AUTO WAIT • MENUNGGU JARAK EXHAUSTION");
             return;
         }
         // AUTO LIMIT must use the same per-candle direction accepted by READY UI.
