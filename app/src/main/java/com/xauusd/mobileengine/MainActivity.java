@@ -760,9 +760,6 @@ public class MainActivity extends Activity {
         String nextSide=nextReady?signal.side:"WAIT";
         readyCandleSide=nextReady?nextSide:"WAIT";
         if(nextReady){
-            // This is the shared direction lock consumed by Smart Auto. Without
-            // updating it here, the UI can show READY while the order gate sees WAIT.
-            readyCandleSide=nextSide;
             if(chart!=null)chart.setSignalLevels(nextSide,signal.entry,signal.sl,signal.tp1,signal.tp2,true);
             boolean changed=!readySide.equals(nextSide);
             if(!entryReady||changed){
