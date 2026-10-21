@@ -4,7 +4,7 @@
 CTrade trade;
 #define RAYYAN_MAGIC 4104407
 
-input string GatewayUrl="http://192.168.0.109:8787";
+input string GatewayUrl="http://192.168.0.112:8787";
 input string AllowedSymbol="XAUUSDm";
 input bool DemoOnly=true;
 input int PollSeconds=1;
