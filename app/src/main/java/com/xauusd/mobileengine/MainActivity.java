@@ -1316,12 +1316,14 @@ public class MainActivity extends Activity {
             return;
         }
         long lastAuto=gp.getLong("auto_last_order_ms",0L);
-        if(now-lastAuto<60000L){
-            long remainingMs=60000L-(now-lastAuto);
+        // Signal-key dedupe prevents repeated same-side orders on one candle.
+        // Keep only a short 3s submission guard so a validated opposite-side setup
+        // can be considered in the same M1 candle after the prior request resolves.
+        if(now-lastAuto<3000L){
+            long remainingMs=3000L-(now-lastAuto);
             autoDiagnostic(gp,"COOLDOWN|"+signalKey+"|"+(lastAuto/1000L),
-                "READY DITAHAN • cooldown global aktif • tersisa sekitar "+((remainingMs+999L)/1000L)+
-                " detik dari 60 detik • waktu perintah terakhir="+lastAuto+
-                " • gate ini sedang dipantau pada Tahap 1");
+                "READY DITAHAN • jeda pengaman pengiriman aktif • tersisa sekitar "+((remainingMs+999L)/1000L)+
+                " detik dari 3 detik • waktu perintah terakhir="+lastAuto);
             return;
         }
         double target=validAutoTarget(s);
