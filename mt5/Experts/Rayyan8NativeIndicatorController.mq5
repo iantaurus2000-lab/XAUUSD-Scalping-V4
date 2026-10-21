@@ -6,8 +6,8 @@ input int PollSeconds=1;
 input int SRLookbackBars=80;
 input int FiboLookbackBars=60;
 
-int hEma50=INVALID_HANDLE, hEma200=INVALID_HANDLE, hEma50=INVALID_HANDLE;
-bool onEma50=true,onEma200=true,onEma50=true,onSR=true,onFibo=true;
+int hEma50=INVALID_HANDLE, hEma200=INVALID_HANDLE;
+bool onEma50=true,onEma200=true,onSR=true,onFibo=true;
 string lastCommandId="";
 uint lastScreenshotTick=0;
 datetime lastBar=0;
@@ -15,9 +15,8 @@ datetime lastBar=0;
 int OnInit(){
    hEma50=iMA(_Symbol,_Period,50,0,MODE_EMA,PRICE_CLOSE);
    hEma200=iMA(_Symbol,_Period,200,0,MODE_EMA,PRICE_CLOSE);
-   hEma50=iMA(_Symbol,_Period,50,0,MODE_EMA,PRICE_CLOSE);
-   if(hEma50==INVALID_HANDLE||hEma200==INVALID_HANDLE||hEma50==INVALID_HANDLE){
-      Print("RAYYAN8 INDICATOR INIT ERROR handles=",hEma50,",",hEma200,",",hEma50);
+   if(hEma50==INVALID_HANDLE||hEma200==INVALID_HANDLE){
+      Print("RAYYAN8 INDICATOR INIT ERROR handles=",hEma50,",",hEma200);
       return INIT_FAILED;
    }
    EventSetTimer(MathMax(1,PollSeconds));
@@ -32,7 +31,6 @@ void OnDeinit(const int reason){
    ObjectDelete(0,"RAYYAN8_FIBO");
    if(hEma50!=INVALID_HANDLE)IndicatorRelease(hEma50);
    if(hEma200!=INVALID_HANDLE)IndicatorRelease(hEma200);
-   if(hEma50!=INVALID_HANDLE)IndicatorRelease(hEma50);
 }
 void OnTick(){}
 void OnTimer(){
@@ -53,7 +51,6 @@ void OnTimer(){
          }
          onEma50=(field(cmd,"ema50")=="1");
          onEma200=(field(cmd,"ema200")=="1");
-         onEma50=(field(cmd,"ema50")=="1");
          onSR=(field(cmd,"sr")=="1");
          onFibo=(field(cmd,"fibo")=="1");
          applyAll();
@@ -61,7 +58,7 @@ void OnTimer(){
          string ack="";
          httpGet("/indicator_ack?id="+id,ack);
          Print("RAYYAN8 indicators ACK id=",id," EMA50=",onEma50," EMA200=",onEma200,
-               " EMA50=",onEma50," SR=",onSR," FIBO=",onFibo);
+               " SR=",onSR," FIBO=",onFibo);
       }
    }
    datetime bar=iTime(_Symbol,_Period,0);
@@ -119,7 +116,6 @@ string field(string source,string key){
 void applyAll(){
    setEma(hEma50,50,onEma50);
    setEma(hEma200,200,onEma200);
-   setEma(hEma50,50,onEma50);
    updateSR();
    updateFibo();
    ChartRedraw(0);
