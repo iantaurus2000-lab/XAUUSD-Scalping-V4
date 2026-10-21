@@ -4,6 +4,7 @@ on:
     branches:
       - rayyan9-spread-filter-manual-auto
       - rayyan9-market-exhaustion-market-order
+      - rayyan9-open-action1-complete
   workflow_dispatch:
 jobs:
   validate-and-build:
