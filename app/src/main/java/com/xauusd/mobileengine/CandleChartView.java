@@ -23,6 +23,7 @@ public class CandleChartView extends View {
     private String visualTheme="DEFAULT";
     private final SimpleDateFormat time = new SimpleDateFormat("HH:mm", Locale.US);
     private double signalEntry, signalSl, signalTp1, signalTp2;
+    private String signalSide="BUY";
     private double positionEntry;
     private boolean signalActive=false;
     private final Handler countdownHandler = new Handler(Looper.getMainLooper());
@@ -99,7 +100,13 @@ public class CandleChartView extends View {
     public boolean isFollow(){ return follow; }
 
     public void setSignalLevels(double e,double s,double t1,double t2,boolean active){
-        signalEntry=e; signalSl=s; signalTp1=t1; signalTp2=t2; signalActive=active; invalidate();
+        setSignalLevels("BUY",e,s,t1,t2,active);
+    }
+    public void setSignalLevels(String side,double e,double s,double t1,double t2,boolean active){
+        signalSide="SELL".equals(side)?"SELL":"BUY";
+        signalEntry=e; signalSl=s; signalTp1=t1; signalTp2=t2; signalActive=active
+            &&e>0&&s>0&&t1>0&&t2>0;
+        invalidate();
     }
     /** Fixed entry price captured when READY/Manual/Smart Auto is recorded. */
     public void setPositionEntryLevel(double entry){positionEntry=entry>0?entry:0;invalidate();}
@@ -267,12 +274,40 @@ public class CandleChartView extends View {
         }
 
         if(showTradeLevels&&signalActive){
+            // Shaded risk/reward blocks make the active Entry Ready setup readable at a glance.
+            float ye=py(signalEntry,lo,hi,T,B), ys=py(signalSl,lo,hi,T,B);
+            float y1=py(signalTp1,lo,hi,T,B), y2=py(signalTp2,lo,hi,T,B);
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(Color.argb(48,245,55,70));
+            c.drawRect(L,Math.min(ye,ys),R,Math.max(ye,ys),p);
+            p.setColor(Color.argb(38,0,210,120));
+            c.drawRect(L,Math.min(ye,y1),R,Math.max(ye,y1),p);
+            p.setColor(Color.argb(24,0,155,100));
+            c.drawRect(L,Math.min(y1,y2),R,Math.max(y1,y2),p);
+
+            // Trade-specific Fibonacci ladder, anchored to the signal candle's 0..100 range.
+            double fibRange=Math.abs(signalTp2-signalTp1)/0.382;
+            double fib0="BUY".equals(signalSide)?signalTp2-fibRange:signalTp2+fibRange;
+            double[] fib={0,.236,.382,.5,.618,.786,1};
+            int[] fibCols={Color.rgb(150,150,170),Color.rgb(160,130,210),Color.rgb(130,110,190),
+                Color.rgb(0,188,212),Color.rgb(0,190,130),Color.rgb(210,160,80),Color.rgb(150,150,170)};
+            for(int i=0;i<fib.length;i++){
+                double level="BUY".equals(signalSide)?fib0+fibRange*fib[i]:fib0-fibRange*fib[i];
+                float fy=py(level,lo,hi,T,B);
+                if(fy>=T&&fy<=B){
+                    p.setPathEffect(new DashPathEffect(new float[]{4,4},0));
+                    ln(c,L,fy,R,fy,fibCols[i],1);
+                    p.setPathEffect(null);
+                    text(c,String.format(Locale.US,"F%.1f %.2f",fib[i]*100,level),L+4,fy-3,8,fibCols[i]);
+                }
+            }
+
             double[] vals={signalEntry,signalSl,signalTp1,signalTp2};
             String[] names={"ENTRY","SL","TP1","TP2"};
             int[] cols={Color.rgb(3,190,240),Color.rgb(245,55,70),Color.rgb(0,220,120),Color.rgb(0,220,120)};
             for(int i=0;i<4;i++){
                 float y=py(vals[i],lo,hi,T,B);
-                if(y>=T&&y<=B){ln(c,L,y,R,y,cols[i],1);box(c,names[i]+" "+f(vals[i]),y,cols[i],i==1?Color.WHITE:Color.BLACK);}
+                if(y>=T&&y<=B){ln(c,L,y,R,y,cols[i],i==0?2:1);box(c,names[i]+" "+f(vals[i]),y,cols[i],i==1?Color.WHITE:Color.BLACK);}
             }
         }
 
