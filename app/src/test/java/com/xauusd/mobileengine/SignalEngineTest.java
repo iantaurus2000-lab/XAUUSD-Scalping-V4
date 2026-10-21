@@ -93,7 +93,7 @@ public class SignalEngineTest {
         Candle[] m1 = m1FibSetup(true, true);
         Candle[] m5 = m5Trend(true, 90);
         SignalResult normal = SignalEngine.evaluate(m1, m5, 100.29, 100.31, 100.29, 100.31);
-        SignalResult extreme = SignalEngine.evaluate(m1, m5, 100.10, 100.50, 100.10, 100.50);
+        SignalResult extreme = SignalEngine.evaluate(m1, m5, 100.00, 100.60, 100.00, 100.60);
         assertTrue("Normal spread unexpectedly rejected: " + normal.setup, normal.spreadFilter);
         assertTrue(normal.side.equals("BUY") || normal.side.equals("SELL"));
         assertFalse("Extreme spread unexpectedly accepted", extreme.spreadFilter);
