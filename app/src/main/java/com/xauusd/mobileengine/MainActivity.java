@@ -1121,8 +1121,7 @@ public class MainActivity extends Activity {
                 else size="NORMAL";
                 smartLogOnce(gp,"OPEN_ACTION_SWEEP_WAIT|"+symbol+"|"+side+"|"+candleStamp,
                     "OPEN ACTION SAPUAN WAIT • side="+side+" excursion="+price(Math.max(0.0,excursion))+
-                    " threshold="+price(threshold)+" recoil="+price(recoil)+
-                    " recoilNeed="+price(recoilThreshold)+" prevRange="+price(m1[m1.length-2].h-m1[m1.length-2].l)+
+                    " threshold="+price(threshold)+" prevRange="+price(m1[m1.length-2].h-m1[m1.length-2].l)+
                     " ATR="+price(atr)+" candleSize="+size+
                     ("BUY".equals(side)?" • BUY menunggu exhaustion + pantulan dari low":" • SELL menunggu exhaustion + pantulan dari high"));
                 if(status!=null)status.setText("● OPEN ACTION WAIT • "+side+" EXHAUSTION");
