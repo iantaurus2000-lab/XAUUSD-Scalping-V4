@@ -1,7 +1,7 @@
-name: Rayyan10 Simple Entry Build
+name: Rayyan11 Fibo + Wick Sync Build
 on:
   push:
-    branches: [ rayyan10-simple-m1-wick-entry, rayyan10-synced-entry-atr-chart-fix ]
+    branches: [ rayyan10-simple-m1-wick-entry, rayyan10-synced-entry-atr-chart-fix, rayyan11-fibo-wick-sync ]
   workflow_dispatch:
 jobs:
   build:
@@ -23,6 +23,6 @@ jobs:
         run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: XAUUSD-Mobile-Engine-RAYYAN10
+          name: XAUUSD-Mobile-Engine-RAYYAN11
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
