@@ -218,7 +218,7 @@ public class MainActivity extends Activity {
         Button side=btn("");side.setText("");side.setTextSize(1);side.setPadding(0,0,0,0);side.setMinWidth(0);side.setMinimumWidth(0);
         signalSideButton=side;
         side.setBackground(roundBg(Color.rgb(110,115,125),1000));
-        side.setOnClickListener(v->Toast.makeText(this,"Gunakan tombol BUY MARKET / SELL MARKET setelah Entry Ready",Toast.LENGTH_SHORT).show());
+        side.setOnClickListener(v->Toast.makeText(this,"Entry Ready menyiapkan BUY LIMIT / SELL LIMIT di area wick",Toast.LENGTH_SHORT).show());
         top.addView(side,new LinearLayout.LayoutParams(30,30));
         signalSummary=tv("Menunggu setup trend M5 + candle / wick M1",10);
         signalSummary.setIncludeFontPadding(false);signalSummary.setMaxLines(2);
@@ -268,12 +268,12 @@ public class MainActivity extends Activity {
         limitActions.addView(quickLotInput,new LinearLayout.LayoutParams(62,40));
         View lotGap=new View(this);
         limitActions.addView(lotGap,new LinearLayout.LayoutParams(5,1));
-        buyLimitBtn=btn("● BUY MARKET");
+        buyLimitBtn=btn("● BUY LIMIT");
         buyLimitBtn.setTextSize(12);
         buyLimitBtn.setTypeface(null,Typeface.BOLD);
         buyLimitBtn.setTextColor(Color.WHITE);
         buyLimitBtn.setBackground(roundBg(Color.rgb(0,145,88),10));
-        sellLimitBtn=btn("● SELL MARKET");
+        sellLimitBtn=btn("● SELL LIMIT");
         sellLimitBtn.setTextSize(12);
         sellLimitBtn.setTypeface(null,Typeface.BOLD);
         sellLimitBtn.setTextColor(Color.WHITE);
@@ -282,8 +282,8 @@ public class MainActivity extends Activity {
         View actionGap=new View(this);
         limitActions.addView(actionGap,new LinearLayout.LayoutParams(7,1));
         limitActions.addView(sellLimitBtn,new LinearLayout.LayoutParams(0,40,1));
-        buyLimitBtn.setOnClickListener(v->prepareLimitButton("BUY MARKET button tapped","BUY",v));
-        sellLimitBtn.setOnClickListener(v->prepareLimitButton("SELL MARKET button tapped","SELL",v));
+        buyLimitBtn.setOnClickListener(v->prepareLimitButton("BUY LIMIT button tapped","BUY",v));
+        sellLimitBtn.setOnClickListener(v->prepareLimitButton("SELL LIMIT button tapped","SELL",v));
         root.addView(limitActions,new LinearLayout.LayoutParams(-1,46));
         card.setOnClickListener(v->executeCurrentSignal());
         signalSummary.setOnClickListener(v->executeCurrentSignal());
@@ -615,16 +615,16 @@ public class MainActivity extends Activity {
     }
 
     void executeLimitForSide(String requestedSide){
-        submitFibMarketEntry(requestedSide, readQuickLot(), "MANUAL_BUTTON");
+        submitWickLimitEntry(requestedSide, readQuickLot(), "MANUAL_BUTTON");
     }
     void executeCurrentSignal(){
-        submitFibMarketEntry(null, readQuickLot(), "MANUAL_CHART");
+        submitWickLimitEntry(null, readQuickLot(), "MANUAL_CHART");
     }
-    /** One confirmed Fibonacci setup is shared by the chart buttons and manual signal tap. */
-    private void submitFibMarketEntry(String requestedSide,double lot,String origin){
+    /** One confirmed wick-end LIMIT setup is shared by manual and Smart Auto. */
+    private void submitWickLimitEntry(String requestedSide,double lot,String origin){
         try{
             if(!"M1".equals(selectedTf)){
-                AppLog.add(this,"ORDER_BLOCKED",origin+" • strategi Fibonacci hanya mengirim entry dari M1");
+                AppLog.add(this,"ORDER_BLOCKED",origin+" • wick LIMIT hanya dikirim dari M1");
                 Toast.makeText(this,"Pilih timeframe M1 untuk entry Fibonacci",Toast.LENGTH_LONG).show();return;
             }
             if(chart==null||m1Data==null||m1Data.length<30||m5Data==null||m5Data.length<201){
@@ -641,7 +641,7 @@ public class MainActivity extends Activity {
             String reason=autoEntryBlockReason(signal,broker[0],broker[1],true);
             if(!"READY".equals(reason)){
                 String detail=signal!=null&&!signal.setup.isEmpty()?signal.setup:reason;
-                AppLog.add(this,"ORDER_BLOCKED",origin+" • Fibonacci filter="+reason+" • "+detail+" • "+spreadAuditText(m1Data));
+                AppLog.add(this,"ORDER_BLOCKED",origin+" • wick LIMIT filter="+reason+" • "+detail+" • "+spreadAuditText(m1Data));
                 Toast.makeText(this,"Entry ditahan • "+detail,Toast.LENGTH_LONG).show();return;
             }
             if(requestedSide!=null&&!requestedSide.equals(signal.side)){
@@ -657,10 +657,11 @@ public class MainActivity extends Activity {
             if(target<=0.0){AppLog.add(this,"ORDER_BLOCKED",origin+" • TP2 Fibonacci tidak valid");return;}
             queueOrigin=origin;queueOutcomeTarget=signal.tp1;
             boolean queued;
-            try{queued=queueLimit(signal.side,lot,signal.entry,signal.sl,target,signal.tp1);}
+            String limitSide="BUY".equals(signal.side)?"BUY_LIMIT":"SELL_LIMIT";
+            try{queued=queueLimit(limitSide,lot,signal.entry,signal.sl,target,signal.tp1);}
             finally{queueOrigin="MANUAL";queueOutcomeTarget=0.0;}
             if(queued){
-                AppLog.add(this,"ORDER",origin+" • Fibonacci MARKET queued side="+signal.side+" entry="+price(signal.entry)+
+                AppLog.add(this,"ORDER",origin+" • wick LIMIT queued side="+("BUY".equals(signal.side)?"BUY_LIMIT":"SELL_LIMIT")+" entry="+price(signal.entry)+
                     " SL="+price(signal.sl)+" TP1="+price(signal.tp1)+" TP2="+price(target));
                 startGateway();
             }
@@ -697,6 +698,8 @@ public class MainActivity extends Activity {
         if(!signal.atrFilter)return "ATR FILTER GAGAL";
         if(!signal.spreadFilter)return "SPREAD FILTER GAGAL";
         if(signal.entry<=0||signal.sl<=0||signal.tp1<=0||signal.tp2<=0)return "LEVEL ENTRY / SL / TP TIDAK VALID";
+        if("BUY".equals(signal.side)&&signal.entry>=ask)return "BUY LIMIT ENTRY HARUS DI BAWAH ASK";
+        if("SELL".equals(signal.side)&&signal.entry<=bid)return "SELL LIMIT ENTRY HARUS DI ATAS BID";
         if("BUY".equals(signal.side)&&!(signal.sl<signal.entry&&signal.tp1>signal.entry&&signal.tp2>signal.tp1))
             return "GEOMETRI BUY TIDAK VALID";
         if("SELL".equals(signal.side)&&!(signal.sl>signal.entry&&signal.tp1<signal.entry&&signal.tp2<signal.tp1))
@@ -766,7 +769,7 @@ public class MainActivity extends Activity {
                 signalUiHandler.removeCallbacks(entryBlinkRunnable);blinkOn=false;readySide=nextSide;entryReady=true;
                 signalUiHandler.post(entryBlinkRunnable);
             }else{entryReady=true;readySide=nextSide;}
-            entryReadyView.setText("● ENTRY READY • "+nextSide+" MARKET");
+            entryReadyView.setText("● ENTRY READY • "+nextSide+" LIMIT");
             entryReadyView.setTextColor(Color.WHITE);
             entryReadyView.setBackground(roundBg("BUY".equals(nextSide)?Color.rgb(0,105,68):Color.rgb(140,28,43),10));
         }else{
@@ -816,8 +819,8 @@ public class MainActivity extends Activity {
         int sellColor=sellReady?(blinkOn?Color.rgb(255,55,75):Color.rgb(132,18,35)):Color.rgb(76,42,48);
         buyLimitBtn.setBackground(entryButtonBg(buyColor,buyReady,10));
         sellLimitBtn.setBackground(entryButtonBg(sellColor,sellReady,10));
-        buyLimitBtn.setText(buyReady?(blinkOn?"● BUY MARKET":"BUY MARKET"):"○ BUY MARKET");
-        sellLimitBtn.setText(sellReady?(blinkOn?"● SELL MARKET":"SELL MARKET"):"○ SELL MARKET");
+        buyLimitBtn.setText(buyReady?(blinkOn?"● BUY LIMIT":"BUY LIMIT"):"○ BUY LIMIT");
+        sellLimitBtn.setText(sellReady?(blinkOn?"● SELL LIMIT":"SELL LIMIT"):"○ SELL LIMIT");
         // UI state mirrors the trading gate: only the side validated by ENTRY READY
         // is actionable. The click path still revalidates fresh quotes before queueing.
         // Keep both manual controls tappable from app launch. This does not bypass
@@ -912,7 +915,8 @@ public class MainActivity extends Activity {
         double target=validAutoTarget(signal);if(target<=0.0)return false;
         queueOrigin="SMART_AUTO";queueOutcomeTarget=signal.tp1;
         boolean queued;
-        try{queued=queueLimit(signal.side,lot,signal.entry,signal.sl,target,signal.tp1);}
+        String limitSide="BUY".equals(signal.side)?"BUY_LIMIT":"SELL_LIMIT";
+        try{queued=queueLimit(limitSide,lot,signal.entry,signal.sl,target,signal.tp1);}
         finally{queueOrigin="MANUAL";queueOutcomeTarget=0.0;}
         if(!queued)return false;
         String orderId=gp.getString("order_status_id","");
@@ -923,7 +927,7 @@ public class MainActivity extends Activity {
             .putString("smart_active_entry",Double.toString(signal.entry)).putString("smart_active_ticket","")
             .putLong("smart_active_start_candle_ms",candleStamp).putLong("smart_active_queue_ms",now)
             .putBoolean("smart_reentry_allowed",false).remove("smart_cancel_command_id").apply();
-        AppLog.add(this,"AUTO FIBONACCI","queued "+signalKey+" execution=MARKET entry="+price(signal.entry)
+        AppLog.add(this,"AUTO WICK LIMIT","queued "+signalKey+" execution=LIMIT entry="+price(signal.entry)
             +" SL="+price(signal.sl)+" TP1="+price(signal.tp1)+" TP2="+price(target)+" • menunggu konfirmasi EA");
         return true;
     }
@@ -1610,10 +1614,10 @@ public class MainActivity extends Activity {
         TextView note=tv("Panduan baca-sinyal • bukan jaminan hasil",12);note.setTextColor(Color.LTGRAY);
         box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(36)));
         LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
-        addPanelRow(rows,"01 • TREND M5","Pakai candle M5 tertutup, EMA50/EMA200 dan struktur HH/HL atau LH/LL. Jika konsolidasi, tunggu.",Color.WHITE);
-        addPanelRow(rows,"02 • FIBONACCI M1","Tarik Fibonacci pada swing impuls M1 yang sudah terbentuk; tunggu harga kembali ke zona 50–61,8%.",Color.WHITE);
-        addPanelRow(rows,"03 • KONFIRMASI CANDLE","Entry hanya setelah candle M1 tertutup mengonfirmasi arah dan bersinggungan dengan zona Fibonacci.",Color.WHITE);
-        addPanelRow(rows,"04 • ENTRY / SL / TARGET","Entry MARKET pada zona valid; SL di luar level 78,6%, TP1 pada level 0 (swing), TP2 di ekstensi −27%.",Color.WHITE);
+        addPanelRow(rows,"01 • TREND M5","EMA50/EMA200 pada candle M5 tertutup menentukan bias BUY atau SELL.",Color.WHITE);
+        addPanelRow(rows,"02 • ENTRY LIMIT UJUNG WICK","Harga LIMIT ditempatkan sedikit masuk dari ujung wick M1 yang sudah tertutup; tidak mengejar harga dengan MARKET.",Color.WHITE);
+        addPanelRow(rows,"03 • KONFIRMASI CANDLE","Candle M1 tertutup harus mendukung arah tren atau menunjukkan rejection wick yang valid.",Color.WHITE);
+        addPanelRow(rows,"04 • ENTRY / SL / TARGET","SL berada di luar ujung wick dengan buffer ATR; TP1 = 1R dan TP2 = 1,8R.",Color.WHITE);
         addPanelRow(rows,"05 • PENGAMAN","ATR dan spread tetap divalidasi. Quote MT5 harus segar, EA online, antrean kosong, dan tidak ada exposure aktif.",Color.CYAN);
         ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
         box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
@@ -2338,8 +2342,8 @@ public class MainActivity extends Activity {
             .putString("order_status_id",id).putString("order_status","QUEUED")
             .putString("order_status_detail","Menunggu EA MT5 mengambil perintah")
             .putLong("order_status_at",System.currentTimeMillis()).apply();
-        HistoryStore.add(this,"PENDING",side,entry,sl,tp,tp,lastSignal==null?0:lastSignal.confidence);
         String trackedSide=side.startsWith("BUY")?"BUY":"SELL";
+        HistoryStore.add(this,"PENDING",trackedSide,entry,sl,tp,tp,lastSignal==null?0:lastSignal.confidence);
         long trackedCandle=chart!=null&&!chart.isEmpty()?chart.getDataSnapshot()[chart.getDataSnapshot().length-1].t:System.currentTimeMillis();
         WinRateTracker.record(this,queueOrigin,selectedMarket,trackedSide,entry,sl,queueOutcomeTarget>0?queueOutcomeTarget:tp,trackedCandle);
         // A queued request is not yet a live broker order. The EA state heartbeat
