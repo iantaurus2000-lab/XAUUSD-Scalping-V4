@@ -13,6 +13,11 @@ uint lastScreenshotTick=0;
 datetime lastBar=0;
 
 int OnInit(){
+   // Zoom the MT5 chart so roughly 50-70 candles fit on a typical phone screen.
+   // Scale 4 is intentionally enlarged; users can still zoom manually if needed.
+   ChartSetInteger(0,CHART_AUTOSCROLL,true);
+   ChartSetInteger(0,CHART_SHIFT,true);
+   ChartSetInteger(0,CHART_SCALE,4);
    hEma50=iMA(_Symbol,_Period,50,0,MODE_EMA,PRICE_CLOSE);
    hEma200=iMA(_Symbol,_Period,200,0,MODE_EMA,PRICE_CLOSE);
    if(hEma50==INVALID_HANDLE||hEma200==INVALID_HANDLE){
