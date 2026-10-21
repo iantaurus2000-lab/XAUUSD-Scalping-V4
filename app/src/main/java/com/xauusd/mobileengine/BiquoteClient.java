@@ -13,7 +13,8 @@ public class BiquoteClient {
     public static Candle[] candles(String market,String interval) throws Exception {
         String symbol=normalizeMarket(market);
         String tf=(interval==null||interval.isEmpty())?"1m":interval;
-        return parse(get("https://biquote.io/api/"+symbol+"/ohlc?interval="+tf+"&limit=120"));
+        int limit="5m".equalsIgnoreCase(tf)?240:120; // EMA200 M5 needs a complete history window.
+        return parse(get("https://biquote.io/api/"+symbol+"/ohlc?interval="+tf+"&limit="+limit));
     }
 
     public static double[] tick() throws Exception { return tick("XAUUSD"); }
