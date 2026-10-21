@@ -933,10 +933,15 @@ void updateFibo(){
    if(hi<0||lo<0)return;
    datetime th=iTime(_Symbol,_Period,hi),tl=iTime(_Symbol,_Period,lo);
    double ph=iHigh(_Symbol,_Period,hi),pl=iLow(_Symbol,_Period,lo);
-   datetime t1=th<tl?th:tl;
-   datetime t2=th<tl?tl:th;
-   double p1=th<tl?ph:pl;
-   double p2=th<tl?pl:ph;
+   // Anchor the 0% level at the most recent swing extreme:
+   // bullish impulse: 0% at high and retrace downward toward the older low;
+   // bearish impulse: 0% at low and retrace upward toward the older high.
+   // This orientation matches SignalEngine's BUY high-range*ratio / SELL low+range*ratio.
+   bool highIsRecent=(th>tl);
+   datetime t1=highIsRecent?th:tl;
+   datetime t2=highIsRecent?tl:th;
+   double p1=highIsRecent?ph:pl;
+   double p2=highIsRecent?pl:ph;
    if(ObjectFind(0,"RAYYAN8_FIBO")<0)
       ObjectCreate(0,"RAYYAN8_FIBO",OBJ_FIBO,0,t1,p1,t2,p2);
    else{
@@ -947,8 +952,9 @@ void updateFibo(){
    ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_RAY_RIGHT,true);
    // Keep chart levels aligned with SignalEngine's M1 retracement and TP2 extension.
    ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_LEVELS,8);
-   double levels[]={0.0,0.236,0.382,0.5,0.618,0.786,1.0,1.272};
-   string labels[]={"0","23.6","38.2","50","61.8","78.6","100","127.2"};
+   // -27.2% extends beyond the 0% swing extreme (127.2% target).
+   double levels[]={0.0,0.236,0.382,0.5,0.618,0.786,1.0,-0.272};
+   string labels[]={"0","23.6","38.2","50","61.8","78.6","100","127.2 TP2"};
    for(int i=0;i<8;i++){
       ObjectSetDouble(0,"RAYYAN8_FIBO",OBJPROP_LEVELVALUE,i,levels[i]);
       ObjectSetString(0,"RAYYAN8_FIBO",OBJPROP_LEVELTEXT,i,labels[i]);
