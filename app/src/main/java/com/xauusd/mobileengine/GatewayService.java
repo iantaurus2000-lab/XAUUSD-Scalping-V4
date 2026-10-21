@@ -315,7 +315,7 @@ public final class GatewayService extends Service {
                 return;
             }
             logBgStatus("FEED_OK M1="+m1.length+" M5="+m5.length);
-            SignalResult s=SignalEngine.evaluate(m1,m5,t[0],t[1]);
+            SignalResult s=SignalEngine.evaluate(m1,m5,t[0],t[1],t[0],t[1]);
             if(s==null){logBgStatus("SIGNAL_RESULT_NULL");return;}
             String side=s.side;
             if(!"BUY".equals(side)&&!"SELL".equals(side))logBgStatus("SIGNAL_WAIT side="+side+" confidence="+s.confidence);
