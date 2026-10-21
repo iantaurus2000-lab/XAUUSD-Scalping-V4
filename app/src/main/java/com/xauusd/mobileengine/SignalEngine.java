@@ -11,7 +11,7 @@ package com.xauusd.mobileengine;
 public final class SignalEngine {
     private SignalEngine() {}
 
-    private static final int M5_TREND_HISTORY = 200;
+    private static final int M5_TREND_HISTORY = 201;
     private static final int M1_SWING_LOOKBACK = 20;
     private static final double FIB_ENTRY_OUTER = 0.618;
     private static final double FIB_ENTRY_INNER = 0.500;
