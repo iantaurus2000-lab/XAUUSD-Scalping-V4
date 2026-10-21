@@ -4,124 +4,126 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class SignalEngineTest {
-    private Candle[] history(double open,double high,double low,double close) {
-        Candle[] bars=new Candle[40];
-        for(int i=0;i<bars.length-1;i++){
-            double c=100.0+(i%3)*0.01;
-            bars[i]=new Candle((i+1)*60_000L,c,c+0.20,c-0.20,c);
-        }
-        bars[bars.length-1]=new Candle(40*60_000L,open,high,low,close);
-        return bars;
-    }
-
-    private Candle[] context() {
-        Candle[] bars=new Candle[40];
-        for(int i=0;i<bars.length;i++){
-            double c=100.0+(i%3)*0.01;
-            bars[i]=new Candle((i+1)*300_000L,c,c+0.20,c-0.20,c);
+    private Candle[] m5Trend(boolean bullish) {
+        Candle[] bars = new Candle[240];
+        for (int i = 0; i < bars.length; i++) {
+            double close = bullish ? 80.0 + i * 0.10 : 120.0 - i * 0.10;
+            double open = bullish ? close - 0.02 : close + 0.02;
+            bars[i] = new Candle((i + 1) * 300_000L, open, close + 0.08,
+                close - 0.08, close);
         }
         return bars;
     }
 
-    @Test public void recognizesBuyAtFirstSmallReclaimAfterLowSweep() {
-        Candle[] m1=history(100.0,100.1,98.8,98.9);
-        SignalResult s=SignalEngine.evaluate(m1,context(),98.89,98.91,98.89,98.91);
-        assertEquals("BUY",s.side);
-        assertTrue(s.liquiditySweep);
-        assertTrue(s.entry>0&&s.entry<98.91);
-        assertTrue(s.entry-m1[m1.length-1].l
-            <= (Math.min(m1[m1.length-1].o,m1[m1.length-1].c)-m1[m1.length-1].l)*0.10+1e-9);
-        assertTrue(s.sl<s.entry&&s.tp1>s.entry&&s.tp2>s.tp1);
-        double range=m1[m1.length-1].h-m1[m1.length-1].l;
-        assertEquals(m1[m1.length-1].l-range*0.27
-            -Math.max(SignalEngine.atr(m1,14)*0.03,(98.91-98.89)*2.0),s.sl,1e-8);
-        assertEquals(m1[m1.length-1].l+range*0.618,s.tp1,1e-8);
-        assertEquals(m1[m1.length-1].h,s.tp2,1e-8);
-        assertTrue(s.setup.contains("EARLY WICK")||s.setup.contains("NEEDLE WICK"));
+    private Candle[] m5Consolidation() {
+        Candle[] bars = new Candle[240];
+        for (int i = 0; i < bars.length; i++) {
+            double close = 100.0 + (i % 2 == 0 ? 0.01 : -0.01);
+            bars[i] = new Candle((i + 1) * 300_000L, close, close + 0.08,
+                close - 0.08, close);
+        }
+        return bars;
     }
 
-    @Test public void recognizesSellSymmetricallyAtFirstRecoilAfterHighSweep() {
-        Candle[] m1=history(100.0,101.2,99.9,101.1);
-        SignalResult s=SignalEngine.evaluate(m1,context(),101.09,101.11,101.09,101.11);
-        assertEquals("SELL",s.side);
-        assertTrue(s.liquiditySweep);
-        assertTrue(s.entry>101.09);
-        assertTrue(m1[m1.length-1].h-s.entry
-            <= (m1[m1.length-1].h-Math.max(m1[m1.length-1].o,m1[m1.length-1].c))*0.10+1e-9);
-        assertTrue(s.sl>s.entry&&s.tp1<s.entry&&s.tp2<s.tp1);
-        double range=m1[m1.length-1].h-m1[m1.length-1].l;
-        assertEquals(m1[m1.length-1].h+range*0.27
-            +Math.max(SignalEngine.atr(m1,14)*0.03,(101.11-101.09)*2.0),s.sl,1e-8);
-        assertEquals(m1[m1.length-1].h-range*0.618,s.tp1,1e-8);
-        assertEquals(m1[m1.length-1].l,s.tp2,1e-8);
-    }
-    @Test public void acceptsNearSweepWhenWickRejectionIsValid() {
-        Candle[] m1=history(100.0,100.1,98.8,98.9);
-        // Previous swing low is 99.80; this wick stops just above it, within the adaptive tolerance.
-        m1[m1.length-1]=new Candle(40*60_000L,100.10,100.12,99.81,99.96);
-        SignalResult s=SignalEngine.evaluate(m1,context(),99.97,99.99,99.97,99.99);
-        assertEquals("BUY",s.side);
-        assertTrue(s.liquiditySweep);
-        double wickLength=Math.min(m1[m1.length-1].o,m1[m1.length-1].c)-m1[m1.length-1].l;
-        assertTrue(s.entry-m1[m1.length-1].l<=wickLength*0.10+1e-9);
+    private Candle[] m1FibSetup(boolean bullish, boolean confirmation) {
+        Candle[] bars = new Candle[40];
+        for (int i = 0; i < bars.length; i++) {
+            double close = 100.0;
+            bars[i] = new Candle((i + 1) * 60_000L, close, 100.10, 99.90, close);
+        }
+
+        if (bullish) {
+            // Swing low occurs before swing high: bullish impulse 99.00 -> 102.00.
+            bars[20] = new Candle(21 * 60_000L, 99.50, 100.00, 99.00, 99.85);
+            bars[28] = new Candle(29 * 60_000L, 101.70, 102.00, 101.10, 101.80);
+            // Closed M1 candle rejects the 50%-61.8% retracement area.
+            bars[38] = confirmation
+                ? new Candle(39 * 60_000L, 100.17, 100.44, 100.08, 100.35)
+                : new Candle(39 * 60_000L, 100.34, 100.44, 100.20, 100.24);
+            bars[39] = new Candle(40 * 60_000L, 100.35, 100.40, 100.25, 100.30);
+        } else {
+            // Swing high occurs before swing low: bearish impulse 102.00 -> 98.00.
+            bars[20] = new Candle(21 * 60_000L, 101.50, 102.00, 101.20, 101.40);
+            bars[28] = new Candle(29 * 60_000L, 98.50, 100.00, 98.00, 98.20);
+            bars[38] = confirmation
+                ? new Candle(39 * 60_000L, 100.43, 100.50, 100.12, 100.20)
+                : new Candle(39 * 60_000L, 100.20, 100.44, 100.12, 100.35);
+            bars[39] = new Candle(40 * 60_000L, 100.31, 100.38, 100.25, 100.31);
+        }
+        return bars;
     }
 
-    @Test public void doesNotCarryPreviousCandleWickIntoNeutralNewCandle() {
-        Candle[] m1=history(100.0,100.1,99.9,100.0);
-        long now=System.currentTimeMillis();
-        m1[m1.length-2]=new Candle(now-60_000L,100.8,101.6,100.7,100.9);
-        // New candle is a small, balanced wick: the old candle's SELL wick must not be replayed.
-        m1[m1.length-1]=new Candle(now-2_000L,100.9,100.92,100.88,100.90);
-        SignalResult s=SignalEngine.evaluate(m1,context(),100.89,100.91,100.89,100.91);
-        assertEquals("WAIT",s.side);
-        assertFalse("Prior candle shape alone is not an active-bar rejection",s.wickRejection);
+    @Test public void bullishTrendProducesFibonacciEntryAndTargets() {
+        Candle[] m1 = m1FibSetup(true, true);
+        SignalResult s = SignalEngine.evaluate(m1, m5Trend(true),
+            100.29, 100.31, 100.29, 100.31);
+
+        assertEquals("BUY", s.side);
+        assertEquals("BUY", s.m5Bias);
+        assertEquals("FIB 50–61.8% + CANDLE CONFIRM • BUY", s.setup);
+        assertEquals(100.31, s.entry, 1e-8);
+        assertTrue(s.sl < s.entry);
+        assertTrue(s.tp1 > s.entry);
+        assertTrue(s.tp2 > s.tp1);
+        assertTrue(s.rr >= 1.0);
+        assertEquals(102.0, s.tp1, 1e-8);
+        assertEquals(102.81, s.tp2, 1e-8);
+
+        double shift = ((100.29 + 100.31) * 0.5) - m1[39].c;
+        double stopFib = 102.0 - 3.0 * 0.786 + shift;
+        double buffer = Math.max(SignalEngine.atr(m1, 14) * 0.08, 0.02 * 2.0);
+        assertEquals(stopFib - buffer, s.sl, 1e-7);
+        assertTrue(s.spreadFilter);
+        assertTrue(s.atrFilter);
     }
 
-    @Test public void recognizesSellWickWithoutLiquiditySweep() {
-        Candle[] m1=history(100.00,100.14,99.95,99.98);
-        SignalResult s=SignalEngine.evaluate(m1,context(),99.97,99.99,99.97,99.99);
-        assertEquals("SELL",s.side);
-        assertTrue("A real upper-wick rejection should qualify without a prior swing sweep",s.wickRejection);
-        assertFalse("No prior swing was taken in this fixture",s.liquiditySweep);
-        assertTrue(s.entry>99.97);
-        assertTrue(s.sl>s.entry&&s.tp1<s.entry);
+    @Test public void bearishTrendProducesMirroredFibonacciEntryAndTargets() {
+        Candle[] m1 = m1FibSetup(false, true);
+        SignalResult s = SignalEngine.evaluate(m1, m5Trend(false),
+            100.30, 100.32, 100.30, 100.32);
+
+        assertEquals("SELL", s.side);
+        assertEquals("SELL", s.m5Bias);
+        assertEquals("FIB 50–61.8% + CANDLE CONFIRM • SELL", s.setup);
+        assertEquals(100.30, s.entry, 1e-8);
+        assertTrue(s.sl > s.entry);
+        assertTrue(s.tp1 < s.entry);
+        assertTrue(s.tp2 < s.tp1);
+        assertTrue(s.rr >= 1.0);
+        assertEquals(98.0, s.tp1, 1e-8);
+        assertEquals(96.92, s.tp2, 1e-8);
     }
 
-    @Test public void recognizesBuyWickWithoutLiquiditySweep() {
-        Candle[] m1=history(100.00,100.05,99.88,100.02);
-        SignalResult s=SignalEngine.evaluate(m1,context(),100.01,100.03,100.01,100.03);
-        assertEquals("BUY",s.side);
-        assertTrue("A real lower-wick rejection should qualify without a prior swing sweep",s.wickRejection);
-        assertFalse("No prior swing was taken in this fixture",s.liquiditySweep);
-        assertTrue(s.entry<100.03);
-        assertTrue(s.sl<s.entry&&s.tp1>s.entry);
+    @Test public void consolidationDoesNotForceTrendFibonacci() {
+        SignalResult s = SignalEngine.evaluate(m1FibSetup(true, true), m5Consolidation(),
+            100.29, 100.31, 100.29, 100.31);
+        assertEquals("WAIT", s.side);
+        assertEquals("NEUTRAL", s.m5Bias);
+        assertTrue(s.setup.contains("KONSOLIDASI"));
     }
 
-    @Test public void openActionOneFollowsLiveHighWithoutWaitingForSellRejection() {
-        Candle[] m1=history(100.00,100.25,99.98,100.21);
-        SignalResult s=SignalEngine.evaluate(m1,context(),100.21,100.23,100.21,100.23,true);
-        assertEquals("SELL",s.side);
-        assertFalse("Open Action 1 must not require a rejection wick",s.wickRejection);
-        assertEquals("CANDLE EXHAUSTION • MARKET SELL",s.setup);
-        assertEquals("Entry follows the current candle high",m1[m1.length-1].h,s.entry,1e-9);
-        assertTrue(s.sl>s.entry&&s.tp1<s.entry&&s.tp2<s.tp1);
+    @Test public void noDirectionalConfirmationMeansWait() {
+        SignalResult s = SignalEngine.evaluate(m1FibSetup(true, false), m5Trend(true),
+            100.29, 100.31, 100.29, 100.31);
+        assertEquals("WAIT", s.side);
+        assertTrue(s.setup.contains("CANDLE KONFIRMASI") || s.setup.contains("ZONA FIBO"));
     }
 
-    @Test public void openActionOneFollowsLiveLowWithoutWaitingForBuyRejection() {
-        Candle[] m1=history(100.00,100.02,99.75,99.79);
-        SignalResult s=SignalEngine.evaluate(m1,context(),99.77,99.79,99.77,99.79,true);
-        assertEquals("BUY",s.side);
-        assertFalse("Open Action 1 must not require a rejection wick",s.wickRejection);
-        assertEquals("CANDLE EXHAUSTION • MARKET BUY",s.setup);
-        assertEquals("Entry follows the current candle low",m1[m1.length-1].l,s.entry,1e-9);
-        assertTrue(s.sl<s.entry&&s.tp1>s.entry&&s.tp2>s.tp1);
+    @Test public void wideSpreadPreventsEntryEvenWhenFibonacciSetupIsValid() {
+        SignalResult s = SignalEngine.evaluate(m1FibSetup(true, true), m5Trend(true),
+            100.10, 100.50, 100.10, 100.50);
+        assertEquals("WAIT", s.side);
+        assertTrue(s.setup.contains("SPREAD"));
+        assertFalse(s.spreadFilter);
     }
 
-    @Test public void openActionOneWaitsUntilExhaustionTravelThresholdIsReached() {
-        // Small live candle range remains below the adaptive exhaustion threshold.
-        Candle[] m1=history(100.00,100.05,99.95,100.049);
-        SignalResult s=SignalEngine.evaluate(m1,context(),100.047,100.049,100.047,100.049,true);
-        assertEquals("WAIT",s.side);
+    @Test public void insufficientM5HistoryFailsClosed() {
+        Candle[] shortM5 = new Candle[100];
+        for (int i = 0; i < shortM5.length; i++)
+            shortM5[i] = new Candle((i + 1) * 300_000L, 100, 100.1, 99.9, 100);
+        SignalResult s = SignalEngine.evaluate(m1FibSetup(true, true), shortM5,
+            100.29, 100.31, 100.29, 100.31);
+        assertEquals("WAIT", s.side);
+        assertTrue(s.setup.contains("200 CANDLE"));
     }
-
 }
