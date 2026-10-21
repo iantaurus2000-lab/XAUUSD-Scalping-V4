@@ -23,6 +23,7 @@ public class CandleChartView extends View {
     private String visualTheme="DEFAULT";
     private final SimpleDateFormat time = new SimpleDateFormat("HH:mm", Locale.US);
     private double signalEntry, signalSl, signalTp1, signalTp2;
+    private double[] fibonacciLevels = new double[]{-0.27,0,.236,.382,.5,.618,.786,1};
     private String signalSide="BUY";
     private double positionEntry;
     private boolean signalActive=false;
@@ -116,6 +117,13 @@ public class CandleChartView extends View {
     public void setShowEMA50(boolean v){showEMA50=v;invalidate();}
     public void setShowSR(boolean v){showSR=v;invalidate();}
     public void setShowFibo(boolean v){showFibo=v;invalidate();}
+    /** Levels are ratios: 23.6% is 0.236, and -27% is -0.27. */
+    public void setFibonacciLevels(double[] levels){
+        if(levels==null||levels.length==0)return;
+        TreeSet<Double> clean=new TreeSet<>();
+        for(double level:levels)if(!Double.isNaN(level)&&!Double.isInfinite(level)&&level>=-5&&level<=5)clean.add(level);
+        if(!clean.isEmpty()){fibonacciLevels=new double[clean.size()];int i=0;for(Double level:clean)fibonacciLevels[i++]=level;invalidate();}
+    }
     public void setShowRSI(boolean v){showRSI=v;invalidate();}
     public void setShowMACD(boolean v){showMACD=v;invalidate();}
     public void setShowATR(boolean v){showATR=v;invalidate();}
@@ -250,7 +258,7 @@ public class CandleChartView extends View {
             text(c,"RES",L+4,ry-4,8,Color.rgb(255,152,0));text(c,"SUP",L+4,sy-4,8,Color.rgb(0,188,212));
         }
         if(showFibo){
-            for(double q:new double[]{-.27,0,.236,.382,.5,.618,.786,1}){
+            for(double q:fibonacciLevels){
                 float y=py(hi-(hi-lo)*q,lo,hi,T,B);
                 ln(c,L,y,R,y,q==.5?Color.rgb(0,188,212):Color.rgb(100,75,130),1);
                 text(c,String.format(Locale.US,"%.1f%%  (%.2f)",q*100,hi-(hi-lo)*q),L+7,y-2,8,q==.5?Color.CYAN:Color.rgb(190,150,220));
@@ -288,10 +296,9 @@ public class CandleChartView extends View {
             // Trade-specific Fibonacci ladder, anchored to the signal candle's 0..100 range.
             double fibRange=Math.abs(signalTp2-signalTp1)/0.382;
             double fib0="BUY".equals(signalSide)?signalTp2-fibRange:signalTp2+fibRange;
-            double[] fib={-.27,0,.236,.382,.5,.618,.786,1};
-            int[] fibCols={Color.rgb(245,145,65),Color.rgb(150,150,170),Color.rgb(160,130,210),Color.rgb(130,110,190),
-                Color.rgb(0,188,212),Color.rgb(0,190,130),Color.rgb(210,160,80),Color.rgb(150,150,170)};
+            double[] fib=fibonacciLevels;
             for(int i=0;i<fib.length;i++){
+                int fibColor=fib[i]<0?Color.rgb(245,145,65):(Math.abs(fib[i]-.5)<.0001?Color.rgb(0,188,212):Color.rgb(160,130,210));
                 double level="BUY".equals(signalSide)?fib0+fibRange*fib[i]:fib0-fibRange*fib[i];
                 float fy=py(level,lo,hi,T,B);
                 if(fy>=T&&fy<=B){
