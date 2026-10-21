@@ -1594,10 +1594,6 @@ public class MainActivity extends Activity {
         addPanelRow(rows,"03 • KONFIRMASI CANDLE","Entry hanya setelah candle M1 tertutup mengonfirmasi arah dan bersinggungan dengan zona Fibonacci.",Color.WHITE);
         addPanelRow(rows,"04 • ENTRY / SL / TARGET","Entry MARKET pada zona valid; SL di luar level 78,6%, TP1 pada level 0 (swing), TP2 di ekstensi −27%.",Color.WHITE);
         addPanelRow(rows,"05 • PENGAMAN","ATR dan spread tetap divalidasi. Quote MT5 harus segar, EA online, antrean kosong, dan tidak ada exposure aktif.",Color.CYAN);
-        addPanelRow(rows,"02 • FIBONACCI SWING","Gunakan swing M1 yang jelas; hindari memaksa Fibonacci ketika M5 konsolidasi.",Color.WHITE);
-        addPanelRow(rows,"03 • ZONA ENTRY","Entry MARKET hanya jika harga berada di area retracement 50–61,8% dan candle tertutup mengonfirmasi arah.",Color.WHITE);
-        addPanelRow(rows,"04 • SL / TARGET","SL di luar level 78,6% dengan buffer ATR/spread; TP1 di swing asal (0%) dan TP2 pada ekstensi −27%.",Color.WHITE);
-        addPanelRow(rows,"05 • SAFETY","Quote MT5 segar, spread, lot, status EA, antrean tunggal, dan pencegahan order ganda tetap wajib.",Color.CYAN);
         ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
         box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
         AlertDialog d=new AlertDialog.Builder(this).setView(box).setPositiveButton("TUTUP",null).create();
