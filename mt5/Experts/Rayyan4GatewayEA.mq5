@@ -7,9 +7,8 @@ input string GatewayUrl="http://192.168.0.112:8787";
 input string AllowedSymbol="XAUUSDm";
 input bool DemoOnly=true;
 input int PollSeconds=1;
-// TP2 approach -> retrace to TP1 close. Applies only to positions opened by this EA.
+// After TP1 is reached, close on a confirmed M1 reversal before TP2.
 input bool EnableTP2RetraceProtection=true;
-input double TP2ApproachPercent=85.0;
 input double TP1FallbackRiskMultiple=2.0;
 
 
@@ -401,7 +400,6 @@ void manageTP2RetraceProtection(){
       || !AccountInfoInteger(ACCOUNT_TRADE_ALLOWED)
       || !AccountInfoInteger(ACCOUNT_TRADE_EXPERT)) return;
 
-   double armPct=MathMax(50.0,MathMin(99.0,TP2ApproachPercent))/100.0;
    double fallbackR=MathMax(0.5,MathMin(5.0,TP1FallbackRiskMultiple));
    for(int i=PositionsTotal()-1;i>=0;i--){
       ulong ticket=PositionGetTicket(i);
@@ -437,24 +435,38 @@ void manageTP2RetraceProtection(){
 
       MqlTick tick;
       if(!SymbolInfoTick(symbol,tick) || tick.bid<=0.0 || tick.ask<tick.bid) continue;
-      double armPrice=(posType==POSITION_TYPE_BUY
-         ? entry+(tp2-entry)*armPct
-         : entry-(entry-tp2)*armPct);
+      // Arm as soon as the executable side of the quote reaches TP1.
+      // After that, a closed M1 candle must confirm a reversal before TP2.
       bool armed=GlobalVariableCheck(armedKey) && GlobalVariableGet(armedKey)>0.0;
-      bool reached=(posType==POSITION_TYPE_BUY ? tick.bid>=armPrice : tick.ask<=armPrice);
-      if(!armed && reached){
+      bool reachedTP1=(posType==POSITION_TYPE_BUY ? tick.bid>=tp1 : tick.ask<=tp1);
+      if(!armed && reachedTP1){
          GlobalVariableSet(armedKey,(double)TimeCurrent());
          armed=true;
-         Print("RAYYAN4 TP2 PROTECTION ARMED symbol=",symbol," side=",
+         Print("RAYYAN4 TP1 PROFIT PROTECTION ARMED symbol=",symbol," side=",
                (posType==POSITION_TYPE_BUY?"BUY":"SELL"),
                " entry=",DoubleToString(entry,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
                " tp1=",DoubleToString(tp1,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
-               " tp2=",DoubleToString(tp2,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
-               " trigger=",DoubleToString(armPrice,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)));
+               " tp2=",DoubleToString(tp2,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)));
       }
       if(!armed) continue;
-      bool retracedToTP1=(posType==POSITION_TYPE_BUY ? tick.bid<=tp1 : tick.ask>=tp1);
-      if(!retracedToTP1) continue;
+
+      datetime closedBarTime=iTime(symbol,PERIOD_M1,1);
+      if(closedBarTime<=0) continue;
+      string candleKey="R8_TP2C_"+(string)positionId;
+      double lastCheckedBar=GlobalVariableCheck(candleKey)?GlobalVariableGet(candleKey):0.0;
+      if((double)closedBarTime<=lastCheckedBar) continue;
+      double cOpen=iOpen(symbol,PERIOD_M1,1);
+      double cClose=iClose(symbol,PERIOD_M1,1);
+      double prevLow=iLow(symbol,PERIOD_M1,2);
+      double prevHigh=iHigh(symbol,PERIOD_M1,2);
+      if(cOpen<=0.0 || cClose<=0.0 || prevLow<=0.0 || prevHigh<=0.0) continue;
+
+      // BUY: bearish close breaks prior M1 low; SELL: bullish close breaks prior M1 high.
+      bool reversal=(posType==POSITION_TYPE_BUY
+         ? (cClose<cOpen && cClose<prevLow)
+         : (cClose>cOpen && cClose>prevHigh));
+      GlobalVariableSet(candleKey,(double)closedBarTime);
+      if(!reversal) continue;
 
       trade.SetAsyncMode(false);
       trade.SetExpertMagicNumber(RAYYAN_MAGIC);
@@ -466,13 +478,15 @@ void manageTP2RetraceProtection(){
       if(closed && (rc==TRADE_RETCODE_DONE || rc==TRADE_RETCODE_DONE_PARTIAL)){
          Print("RAYYAN4 TP2 RETRACE EXIT symbol=",symbol," side=",
                (posType==POSITION_TYPE_BUY?"BUY":"SELL"),
-               " reason=TP2 approach then retrace to TP1 ticket=",ticket,
+               " reason=TP1 reached then confirmed M1 reversal before TP2 ticket=",ticket,
                " tp1=",DoubleToString(tp1,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
                " bid=",DoubleToString(tick.bid,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
                " ask=",DoubleToString(tick.ask,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
                " retcode=",rc);
          if(!PositionSelectByTicket(ticket)){
             GlobalVariableDel(armedKey);
+            string candleKeyCleanup="R8_TP2C_"+(string)positionId;
+            if(GlobalVariableCheck(candleKeyCleanup)) GlobalVariableDel(candleKeyCleanup);
             if(tp1Key!="" && GlobalVariableCheck(tp1Key)) GlobalVariableDel(tp1Key);
          }
       }else{
