@@ -514,7 +514,7 @@ public class MainActivity extends Activity {
         }
         if(chart!=null)chart.setTimeframe(tf);
         queueNativeIndicatorState();
-        if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+tf+"\nWick Rejection + Liquidity Sweep + BOS");
+        if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+tf+"\nFibonacci 50–61.8% + Trend M5");
         if(status!=null)status.setText("● "+("M1".equals(tf)?"LIVE":"LOADING")+" • RAYYAN4 • "+tf);
         if(reload)load(interval(tf),tf);
     }
@@ -1589,12 +1589,15 @@ public class MainActivity extends Activity {
         TextView note=tv("Panduan baca-sinyal • bukan jaminan hasil",12);note.setTextColor(Color.LTGRAY);
         box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(36)));
         LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
-        addPanelRow(rows,"01 • MARKET BIAS","Gunakan M5 untuk arah konteks, lalu cari pemicu masuk pada M1.",Color.WHITE);
-        addPanelRow(rows,"02 • WICK REJECTION","Cari ekor candle yang menolak level; jangan masuk hanya karena candle tampak panjang.",Color.WHITE);
-        addPanelRow(rows,"03 • LIQUIDITY SWEEP","Perhatikan sapuan swing high/low dan reaksi harga sesudahnya.",Color.WHITE);
-        addPanelRow(rows,"04 • BOS","Tunggu struktur terkonfirmasi; BOS membantu validasi, bukan sinyal tunggal.",Color.WHITE);
-        addPanelRow(rows,"05 • FILTER","EMA, RSI, MACD, ATR, dan spread membantu konteks; periksa spread/feed sebelum keputusan.",Color.WHITE);
-        addPanelRow(rows,"06 • ENTRY PLAN","Tinjau Entry, SL, TP1, TP2, dan Risk:Reward sebelum LIMIT demo.",Color.CYAN);
+        addPanelRow(rows,"01 • TREND M5","Pakai candle M5 tertutup, EMA50/EMA200 dan struktur HH/HL atau LH/LL. Jika konsolidasi, tunggu.",Color.WHITE);
+        addPanelRow(rows,"02 • FIBONACCI M1","Tarik Fibonacci pada swing impuls M1 yang sudah terbentuk; tunggu harga kembali ke zona 50–61,8%.",Color.WHITE);
+        addPanelRow(rows,"03 • KONFIRMASI CANDLE","Entry hanya setelah candle M1 tertutup mengonfirmasi arah dan bersinggungan dengan zona Fibonacci.",Color.WHITE);
+        addPanelRow(rows,"04 • ENTRY / SL / TARGET","Entry MARKET pada zona valid; SL di luar level 78,6%, TP1 pada level 0 (swing), TP2 di ekstensi −27%.",Color.WHITE);
+        addPanelRow(rows,"05 • PENGAMAN","ATR dan spread tetap divalidasi. Quote MT5 harus segar, EA online, antrean kosong, dan tidak ada exposure aktif.",Color.CYAN);
+        addPanelRow(rows,"02 • FIBONACCI SWING","Gunakan swing M1 yang jelas; hindari memaksa Fibonacci ketika M5 konsolidasi.",Color.WHITE);
+        addPanelRow(rows,"03 • ZONA ENTRY","Entry MARKET hanya jika harga berada di area retracement 50–61,8% dan candle tertutup mengonfirmasi arah.",Color.WHITE);
+        addPanelRow(rows,"04 • SL / TARGET","SL di luar level 78,6% dengan buffer ATR/spread; TP1 di swing asal (0%) dan TP2 pada ekstensi −27%.",Color.WHITE);
+        addPanelRow(rows,"05 • SAFETY","Quote MT5 segar, spread, lot, status EA, antrean tunggal, dan pencegahan order ganda tetap wajib.",Color.CYAN);
         ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
         box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
         AlertDialog d=new AlertDialog.Builder(this).setView(box).setPositiveButton("TUTUP",null).create();
@@ -1795,12 +1798,10 @@ public class MainActivity extends Activity {
         addPanelRow(rows,"TAKE PROFIT 2 (TP2)",String.valueOf(s.tp2),green);
         addPanelRow(rows,"RISK : REWARD",String.format(Locale.US,"%.2f",s.rr),Color.WHITE);
         addPanelRow(rows,"CONFIDENCE",s.confidence+"/5  •  ENTRY SCORE "+s.score+"%",Color.CYAN);
-        addPanelRow(rows,"LIQUIDITY SWEEP",onoff(s.liquiditySweep),s.liquiditySweep?green:Color.LTGRAY);
-        addPanelRow(rows,"WICK REJECTION",onoff(s.wickRejection),s.wickRejection?green:Color.LTGRAY);
-        addPanelRow(rows,"BOS",onoff(s.bos),s.bos?green:Color.LTGRAY);
-        addPanelRow(rows,"EMA FILTER",onoff(s.emaFilter),s.emaFilter?green:Color.LTGRAY);
-        addPanelRow(rows,"RSI FILTER",onoff(s.rsiFilter),s.rsiFilter?green:Color.LTGRAY);
-        addPanelRow(rows,"MACD FILTER",onoff(s.macdFilter),s.macdFilter?green:Color.LTGRAY);
+        addPanelRow(rows,"M5 TREND / EMA50-200",String.valueOf(s.m5Bias),("BUY".equals(s.m5Bias)||"SELL".equals(s.m5Bias))?green:Color.LTGRAY);
+        addPanelRow(rows,"FIBONACCI ZONE 50–61.8%",onoff("BUY".equals(s.side)||"SELL".equals(s.side)),("BUY".equals(s.side)||"SELL".equals(s.side))?green:Color.LTGRAY);
+        addPanelRow(rows,"CANDLE CONFIRMATION",onoff("BUY".equals(s.side)||"SELL".equals(s.side)),("BUY".equals(s.side)||"SELL".equals(s.side))?green:Color.LTGRAY);
+        addPanelRow(rows,"WICK CONFLUENCE (OPSIONAL)",onoff(s.wickRejection),s.wickRejection?green:Color.LTGRAY);
         addPanelRow(rows,"ATR FILTER",onoff(s.atrFilter),s.atrFilter?green:Color.LTGRAY);
         addPanelRow(rows,"SPREAD FILTER",onoff(s.spreadFilter),s.spreadFilter?green:Color.LTGRAY);
         ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
@@ -1962,7 +1963,7 @@ public class MainActivity extends Activity {
     }
 
     void showIndicatorDialog(){
-        final String[] names={"EMA 9","EMA 21","EMA 50","Support / Resistance","Fibonacci","RSI 14","MACD","ATR","Buy / Sell","Wick / Sweep / BOS","Bid / Ask","Entry / SL / TP"};
+        final String[] names={"EMA 9","EMA 21","EMA 50","Support / Resistance","Fibonacci","RSI 14","MACD","ATR","Buy / Sell","Trend / Structure","Bid / Ask","Entry / SL / TP"};
         final String[] keys={"ema9","ema21","ema50","sr","fibo","rsi","macd","atr","signals","wickbos","bidask","orders"};
         final String[] icons={"〽","〽","〽","⌗","⟋","◌","∿","↕","↗","〰","⇄","▤"};
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(22,16,22,14);box.setBackground(roundBg(Color.rgb(3,18,30),16));
