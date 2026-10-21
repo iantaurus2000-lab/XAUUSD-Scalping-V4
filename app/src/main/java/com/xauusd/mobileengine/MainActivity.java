@@ -627,7 +627,7 @@ public class MainActivity extends Activity {
                 AppLog.add(this,"ORDER_BLOCKED",origin+" • strategi Fibonacci hanya mengirim entry dari M1");
                 Toast.makeText(this,"Pilih timeframe M1 untuk entry Fibonacci",Toast.LENGTH_LONG).show();return;
             }
-            if(chart==null||m1Data==null||m1Data.length<30||m5Data==null||m5Data.length<200){
+            if(chart==null||m1Data==null||m1Data.length<30||m5Data==null||m5Data.length<201){
                 AppLog.add(this,"ORDER_BLOCKED",origin+" • data M1 / trend EMA200 M5 belum cukup");
                 Toast.makeText(this,"Menunggu data M1 dan minimal 200 candle M5",Toast.LENGTH_LONG).show();return;
             }
@@ -755,7 +755,7 @@ public class MainActivity extends Activity {
     private void updateEntryReadyUi(SignalResult signal,double bid,double ask,Candle[] activeM1,long candleStamp){
         String candleKey=selectedMarket+"|"+selectedTf+"|"+candleStamp;
         if(!candleKey.equals(readyCandleKey)){readyCandleKey=candleKey;readyCandleSide="WAIT";}
-        boolean context="M1".equals(selectedTf)&&activeM1!=null&&activeM1.length>=30&&m5Data!=null&&m5Data.length>=200;
+        boolean context="M1".equals(selectedTf)&&activeM1!=null&&activeM1.length>=30&&m5Data!=null&&m5Data.length>=201;
         boolean nextReady=isAutoEntryEligible(signal,bid,ask,context);
         String nextSide=nextReady?signal.side:"WAIT";
         readyCandleSide=nextReady?nextSide:"WAIT";
@@ -915,7 +915,7 @@ public class MainActivity extends Activity {
         boolean autoEnabled=gp.getBoolean("auto",false)
                 &&"READY".equals(gp.getString("operation_mode","REST"))
                 &&"M1".equals(selectedTf);
-        if(m1==null||m1.length<30||m5==null||m5.length<200){
+        if(m1==null||m1.length<30||m5==null||m5.length<201){
             autoDiagnostic(gp,"DATA_M1M5_SHORT|"+selectedMarket+"|"+selectedTf,
                 "ENTRY BLOCKED • M1 kurang dari 30 atau M5 kurang dari 200 candle • market="+selectedMarket+" TF="+selectedTf);
             return;
@@ -1249,7 +1249,7 @@ public class MainActivity extends Activity {
             return;
         }
 
-        boolean m1Context="M1".equals(selectedTf)&&m1.length>=30&&m5.length>=200;
+        boolean m1Context="M1".equals(selectedTf)&&m1.length>=30&&m5.length>=201;
         if(!isAutoEntryEligible(s,bid,ask,m1Context)){
             String reason=autoEntryBlockReason(s,bid,ask,m1Context);
             autoDiagnostic(gp,"FILTER|"+signalKey+"|"+reason,
@@ -1325,7 +1325,7 @@ public class MainActivity extends Activity {
 
     void updateSignal(Candle[] m1,Candle[] m5){
         syncBrokerEntryLine();
-        if(m1==null||m1.length<30||m5==null||m5.length<200){
+        if(m1==null||m1.length<30||m5==null||m5.length<201){
             if(scoreView!=null)scoreView.setText("SCORE 0%");
             resetEntryReadyUi("menunggu data M1/M5");
             return;
