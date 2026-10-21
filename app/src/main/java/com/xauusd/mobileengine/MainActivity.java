@@ -2235,7 +2235,71 @@ public class MainActivity extends Activity {
     String onoff(boolean v){return v?"ON":"OFF";}
     boolean ind(String key,boolean def){return prefs.getBoolean(key,def);}
 
+    private String fibonacciLevelsText(){
+        return prefs.getString("fibo_levels_percent","-27,0,23.6,38.2,50,61.8,78.6,100");
+    }
+
+    private double[] readFibonacciLevels(){
+        String raw=fibonacciLevelsText();
+        ArrayList<Double> levels=new ArrayList<>();
+        for(String part:raw.split(",")){
+            try{
+                double percent=Double.parseDouble(part.trim());
+                if(!Double.isNaN(percent)&&!Double.isInfinite(percent)&&percent>=-500&&percent<=500)
+                    levels.add(percent/100.0);
+            }catch(Exception ignored){}
+        }
+        if(levels.isEmpty())return new double[]{-.27,0,.236,.382,.5,.618,.786,1};
+        double[] out=new double[levels.size()];for(int i=0;i<levels.size();i++)out[i]=levels.get(i);
+        return out;
+    }
+
+    private void showFibonacciDialog(){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(uiDp(18),uiDp(14),uiDp(18),uiDp(12));
+        box.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("PENGATURAN FIBONACCI",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(40)));
+        TextView note=tv("Masukkan level dalam persen, pisahkan dengan koma. Contoh: -27, 0, 23.6, 38.2, 50, 61.8, 78.6, 100",12);
+        note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
+        box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(56)));
+        EditText values=new EditText(this);styleDialogInput(values);values.setText(fibonacciLevelsText());
+        values.setHint("-27,0,23.6,38.2,50,61.8,78.6,100");
+        values.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        box.addView(values,new LinearLayout.LayoutParams(-1,uiDp(52)));
+        TextView help=tv("Rentang yang diizinkan: -500% sampai 500%. Perubahan langsung berlaku pada Fibonacci chart dan disimpan.",11);
+        help.setTextColor(Color.rgb(255,205,95));help.setGravity(Gravity.TOP|Gravity.START);
+        box.addView(help,new LinearLayout.LayoutParams(-1,uiDp(46)));
+        AlertDialog d=new AlertDialog.Builder(this).setView(box)
+            .setPositiveButton("SIMPAN",null).setNegativeButton("BATAL",null).create();
+        d.setOnShowListener(v->{
+            d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(btn->{
+                String raw=values.getText().toString().trim();
+                ArrayList<Double> valid=new ArrayList<>();
+                for(String part:raw.split(",")){
+                    try{double n=Double.parseDouble(part.trim());if(!Double.isNaN(n)&&!Double.isInfinite(n)&&n>=-500&&n<=500)valid.add(n);}
+                    catch(Exception ignored){}
+                }
+                if(valid.isEmpty()){
+                    values.setError("Masukkan minimal satu level angka yang valid");
+                    return;
+                }
+                StringBuilder normalized=new StringBuilder();
+                for(Double n:valid){if(normalized.length()>0)normalized.append(", ");normalized.append(String.format(Locale.US,"%.4f",n).replaceAll("0+$","").replaceAll("\\.$",""));}
+                prefs.edit().putString("fibo_levels_percent",normalized.toString()).apply();
+                chart.setFibonacciLevels(readFibonacciLevels());
+                setInd("fibo",true);
+                AppLog.add(this,"FIBONACCI","levels updated: "+normalized);
+                Toast.makeText(this,"Level Fibonacci disimpan",Toast.LENGTH_SHORT).show();
+                d.dismiss();
+            });
+        });
+        d.show();
+        if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-uiDp(36),uiDp(430)),-2);}
+    }
+
     void loadIndicatorSettings(){
+        chart.setFibonacciLevels(readFibonacciLevels());
         chart.setShowEMA9(ind("ema9",true));chart.setShowEMA21(ind("ema21",true));chart.setShowEMA50(ind("ema50",true));
         chart.setShowSR(ind("sr",true));chart.setShowFibo(ind("fibo",true));chart.setShowRSI(ind("rsi",true));chart.setShowMACD(ind("macd",true));chart.setShowATR(ind("atr",true));
         chart.setShowSignals(ind("signals",true));chart.setShowWickBos(ind("wickbos",true));chart.setShowTradeLevels(ind("orders",true));chart.setShowPosition(ind("position",true));chart.setShowBidAsk(ind("bidask",true));
@@ -2309,7 +2373,7 @@ public class MainActivity extends Activity {
     }
 
     void bindQuickLayer(Button b,String label){
-        b.setOnClickListener(v->{if(label.contains("S/R"))setInd("sr",!ind("sr",true));else if(label.contains("Fibo"))setInd("fibo",!ind("fibo",true));
+        b.setOnClickListener(v->{if(label.contains("S/R"))setInd("sr",!ind("sr",true));else if(label.contains("Fibo"))showFibonacciDialog();
             else if(label.contains("EMA")){boolean next=!(ind("ema9",true)&&ind("ema21",true)&&ind("ema50",true));setInd("ema9",next);setInd("ema21",next);setInd("ema50",next);}
             else if(label.contains("Buy/Sell"))setInd("signals",!ind("signals",true));else if(label.contains("Order"))setInd("orders",!ind("orders",true));else if(label.contains("Posisi")){setInd("position",true);if(chart!=null)chart.setShowPosition(true);showWinRateDialog();}updateQuickLayerButton(b,label);});
         updateQuickLayerButton(b,label);
