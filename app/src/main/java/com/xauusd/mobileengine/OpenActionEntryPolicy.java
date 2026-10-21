@@ -5,8 +5,8 @@ public final class OpenActionEntryPolicy {
     private OpenActionEntryPolicy() {}
 
     /**
-     * Adaptive exhaustion travel distance before Open Action 1 can fire; the live extreme
-     * must first extend meaningfully and then recoil.
+     * Adaptive travel distance for Open Action 1. Reaching this distance on the forming
+     * candle is sufficient; there is deliberately no recoil/bounce confirmation.
      */
     public static double exhaustionTravelThreshold(Candle previous, double atr) {
         if (previous == null || !Double.isFinite(atr) || atr <= 0.0
