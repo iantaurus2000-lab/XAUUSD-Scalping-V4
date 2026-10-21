@@ -452,6 +452,9 @@ void manageTP2RetraceProtection(){
 
       datetime closedBarTime=iTime(symbol,PERIOD_M1,1);
       if(closedBarTime<=0) continue;
+      // Ignore candles that closed before TP1 was reached; only react to a new reversal.
+      double armedAt=GlobalVariableCheck(armedKey)?GlobalVariableGet(armedKey):0.0;
+      if(armedAt<=0.0 || (double)closedBarTime<=armedAt) continue;
       string candleKey="R8_TP2C_"+(string)positionId;
       double lastCheckedBar=GlobalVariableCheck(candleKey)?GlobalVariableGet(candleKey):0.0;
       if((double)closedBarTime<=lastCheckedBar) continue;
