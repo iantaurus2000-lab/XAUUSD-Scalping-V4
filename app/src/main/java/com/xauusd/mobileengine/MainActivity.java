@@ -1325,7 +1325,7 @@ public class MainActivity extends Activity {
 
     void updateSignal(Candle[] m1,Candle[] m5){
         syncBrokerEntryLine();
-        if(m1==null||m1.length<30||m5==null||m5.length<30){
+        if(m1==null||m1.length<30||m5==null||m5.length<200){
             if(scoreView!=null)scoreView.setText("SCORE 0%");
             resetEntryReadyUi("menunggu data M1/M5");
             return;
