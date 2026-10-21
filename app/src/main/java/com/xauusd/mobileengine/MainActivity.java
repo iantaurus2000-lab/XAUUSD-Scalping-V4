@@ -856,6 +856,7 @@ public class MainActivity extends Activity {
         // rejection later in the same candle. Order lifecycle guards prevent duplicates.
         readyCandleSide=nextReady?nextSide:"WAIT";
         if(nextReady){
+            if(chart!=null)chart.setSignalLevels(nextSide,signal.entry,signal.sl,signal.tp1,signal.tp2,true);
             boolean sideChanged=!readySide.equals(nextSide);
             if(!entryReady||sideChanged){
                 signalUiHandler.removeCallbacks(entryBlinkRunnable);
@@ -871,6 +872,7 @@ public class MainActivity extends Activity {
             entryReadyView.setTextColor(Color.WHITE);
             entryReadyView.setBackground(roundBg("BUY".equals(nextSide)?Color.rgb(0,105,68):Color.rgb(140,28,43),10));
         }else{
+            if(chart!=null)chart.setSignalLevels("BUY",0,0,0,0,false);
             signalUiHandler.removeCallbacks(entryBlinkRunnable);
             entryReady=false;
             readySide="WAIT";
@@ -896,6 +898,7 @@ public class MainActivity extends Activity {
     }
 
     private void resetEntryReadyUi(String reason){
+        if(chart!=null)chart.setSignalLevels("BUY",0,0,0,0,false);
         signalUiHandler.removeCallbacks(entryBlinkRunnable);
         entryReady=false;
         readySide="WAIT";
