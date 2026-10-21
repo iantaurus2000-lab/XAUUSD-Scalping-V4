@@ -20,7 +20,7 @@ jobs:
       - name: Restore debug signing key
         run: base64 -d app/rayyan4-debug.keystore.b64 > app/rayyan4-debug.keystore
       - name: Build debug APK
-        run: gradle :app:assembleDebug --no-daemon
+        run: gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
           name: XAUUSD-Mobile-Engine-RAYYAN11
