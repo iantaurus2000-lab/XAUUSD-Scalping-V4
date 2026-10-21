@@ -2215,6 +2215,17 @@ public class MainActivity extends Activity {
                 return false;
             }
             double brokerEntry="BUY".equals(side)?q[1]:q[0];
+            double entryDrift=Math.abs(brokerEntry-entry);
+            double maxEntryDrift=Math.max(atr*0.12,(q[1]-q[0])*2.0);
+            if(!Double.isFinite(entryDrift)||!Double.isFinite(maxEntryDrift)||entryDrift>maxEntryDrift){
+                String detail="MARKET diblokir • harga bergerak keluar dari toleransi entry Fibonacci"
+                    +" • signalEntry="+price(entry)+" brokerEntry="+price(brokerEntry)
+                    +" drift="+price(entryDrift)+" max="+price(maxEntryDrift);
+                queueBlockDiagnostic(detail);
+                AppLog.add(this,"ORDER_BLOCKED",detail);
+                Toast.makeText(this,"Harga sudah menjauh dari zona Fibonacci • tunggu sinyal baru",Toast.LENGTH_LONG).show();
+                return false;
+            }
             double shift=brokerEntry-entry;
             sl+=shift; tp+=shift;
             if(tp1>0.0)tp1+=shift;
