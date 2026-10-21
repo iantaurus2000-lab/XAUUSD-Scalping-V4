@@ -77,12 +77,25 @@ public class CandleChartView extends View {
 
     /** Fresh feed quote updates the visible forming candle on each one-second tick. */
     public void updateLiveBar(double b,double a,long nowMs,String tf){
-        if(!QuoteSafety.valid(b,a))return;
+        if(!QuoteSafety.valid(b,a)||nowMs<=0L)return;
         if(tf!=null) timeframe=tf;
-        Candle[] next=LiveCandleUpdater.update(cs.toArray(new Candle[0]),
-            LiveCandleUpdater.periodMillis(tf==null?timeframe:tf),(b+a)*0.5,nowMs);
-        cs.clear();
-        if(next!=null) Collections.addAll(cs,next);
+        long period=LiveCandleUpdater.periodMillis(tf==null?timeframe:tf);
+        double price=(b+a)*0.5;
+        if(!cs.isEmpty()&&period>0L){
+            Candle last=cs.get(cs.size()-1);
+            long barTime=(nowMs/period)*period;
+            if(last!=null&&last.t>0L&&barTime>=last.t){
+                if(barTime==last.t){
+                    last.h=Math.max(last.h,price);
+                    last.l=Math.min(last.l,price);
+                    last.c=price;
+                }else if(barTime-last.t==period){
+                    if(cs.size()>=120)cs.remove(0);
+                    cs.add(new Candle(barTime,last.c,Math.max(last.c,price),Math.min(last.c,price),price));
+                    if(follow)positionLatestCandle();
+                }
+            }
+        }
         bid=b; ask=a;
         invalidate();
     }
