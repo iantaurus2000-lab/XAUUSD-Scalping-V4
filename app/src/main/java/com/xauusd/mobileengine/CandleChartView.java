@@ -293,13 +293,14 @@ public class CandleChartView extends View {
             p.setColor(Color.argb(24,0,155,100));
             c.drawRect(L,Math.min(y1,y2),R,Math.max(y1,y2),p);
 
-            // Trade-specific Fibonacci ladder, anchored to the signal candle's 0..100 range.
-            double fibRange=Math.abs(signalTp2-signalTp1)/0.382;
-            double fib0="BUY".equals(signalSide)?signalTp2-fibRange:signalTp2+fibRange;
+            // Trade-specific Fibonacci ladder: TP1 marks 0.0% (the prior swing),
+            // while TP2 marks the -27.0% extension used as the second target.
+            double fibRange=Math.abs(signalTp2-signalTp1)/0.27;
+            double fib0=signalTp1;
             double[] fib=fibonacciLevels;
             for(int i=0;i<fib.length;i++){
                 int fibColor=fib[i]<0?Color.rgb(245,145,65):(Math.abs(fib[i]-.5)<.0001?Color.rgb(0,188,212):Color.rgb(160,130,210));
-                double level="BUY".equals(signalSide)?fib0+fibRange*fib[i]:fib0-fibRange*fib[i];
+                double level="BUY".equals(signalSide)?fib0-fibRange*fib[i]:fib0+fibRange*fib[i];
                 float fy=py(level,lo,hi,T,B);
                 if(fy>=T&&fy<=B){
                     p.setPathEffect(new DashPathEffect(new float[]{4,4},0));
