@@ -220,7 +220,7 @@ public class MainActivity extends Activity {
         side.setBackground(roundBg(Color.rgb(110,115,125),1000));
         side.setOnClickListener(v->Toast.makeText(this,"Gunakan tombol BUY MARKET / SELL MARKET setelah Entry Ready",Toast.LENGTH_SHORT).show());
         top.addView(side,new LinearLayout.LayoutParams(30,30));
-        signalSummary=tv("Menunggu setup Fibonacci valid\nTren M5 + retracement M1 + konfirmasi candle",10);
+        signalSummary=tv("Menunggu setup trend M5 + candle / wick M1",10);
         signalSummary.setIncludeFontPadding(false);signalSummary.setMaxLines(2);
         signalSummary.setEllipsize(android.text.TextUtils.TruncateAt.END);
         signalSummary.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);
@@ -514,7 +514,7 @@ public class MainActivity extends Activity {
         }
         if(chart!=null)chart.setTimeframe(tf);
         queueNativeIndicatorState();
-        if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+tf+"\nFibonacci 50–61.8% + Trend M5");
+        if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+tf+"\nTrend M5 + candle / wick M1");
         if(status!=null)status.setText("● "+("M1".equals(tf)?"LIVE":"LOADING")+" • RAYYAN4 • "+tf);
         if(reload)load(interval(tf),tf);
     }
@@ -673,7 +673,7 @@ public class MainActivity extends Activity {
     private boolean isEntryReady(SignalResult signal,double bid,double ask){
         if(signal==null||!hasFreshEntryQuotes()||!QuoteSafety.valid(bid,ask))return false;
         if(!"BUY".equals(signal.side)&&!"SELL".equals(signal.side))return false;
-        if(signal.score<getMinimumEntryConfidence()||!signal.spreadFilter||!signal.atrFilter)return false;
+        if(!signal.spreadFilter||!signal.atrFilter)return false;
         if(signal.entry<=0||signal.sl<=0||signal.tp1<=0||signal.tp2<=0)return false;
         if("BUY".equals(signal.side))return signal.sl<signal.entry&&signal.tp1>signal.entry&&signal.tp2>signal.tp1;
         return signal.sl>signal.entry&&signal.tp1<signal.entry&&signal.tp2<signal.tp1;
@@ -692,16 +692,16 @@ public class MainActivity extends Activity {
         if(!m1Context)return "TF/DATA M1-M5 BELUM SIAP";
         if(signal==null)return "SIGNAL BELUM TERSEDIA";
         if(!hasFreshEntryQuotes()||!QuoteSafety.valid(bid,ask))return "QUOTE BROKER/CHART STALE";
-        if(!"BUY".equals(signal.side)&&!"SELL".equals(signal.side))return "BELUM ADA SETUP FIBONACCI";
-        if(signal.score<getMinimumEntryConfidence())return "CONFIDENCE DI BAWAH MINIMUM "+getMinimumEntryConfidence()+"%";
+        if(!"BUY".equals(signal.side)&&!"SELL".equals(signal.side))return signal.setup==null||signal.setup.isEmpty()?"BELUM ADA SETUP TREND/WICK M1":signal.setup;
+        
         if(!signal.atrFilter)return "ATR FILTER GAGAL";
         if(!signal.spreadFilter)return "SPREAD FILTER GAGAL";
-        if(signal.entry<=0||signal.sl<=0||signal.tp1<=0||signal.tp2<=0)return "LEVEL ENTRY/SL/TP FIBONACCI TIDAK VALID";
+        if(signal.entry<=0||signal.sl<=0||signal.tp1<=0||signal.tp2<=0)return "LEVEL ENTRY / SL / TP TIDAK VALID";
         if("BUY".equals(signal.side)&&!(signal.sl<signal.entry&&signal.tp1>signal.entry&&signal.tp2>signal.tp1))
-            return "GEOMETRI BUY FIBONACCI TIDAK VALID";
+            return "GEOMETRI BUY TIDAK VALID";
         if("SELL".equals(signal.side)&&!(signal.sl>signal.entry&&signal.tp1<signal.entry&&signal.tp2<signal.tp1))
-            return "GEOMETRI SELL FIBONACCI TIDAK VALID";
-        if(validAutoTarget(signal)<=0.0)return "TARGET FIBONACCI TP2 TIDAK VALID";
+            return "GEOMETRI SELL TIDAK VALID";
+        if(validAutoTarget(signal)<=0.0)return "TARGET TP2 TIDAK VALID";
         return "READY";
     }
 
