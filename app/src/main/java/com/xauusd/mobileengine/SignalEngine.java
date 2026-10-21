@@ -175,8 +175,20 @@ public final class SignalEngine {
         }
         String side = trendBuy ? "BUY" : "SELL";
         String setup = "FIB 50–61.8% + CANDLE CONFIRM • " + side;
+        double trendStrength = Math.min(1.0, emaGap / Math.max(atrM5 * 0.50, 1e-8));
+        double bodyStrength = Math.min(1.0, Math.abs(confirmationClose - confirmationOpen)
+            / Math.max(atrM1, 1e-8));
+        double zoneHalfWidth = Math.max((zoneHigh - zoneLow) * 0.5 + zoneTolerance, 1e-8);
+        double entryPrecision = 1.0 - Math.min(1.0,
+            Math.abs(entry - (zoneLow + zoneHigh) * 0.5) / zoneHalfWidth);
+        int score = Math.min(100, 75 + (int)Math.round(8.0 * trendStrength)
+            + (int)Math.round(10.0 * bodyStrength) + (int)Math.round(7.0 * entryPrecision)
+            + (wick ? 3 : 0));
+        int confidence = score >= 93 ? 5 : (score >= 80 ? 4 : 3);
+        // Legacy signal flags that are not part of this setup stay false; wick is
+        // a displayed optional confluence, not an entry requirement.
         return new SignalResult(side, bias, entry, sl, tp1, tp2, rr,
-            90, 4, setup, true, wick, true, true, true, true, atrOk, spreadOk);
+            score, confidence, setup, false, wick, true, true, false, false, atrOk, spreadOk);
     }
 
     private static SignalResult wait(String setup, boolean atrOk, boolean spreadOk,
