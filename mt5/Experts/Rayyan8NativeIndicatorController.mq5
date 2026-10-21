@@ -6,7 +6,7 @@ input int PollSeconds=1;
 input int SRLookbackBars=80;
 input int FiboLookbackBars=60;
 
-int hEma50=INVALID_HANDLE, hEma200=INVALID_HANDLE;
+int hColoredEma=INVALID_HANDLE;
 bool onEma50=true,onEma200=true,onSR=true,onFibo=true;
 string lastCommandId="";
 uint lastScreenshotTick=0;
@@ -18,14 +18,11 @@ int OnInit(){
    ChartSetInteger(0,CHART_AUTOSCROLL,true);
    ChartSetInteger(0,CHART_SHIFT,true);
    ChartSetInteger(0,CHART_SCALE,4);
-   hEma50=iMA(_Symbol,_Period,50,0,MODE_EMA,PRICE_CLOSE);
-   hEma200=iMA(_Symbol,_Period,200,0,MODE_EMA,PRICE_CLOSE);
-   if(hEma50==INVALID_HANDLE||hEma200==INVALID_HANDLE){
-      Print("RAYYAN8 INDICATOR INIT ERROR handles=",hEma50,",",hEma200);
-      return INIT_FAILED;
-   }
    EventSetTimer(MathMax(1,PollSeconds));
-   applyAll();
+   setColoredEma();
+   updateSR();
+   updateFibo();
+   ChartRedraw(0);
    Print("RAYYAN8 INDICATOR CONTROLLER START Gateway=",GatewayUrl," queue=/indicator_next only; DOES NOT handle trade /next or /ack. Keep Rayyan4GatewayEA attached for orders.");
    return INIT_SUCCEEDED;
 }
@@ -34,8 +31,7 @@ void OnDeinit(const int reason){
    ObjectDelete(0,"RAYYAN8_SR_RESISTANCE");
    ObjectDelete(0,"RAYYAN8_SR_SUPPORT");
    ObjectDelete(0,"RAYYAN8_FIBO");
-   if(hEma50!=INVALID_HANDLE)IndicatorRelease(hEma50);
-   if(hEma200!=INVALID_HANDLE)IndicatorRelease(hEma200);
+   if(hColoredEma!=INVALID_HANDLE)IndicatorRelease(hColoredEma);
 }
 void OnTick(){}
 void OnTimer(){
@@ -67,7 +63,7 @@ void OnTimer(){
       }
    }
    datetime bar=iTime(_Symbol,_Period,0);
-   if(bar!=0&&bar!=lastBar){lastBar=bar;applyAll();}
+   if(bar!=0&&bar!=lastBar){lastBar=bar;updateSR();updateFibo();ChartRedraw(0);}
    uploadChartSnapshot();
 }
 ENUM_TIMEFRAMES parsePeriod(string tf){
@@ -119,32 +115,39 @@ string field(string source,string key){
    return StringSubstr(source,a,b-a);
 }
 void applyAll(){
-   setEma(hEma50,50,onEma50);
-   setEma(hEma200,200,onEma200);
+   setColoredEma();
    updateSR();
    updateFibo();
    ChartRedraw(0);
 }
-void setEma(int handle,int period,bool enabled){
-   if(handle==INVALID_HANDLE)return;
-   string periodText="("+IntegerToString(period)+")";
-   string foundName="";
+
+// Use a custom indicator because built-in iMA instances inherit the same chart
+// palette and their line colors cannot be reliably set by this controller.
+void setColoredEma(){
    int total=ChartIndicatorsTotal(0,0);
    for(int i=total-1;i>=0;i--){
       string name=ChartIndicatorName(0,0,i);
-      if(StringFind(name,periodText)>=0){
-         foundName=name;
-         break;
-      }
+      if(StringFind(name,"Rayyan Colored EMA (")==0)
+         ChartIndicatorDelete(0,0,name);
    }
-   bool present=(foundName!="");
-   if(enabled&&!present){
-      if(!ChartIndicatorAdd(0,0,handle))
-         Print("RAYYAN8 EMA add failed period=",period," err=",GetLastError());
-   }else if(!enabled&&present){
-      if(!ChartIndicatorDelete(0,0,foundName))
-         Print("RAYYAN8 EMA delete failed period=",period," name=",foundName," err=",GetLastError());
+   if(hColoredEma!=INVALID_HANDLE){
+      IndicatorRelease(hColoredEma);
+      hColoredEma=INVALID_HANDLE;
    }
+   ResetLastError();
+   hColoredEma=iCustom(_Symbol,_Period,"RayyanColoredEMA",50,200,onEma50,onEma200);
+   if(hColoredEma==INVALID_HANDLE){
+      Print("RAYYAN8 COLORED EMA LOAD FAILED. Compile MQL5/Indicators/RayyanColoredEMA.mq5 first. err=",GetLastError());
+      return;
+   }
+   if(!ChartIndicatorAdd(0,0,hColoredEma)){
+      Print("RAYYAN8 COLORED EMA CHART ADD FAILED err=",GetLastError());
+      IndicatorRelease(hColoredEma);
+      hColoredEma=INVALID_HANDLE;
+      return;
+   }
+   Print("RAYYAN8 EMA COLORS APPLIED EMA50=ORANGE enabled=",onEma50,
+         " EMA200=PURPLE enabled=",onEma200);
 }
 void updateSR(){
    if(!onSR){ObjectDelete(0,"RAYYAN8_SR_RESISTANCE");ObjectDelete(0,"RAYYAN8_SR_SUPPORT");return;}
