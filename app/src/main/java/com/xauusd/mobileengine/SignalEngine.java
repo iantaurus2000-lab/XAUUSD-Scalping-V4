@@ -53,8 +53,11 @@ public final class SignalEngine {
 
         double mid = (bid + ask) * 0.5;
         double shift = mid - m1[m1.length - 1].c;
-        double entry = buyBias ? ask : bid;
-        double buffer = Math.max(atrM1 * 0.15, Math.max(0.0, spreadAsk - spreadBid) * 2.0);
+        double spread = Math.max(0.0, ask - bid);
+        // Place a pending LIMIT just inside the rejection wick, not at the live quote.
+        double entryOffset = Math.max(atrM1 * 0.05, spread * 1.25);
+        double entry = buyBias ? (l + shift + entryOffset) : (h + shift - entryOffset);
+        double buffer = Math.max(atrM1 * 0.15, spread * 2.0);
         double sl = buyBias ? (l + shift - buffer) : (h + shift + buffer);
         // If the rejection candle is unusually small, keep a practical ATR-based stop.
         if (buyBias && entry - sl < atrM1 * 0.35) sl = entry - atrM1 * 0.75;
