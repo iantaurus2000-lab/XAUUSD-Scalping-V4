@@ -58,8 +58,6 @@ public class MainActivity extends Activity {
     private static final long ORDER_STATE_MAX_AGE_MS=8000L;
     private static final long M1_BAR_MAX_AGE_MS=120000L;
     private static final long M5_BAR_MAX_AGE_MS=600000L;
-    private static final String OPEN_ACTION_SWEEP_FIRST="SWEEP_FIRST";
-    private static final String OPEN_ACTION_WAIT_BOUNCE="WAIT_BOUNCE";
     private static final int AUTO_ENTRY_OFFSET_POINTS=10;
     private Button signalSideButton, buyLimitBtn, sellLimitBtn;
     private TextView entryReadyView;
@@ -148,7 +146,7 @@ public class MainActivity extends Activity {
         SharedPreferences uiPrefs=getSharedPreferences("rayyan4_ui",MODE_PRIVATE);
         chartDisplayMode=uiPrefs.getString("chart_display_mode","BIQUOTE");
         appTheme=RayyanTheme.normalize(uiPrefs.getString("app_theme",RayyanTheme.DEFAULT));
-        // Explicit project request: enable AUTO LIMIT in DEMO-ready mode.
+        // Explicit project request: enable SMART AUTO in DEMO-ready mode.
         // Order submission remains guarded by fresh EA polling, signal validity, spread,
         // LIMIT price geometry, lot minimum, duplicate cooldown, and the single-command queue.
         SharedPreferences gatewayPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
@@ -221,9 +219,9 @@ public class MainActivity extends Activity {
         Button side=btn("");side.setText("");side.setTextSize(1);side.setPadding(0,0,0,0);side.setMinWidth(0);side.setMinimumWidth(0);
         signalSideButton=side;
         side.setBackground(roundBg(Color.rgb(110,115,125),1000));
-        side.setOnClickListener(v->Toast.makeText(this,"Gunakan tombol BUY LIMIT / SELL LIMIT untuk mengirim order",Toast.LENGTH_SHORT).show());
+        side.setOnClickListener(v->Toast.makeText(this,"Gunakan tombol BUY MARKET / SELL MARKET setelah Entry Ready",Toast.LENGTH_SHORT).show());
         top.addView(side,new LinearLayout.LayoutParams(30,30));
-        signalSummary=tv("Menunggu wick valid • 0/5\nWick Rejection + Liquidity Sweep + BOS",10);
+        signalSummary=tv("Menunggu setup Fibonacci valid\nTren M5 + retracement M1 + konfirmasi candle",10);
         signalSummary.setIncludeFontPadding(false);signalSummary.setMaxLines(2);
         signalSummary.setEllipsize(android.text.TextUtils.TruncateAt.END);
         signalSummary.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);
@@ -271,12 +269,12 @@ public class MainActivity extends Activity {
         limitActions.addView(quickLotInput,new LinearLayout.LayoutParams(62,40));
         View lotGap=new View(this);
         limitActions.addView(lotGap,new LinearLayout.LayoutParams(5,1));
-        buyLimitBtn=btn("● BUY LIMIT");
+        buyLimitBtn=btn("● BUY MARKET");
         buyLimitBtn.setTextSize(12);
         buyLimitBtn.setTypeface(null,Typeface.BOLD);
         buyLimitBtn.setTextColor(Color.WHITE);
         buyLimitBtn.setBackground(roundBg(Color.rgb(0,145,88),10));
-        sellLimitBtn=btn("● SELL LIMIT");
+        sellLimitBtn=btn("● SELL MARKET");
         sellLimitBtn.setTextSize(12);
         sellLimitBtn.setTypeface(null,Typeface.BOLD);
         sellLimitBtn.setTextColor(Color.WHITE);
@@ -285,8 +283,8 @@ public class MainActivity extends Activity {
         View actionGap=new View(this);
         limitActions.addView(actionGap,new LinearLayout.LayoutParams(7,1));
         limitActions.addView(sellLimitBtn,new LinearLayout.LayoutParams(0,40,1));
-        buyLimitBtn.setOnClickListener(v->prepareLimitButton("BUY LIMIT button tapped","BUY",v));
-        sellLimitBtn.setOnClickListener(v->prepareLimitButton("SELL LIMIT button tapped","SELL",v));
+        buyLimitBtn.setOnClickListener(v->prepareLimitButton("BUY MARKET button tapped","BUY",v));
+        sellLimitBtn.setOnClickListener(v->prepareLimitButton("SELL MARKET button tapped","SELL",v));
         root.addView(limitActions,new LinearLayout.LayoutParams(-1,46));
         card.setOnClickListener(v->executeCurrentSignal());
         signalSummary.setOnClickListener(v->executeCurrentSignal());
@@ -618,202 +616,93 @@ public class MainActivity extends Activity {
     }
 
     void executeLimitForSide(String requestedSide){
-        // Require fresh broker/chart quotes; Manual and Smart Auto use the same
-        // Open Action gate and the same broker-mapped wick-tip LIMIT levels.
-        try {
-            double[] broker=freshBrokerQuote(selectedMarket);
-            if(broker==null||!hasFreshEntryQuotes()){
-                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT: broker/chart quote tidak segar");
-                Toast.makeText(this,"Harga broker/chart belum segar • order diblokir",Toast.LENGTH_LONG).show();
-                return;
-            }
-            if(chart==null || chart.isEmpty() || m1Data==null || m1Data.length<30 || m5Data==null || m5Data.length<30){
-                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT: data M1/M5 belum siap");
-                Toast.makeText(this,"Data M1/M5 belum siap",Toast.LENGTH_SHORT).show();
-                return;
-            }
-            Candle[] liveM1=m1Data;
-            if(liveM1==null || liveM1.length<30){
-                Toast.makeText(this,"Data candle M1 belum cukup",Toast.LENGTH_SHORT).show();
-                return;
-            }
-            SignalResult s=evaluateSignal(liveM1,m5Data,chart.getBid(),chart.getAsk(),broker[0],broker[1]);
-            lastSignal=s;
-            double liveBid=chart.getBid(),liveAsk=chart.getAsk();
-
-            // Manual and Smart Auto share one complete entry filter. Manual chooses
-            // when to submit, but cannot bypass spread, ATR, wick, confidence, M5 or LIMIT checks.
-            String blockReason=autoEntryBlockReason(s,liveBid,liveAsk,"M1".equals(selectedTf));
-            if(!"READY".equals(blockReason)){
-                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT • shared filter="+blockReason+
-                    " • "+spreadAuditText(liveM1));
-                Toast.makeText(this,"Order diblokir • "+blockReason,Toast.LENGTH_LONG).show();
-                return;
-            }
-            if(!requestedSide.equals(s.side)){
-                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT • arah berbeda dari signal READY="+s.side+
-                    " • tidak melewati filter bersama");
-                Toast.makeText(this,"Arah signal READY adalah "+s.side+" • "+requestedSide+" diblokir",Toast.LENGTH_LONG).show();
-                return;
-            }
-            SharedPreferences actionPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-            long candleStamp=liveM1[liveM1.length-1].t;
-            if(!isOpenActionEntryReady(s,liveM1,liveBid,liveAsk,candleStamp,actionPrefs)){
-                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT • OPEN ACTION belum valid");
-                Toast.makeText(this,"Menunggu sapuan candle / pantulan wick",Toast.LENGTH_LONG).show();
-                return;
-            }
-            SignalResult orderSignal=createOpenActionOrderSignal(s,actionPrefs,liveM1);
-            if(orderSignal==null){
-                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT • level wick-tip/quote broker tidak valid");
-                Toast.makeText(this,"Harga wick-tip belum valid untuk LIMIT broker",Toast.LENGTH_LONG).show();
-                return;
-            }
-            double target=validAutoTarget(orderSignal);
-            if(target<=0.0){
-                AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT • target TP tidak valid");
-                Toast.makeText(this,"Target TP tidak valid",Toast.LENGTH_LONG).show();
-                return;
-            }
-            double lot=readQuickLot();
-            if(lot<=0){AppLog.add(this,"ORDER_BLOCKED",requestedSide+" LIMIT • lot tidak valid");return;}
-            boolean marketEntry=!OPEN_ACTION_WAIT_BOUNCE.equals(
-                actionPrefs.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST));
-            String orderSide=marketEntry?requestedSide:
-                ("BUY".equals(requestedSide)?"BUY_LIMIT":"SELL_LIMIT");
-            // Queue TP1 metadata just like Smart Auto, keeping EA exit protection consistent.
-            boolean queued = queueLimit(orderSide,lot,orderSignal.entry,orderSignal.sl,target,orderSignal.tp1);
-            if(queued){
-                AppLog.add(this,"ORDER","button accepted queue; starting Gateway");
-                startGateway();
-            }else{
-                AppLog.add(this,"ORDER","button order rejected before queue; Gateway not started");
-            }
-        } catch (Throwable e) {
-            try { AppLog.add(this,"CRASH_GUARD","LIMIT "+requestedSide+" "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage())); } catch(Throwable ignored) {}
-            try { Toast.makeText(this,"Order gagal diproses • APK tetap dibuka. Periksa Log.",Toast.LENGTH_LONG).show(); } catch(Throwable ignored) {}
-        }
+        submitFibMarketEntry(requestedSide, readQuickLot(), "MANUAL_BUTTON");
     }
-
     void executeCurrentSignal(){
-        // Manual chart-tap entry only. AUTO LIMIT has its own direct path below and must never wait for a confirmation dialog.
-        // Re-evaluate the signal immediately before queueing so stale levels are not used.
-        if(chart==null || m1Data==null || m1Data.length<30 || m5Data==null || m5Data.length<30){
-            Toast.makeText(this,"Data M1/M5 belum siap",Toast.LENGTH_SHORT).show();
-            return;
-        }
-        double[] broker=freshBrokerQuote(selectedMarket);
-        if(broker==null||!hasFreshEntryQuotes()){
-            Toast.makeText(this,"Harga broker/chart belum segar • order diblokir",Toast.LENGTH_LONG).show();
-            return;
-        }
-        Candle[] liveM1=m1Data;
-        double liveBid=chart.getBid(), liveAsk=chart.getAsk();
-        SignalResult s=evaluateSignal(liveM1,m5Data,liveBid,liveAsk,broker[0],broker[1]);
-        lastSignal=s;
-
-        String blockReason=autoEntryBlockReason(s,liveBid,liveAsk,"M1".equals(selectedTf));
-        if(!"READY".equals(blockReason)){
-            AppLog.add(this,"ORDER_BLOCKED","Manual chart entry • shared filter="+blockReason+
-                " • "+spreadAuditText(liveM1));
-            Toast.makeText(this,"Setup diblokir • "+blockReason,Toast.LENGTH_LONG).show();
-            return;
-        }
-
-        SharedPreferences actionPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        long candleStamp=liveM1[liveM1.length-1].t;
-        if(!isOpenActionEntryReady(s,liveM1,liveBid,liveAsk,candleStamp,actionPrefs)){
-            AppLog.add(this,"ORDER_BLOCKED","Manual chart entry • OPEN ACTION belum valid");
-            Toast.makeText(this,"Menunggu sapuan candle / pantulan wick",Toast.LENGTH_LONG).show();
-            return;
-        }
-        SignalResult orderSignal=createOpenActionOrderSignal(s,actionPrefs,liveM1);
-        if(orderSignal==null){
-            AppLog.add(this,"ORDER_BLOCKED","Manual chart entry • level wick-tip/quote broker tidak valid");
-            return;
-        }
-        boolean marketEntry=isOpenActionSweepMode(actionPrefs);
-        String side=marketEntry?orderSignal.side:
-            ("BUY".equals(orderSignal.side)?"BUY_LIMIT":"SELL_LIMIT");
-        double lot=lotForMarket();
-        double target=validAutoTarget(orderSignal);
-        if(target<=0.0||lot<=0.0){
-            AppLog.add(this,"ORDER_BLOCKED","Manual chart entry • lot/target tidak valid");
-            return;
-        }
-        boolean queued=queueLimit(side,lot,orderSignal.entry,orderSignal.sl,target,orderSignal.tp1);
-        if(queued){
-            AppLog.add(this,"ORDER","manual Open Action execution="+(marketEntry?"MARKET":"LIMIT"));
-            startGateway();
+        submitFibMarketEntry(null, readQuickLot(), "MANUAL_CHART");
+    }
+    /** One confirmed Fibonacci setup is shared by the chart buttons and manual signal tap. */
+    private void submitFibMarketEntry(String requestedSide,double lot,String origin){
+        try{
+            if(!"M1".equals(selectedTf)){
+                AppLog.add(this,"ORDER_BLOCKED",origin+" • strategi Fibonacci hanya mengirim entry dari M1");
+                Toast.makeText(this,"Pilih timeframe M1 untuk entry Fibonacci",Toast.LENGTH_LONG).show();return;
+            }
+            if(chart==null||m1Data==null||m1Data.length<30||m5Data==null||m5Data.length<200){
+                AppLog.add(this,"ORDER_BLOCKED",origin+" • data M1 / trend EMA200 M5 belum cukup");
+                Toast.makeText(this,"Menunggu data M1 dan minimal 200 candle M5",Toast.LENGTH_LONG).show();return;
+            }
+            double[] broker=freshBrokerQuote(selectedMarket);
+            if(broker==null||!hasFreshEntryQuotes()||!QuoteSafety.valid(broker[0],broker[1])){
+                AppLog.add(this,"ORDER_BLOCKED",origin+" • quote broker/chart tidak segar");
+                Toast.makeText(this,"Harga MT5/chart belum segar • order diblokir",Toast.LENGTH_LONG).show();return;
+            }
+            SignalResult signal=evaluateSignal(m1Data,m5Data,broker[0],broker[1],broker[0],broker[1]);
+            lastSignal=signal;
+            String reason=autoEntryBlockReason(signal,broker[0],broker[1],true);
+            if(!"READY".equals(reason)){
+                String detail=signal!=null&&!signal.setup.isEmpty()?signal.setup:reason;
+                AppLog.add(this,"ORDER_BLOCKED",origin+" • Fibonacci filter="+reason+" • "+detail+" • "+spreadAuditText(m1Data));
+                Toast.makeText(this,"Entry ditahan • "+detail,Toast.LENGTH_LONG).show();return;
+            }
+            if(requestedSide!=null&&!requestedSide.equals(signal.side)){
+                AppLog.add(this,"ORDER_BLOCKED",origin+" • tombol "+requestedSide+" berbeda dari arah READY="+signal.side);
+                Toast.makeText(this,"Arah READY adalah "+signal.side+" • "+requestedSide+" diblokir",Toast.LENGTH_LONG).show();return;
+            }
+            double minimum=minLotForSymbol(mt5SymbolForMarket(selectedMarket));
+            if(!Double.isFinite(lot)||lot+1e-8<minimum){
+                AppLog.add(this,"ORDER_BLOCKED",origin+" • lot invalid/minimum="+lotText(minimum));
+                Toast.makeText(this,"Lot minimum "+lotText(minimum),Toast.LENGTH_LONG).show();return;
+            }
+            double target=validAutoTarget(signal);
+            if(target<=0.0){AppLog.add(this,"ORDER_BLOCKED",origin+" • TP2 Fibonacci tidak valid");return;}
+            queueOrigin=origin;queueOutcomeTarget=signal.tp1;
+            boolean queued;
+            try{queued=queueLimit(signal.side,lot,signal.entry,signal.sl,target,signal.tp1);}
+            finally{queueOrigin="MANUAL";queueOutcomeTarget=0.0;}
+            if(queued){
+                AppLog.add(this,"ORDER",origin+" • Fibonacci MARKET queued side="+signal.side+" entry="+price(signal.entry)+
+                    " SL="+price(signal.sl)+" TP1="+price(signal.tp1)+" TP2="+price(target));
+                startGateway();
+            }
+        }catch(Throwable e){
+            try{AppLog.add(this,"CRASH_GUARD",origin+" "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()));}catch(Throwable ignored){}
+            try{Toast.makeText(this,"Order gagal diproses • periksa Log",Toast.LENGTH_LONG).show();}catch(Throwable ignored){}
         }
     }
 
     private boolean isEntryReady(SignalResult signal,double bid,double ask){
-        if(signal==null||bid<=0||ask<=0)return false;
-        if(!hasFreshEntryQuotes())return false;
+        if(signal==null||!hasFreshEntryQuotes()||!QuoteSafety.valid(bid,ask))return false;
         if(!"BUY".equals(signal.side)&&!"SELL".equals(signal.side))return false;
-        int score=Math.max(0,Math.min(100,signal.score));
-        if(score<getMinimumEntryConfidence()||!signal.spreadFilter||!signal.atrFilter)return false;
-        if(signal.entry<=0||signal.sl<=0||signal.tp1<=0)return false;
-        if("BUY".equals(signal.side))return signal.entry<ask&&signal.sl<signal.entry&&signal.tp1>signal.entry;
-        return signal.entry>bid&&signal.tp1<signal.entry&&signal.sl>signal.entry;
+        if(signal.score<getMinimumEntryConfidence()||!signal.spreadFilter||!signal.atrFilter)return false;
+        if(signal.entry<=0||signal.sl<=0||signal.tp1<=0||signal.tp2<=0)return false;
+        if("BUY".equals(signal.side))return signal.sl<signal.entry&&signal.tp1>signal.entry&&signal.tp2>signal.tp1;
+        return signal.sl>signal.entry&&signal.tp1<signal.entry&&signal.tp2<signal.tp1;
     }
-
     private double validAutoTarget(SignalResult signal){
-        if(signal==null||signal.entry<=0)return 0;
-        if("BUY".equals(signal.side)){
-            if(signal.tp2>signal.entry)return signal.tp2;
-            if(signal.tp1>signal.entry)return signal.tp1;
-        }else if("SELL".equals(signal.side)){
-            if(signal.tp2>0&&signal.tp2<signal.entry)return signal.tp2;
-            if(signal.tp1>0&&signal.tp1<signal.entry)return signal.tp1;
-        }
-        return 0;
+        if(signal==null||signal.entry<=0)return 0.0;
+        if("BUY".equals(signal.side))return signal.tp2>signal.tp1&&signal.tp1>signal.entry?signal.tp2:0.0;
+        if("SELL".equals(signal.side))return signal.tp2<signal.tp1&&signal.tp1<signal.entry?signal.tp2:0.0;
+        return 0.0;
     }
-
-    private boolean isOpenActionSweepMode(SharedPreferences gp){
-        return !OPEN_ACTION_WAIT_BOUNCE.equals(
-            gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST));
-    }
-
     private SignalResult evaluateSignal(Candle[] m1,Candle[] m5,double bid,double ask,
                                         double spreadBid,double spreadAsk){
-        SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        return SignalEngine.evaluate(m1,m5,bid,ask,spreadBid,spreadAsk,isOpenActionSweepMode(gp));
+        return SignalEngine.evaluate(m1,m5,bid,ask,spreadBid,spreadAsk);
     }
-
     private String autoEntryBlockReason(SignalResult signal,double bid,double ask,boolean m1Context){
-        if(!m1Context)return "TF BUKAN M1 / DATA M1-M5 BELUM CUKUP";
+        if(!m1Context)return "TF/DATA M1-M5 BELUM SIAP";
         if(signal==null)return "SIGNAL BELUM TERSEDIA";
-        if(!hasFreshEntryQuotes())return "QUOTE BROKER/CHART STALE";
-        if(!"BUY".equals(signal.side)&&!"SELL".equals(signal.side))return "BELUM ADA ARAH BUY/SELL";
-        if(signal.score<getMinimumEntryConfidence())return "SCORE DI BAWAH MINIMUM "+getMinimumEntryConfidence()+"%";
-        // ATR validity comes first because spread acceptance also requires valid ATR.
+        if(!hasFreshEntryQuotes()||!QuoteSafety.valid(bid,ask))return "QUOTE BROKER/CHART STALE";
+        if(!"BUY".equals(signal.side)&&!"SELL".equals(signal.side))return "BELUM ADA SETUP FIBONACCI";
+        if(signal.score<getMinimumEntryConfidence())return "CONFIDENCE DI BAWAH MINIMUM "+getMinimumEntryConfidence()+"%";
         if(!signal.atrFilter)return "ATR FILTER GAGAL";
         if(!signal.spreadFilter)return "SPREAD FILTER GAGAL";
-        SharedPreferences actionPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        // Open Action 1 follows the actively extending candle extreme; only Open Action 2
-        // waits for a rejection wick and a confirmed bounce.
-        if(!isOpenActionSweepMode(actionPrefs)&&!signal.wickRejection)
-            return "WICK REJECTION BELUM VALID";
-        // M5 is context, not a veto: a clean M1 wick rejection can turn against M5.
-        // Without a real rejection, low-confidence counter-bias precursors stay blocked.
-        if(!m5DoesNotOppose(signal.side,signal.m5Bias)
-                &&!signal.liquiditySweep&&signal.confidence<4)
-            return "ARAH M5 BERLAWANAN • WICK BELUM KUAT";
-        if(signal.entry<=0||signal.sl<=0||signal.tp1<=0)return "LEVEL ENTRY/SL/TP TIDAK VALID";
-        boolean marketMode=isOpenActionSweepMode(actionPrefs);
-        // Mode 1 is a MARKET entry: never apply BUY_LIMIT/SELL_LIMIT price-position gates.
-        // Mode 2 remains a wick-tip LIMIT and must stay on the correct side of live quotes.
-        if("BUY".equals(signal.side)){
-            if(!(signal.sl<signal.entry&&signal.tp1>signal.entry))return "LEVEL BUY SL/TP TIDAK VALID";
-            if(!marketMode&&signal.entry>=ask)return "BUY LIMIT harus di bawah ASK";
-        }
-        if("SELL".equals(signal.side)){
-            if(!(signal.tp1<signal.entry&&signal.sl>signal.entry))return "LEVEL SELL SL/TP TIDAK VALID";
-            if(!marketMode&&signal.entry<=bid)return "SELL LIMIT harus di atas BID";
-        }
-        if(validAutoTarget(signal)<=0)return marketMode?"TARGET MARKET TIDAK VALID":"TARGET LIMIT TIDAK VALID";
+        if(signal.entry<=0||signal.sl<=0||signal.tp1<=0||signal.tp2<=0)return "LEVEL ENTRY/SL/TP FIBONACCI TIDAK VALID";
+        if("BUY".equals(signal.side)&&!(signal.sl<signal.entry&&signal.tp1>signal.entry&&signal.tp2>signal.tp1))
+            return "GEOMETRI BUY FIBONACCI TIDAK VALID";
+        if("SELL".equals(signal.side)&&!(signal.sl>signal.entry&&signal.tp1<signal.entry&&signal.tp2<signal.tp1))
+            return "GEOMETRI SELL FIBONACCI TIDAK VALID";
+        if(validAutoTarget(signal)<=0.0)return "TARGET FIBONACCI TP2 TIDAK VALID";
         return "READY";
     }
 
@@ -857,80 +746,35 @@ public class MainActivity extends Activity {
 
     private void updateEntryReadyUi(SignalResult signal,double bid,double ask,Candle[] activeM1,long candleStamp){
         String candleKey=selectedMarket+"|"+selectedTf+"|"+candleStamp;
-        if(!candleKey.equals(readyCandleKey)){
-            readyCandleKey=candleKey;
-            readyCandleSide="WAIT";
-        }
-        boolean baseReady=isAutoEntryEligible(signal,bid,ask,"M1".equals(selectedTf));
-        SharedPreferences actionPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        boolean nextReady=baseReady&&isOpenActionEntryReady(
-            signal,activeM1,bid,ask,candleStamp,actionPrefs);
+        if(!candleKey.equals(readyCandleKey)){readyCandleKey=candleKey;readyCandleSide="WAIT";}
+        boolean context="M1".equals(selectedTf)&&activeM1!=null&&activeM1.length>=30&&m5Data!=null&&m5Data.length>=200;
+        boolean nextReady=isAutoEntryEligible(signal,bid,ask,context);
         String nextSide=nextReady?signal.side:"WAIT";
-        // READY follows the newest valid wick direction, including a fresh opposite-side
-        // rejection later in the same candle. Order lifecycle guards prevent duplicates.
         readyCandleSide=nextReady?nextSide:"WAIT";
         if(nextReady){
             if(chart!=null)chart.setSignalLevels(nextSide,signal.entry,signal.sl,signal.tp1,signal.tp2,true);
-            boolean sideChanged=!readySide.equals(nextSide);
-            if(!entryReady||sideChanged){
-                signalUiHandler.removeCallbacks(entryBlinkRunnable);
-                blinkOn=false;
-                readySide=nextSide;
-                entryReady=true;
+            boolean changed=!readySide.equals(nextSide);
+            if(!entryReady||changed){
+                signalUiHandler.removeCallbacks(entryBlinkRunnable);blinkOn=false;readySide=nextSide;entryReady=true;
                 signalUiHandler.post(entryBlinkRunnable);
-            }else{
-                entryReady=true;
-                readySide=nextSide;
-            }
-            entryReadyView.setText("● ENTRY READY • "+nextSide+" LIMIT");
+            }else{entryReady=true;readySide=nextSide;}
+            entryReadyView.setText("● ENTRY READY • "+nextSide+" MARKET");
             entryReadyView.setTextColor(Color.WHITE);
             entryReadyView.setBackground(roundBg("BUY".equals(nextSide)?Color.rgb(0,105,68):Color.rgb(140,28,43),10));
         }else{
             if(chart!=null)chart.setSignalLevels("BUY",0,0,0,0,false);
-            signalUiHandler.removeCallbacks(entryBlinkRunnable);
-            entryReady=false;
-            readySide="WAIT";
-            blinkOn=false;
-            boolean hasSide=signal!=null&&("BUY".equals(signal.side)||"SELL".equals(signal.side));
-            String blockReason=autoEntryBlockReason(signal,bid,ask,"M1".equals(selectedTf));
-            if("READY".equals(blockReason)){
-                String actionMode=actionPrefs.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST);
-                if(OPEN_ACTION_WAIT_BOUNCE.equals(actionMode)){
-                    boolean armed=selectedMarket.equals(actionPrefs.getString("open_action_wait_market",""))
-                        &&signal.side.equals(actionPrefs.getString("open_action_wait_side",""));
-                    if(armed)blockReason="MENUNGGU PANTULAN DARI UJUNG WICK";
-                    else blockReason="MENUNGGU WICK / EXTREME BARU";
-                }else{
-                    blockReason="MENUNGGU EXHAUSTION + PANTULAN";
-                }
-            }
-            entryReadyView.setText("WAIT • "+blockReason);
-            entryReadyView.setTextColor(Color.rgb(255,205,95));
-            entryReadyView.setBackground(roundBg(Color.rgb(35,38,35),10));
-        }
-        applyEntryButtonColors();
-    }
-
-    private void resetEntryReadyUi(String reason){
-        if(chart!=null)chart.setSignalLevels("BUY",0,0,0,0,false);
-        signalUiHandler.removeCallbacks(entryBlinkRunnable);
-        entryReady=false;
-        readySide="WAIT";
-        blinkOn=false;
-        if(entryReadyView!=null){
+            signalUiHandler.removeCallbacks(entryBlinkRunnable);entryReady=false;readySide="WAIT";blinkOn=false;
+            String reason=autoEntryBlockReason(signal,bid,ask,context);
+            if(signal!=null&&"WAIT".equals(signal.side)&&signal.setup!=null&&!signal.setup.isEmpty())reason=signal.setup;
             entryReadyView.setText("WAIT • "+reason);
             entryReadyView.setTextColor(Color.rgb(255,205,95));
             entryReadyView.setBackground(roundBg(Color.rgb(35,38,35),10));
         }
         applyEntryButtonColors();
-    }
-
-    private GradientDrawable entryButtonBg(int color,boolean active,int radius){
-        GradientDrawable g=new GradientDrawable();
-        g.setColor(color);
-        g.setCornerRadius(uiDp(radius));
-        g.setStroke(uiDp(active?2:1),active?color:Color.rgb(55,68,78));
-        return g;
+        if(entryView!=null)entryView.setText("ENTRY\n"+(signal!=null&&signal.entry>0?price(signal.entry):"--"));
+        if(slView!=null)slView.setText("SL\n"+(signal!=null&&signal.sl>0?price(signal.sl):"--"));
+        if(tp1View!=null)tp1View.setText("TP1\n"+(signal!=null&&signal.tp1>0?price(signal.tp1):"--"));
+        if(tp2View!=null)tp2View.setText("TP2\n"+(signal!=null&&signal.tp2>0?price(signal.tp2):"--"));
     }
 
     private void applyEntryButtonColors(){
@@ -1030,284 +874,32 @@ public class MainActivity extends Activity {
         return selectedMarket+"|"+s.side+"|"+candleStamp;
     }
 
-    private boolean queueAutoSignal(SignalResult s,Candle[] m1,SharedPreferences gp,
-                                    double lot,long candleStamp,String signalKey){
-        SignalResult orderSignal=createOpenActionOrderSignal(s,gp,m1);
-        if(orderSignal==null){
-            smartLogOnce(gp,"OPEN_ACTION_LEVELS|"+signalKey,
-                "AUTO tidak mengirim: level entry/SL/TP atau quote broker tidak valid; menunggu setup baru");
-            return false;
+    private boolean queueAutoSignal(SignalResult signal,Candle[] m1,SharedPreferences gp,
+                                     double lot,long candleStamp,String signalKey){
+        if(signal==null||(!"BUY".equals(signal.side)&&!"SELL".equals(signal.side)))return false;
+        if(!isAutoEntryEligible(signal,chart.getBid(),chart.getAsk(),true)){
+            smartLogOnce(gp,"FIB_LEVELS|"+signalKey,"SMART AUTO ditahan: signal Fibonacci/quote/spread belum valid");return false;
         }
-        double target=validAutoTarget(orderSignal);
-        if(target<=0)return false;
-        boolean sweepMarket=!OPEN_ACTION_WAIT_BOUNCE.equals(
-            gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST));
-        String orderSide=sweepMarket?orderSignal.side:
-            ("BUY".equals(orderSignal.side)?"BUY_LIMIT":"SELL_LIMIT");
-        queueOrigin="SMART_AUTO";
-        queueOutcomeTarget=orderSignal.tp1;
+        double target=validAutoTarget(signal);if(target<=0.0)return false;
+        queueOrigin="SMART_AUTO";queueOutcomeTarget=signal.tp1;
         boolean queued;
-        try { queued=queueLimit(orderSide,lot,orderSignal.entry,orderSignal.sl,target,orderSignal.tp1); }
-        finally { queueOrigin="MANUAL"; queueOutcomeTarget=0; }
+        try{queued=queueLimit(signal.side,lot,signal.entry,signal.sl,target,signal.tp1);}
+        finally{queueOrigin="MANUAL";queueOutcomeTarget=0.0;}
         if(!queued)return false;
         String orderId=gp.getString("order_status_id","");
         long now=System.currentTimeMillis();
-        gp.edit().putString("auto_last_signal_key",signalKey)
-            .putLong("auto_last_order_ms",now)
-            .putString("smart_phase","QUEUED")
-            .putString("smart_active_id",orderId)
-            .putString("smart_active_side",orderSignal.side)
-            .putString("smart_active_symbol",mt5SymbolForMarket(selectedMarket))
-            .putString("smart_active_entry",Double.toString(orderSignal.entry))
-            .putString("smart_active_ticket","")
-            .putLong("smart_active_start_candle_ms",candleStamp)
-            .putLong("smart_active_queue_ms",now)
-            .putBoolean("smart_reentry_allowed",false)
-            .remove("smart_cancel_command_id")
-            .remove("open_action_wait_market")
-            .remove("open_action_wait_side")
-            .remove("open_action_wait_anchor")
-            .remove("open_action_wait_wick_length")
-            .remove("open_action_wait_candle_ms")
-            .remove("open_action_wait_bounce_confirmed")
-            .remove("open_action_wait_bounce_price")
-            .apply();
-        String queuedMode=gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST);
-        String offsetAudit=OPEN_ACTION_WAIT_BOUNCE.equals(queuedMode)
-            ?"saved wick-tip edge + adaptive tick offset":"live MT5 Bid/Ask market entry";
-        AppLog.add(this,"AUTO ORDER","queued "+signalKey+" mode="+queuedMode
-            +" execution="+(sweepMarket?"MARKET":"LIMIT")
-            +" entryPolicy="+offsetAudit+" entry="+price(orderSignal.entry)
-            +" SL="+price(orderSignal.sl)+" TP="+price(target)+"; locked pending EA state");
+        gp.edit().putString("auto_last_signal_key",signalKey).putLong("auto_last_order_ms",now)
+            .putString("smart_phase","QUEUED").putString("smart_active_id",orderId)
+            .putString("smart_active_side",signal.side).putString("smart_active_symbol",mt5SymbolForMarket(selectedMarket))
+            .putString("smart_active_entry",Double.toString(signal.entry)).putString("smart_active_ticket","")
+            .putLong("smart_active_start_candle_ms",candleStamp).putLong("smart_active_queue_ms",now)
+            .putBoolean("smart_reentry_allowed",false).remove("smart_cancel_command_id").apply();
+        AppLog.add(this,"AUTO FIBONACCI","queued "+signalKey+" execution=MARKET entry="+price(signal.entry)
+            +" SL="+price(signal.sl)+" TP1="+price(signal.tp1)+" TP2="+price(target)+" • menunggu konfirmasi EA");
         return true;
     }
 
-    /** Use broker SYMBOL_POINT, not a guessed pip size, for all open-action offsets. */
-    private double brokerPoint(SharedPreferences gp){
-        String symbol=mt5SymbolForMarket(selectedMarket);
-        double point=preferenceDouble(gp,"broker_quote_point_"+symbol,0.0);
-        if(point>0.0)return point;
-        int digits=gp.getInt("broker_quote_digits_"+symbol,-1);
-        return digits>=0&&digits<=10?Math.pow(10.0,-digits):0.0;
-    }
-
-    private double normalizeBrokerPrice(double value,SharedPreferences gp){
-        int digits=gp.getInt("broker_quote_digits_"+mt5SymbolForMarket(selectedMarket),3);
-        digits=Math.max(0,Math.min(10,digits));
-        return Double.parseDouble(String.format(Locale.US,"%."+digits+"f",value));
-    }
-
-    private void clearOpenActionWait(SharedPreferences gp){
-        gp.edit().remove("open_action_wait_market").remove("open_action_wait_side")
-            .remove("open_action_wait_anchor").remove("open_action_wait_wick_length")
-            .remove("open_action_wait_candle_ms").remove("open_action_wait_bounce_confirmed")
-            .remove("open_action_wait_bounce_price").apply();
-    }
-
-    /**
-     * OPEN ACTION 1 fires as soon as the forming M1 candle reaches adaptive exhaustion travel.
-     * OPEN ACTION 1 has no bounce/recoil confirmation gate. OPEN ACTION 2 waits for one recoil.
-     */
-    private boolean isOpenActionEntryReady(SignalResult s,Candle[] m1,double bid,double ask,
-                                           long candleStamp,SharedPreferences gp){
-        String mode=gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST);
-        if(s==null||m1==null||m1.length<2
-                ||(!"BUY".equals(s.side)&&!"SELL".equals(s.side))
-                ||(OPEN_ACTION_WAIT_BOUNCE.equals(mode)&&!s.wickRejection))
-            return false;
-        String symbol=selectedMarket;
-        String side=s.side;
-        double atr=SmartLimitReentry.atr(m1,14);
-        Candle live=m1[m1.length-1];
-
-        if(!OPEN_ACTION_WAIT_BOUNCE.equals(mode)){
-            double point=brokerPoint(gp);
-            double spread=Math.max(0.0,ask-bid);
-            double excursion="BUY".equals(side)?live.o-live.l:live.h-live.o;
-            double threshold=OpenActionEntryPolicy.exhaustionTravelThreshold(m1[m1.length-2],atr);
-            // Open Action 1 is momentum/exhaustion entry: no bounce/recoil confirmation.
-            boolean travelled=threshold>0.0&&excursion>=threshold;
-            if(!travelled){
-                String size;
-                if(atr<=0.0)size="ATR_PENDING";
-                else if(live.h-live.l>=atr*1.25)size="LONG";
-                else if(live.h-live.l<=atr*0.55)size="SHORT";
-                else size="NORMAL";
-                smartLogOnce(gp,"OPEN_ACTION_SWEEP_WAIT|"+symbol+"|"+side+"|"+candleStamp,
-                    "OPEN ACTION SAPUAN WAIT • side="+side+" excursion="+price(Math.max(0.0,excursion))+
-                    " threshold="+price(threshold)+" prevRange="+price(m1[m1.length-2].h-m1[m1.length-2].l)+
-                    " ATR="+price(atr)+" candleSize="+size+
-                    ("BUY".equals(side)?" • BUY menunggu jarak exhaustion candle":" • SELL menunggu jarak exhaustion candle"));
-                if(status!=null)status.setText("● OPEN ACTION WAIT • "+side+" EXHAUSTION");
-            }
-            return travelled;
-        }
-
-        String waitMarket=gp.getString("open_action_wait_market","");
-        String waitSide=gp.getString("open_action_wait_side","");
-        long started=gp.getLong("open_action_wait_candle_ms",0L);
-        boolean sameSetup=symbol.equals(waitMarket)&&side.equals(waitSide)&&started>0L;
-
-        if(!sameSetup){
-            double tip="BUY".equals(side)?live.l:live.h;
-            double wickLength="BUY".equals(side)
-                ?Math.max(0.0,Math.min(live.o,live.c)-live.l)
-                :Math.max(0.0,live.h-Math.max(live.o,live.c));
-            if(!Double.isFinite(tip)||tip<=0.0)return false;
-            clearOpenActionWait(gp);
-            gp.edit().putString("open_action_wait_market",symbol)
-                .putString("open_action_wait_side",side)
-                .putString("open_action_wait_anchor",Double.toString(tip))
-                .putString("open_action_wait_wick_length",Double.toString(wickLength))
-                .putLong("open_action_wait_candle_ms",candleStamp)
-                .putBoolean("open_action_wait_bounce_confirmed",false).apply();
-            smartLogOnce(gp,"OPEN_ACTION_BOUNCE_ARMED|"+symbol+"|"+side+"|"+candleStamp,
-                "OPEN ACTION PANTULAN ARMED • side="+side+" wickTip="+price(tip)+
-                " wickLength="+price(wickLength)+" • menunggu satu pantulan dari ujung wick");
-            if(status!=null)status.setText("● OPEN ACTION WAIT • PANTULAN "+side);
-            return false;
-        }
-
-        int elapsed=SmartLimitReentry.elapsedM1Bars(started,candleStamp);
-        if(elapsed>2){
-            clearOpenActionWait(gp);
-            smartLogOnce(gp,"OPEN_ACTION_BOUNCE_EXPIRED|"+symbol+"|"+side+"|"+candleStamp,
-                "OPEN ACTION PANTULAN EXPIRED • tidak ada pantulan valid dalam 2 candle M1; tunggu sweep baru");
-            return false;
-        }
-        if(gp.getBoolean("open_action_wait_bounce_confirmed",false))return true;
-
-        double point=brokerPoint(gp);
-        double anchor=preferenceDouble(gp,"open_action_wait_anchor",0.0);
-        double wickLength=preferenceDouble(gp,"open_action_wait_wick_length",0.0);
-        if(point<=0.0||atr<=0.0||anchor<=0.0||!Double.isFinite(live.c))return false;
-
-        // While waiting, follow a newly extended low/high. Once a bounce is confirmed,
-        // the tip is frozen so later oscillations cannot create a second bounce signal.
-        double newTip="BUY".equals(side)?live.l:live.h;
-        double epsilon=Math.max(point,Math.abs(anchor)*1e-8);
-        boolean extended="BUY".equals(side)?newTip<anchor-epsilon:newTip>anchor+epsilon;
-        if(extended){
-            anchor=newTip;
-            wickLength="BUY".equals(side)
-                ?Math.max(0.0,Math.min(live.o,live.c)-live.l)
-                :Math.max(0.0,live.h-Math.max(live.o,live.c));
-            gp.edit().putString("open_action_wait_anchor",Double.toString(anchor))
-                .putString("open_action_wait_wick_length",Double.toString(wickLength))
-                .putBoolean("open_action_wait_bounce_confirmed",false).apply();
-        }else{
-            // Wick length can grow while the extreme stays fixed. Persist that sensor
-            // update too; otherwise a short initial wick could leave the tip offset at zero.
-            double formingWickLength="BUY".equals(side)
-                ?Math.max(0.0,Math.min(live.o,live.c)-live.l)
-                :Math.max(0.0,live.h-Math.max(live.o,live.c));
-            boolean liveBarContainsTip="BUY".equals(side)
-                ?live.l<=anchor+epsilon:live.h>=anchor-epsilon;
-            if(liveBarContainsTip&&formingWickLength>wickLength){
-                wickLength=formingWickLength;
-                gp.edit().putString("open_action_wait_wick_length",Double.toString(wickLength)).apply();
-            }
-        }
-
-        double threshold=OpenActionEntryPolicy.bounceThreshold(atr,wickLength,point);
-        double current=live.c; // Use the same candle-feed price scale as the saved wick tip.
-        if(threshold<=0.0)return false;
-        boolean bounced="BUY".equals(side)?current>=anchor+threshold:current<=anchor-threshold;
-        if(bounced){
-            gp.edit().putBoolean("open_action_wait_bounce_confirmed",true)
-                .putString("open_action_wait_bounce_price",Double.toString(current)).apply();
-            AppLog.add(this,"OPEN ACTION","ONE BOUNCE CONFIRMED side="+side+
-                " wickTip="+price(anchor)+" current="+price(current)+
-                " movement="+price(Math.abs(current-anchor))+" threshold="+price(threshold)+
-                " • wick tip frozen; next LIMIT targets wick edge");
-            return true;
-        }
-        if(status!=null)status.setText("● OPEN ACTION WAIT • PANTULAN "+side+" KE UJUNG WICK");
-        return false;
-    }
-
-    /**
-     * Build the pending LIMIT around the wick tip and translate chart-feed OHLC
-     * into the live MT5 quote coordinate. All submitted LIMIT geometry uses broker Bid/Ask.
-     */
-    private SignalResult createOpenActionOrderSignal(SignalResult s,SharedPreferences gp,Candle[] m1){
-        if(s==null||chart==null||m1==null||m1.length<2)return null;
-        double[] broker=freshBrokerQuote(selectedMarket);
-        if(broker==null||!QuoteSafety.valid(broker[0],broker[1]))return null;
-        double point=brokerPoint(gp);
-        if(point<=0.0)return null;
-        double bid=broker[0],ask=broker[1];
-        boolean wickTipMode=OPEN_ACTION_WAIT_BOUNCE.equals(
-            gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST));
-        double entry,sl;
-        double atr=SmartLimitReentry.atr(m1,14);
-        String setupSuffix;
-
-        if(wickTipMode){
-            if(m1==null||m1.length<2||atr<=0.0)return null;
-            Candle live=m1[m1.length-1];
-            double savedTip=preferenceDouble(gp,"open_action_wait_anchor",0.0);
-            double wickLength=preferenceDouble(gp,"open_action_wait_wick_length",0.0);
-            double offset=OpenActionEntryPolicy.wickTipOffset(wickLength,atr,point);
-            if(savedTip<=0.0||offset<=0.0)return null;
-
-            // Candle OHLC comes from the chart feed, while current Bid/Ask are from MT5.
-            // Translate the saved feed wick edge to the current broker price coordinate.
-            double priceShift=((bid+ask)*0.5)-live.c;
-            double brokerTip=savedTip+priceShift;
-            entry="BUY".equals(s.side)?brokerTip+offset:brokerTip-offset;
-            double stopDistance=Math.max(atr*0.12,(ask-bid)*2.0);
-            sl="BUY".equals(s.side)?brokerTip-stopDistance:brokerTip+stopDistance;
-            setupSuffix=" • OPEN ACTION WICK TIP / ONE BOUNCE";
-        }else{
-            if(m1==null||m1.length<2||atr<=0.0)return null;
-            Candle live=m1[m1.length-1];
-            // Candle-feed OHLC may be offset from MT5 quotes. Move the wick-tip entry
-            // and protective SL into the current broker-price coordinate before sending.
-            double priceShift=((bid+ask)*0.5)-live.c;
-            entry=s.entry+priceShift;
-            sl=s.sl+priceShift;
-            double stopDistance=Math.max(atr*0.12,(ask-bid)*2.0);
-            if("BUY".equals(s.side)){
-                entry=ask;
-                double brokerLow=live.l+priceShift;
-                sl=brokerLow-stopDistance;
-            }else{
-                entry=bid;
-                double brokerHigh=live.h+priceShift;
-                sl=brokerHigh+stopDistance;
-            }
-            setupSuffix=" • OPEN ACTION EXHAUSTION • MARKET";
-        }
-        if(entry<=0.0||!Double.isFinite(entry)||!Double.isFinite(sl))return null;
-        entry=normalizeBrokerPrice(entry,gp);
-        sl=normalizeBrokerPrice(sl,gp);
-        double tp1,tp2,risk;
-        if("BUY".equals(s.side)){
-            boolean marketEntry=!wickTipMode;
-            if(!(marketEntry?sl<entry:(entry<ask&&sl<entry)))return null;
-            risk=entry-sl;
-            tp1=entry+2.0*risk;
-            tp2=entry+3.5*risk;
-        }else if("SELL".equals(s.side)){
-            boolean marketEntry=!wickTipMode;
-            if(!(marketEntry?sl>entry:(entry>bid&&sl>entry)))return null;
-            risk=sl-entry;
-            tp1=entry-2.0*risk;
-            tp2=entry-3.5*risk;
-            if(tp2<=0.0)return null;
-        }else return null;
-        sl=normalizeBrokerPrice(sl,gp);
-        tp1=normalizeBrokerPrice(tp1,gp);
-        tp2=normalizeBrokerPrice(tp2,gp);
-        if("BUY".equals(s.side)&&!(sl<entry&&tp1>entry&&tp2>tp1))return null;
-        if("SELL".equals(s.side)&&!(tp2<tp1&&tp1<entry&&entry<sl))return null;
-        return new SignalResult(s.side,s.m5Bias,entry,sl,tp1,tp2,3.5,s.score,s.confidence,
-            s.setup+setupSuffix,s.liquiditySweep,s.wickRejection,s.bos,s.emaFilter,s.rsiFilter,
-            s.macdFilter,s.atrFilter,s.spreadFilter);
-    }
-
-    private void processAutoLimit(SignalResult s,Candle[] m1,Candle[] m5,
+    private void processAutoLimit(    private void processAutoLimit(SignalResult s,Candle[] m1,Candle[] m5,
                                   double bid,double ask,long candleStamp){
         SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         // Keep monitoring/cancelling existing exposure even if AUTO is paused or the
@@ -1315,7 +907,7 @@ public class MainActivity extends Activity {
         boolean autoEnabled=gp.getBoolean("auto",false)
                 &&"READY".equals(gp.getString("operation_mode","REST"))
                 &&"M1".equals(selectedTf);
-        if(m1==null||m1.length<30||m5==null||m5.length<30){
+        if(m1==null||m1.length<30||m5==null||m5.length<200){
             autoDiagnostic(gp,"DATA_M1M5_SHORT|"+selectedMarket+"|"+selectedTf,
                 "ENTRY BLOCKED • data M1/M5 kurang dari 30 candle • market="+selectedMarket+" TF="+selectedTf);
             return;
@@ -1337,7 +929,7 @@ public class MainActivity extends Activity {
         }
         if(readyCandidate&&autoEnabled){
             autoDiagnostic(gp,"READY_AUTO_ON|"+signalKey,
-                "READY + SMART AUTO ON • memeriksa EA heartbeat, state order, Open Action, antrean, lot, cooldown");
+                "READY + SMART AUTO ON • memeriksa EA heartbeat, state order, antrean, lot, cooldown");
         }
         if(!eaOnline){
             autoDiagnostic(gp,"EA_OFFLINE|"+(readyCandidate?signalKey:selectedMarket+"|"+selectedTf),
@@ -1468,7 +1060,7 @@ public class MainActivity extends Activity {
             boolean validFresh=isAutoEntryEligible(s,bid,ask,true)
                 &&readyCandleKey.equals(selectedMarket+"|"+selectedTf+"|"+candleStamp)
                 &&readyCandleSide.equals(s.side)
-                &&isOpenActionEntryReady(s,m1,bid,ask,candleStamp,gp);
+                ;
             double maxDistanceAtr=smartReentryMaxDistanceAtr(gp);
             boolean withinMaxDistance=SmartLimitReentry.withinMaxDistanceFromOriginalEntry(
                 activeEntry,s.entry,atr,maxDistanceAtr);
@@ -1556,7 +1148,6 @@ public class MainActivity extends Activity {
                         &&isAutoEntryEligible(s,bid,ask,true)
                         &&readyCandleKey.equals(selectedMarket+"|"+selectedTf+"|"+candleStamp)
                         &&readyCandleSide.equals(s.side)
-                        &&isOpenActionEntryReady(s,m1,bid,ask,candleStamp,gp)
                         &&SmartLimitReentry.elapsedM1Bars(startedAt,candleStamp)
                             <smartReentryMaxAgeBars(gp)
                         &&SmartLimitReentry.withinMaxDistanceFromOriginalEntry(activeEntry,s.entry,atr,
@@ -1650,7 +1241,7 @@ public class MainActivity extends Activity {
             return;
         }
 
-        boolean m1Context="M1".equals(selectedTf)&&m1.length>=30&&m5.length>=30;
+        boolean m1Context="M1".equals(selectedTf)&&m1.length>=30&&m5.length>=200;
         if(!isAutoEntryEligible(s,bid,ask,m1Context)){
             String reason=autoEntryBlockReason(s,bid,ask,m1Context);
             autoDiagnostic(gp,"FILTER|"+signalKey+"|"+reason,
@@ -1660,28 +1251,6 @@ public class MainActivity extends Activity {
                 " entry="+price(s.entry)+" bid="+price(bid)+" ask="+price(ask)+
                 " • "+spreadAuditText(m1));
             if(status!=null)status.setText("● SMART AUTO WAIT • "+reason);
-            return;
-        }
-        // Open Action uses wick rejection + candle-range travel, not a mandatory
-        // prior swing-liquidity sweep. Mode 2 waits for one recoil from the wick tip.
-        if(!isOpenActionEntryReady(s,m1,bid,ask,candleStamp,gp)){
-            String mode=gp.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST);
-            String waitSide=gp.getString("open_action_wait_side","");
-            String waitMarket=gp.getString("open_action_wait_market","");
-            long waitStart=gp.getLong("open_action_wait_candle_ms",0L);
-            boolean bounceDone=gp.getBoolean("open_action_wait_bounce_confirmed",false);
-            int waitBars=waitStart>0?SmartLimitReentry.elapsedM1Bars(waitStart,candleStamp):-1;
-            String gate=OPEN_ACTION_WAIT_BOUNCE.equals(mode)
-                    ?(!s.wickRejection?"WICK_REJECTION_FALSE"
-                        :(bounceDone?"BOUNCE_CONFIRMED_BUT_ORDER_GATES_RECHECK":"WAITING_FOR_PRICE_BOUNCE"))
-                    :"EXHAUSTION_TRAVEL_THRESHOLD_NOT_REACHED";
-            autoDiagnostic(gp,"OPEN_ACTION|"+signalKey+"|"+mode+"|"+gate+"|"+waitBars,
-                "OPEN ACTION BLOCK • reason="+gate+" mode="+mode+" side="+s.side+
-                " wick="+s.wickRejection+" sweepContext="+s.liquiditySweep+
-                " waitMarket="+waitMarket+" waitSide="+waitSide+" bounceConfirmed="+bounceDone+
-                " waitM1Bars="+waitBars+" • READY visual tidak otomatis berarti Open Action terpenuhi");
-            if(status!=null)status.setText(OPEN_ACTION_WAIT_BOUNCE.equals(mode)
-                ?"● SMART AUTO WAIT • MENUNGGU PANTULAN":"● SMART AUTO WAIT • MENUNGGU JARAK EXHAUSTION");
             return;
         }
         // AUTO LIMIT must use the same per-candle direction accepted by READY UI.
@@ -2485,12 +2054,11 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Save the market-specific lot used by AUTO LIMIT as well as the selected mode.
-     * AUTO computes Entry/SL/TP from the live signal; those manual fields are not used.
+     * Save the market-specific lot and unified strategy settings.
+     * SMART AUTO computes Entry/SL/TP from the Fibonacci signal; those manual fields are not used.
      */
     private boolean saveAutoEntrySettings(Switch auto,Switch smartReentry,Spinner mode,
-                                          Spinner entryActionMode,EditText volume,
-                                          SharedPreferences gatewayPrefs,String symbol){
+                                           EditText volume,SharedPreferences gatewayPrefs,String symbol){
         final double lot;
         try{
             lot=Double.parseDouble(volume.getText().toString().trim());
@@ -2505,17 +2073,13 @@ public class MainActivity extends Activity {
             return false;
         }
         String operation=mode.getSelectedItemPosition()==1?"READY":"REST";
-        String entryAction=entryActionMode!=null&&entryActionMode.getSelectedItemPosition()==1
-            ?OPEN_ACTION_WAIT_BOUNCE:OPEN_ACTION_SWEEP_FIRST;
         gatewayPrefs.edit().putFloat("lot_"+symbol,(float)lot)
             .putBoolean("auto",auto.isChecked())
             .putBoolean("smart_reentry_enabled",smartReentry.isChecked())
-            .putString("open_action_entry_mode",entryAction)
             .putString("operation_mode",operation).apply();
         AppLog.add(this,"MODE",operation.equals("READY")?"SIAP TRADING":"ISTIRAHAT");
         AppLog.add(this,"AUTO LIMIT","settings saved symbol="+symbol+" lot="+lotText(lot)
             +" auto="+auto.isChecked()+" mode="+operation);
-        AppLog.add(this,"OPEN ACTION ENTRY","mode="+entryAction+" offset="+AUTO_ENTRY_OFFSET_POINTS+" MT5 points");
         return true;
     }
 
@@ -2624,8 +2188,8 @@ public class MainActivity extends Activity {
             Toast.makeText(this,"Side harus BUY/SELL MARKET atau BUY_LIMIT/SELL_LIMIT",Toast.LENGTH_SHORT).show();return false;
         }
 
-        // Open Action 1 uses a final fail-closed MT5 quote + spread gate immediately
-        // before enqueueing. The broker quote also becomes the EA's price-map reference.
+        // Every MARKET order uses a final fail-closed MT5 quote + spread gate before enqueueing.
+        // The broker quote also becomes the EA price-map reference.
         double marketRefBid=0.0,marketRefAsk=0.0,marketMaxSpread=0.0;
         long marketRefTickMs=0L;
         if(marketOrder){
@@ -2776,7 +2340,7 @@ public class MainActivity extends Activity {
         TextView panelTitle=tv("AUTO ENTRY / MT5 • DEMO",18);
         panelTitle.setTextColor(Color.CYAN);panelTitle.setTypeface(null,Typeface.BOLD);
         root.addView(panelTitle,new LinearLayout.LayoutParams(-1,uiDp(36)));
-        TextView panelNote=tv("M1 + bias M5 • proteksi exit TP2→TP1 dikelola EA Rayyan",12);
+        TextView panelNote=tv("Tren/struktur M5 + zona Fibonacci 50–61.8% M1 • TP1/TP2 dikelola EA Rayyan",12);
         panelNote.setTextColor(Color.LTGRAY);
         root.addView(panelNote,new LinearLayout.LayoutParams(-1,uiDp(32)));
 
@@ -2785,28 +2349,12 @@ public class MainActivity extends Activity {
         fields.setPadding(0,uiDp(3),0,uiDp(5));
 
         Switch auto=new Switch(this);
-        auto.setText("AUTO LIMIT DEMO • order otomatis");
+        auto.setText("SMART AUTO • Fibonacci retracement");
         auto.setTextSize(14);auto.setPadding(uiDp(10),uiDp(4),uiDp(10),uiDp(4));
         auto.setBackground(roundBg(Color.rgb(7,30,47),12));
         auto.setMinHeight(uiDp(52));auto.setMinimumHeight(uiDp(52));
         auto.setChecked(gatewayPrefs.getBoolean("auto",false));
 
-        Spinner entryActionMode=new Spinner(this);
-        String[] entryActions={
-            "OPEN ACTION 1 • exhaustion + pantulan ekstrem",
-            "OPEN ACTION 2 • satu pantulan dari ujung wick"
-        };
-        ArrayAdapter<String> entryActionAdapter=new ArrayAdapter<>(
-            this,android.R.layout.simple_spinner_dropdown_item,entryActions);
-        entryActionMode.setAdapter(entryActionAdapter);
-        entryActionMode.setMinimumHeight(uiDp(50));
-        entryActionMode.setBackground(roundBg(Color.rgb(7,30,47),12));
-        entryActionMode.setSelection(OPEN_ACTION_WAIT_BOUNCE.equals(
-            gatewayPrefs.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST))?1:0);
-
-        TextView entryActionHint=tv("Mode 1: ikuti candle M1 yang sedang terbentuk; saat jarak exhaustion tercapai langsung Market Order tanpa menunggu pantulan. Mode 2 tetap menunggu pantulan dari ujung wick sebelum LIMIT. SL di luar ekstrem.",11);
-        entryActionHint.setTextColor(Color.LTGRAY);
-        entryActionHint.setGravity(Gravity.TOP|Gravity.START);
         entryActionHint.setPadding(uiDp(8),uiDp(5),uiDp(8),uiDp(5));
 
         Switch smartReentry=new Switch(this);
@@ -2863,10 +2411,6 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams hintParams=new LinearLayout.LayoutParams(-1,-2);
         hintParams.setMargins(0,uiDp(5),0,uiDp(6));fields.addView(modeHint,hintParams);
         fields.addView(auto,new LinearLayout.LayoutParams(-1,uiDp(54)));
-        fields.addView(entryActionMode,new LinearLayout.LayoutParams(-1,uiDp(52)));
-        LinearLayout.LayoutParams actionHintParams=new LinearLayout.LayoutParams(-1,-2);
-        actionHintParams.setMargins(0,uiDp(2),0,uiDp(4));
-        fields.addView(entryActionHint,actionHintParams);
         fields.addView(smartReentry,new LinearLayout.LayoutParams(-1,uiDp(54)));
         fields.addView(maxDistance,new LinearLayout.LayoutParams(-1,uiDp(54)));
         fields.addView(maxAge,new LinearLayout.LayoutParams(-1,uiDp(54)));
@@ -2876,7 +2420,7 @@ public class MainActivity extends Activity {
         // With AUTO enabled, only market-specific lot and operating mode need adjustment.
         LinearLayout manualFields=new LinearLayout(this);
         manualFields.setOrientation(LinearLayout.VERTICAL);
-        TextView manualTitle=tv("MANUAL LIMIT • Entry / SL / TP",11);
+        TextView manualTitle=tv("MANUAL LIMIT • Entry / SL / TP (manual terpisah)",11);
         manualTitle.setTextColor(Color.CYAN);
         manualTitle.setPadding(uiDp(3),uiDp(6),uiDp(3),uiDp(3));
         manualFields.addView(manualTitle,new LinearLayout.LayoutParams(-1,uiDp(28)));
@@ -2930,7 +2474,7 @@ public class MainActivity extends Activity {
 
         save.setOnClickListener(v->{
             if(!validSmartReentryLimits(maxDistance,maxAge))return;
-            if(!saveAutoEntrySettings(auto,smartReentry,mode,entryActionMode,vol,gatewayPrefs,selectedMt5Symbol))return;
+            if(!saveAutoEntrySettings(auto,smartReentry,mode,vol,gatewayPrefs,selectedMt5Symbol))return;
             persistSmartReentryLimits(maxDistance,maxAge,gatewayPrefs);
             Toast.makeText(this,"Pengaturan AUTO ENTRY dan batas Smart LIMIT tersimpan untuk "+selectedMt5Symbol,Toast.LENGTH_SHORT).show();
             dialog.dismiss();
