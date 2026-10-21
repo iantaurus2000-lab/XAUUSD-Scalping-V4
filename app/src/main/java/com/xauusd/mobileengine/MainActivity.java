@@ -220,7 +220,7 @@ public class MainActivity extends Activity {
         side.setBackground(roundBg(Color.rgb(110,115,125),1000));
         side.setOnClickListener(v->Toast.makeText(this,"Entry Ready menyiapkan BUY LIMIT / SELL LIMIT di area wick",Toast.LENGTH_SHORT).show());
         top.addView(side,new LinearLayout.LayoutParams(30,30));
-        signalSummary=tv("Menunggu setup trend M5 + candle / wick M1",10);
+        signalSummary=tv("Menunggu setup Fibo M1 + wick rejection / EMA M5",10);
         signalSummary.setIncludeFontPadding(false);signalSummary.setMaxLines(2);
         signalSummary.setEllipsize(android.text.TextUtils.TruncateAt.END);
         signalSummary.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);
@@ -379,14 +379,15 @@ public class MainActivity extends Activity {
 
     private boolean hasFreshEntryQuotes(){
         long now=System.currentTimeMillis();
-        boolean feedFresh=lastFeedQuoteAt>0L&&now>=lastFeedQuoteAt
-            &&now-lastFeedQuoteAt<=5000L&&chart!=null
-            &&QuoteSafety.valid(chart.getBid(),chart.getAsk());
         boolean m1Fresh=m1Data!=null&&m1Data.length>0
             &&QuoteSafety.isFreshBar(m1Data[m1Data.length-1].t,now,M1_BAR_MAX_AGE_MS);
         boolean m5Fresh=m5Data!=null&&m5Data.length>0
             &&QuoteSafety.isFreshBar(m5Data[m5Data.length-1].t,now,M5_BAR_MAX_AGE_MS);
-        return feedFresh&&m1Fresh&&m5Fresh&&freshBrokerQuote(selectedMarket)!=null;
+        double[] broker=freshBrokerQuote(selectedMarket);
+        // MT5 is the execution source of truth. A delayed third-party chart tick
+        // must not veto a fresh broker quote when the actual OHLC bars are fresh.
+        return chart!=null&&broker!=null&&QuoteSafety.valid(broker[0],broker[1])
+            &&m1Fresh&&m5Fresh;
     }
 
     /** Chart prices remain in the candle feed's scale; spread uses real broker quotes. */
@@ -422,15 +423,17 @@ public class MainActivity extends Activity {
         }else if(spreadView!=null){
             spreadView.setText(lastSpreadLabel.isEmpty()?"SPREAD -- • MT5 STALE":lastSpreadLabel+" • MT5 STALE");
         }
-        if(!feedFresh||broker==null){
-            status.setText(!feedFresh?"● CHART FEED STALE • ENTRY LOCKED • "+selectedTf
-                :"● MT5 QUOTE STALE • ENTRY LOCKED • "+selectedTf);
-            resetEntryReadyUi(!feedFresh?"chart price stale":"harga MT5 belum segar");
+        if(broker==null){
+            status.setText("● MT5 QUOTE STALE • ENTRY LOCKED • "+selectedTf);
+            resetEntryReadyUi("harga MT5 belum segar");
         }else{
             updateLiveGatewayStatus(market);
+            if(!feedFresh&&status!=null){
+                status.setText("● MT5 QUOTE LIVE • CHART TICK TERLAMBAT • "+selectedTf);
+            }
         }
         syncBrokerEntryLine();
-        if(m1Data!=null&&m1Data.length>=30&&m5Data!=null&&m5Data.length>=30)
+        if(m1Data!=null&&m1Data.length>=30&&m5Data!=null&&m5Data.length>=60)
             updateSignal(m1Data,m5Data);
     }
 
@@ -514,7 +517,7 @@ public class MainActivity extends Activity {
         }
         if(chart!=null)chart.setTimeframe(tf);
         queueNativeIndicatorState();
-        if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+tf+"\nTrend M5 + candle / wick M1");
+        if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+tf+"\nEMA M5 + Fibo 38.2–78.6 + wick M1");
         if(status!=null)status.setText("● "+("M1".equals(tf)?"LIVE":"LOADING")+" • RAYYAN4 • "+tf);
         if(reload)load(interval(tf),tf);
     }
@@ -627,9 +630,9 @@ public class MainActivity extends Activity {
                 AppLog.add(this,"ORDER_BLOCKED",origin+" • wick LIMIT hanya dikirim dari M1");
                 Toast.makeText(this,"Pilih timeframe M1 untuk entry LIMIT ujung wick",Toast.LENGTH_LONG).show();return;
             }
-            if(chart==null||m1Data==null||m1Data.length<30||m5Data==null||m5Data.length<201){
-                AppLog.add(this,"ORDER_BLOCKED",origin+" • data M1 / trend EMA200 M5 belum cukup");
-                Toast.makeText(this,"Menunggu data M1 dan minimal 200 candle M5",Toast.LENGTH_LONG).show();return;
+            if(chart==null||m1Data==null||m1Data.length<30||m5Data==null||m5Data.length<60){
+                AppLog.add(this,"ORDER_BLOCKED",origin+" • data M1/M5 belum cukup untuk menghitung arah trend");
+                Toast.makeText(this,"Menunggu data M1 dan minimal 60 candle M5 untuk arah trend",Toast.LENGTH_LONG).show();return;
             }
             double[] broker=freshBrokerQuote(selectedMarket);
             if(broker==null||!hasFreshEntryQuotes()||!QuoteSafety.valid(broker[0],broker[1])){
@@ -758,7 +761,7 @@ public class MainActivity extends Activity {
     private void updateEntryReadyUi(SignalResult signal,double bid,double ask,Candle[] activeM1,long candleStamp){
         String candleKey=selectedMarket+"|"+selectedTf+"|"+candleStamp;
         if(!candleKey.equals(readyCandleKey)){readyCandleKey=candleKey;readyCandleSide="WAIT";}
-        boolean context="M1".equals(selectedTf)&&activeM1!=null&&activeM1.length>=30&&m5Data!=null&&m5Data.length>=201;
+        boolean context="M1".equals(selectedTf)&&activeM1!=null&&activeM1.length>=30&&m5Data!=null&&m5Data.length>=60;
         boolean nextReady=isAutoEntryEligible(signal,bid,ask,context);
         String nextSide=nextReady?signal.side:"WAIT";
         readyCandleSide=nextReady?nextSide:"WAIT";
@@ -909,8 +912,9 @@ public class MainActivity extends Activity {
     private boolean queueAutoSignal(SignalResult signal,Candle[] m1,SharedPreferences gp,
                                      double lot,long candleStamp,String signalKey){
         if(signal==null||(!"BUY".equals(signal.side)&&!"SELL".equals(signal.side)))return false;
-        if(!isAutoEntryEligible(signal,chart.getBid(),chart.getAsk(),true)){
-            smartLogOnce(gp,"WICK_LIMIT_LEVELS|"+signalKey,"SMART AUTO ditahan: level wick LIMIT/quote/spread belum valid");return false;
+        double[] queueQuote=freshBrokerQuote(selectedMarket);
+        if(queueQuote==null||!isAutoEntryEligible(signal,queueQuote[0],queueQuote[1],true)){
+            smartLogOnce(gp,"WICK_LIMIT_LEVELS|"+signalKey,"SMART AUTO ditahan: level Fibo/wick LIMIT/quote/spread belum valid");return false;
         }
         double target=validAutoTarget(signal);if(target<=0.0)return false;
         queueOrigin="SMART_AUTO";queueOutcomeTarget=signal.tp1;
@@ -940,7 +944,7 @@ public class MainActivity extends Activity {
         boolean autoEnabled=gp.getBoolean("auto",false)
                 &&"READY".equals(gp.getString("operation_mode","REST"))
                 &&"M1".equals(selectedTf);
-        if(m1==null||m1.length<30||m5==null||m5.length<201){
+        if(m1==null||m1.length<30||m5==null||m5.length<60){
             autoDiagnostic(gp,"DATA_M1M5_SHORT|"+selectedMarket+"|"+selectedTf,
                 "ENTRY BLOCKED • M1 kurang dari 30 atau M5 kurang dari 200 candle • market="+selectedMarket+" TF="+selectedTf);
             return;
@@ -1274,7 +1278,7 @@ public class MainActivity extends Activity {
             return;
         }
 
-        boolean m1Context="M1".equals(selectedTf)&&m1.length>=30&&m5.length>=201;
+        boolean m1Context="M1".equals(selectedTf)&&m1.length>=30&&m5.length>=60;
         if(!isAutoEntryEligible(s,bid,ask,m1Context)){
             String reason=autoEntryBlockReason(s,bid,ask,m1Context);
             autoDiagnostic(gp,"FILTER|"+signalKey+"|"+reason,
@@ -1352,13 +1356,14 @@ public class MainActivity extends Activity {
 
     void updateSignal(Candle[] m1,Candle[] m5){
         syncBrokerEntryLine();
-        if(m1==null||m1.length<30||m5==null||m5.length<201){
+        if(m1==null||m1.length<30||m5==null||m5.length<60){
             if(scoreView!=null)scoreView.setText("SCORE 0%");
             resetEntryReadyUi("menunggu data M1/M5");
             return;
         }
-        double bid=chart==null?0:chart.getBid(),ask=chart==null?0:chart.getAsk();
         double[] brokerForSignal=freshBrokerQuote(selectedMarket);
+        double bid=brokerForSignal!=null?brokerForSignal[0]:(chart==null?0:chart.getBid());
+        double ask=brokerForSignal!=null?brokerForSignal[1]:(chart==null?0:chart.getAsk());
         double spreadBid=brokerForSignal==null?0.0:brokerForSignal[0];
         double spreadAsk=brokerForSignal==null?0.0:brokerForSignal[1];
         SignalResult previous=lastSignal;
@@ -2382,7 +2387,7 @@ public class MainActivity extends Activity {
         TextView panelTitle=tv("AUTO ENTRY / MT5 • DEMO",18);
         panelTitle.setTextColor(Color.CYAN);panelTitle.setTypeface(null,Typeface.BOLD);
         root.addView(panelTitle,new LinearLayout.LayoutParams(-1,uiDp(36)));
-        TextView panelNote=tv("Bias EMA50/200 M5 + wick rejection M1 • entry LIMIT ujung wick • TP1/TP2 dikelola EA Rayyan",12);
+        TextView panelNote=tv("EMA M5 + Fibo 38.2/50/61.8/78.6 + rejection wick M1 • TP1/TP2 tersinkron",12);
         panelNote.setTextColor(Color.LTGRAY);
         root.addView(panelNote,new LinearLayout.LayoutParams(-1,uiDp(32)));
 
@@ -2391,7 +2396,7 @@ public class MainActivity extends Activity {
         fields.setPadding(0,uiDp(3),0,uiDp(5));
 
         Switch auto=new Switch(this);
-        auto.setText("SMART AUTO • wick-end LIMIT entry");
+        auto.setText("SMART AUTO • Fibo + wick rejection LIMIT");
         auto.setTextSize(14);auto.setPadding(uiDp(10),uiDp(4),uiDp(10),uiDp(4));
         auto.setBackground(roundBg(Color.rgb(7,30,47),12));
         auto.setMinHeight(uiDp(52));auto.setMinimumHeight(uiDp(52));
