@@ -760,6 +760,9 @@ public class MainActivity extends Activity {
         String nextSide=nextReady?signal.side:"WAIT";
         readyCandleSide=nextReady?nextSide:"WAIT";
         if(nextReady){
+            // This is the shared direction lock consumed by Smart Auto. Without
+            // updating it here, the UI can show READY while the order gate sees WAIT.
+            readyCandleSide=nextSide;
             if(chart!=null)chart.setSignalLevels(nextSide,signal.entry,signal.sl,signal.tp1,signal.tp2,true);
             boolean changed=!readySide.equals(nextSide);
             if(!entryReady||changed){
@@ -770,6 +773,7 @@ public class MainActivity extends Activity {
             entryReadyView.setTextColor(Color.WHITE);
             entryReadyView.setBackground(roundBg("BUY".equals(nextSide)?Color.rgb(0,105,68):Color.rgb(140,28,43),10));
         }else{
+            readyCandleSide="WAIT";
             if(chart!=null)chart.setSignalLevels("BUY",0,0,0,0,false);
             signalUiHandler.removeCallbacks(entryBlinkRunnable);entryReady=false;readySide="WAIT";blinkOn=false;
             String reason=autoEntryBlockReason(signal,bid,ask,context);
@@ -1381,8 +1385,8 @@ public class MainActivity extends Activity {
             b.setBackground(roundBg("BUY".equals(s.side)?Color.rgb(0,225,135):"SELL".equals(s.side)?Color.rgb(255,65,82):Color.rgb(110,115,125),1000));
         }
         boolean signalDirectional="BUY".equals(s.side)||"SELL".equals(s.side);
-        chart.setSignalLevels(signalDirectional?s.entry:0,signalDirectional?s.sl:0,
-            signalDirectional?s.tp1:0,signalDirectional?s.tp2:0,signalDirectional);
+        // updateEntryReadyUi owns the single signal-level update, including BUY/SELL
+        // direction. Do not overwrite SELL levels with the legacy BUY-default overload.
 
         long candleStamp=m1[m1.length-1].t;
         WinRateTracker.evaluate(this,selectedMarket,m1);
