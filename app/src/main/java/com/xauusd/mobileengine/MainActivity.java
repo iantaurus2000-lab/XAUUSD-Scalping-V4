@@ -625,7 +625,7 @@ public class MainActivity extends Activity {
         try{
             if(!"M1".equals(selectedTf)){
                 AppLog.add(this,"ORDER_BLOCKED",origin+" • wick LIMIT hanya dikirim dari M1");
-                Toast.makeText(this,"Pilih timeframe M1 untuk entry Fibonacci",Toast.LENGTH_LONG).show();return;
+                Toast.makeText(this,"Pilih timeframe M1 untuk entry LIMIT ujung wick",Toast.LENGTH_LONG).show();return;
             }
             if(chart==null||m1Data==null||m1Data.length<30||m5Data==null||m5Data.length<201){
                 AppLog.add(this,"ORDER_BLOCKED",origin+" • data M1 / trend EMA200 M5 belum cukup");
@@ -654,7 +654,7 @@ public class MainActivity extends Activity {
                 Toast.makeText(this,"Lot minimum "+lotText(minimum),Toast.LENGTH_LONG).show();return;
             }
             double target=validAutoTarget(signal);
-            if(target<=0.0){AppLog.add(this,"ORDER_BLOCKED",origin+" • TP2 Fibonacci tidak valid");return;}
+            if(target<=0.0){AppLog.add(this,"ORDER_BLOCKED",origin+" • TP2 LIMIT tidak valid");return;}
             queueOrigin=origin;queueOutcomeTarget=signal.tp1;
             boolean queued;
             String limitSide="BUY".equals(signal.side)?"BUY_LIMIT":"SELL_LIMIT";
@@ -910,7 +910,7 @@ public class MainActivity extends Activity {
                                      double lot,long candleStamp,String signalKey){
         if(signal==null||(!"BUY".equals(signal.side)&&!"SELL".equals(signal.side)))return false;
         if(!isAutoEntryEligible(signal,chart.getBid(),chart.getAsk(),true)){
-            smartLogOnce(gp,"FIB_LEVELS|"+signalKey,"SMART AUTO ditahan: signal Fibonacci/quote/spread belum valid");return false;
+            smartLogOnce(gp,"WICK_LIMIT_LEVELS|"+signalKey,"SMART AUTO ditahan: level wick LIMIT/quote/spread belum valid");return false;
         }
         double target=validAutoTarget(signal);if(target<=0.0)return false;
         queueOrigin="SMART_AUTO";queueOutcomeTarget=signal.tp1;
@@ -2086,7 +2086,7 @@ public class MainActivity extends Activity {
 
     /**
      * Save the market-specific lot and unified strategy settings.
-     * SMART AUTO computes Entry/SL/TP from the Fibonacci signal; those manual fields are not used.
+     * SMART AUTO computes Entry/SL/TP from the closed M1 wick signal; those manual fields are not used.
      */
     private boolean saveAutoEntrySettings(Switch auto,Switch smartReentry,Spinner mode,
                                            EditText volume,SharedPreferences gatewayPrefs,String symbol){
@@ -2382,7 +2382,7 @@ public class MainActivity extends Activity {
         TextView panelTitle=tv("AUTO ENTRY / MT5 • DEMO",18);
         panelTitle.setTextColor(Color.CYAN);panelTitle.setTypeface(null,Typeface.BOLD);
         root.addView(panelTitle,new LinearLayout.LayoutParams(-1,uiDp(36)));
-        TextView panelNote=tv("Tren/struktur M5 + zona Fibonacci 50–61.8% M1 • TP1/TP2 dikelola EA Rayyan",12);
+        TextView panelNote=tv("Bias EMA50/200 M5 + wick rejection M1 • entry LIMIT ujung wick • TP1/TP2 dikelola EA Rayyan",12);
         panelNote.setTextColor(Color.LTGRAY);
         root.addView(panelNote,new LinearLayout.LayoutParams(-1,uiDp(32)));
 
@@ -2391,7 +2391,7 @@ public class MainActivity extends Activity {
         fields.setPadding(0,uiDp(3),0,uiDp(5));
 
         Switch auto=new Switch(this);
-        auto.setText("SMART AUTO • Fibonacci retracement");
+        auto.setText("SMART AUTO • wick-end LIMIT entry");
         auto.setTextSize(14);auto.setPadding(uiDp(10),uiDp(4),uiDp(10),uiDp(4));
         auto.setBackground(roundBg(Color.rgb(7,30,47),12));
         auto.setMinHeight(uiDp(52));auto.setMinimumHeight(uiDp(52));
