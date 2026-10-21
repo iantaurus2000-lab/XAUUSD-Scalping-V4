@@ -89,6 +89,24 @@ public class SignalEngineTest {
         assertEquals("BUY", s.m5Bias);
     }
 
+    @Test public void wickFallbackRemainsAvailableWhenFibLevelIsNotTradable() {
+        Candle[] bars = new Candle[40];
+        for (int i = 0; i < bars.length; i++)
+            bars[i] = new Candle((i + 1) * 60_000L, 100.0, 100.02, 99.98, 100.0);
+        bars[38] = new Candle(39 * 60_000L, 99.70, 100.22, 99.00, 100.20);
+        bars[39] = new Candle(40 * 60_000L, 100.0, 100.02, 99.98, 100.0);
+
+        SignalResult s = SignalEngine.evaluate(bars, m5Trend(true, 90),
+            100.20, 100.22, 100.20, 100.22);
+        assertEquals("BUY", s.side);
+        assertTrue("Expected validated wick fallback, got: " + s.setup,
+            s.setup.startsWith("WICK LIMIT FALLBACK"));
+        assertTrue(s.entry < 100.22);
+        assertTrue(s.sl < s.entry);
+        assertTrue(s.tp1 > s.entry);
+        assertTrue(s.tp2 > s.tp1);
+    }
+
     @Test public void extremeSpreadBlocksButNormalSpreadPasses() {
         Candle[] m1 = m1FibSetup(true, true);
         Candle[] m5 = m5Trend(true, 90);
