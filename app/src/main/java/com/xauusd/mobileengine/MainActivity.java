@@ -727,6 +727,15 @@ public class MainActivity extends Activity {
             state,symbol,bid,ask,receiptAge,tickAge);
     }
 
+    /** Broker SYMBOL_POINT metadata for spread diagnostics; it does not modify the gateway. */
+    private double brokerPoint(SharedPreferences gp){
+        String symbol=mt5SymbolForMarket(selectedMarket);
+        double point=preferenceDouble(gp,"broker_quote_point_"+symbol,0.0);
+        if(point>0.0)return point;
+        int digits=gp.getInt("broker_quote_digits_"+symbol,-1);
+        return digits>=0&&digits<=10?Math.pow(10.0,-digits):0.0;
+    }
+
     /** Actual MT5 spread and the active ATR threshold, included in block/queue audit logs. */
     private String spreadAuditText(Candle[] m1){
         double[] q=freshBrokerQuote(selectedMarket);
@@ -786,8 +795,8 @@ public class MainActivity extends Activity {
         int sellColor=sellReady?(blinkOn?Color.rgb(255,55,75):Color.rgb(132,18,35)):Color.rgb(76,42,48);
         buyLimitBtn.setBackground(entryButtonBg(buyColor,buyReady,10));
         sellLimitBtn.setBackground(entryButtonBg(sellColor,sellReady,10));
-        buyLimitBtn.setText(buyReady?(blinkOn?"● BUY LIMIT":"BUY LIMIT"):"○ BUY LIMIT");
-        sellLimitBtn.setText(sellReady?(blinkOn?"● SELL LIMIT":"SELL LIMIT"):"○ SELL LIMIT");
+        buyLimitBtn.setText(buyReady?(blinkOn?"● BUY MARKET":"BUY MARKET"):"○ BUY MARKET");
+        sellLimitBtn.setText(sellReady?(blinkOn?"● SELL MARKET":"SELL MARKET"):"○ SELL MARKET");
         // UI state mirrors the trading gate: only the side validated by ENTRY READY
         // is actionable. The click path still revalidates fresh quotes before queueing.
         // Keep both manual controls tappable from app launch. This does not bypass
@@ -898,7 +907,7 @@ public class MainActivity extends Activity {
         return true;
     }
 
-    private void processAutoLimit(    private void processAutoLimit(SignalResult s,Candle[] m1,Candle[] m5,
+    private void processAutoLimit(SignalResult s,Candle[] m1,Candle[] m5,
                                   double bid,double ask,long candleStamp){
         SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         // Keep monitoring/cancelling existing exposure even if AUTO is paused or the
@@ -908,7 +917,7 @@ public class MainActivity extends Activity {
                 &&"M1".equals(selectedTf);
         if(m1==null||m1.length<30||m5==null||m5.length<200){
             autoDiagnostic(gp,"DATA_M1M5_SHORT|"+selectedMarket+"|"+selectedTf,
-                "ENTRY BLOCKED • data M1/M5 kurang dari 30 candle • market="+selectedMarket+" TF="+selectedTf);
+                "ENTRY BLOCKED • M1 kurang dari 30 atau M5 kurang dari 200 candle • market="+selectedMarket+" TF="+selectedTf);
             return;
         }
 
@@ -2356,7 +2365,7 @@ public class MainActivity extends Activity {
 
 
         Switch smartReentry=new Switch(this);
-        smartReentry.setText("SMART LIMIT RE-ENTRY • evaluasi 3 candle M1");
+        smartReentry.setText("SMART RE-ENTRY • kelola order aktif sampai status MT5 jelas");
         smartReentry.setTextSize(13);
         smartReentry.setPadding(uiDp(10),uiDp(4),uiDp(10),uiDp(4));
         smartReentry.setBackground(roundBg(Color.rgb(7,30,47),12));
