@@ -1,196 +1,213 @@
 package com.xauusd.mobileengine;
 
+/**
+ * Single Fibonacci trend-retracement engine.
+ *
+ * Trend: M5 EMA50/EMA200 plus higher-high/higher-low or lower-high/lower-low structure.
+ * Setup: M1 impulse swing, retracement into the 50%-61.8% zone, and a directional
+ * confirmation candle that intersects the zone. Signals are market-entry signals;
+ * the queue/Gateway remains responsible for final broker validation.
+ */
 public final class SignalEngine {
     private SignalEngine() {}
 
-    public static SignalResult evaluate(Candle[] m1,Candle[] m5,double bid,double ask){
-        return evaluate(m1,m5,bid,ask,bid,ask);
+    private static final int M5_TREND_HISTORY = 200;
+    private static final int M1_SWING_LOOKBACK = 20;
+    private static final double FIB_ENTRY_OUTER = 0.618;
+    private static final double FIB_ENTRY_INNER = 0.500;
+    private static final double FIB_STOP = 0.786;
+    private static final double FIB_TARGET2 = -0.270;
+
+    public static SignalResult evaluate(Candle[] m1, Candle[] m5,
+                                        double bid, double ask,
+                                        double spreadBid, double spreadAsk) {
+        if (m1 == null || m1.length < 30 || m5 == null || m5.length < M5_TREND_HISTORY) {
+            return wait("MENUNGGU RIWAYAT M1/M5 • EMA200 M5 MEMERLUKAN 200 CANDLE",
+                false, false, false, false);
+        }
+        if (!QuoteSafety.valid(bid, ask)) {
+            return wait("QUOTE MT5 TIDAK VALID", false, false, false, false);
+        }
+
+        final int m1n = m1.length;
+        final int m5n = m5.length;
+        final Candle live = m1[m1n - 1];
+        final Candle confirmation = m1[m1n - 2];
+        final double atrM1 = atr(m1, 14);
+        final double atrM5 = atr(m5, 14);
+        final boolean atrOk = Double.isFinite(atrM1) && atrM1 > 0.0
+            && Double.isFinite(atrM5) && atrM5 > 0.0;
+        final boolean spreadOk = atrOk && QuoteSafety.spreadAcceptable(spreadBid, spreadAsk, atrM1);
+        if (!atrOk) return wait("ATR BELUM VALID", false, spreadOk, false, false);
+
+        // Use closed M5 bars for direction. The currently forming bar is not allowed
+        // to flip the trend every tick.
+        double ema50 = emaUntil(m5, 50, m5n - 2);
+        double ema200 = emaUntil(m5, 200, m5n - 2);
+        double ema50Past = emaUntil(m5, 50, Math.max(1, m5n - 7));
+        Candle m5Closed = m5[m5n - 2];
+        double previousBlockHigh = Double.NEGATIVE_INFINITY;
+        double previousBlockLow = Double.POSITIVE_INFINITY;
+        double recentBlockHigh = Double.NEGATIVE_INFINITY;
+        double recentBlockLow = Double.POSITIVE_INFINITY;
+        for (int i = m5n - 12; i <= m5n - 8; i++) {
+            previousBlockHigh = Math.max(previousBlockHigh, m5[i].h);
+            previousBlockLow = Math.min(previousBlockLow, m5[i].l);
+        }
+        for (int i = m5n - 7; i <= m5n - 3; i++) {
+            recentBlockHigh = Math.max(recentBlockHigh, m5[i].h);
+            recentBlockLow = Math.min(recentBlockLow, m5[i].l);
+        }
+        boolean higherHighs = recentBlockHigh > previousBlockHigh;
+        boolean higherLows = recentBlockLow > previousBlockLow;
+        boolean lowerHighs = recentBlockHigh < previousBlockHigh;
+        boolean lowerLows = recentBlockLow < previousBlockLow;
+        double emaGap = Math.abs(ema50 - ema200);
+        boolean gapClear = emaGap >= Math.max(atrM5 * 0.08, Math.abs(m5Closed.c) * 1e-7);
+        boolean trendBuy = gapClear && ema50 > ema200 && ema50 > ema50Past
+            && m5Closed.c > ema50 && higherHighs && higherLows;
+        boolean trendSell = gapClear && ema50 < ema200 && ema50 < ema50Past
+            && m5Closed.c < ema50 && lowerHighs && lowerLows;
+        String bias = trendBuy ? "BUY" : trendSell ? "SELL" : "NEUTRAL";
+        if (!trendBuy && !trendSell) {
+            return wait("KONSOLIDASI / STRUKTUR M5 BELUM VALID • FIBO TIDAK DIPAKSA",
+                atrOk, spreadOk, false, false, bias);
+        }
+
+        // Anchor a recent M1 impulse with closed candles only; do not let the live
+        // candle continuously redraw the swing used to validate its own entry.
+        int swingEnd = m1n - 3; // confirmation candle is m1n-2
+        int swingStart = Math.max(0, swingEnd - M1_SWING_LOOKBACK + 1);
+        double swingHigh = Double.NEGATIVE_INFINITY;
+        double swingLow = Double.POSITIVE_INFINITY;
+        int swingHighIndex = -1, swingLowIndex = -1;
+        for (int i = swingStart; i <= swingEnd; i++) {
+            if (m1[i].h > swingHigh) { swingHigh = m1[i].h; swingHighIndex = i; }
+            if (m1[i].l < swingLow) { swingLow = m1[i].l; swingLowIndex = i; }
+        }
+        double swingRange = swingHigh - swingLow;
+        if (swingHighIndex < 0 || swingLowIndex < 0
+                || !Double.isFinite(swingRange) || swingRange < atrM1 * 0.75) {
+            return wait("MENUNGGU SWING M1 YANG CUKUP KUAT UNTUK FIBONACCI",
+                atrOk, spreadOk, false, false, bias);
+        }
+        if (trendBuy && swingLowIndex >= swingHighIndex) {
+            return wait("MENUNGGU IMPULS NAIK M1 • LOW HARUS LEBIH DAHULU DARI HIGH",
+                atrOk, spreadOk, false, false, bias);
+        }
+        if (trendSell && swingHighIndex >= swingLowIndex) {
+            return wait("MENUNGGU IMPULS TURUN M1 • HIGH HARUS LEBIH DAHULU DARI LOW",
+                atrOk, spreadOk, false, false, bias);
+        }
+
+        // Convention matches the app Fibonacci ladder:
+        // BUY: 0 at swing high; 100 at swing low; -27 above the old high.
+        // SELL: 0 at swing low; 100 at swing high; -27 below the old low.
+        double fib0 = trendBuy ? swingHigh : swingLow;
+        double fib50 = trendBuy ? swingHigh - swingRange * FIB_ENTRY_INNER
+                                : swingLow + swingRange * FIB_ENTRY_INNER;
+        double fib618 = trendBuy ? swingHigh - swingRange * FIB_ENTRY_OUTER
+                                 : swingLow + swingRange * FIB_ENTRY_OUTER;
+        double fib786 = trendBuy ? swingHigh - swingRange * FIB_STOP
+                                 : swingLow + swingRange * FIB_STOP;
+        double fibTarget2 = trendBuy ? swingHigh - swingRange * FIB_TARGET2
+                                     : swingLow + swingRange * FIB_TARGET2;
+
+        // Align chart-feed OHLC/Fibonacci prices to the current MT5 quote coordinate.
+        double mid = (bid + ask) * 0.5;
+        double priceShift = mid - live.c;
+        fib0 += priceShift;
+        fib50 += priceShift;
+        fib618 += priceShift;
+        fib786 += priceShift;
+        fibTarget2 += priceShift;
+
+        double zoneLow = Math.min(fib50, fib618);
+        double zoneHigh = Math.max(fib50, fib618);
+        double spread = Math.max(0.0, spreadAsk - spreadBid);
+        double buffer = Math.max(atrM1 * 0.08, spread * 2.0);
+        double entry = trendBuy ? ask : bid;
+        double sl = trendBuy ? fib786 - buffer : fib786 + buffer;
+        double tp1 = fib0;
+        double tp2 = fibTarget2;
+
+        // Confirmation must be a CLOSED M1 candle, directionally close, and overlap
+        // the Fibonacci entry zone. The live broker quote must still be near that zone.
+        double zoneTolerance = atrM1 * 0.12;
+        boolean candleTouchesZone = confirmation.l <= zoneHigh + zoneTolerance
+            && confirmation.h >= zoneLow - zoneTolerance;
+        boolean buyCandleConfirmed = confirmation.c > confirmation.o
+            && confirmation.c >= (swingHigh - swingRange * FIB_ENTRY_OUTER) - atrM1 * 0.08;
+        boolean sellCandleConfirmed = confirmation.c < confirmation.o
+            && confirmation.c <= (swingLow + swingRange * FIB_ENTRY_OUTER) + atrM1 * 0.08;
+        boolean quoteInZone = entry >= zoneLow - zoneTolerance && entry <= zoneHigh + zoneTolerance;
+        boolean candleConfirmed = trendBuy ? buyCandleConfirmed : sellCandleConfirmed;
+        boolean wick = trendBuy
+            ? (Math.min(confirmation.o, confirmation.c) - confirmation.l) >= Math.abs(confirmation.c - confirmation.o) * 0.20
+            : (confirmation.h - Math.max(confirmation.o, confirmation.c)) >= Math.abs(confirmation.c - confirmation.o) * 0.20;
+
+        if (!candleTouchesZone || !candleConfirmed || !quoteInZone) {
+            String reason = !quoteInZone
+                ? "MENUNGGU HARGA KEMBALI KE ZONA FIBO 50–61.8%"
+                : "MENUNGGU CANDLE KONFIRMASI DI ZONA FIBO 50–61.8%";
+            return wait(reason, atrOk, spreadOk, wick, true, bias);
+        }
+        if (!spreadOk) return wait("SPREAD MT5 TERLALU LEBAR", atrOk, false, wick, true, bias);
+
+        // Fail closed when the calculated Fibonacci levels do not leave valid risk/reward.
+        boolean validGeometry = trendBuy
+            ? sl < entry && tp1 > entry && tp2 > tp1
+            : sl > entry && tp1 < entry && tp2 < tp1;
+        if (!validGeometry || entry <= 0.0 || sl <= 0.0 || tp1 <= 0.0 || tp2 <= 0.0) {
+            return wait("GEOMETRI ENTRY / SL / TP FIBONACCI TIDAK VALID",
+                atrOk, spreadOk, wick, true, bias);
+        }
+        double risk = Math.abs(entry - sl);
+        double reward = Math.abs(tp2 - entry);
+        double rr = risk > 0.0 ? reward / risk : 0.0;
+        if (!Double.isFinite(rr) || rr < 1.0) {
+            return wait("RR FIBONACCI DI BAWAH 1:1 • SETUP DITAHAN",
+                atrOk, spreadOk, wick, true, bias);
+        }
+        String side = trendBuy ? "BUY" : "SELL";
+        String setup = "FIB 50–61.8% + CANDLE CONFIRM • " + side;
+        return new SignalResult(side, bias, entry, sl, tp1, tp2, rr,
+            90, 4, setup, true, wick, true, true, true, true, atrOk, spreadOk);
     }
 
-    /** Candle-feed prices define entry levels; independent MT5 quotes define spread safety. */
-    public static SignalResult evaluate(Candle[] m1,Candle[] m5,double bid,double ask,
-                                        double spreadBid,double spreadAsk) {
-        return evaluate(m1,m5,bid,ask,spreadBid,spreadAsk,false);
+    private static SignalResult wait(String setup, boolean atrOk, boolean spreadOk,
+                                     boolean wick, boolean structure) {
+        return wait(setup, atrOk, spreadOk, wick, structure, "NEUTRAL");
     }
 
-    /**
-     * followSweepExtremes is Open Action 1: follow the forming M1 candle and signal as soon
-     * as one-way travel reaches the adaptive exhaustion threshold; no bounce/recoil gate.
-     */
-    public static SignalResult evaluate(Candle[] m1,Candle[] m5,double bid,double ask,
-                                        double spreadBid,double spreadAsk,
-                                        boolean followSweepExtremes) {
-        if (m1 == null || m1.length < 30 || m5 == null || m5.length < 30)
-            return new SignalResult("WAIT", "NEUTRAL", 0, 0, 0, 0, 0, 0, 1,
-                "Menunggu data M1/M5", false, false, false, false, false, false, false, false);
-
-        Candle z = m1[m1.length - 1], p = m1[m1.length - 2];
-        double atr = atr(m1, 14);
-        double body = Math.abs(z.c - z.o);
-        double upper = Math.max(0.0, z.h - Math.max(z.o, z.c));
-        double lower = Math.max(0.0, Math.min(z.o, z.c) - z.l);
-        double candleRange = Math.max(0.0, z.h - z.l);
-        double rangeAtrRatio = atr > 0.0 ? candleRange / atr : 0.0;
-        // Adaptive wick sensor: short candles need smaller absolute wicks; long candles
-        // still need a meaningful rejection rather than a body-dominated spike.
-        double wickBodyMultiplier = rangeAtrRatio >= 1.25 ? 1.15
-            : rangeAtrRatio <= 0.55 ? 0.90 : 1.00;
-        double wickRangeFraction = rangeAtrRatio >= 1.25 ? 0.22
-            : rangeAtrRatio <= 0.55 ? 0.14 : 0.18;
-        double minWickAtrFraction = rangeAtrRatio >= 1.25 ? 0.08
-            : rangeAtrRatio <= 0.55 ? 0.035 : 0.055;
-        double closeRetrace = rangeAtrRatio >= 1.25 ? 0.30
-            : rangeAtrRatio <= 0.55 ? 0.20 : 0.25;
-        double wickBody = Math.max(body, Math.max(atr * 0.015, Math.abs(z.c) * 1e-7));
-        double minWickLength = Math.max(atr * minWickAtrFraction, candleRange * wickRangeFraction);
-        double e9 = ema(m1, 9), e21 = ema(m1, 21), e50 = ema(m1, 50);
-        double e9_5 = ema(m5, 9), e21_5 = ema(m5, 21), e50_5 = ema(m5, 50);
-        boolean biasBuy = e9_5 > e21_5 && e21_5 > e50_5;
-        boolean biasSell = e9_5 < e21_5 && e21_5 < e50_5;
-        String bias = biasBuy ? "BUY" : biasSell ? "SELL" : "NEUTRAL";
-
-        // Evaluate the live M1 bar from one-second feed updates, not a 15-second-old snapshot.
-        int n = m1.length;
-        Candle wick = z;
-        double priorLow = Double.POSITIVE_INFINITY;
-        double priorHigh = Double.NEGATIVE_INFINITY;
-        // Use a short recent swing window, excluding the still-forming candle.
-        for (int i = Math.max(0, n - 6); i < n - 1; i++) {
-            priorLow = Math.min(priorLow, m1[i].l);
-            priorHigh = Math.max(priorHigh, m1[i].h);
-        }
-        // Accept a near-sweep/reclaim within 0.12 ATR instead of demanding a strict
-        // one-tick break of the previous swing. This lowers missed wick setups without
-        // removing the requirement for a directional wick/rejection.
-        double sweepTolerance = atr > 0.0 ? Math.max(atr * 0.12, Math.abs(z.c) * 1e-7) : 0.0;
-        boolean swBuy = Double.isFinite(priorLow) && z.l <= priorLow + sweepTolerance;
-        boolean swSell = Double.isFinite(priorHigh) && z.h >= priorHigh - sweepTolerance;
-
-        // Early precursor: a swing is swept and price starts recoiling. This can become READY
-        // on the first small rebound, before a large finished wick is visible.
-        double recoveryFromLow = z.c - z.l;
-        double recoveryFromHigh = z.h - z.c;
-        double earlyRecoilMin = Math.max(atr * 0.015, candleRange * 0.015);
-        boolean earlyBuy = swBuy && atr > 0.0
-            && recoveryFromLow >= earlyRecoilMin
-            && z.c <= priorLow + atr * 0.45;
-        boolean earlySell = swSell && atr > 0.0
-            && recoveryFromHigh >= earlyRecoilMin
-            && z.c >= priorHigh - atr * 0.45;
-
-        // Candle-size-aware wick thresholds reduce missed short/medium candle rejections.
-        boolean rejectBuy = lower >= wickBody * wickBodyMultiplier
-            && lower >= minWickLength
-            && (candleRange <= 0.0 || z.c >= z.l + candleRange * closeRetrace);
-        boolean rejectSell = upper >= wickBody * wickBodyMultiplier
-            && upper >= minWickLength
-            && (candleRange <= 0.0 || z.c <= z.h - candleRange * closeRetrace);
-        boolean needleBuy = rejectBuy || earlyBuy;
-        boolean needleSell = rejectSell || earlySell;
-        boolean sweepBuy = needleBuy && swBuy;
-        boolean sweepSell = needleSell && swSell;
-
-        double rsi = rsi(m1,14), macd = ema(m1,12)-ema(m1,26);
-        boolean rsiBuy=rsi>=50&&rsi<=72, rsiSell=rsi<=50&&rsi>=28;
-        boolean macdBuy=macd>0, macdSell=macd<0;
-        boolean emaBuy=e9>e21&&e21>=e50, emaSell=e9<e21&&e21<=e50;
-        double spread=QuoteSafety.valid(spreadBid,spreadAsk)?spreadAsk-spreadBid:0.0;
-        boolean spreadOk=QuoteSafety.spreadAcceptable(spreadBid,spreadAsk,atr), atrOk=atr>0;
-        boolean bosBuy=z.c>p.h, bosSell=z.c<p.l;
-
-        // Score BUY and SELL wick evidence independently. If both shapes exist on one
-        // forming candle, select the clearer rejection instead of forcing WAIT or defaulting
-        // toward SELL. The formulas are mirrored so BUY isn't disadvantaged by M5 bias.
-        double buyWickRatio=lower/Math.max(wickBody,1e-12);
-        double sellWickRatio=upper/Math.max(wickBody,1e-12);
-        double buyEvidence=(rejectBuy?2.0:0.0)+(earlyBuy?1.5:0.0)+(swBuy?1.25:0.0)
-            +Math.min(2.0,buyWickRatio*0.35)
-            +Math.max(0.0,Math.min(1.0,recoveryFromLow/Math.max(atr*0.25,1e-12)));
-        double sellEvidence=(rejectSell?2.0:0.0)+(earlySell?1.5:0.0)+(swSell?1.25:0.0)
-            +Math.min(2.0,sellWickRatio*0.35)
-            +Math.max(0.0,Math.min(1.0,recoveryFromHigh/Math.max(atr*0.25,1e-12)));
-        String side="WAIT";
-        if(followSweepExtremes){
-            double downExcursion=Math.max(0.0,z.o-z.l);
-            double upExcursion=Math.max(0.0,z.h-z.o);
-            double travelThreshold=OpenActionEntryPolicy.exhaustionTravelThreshold(p,atr);
-            boolean downExhausted=travelThreshold>0.0&&downExcursion>=travelThreshold;
-            boolean upExhausted=travelThreshold>0.0&&upExcursion>=travelThreshold;
-            if(downExhausted&&upExhausted){
-                double ambiguity=Math.max(atr*0.01,Math.abs(z.c)*1e-8);
-                // If price has moved both ways enough, use the dominant live excursion.
-                if(downExcursion>upExcursion+ambiguity)side="BUY";
-                else if(upExcursion>downExcursion+ambiguity)side="SELL";
-            }else if(downExhausted)side="BUY";
-            else if(upExhausted)side="SELL";
-            // Enter immediately when directional travel reaches the exhaustion threshold.
-            needleBuy="BUY".equals(side);
-            needleSell="SELL".equals(side);
-            sweepBuy=needleBuy&&swBuy;
-            sweepSell=needleSell&&swSell;
-        }else{
-            if(needleBuy&&(!needleSell||buyEvidence>sellEvidence+0.10))side="BUY";
-            else if(needleSell&&(!needleBuy||sellEvidence>buyEvidence+0.10))side="SELL";
-        }
-
-        // Do not carry the previous candle's side into a new M1 bar. ENTRY READY
-        // must be based on the active candle rather than replaying the prior candle.
-        double entry=0, sl=0, tp1=0, tp2=0, rr=0;
-        if ("BUY".equals(side)) {
-            double wickOffset=followSweepExtremes ? 0.0 : OpenActionEntryPolicy.wickTipOffset(
-                lower,atr,Math.max(Math.abs(wick.l)*1e-7,Math.abs(ask)*1e-7));
-            entry=wick.l+Math.max(0.0,wickOffset);
-            // Fibonacci anchors: 0 at the swept/rejection low, 100 at candle high.
-            // SL is beyond -27.0 with a volatility/spread safety buffer.
-            double fibRange=Math.max(0.0,wick.h-wick.l);
-            double safetyBuffer=Math.max(atr*0.03,spread*2.0);
-            sl=wick.l-fibRange*0.27-safetyBuffer;
-            tp1=wick.l+fibRange*0.618;
-            tp2=wick.l+fibRange;
-            double risk=entry-sl;
-            if(risk>0.0 && tp1>entry && tp2>tp1) rr=(tp2-entry)/risk;
-        } else if ("SELL".equals(side)) {
-            double wickOffset=followSweepExtremes ? 0.0 : OpenActionEntryPolicy.wickTipOffset(
-                upper,atr,Math.max(Math.abs(wick.h)*1e-7,Math.abs(bid)*1e-7));
-            entry=wick.h-Math.max(0.0,wickOffset);
-            // Mirrored Fibonacci anchors: 0 at the swept/rejection high, 100 at candle low.
-            // SL is beyond -27.0 with a volatility/spread safety buffer.
-            double fibRange=Math.max(0.0,wick.h-wick.l);
-            double safetyBuffer=Math.max(atr*0.03,spread*2.0);
-            sl=wick.h+fibRange*0.27+safetyBuffer;
-            tp1=wick.h-fibRange*0.618;
-            tp2=wick.h-fibRange;
-            double risk=sl-entry;
-            if(risk>0.0 && tp1<entry && tp2<tp1) rr=(entry-tp2)/risk;
-        }
-        // Never chase a feed setup that is far from the current executable quote.
-        double live= "BUY".equals(side)?ask:bid;
-        if(live>0 && atr>0 && Math.abs(live-wick.c)>atr*1.35) {
-            side="WAIT"; entry=sl=tp1=tp2=rr=0;
-        }
-        boolean selectedNeedle=("BUY".equals(side)&&needleBuy)||("SELL".equals(side)&&needleSell);
-        boolean selectedRejection=("BUY".equals(side)&&rejectBuy)||("SELL".equals(side)&&rejectSell);
-        boolean selectedSweep=("BUY".equals(side)&&sweepBuy)||("SELL".equals(side)&&sweepSell);
-        int points=(selectedNeedle?6:0)+(selectedSweep?2:0)
-            +(biasBuy||biasSell?1:0)+(emaBuy||emaSell?1:0)+(rsiBuy||rsiSell?1:0)
-            +(macdBuy||macdSell?1:0)+(bosBuy||bosSell?1:0)+(spreadOk?1:0)+(atrOk?1:0);
-        int score=Math.min(99,45+points*4);
-        boolean selectedEarly=!followSweepExtremes
-            && (("BUY".equals(side)&&earlyBuy&&!rejectBuy)
-                ||("SELL".equals(side)&&earlySell&&!rejectSell));
-        int confidence="WAIT".equals(side)?(points>=7?3:points>=5?2:1)
-            :(selectedEarly?3:(selectedSweep?5:4));
-        String setup="WAIT".equals(side)
-            ? (followSweepExtremes ? "Menunggu jarak exhaustion candle"
-                : (needleBuy && needleSell ? "WICK AMBIGU • WAIT" : "Menunggu wick rejection valid"))
-            : (followSweepExtremes ? "CANDLE EXHAUSTION • MARKET "+side
-                : (selectedEarly?"EARLY WICK PRECURSOR":"NEEDLE WICK + REJECTION"));
-        return new SignalResult(side,bias,entry,sl,tp1,tp2,rr,score,confidence,setup,
-            selectedSweep,selectedRejection,bosBuy||bosSell,
-            emaBuy||emaSell,rsiBuy||rsiSell,macdBuy||macdSell,atrOk,spreadOk);
+    private static SignalResult wait(String setup, boolean atrOk, boolean spreadOk,
+                                     boolean wick, boolean structure, String bias) {
+        return new SignalResult("WAIT", bias, 0, 0, 0, 0, 0, 0, 1, setup,
+            false, wick, structure, false, false, false, atrOk, spreadOk);
     }
 
-    static double ema(Candle[] a,int n){double k=2.0/(n+1.0),e=a[0].c;for(int i=1;i<a.length;i++)e=a[i].c*k+e*(1-k);return e;}
-    static double atr(Candle[] a,int n){int k=Math.min(n,a.length-1);if(k<=0)return 0;double sum=0;for(int i=a.length-k;i<a.length;i++){Candle x=a[i],p=a[i-1];sum+=Math.max(x.h-x.l,Math.max(Math.abs(x.h-p.c),Math.abs(x.l-p.c)));}return sum/k;}
-    static double rsi(Candle[] a,int n){int k=Math.min(n,a.length-1);double gain=0,loss=0;for(int i=a.length-k;i<a.length;i++){double d=a[i].c-a[i-1].c;if(d>0)gain+=d;else loss-=d;}if(loss<1e-9)return 100;double rs=(gain/k)/(loss/k);return 100-100/(1+rs);}
+    static double ema(Candle[] a, int period) {
+        return emaUntil(a, period, a == null ? -1 : a.length - 1);
+    }
+
+    private static double emaUntil(Candle[] a, int period, int endInclusive) {
+        if (a == null || a.length == 0 || period <= 0 || endInclusive < 0) return 0.0;
+        int end = Math.min(endInclusive, a.length - 1);
+        double k = 2.0 / (period + 1.0);
+        double value = a[0].c;
+        for (int i = 1; i <= end; i++) value = a[i].c * k + value * (1.0 - k);
+        return value;
+    }
+
+    static double atr(Candle[] a, int period) {
+        if (a == null || a.length < 2 || period <= 0) return 0.0;
+        int count = Math.min(period, a.length - 1);
+        double sum = 0.0;
+        for (int i = a.length - count; i < a.length; i++) {
+            Candle current = a[i], previous = a[i - 1];
+            sum += Math.max(current.h - current.l,
+                Math.max(Math.abs(current.h - previous.c), Math.abs(current.l - previous.c)));
+        }
+        return sum / count;
+    }
 }
