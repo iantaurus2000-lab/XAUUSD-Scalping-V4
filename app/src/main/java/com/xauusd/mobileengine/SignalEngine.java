@@ -97,9 +97,13 @@ public final class SignalEngine {
     }
     static double atr(Candle[] a, int period) {
         if (a == null || a.length < 2 || period <= 0) return 0.0;
-        int count = Math.min(period, a.length - 1);
+        // Use completed bars only. The forming candle must not make ATR jump
+        // or temporarily collapse while the live feed updates its high/low.
+        int end = a.length - 2;
+        if (end < 1) return 0.0;
+        int count = Math.min(period, end);
         double sum = 0.0;
-        for (int i = a.length - count; i < a.length; i++) {
+        for (int i = end - count + 1; i <= end; i++) {
             Candle current = a[i], previous = a[i - 1];
             sum += Math.max(current.h - current.l,
                 Math.max(Math.abs(current.h - previous.c), Math.abs(current.l - previous.c)));
