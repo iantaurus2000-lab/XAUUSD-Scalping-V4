@@ -134,12 +134,16 @@ public final class SignalEngine {
         // Confirmation must be a CLOSED M1 candle, directionally close, and overlap
         // the Fibonacci entry zone. The live broker quote must still be near that zone.
         double zoneTolerance = atrM1 * 0.12;
-        boolean candleTouchesZone = confirmation.l <= zoneHigh + zoneTolerance
-            && confirmation.h >= zoneLow - zoneTolerance;
-        boolean buyCandleConfirmed = confirmation.c > confirmation.o
-            && confirmation.c >= (swingHigh - swingRange * FIB_ENTRY_OUTER) - atrM1 * 0.08;
-        boolean sellCandleConfirmed = confirmation.c < confirmation.o
-            && confirmation.c <= (swingLow + swingRange * FIB_ENTRY_OUTER) + atrM1 * 0.08;
+        double confirmationOpen = confirmation.o + priceShift;
+        double confirmationHigh = confirmation.h + priceShift;
+        double confirmationLow = confirmation.l + priceShift;
+        double confirmationClose = confirmation.c + priceShift;
+        boolean candleTouchesZone = confirmationLow <= zoneHigh + zoneTolerance
+            && confirmationHigh >= zoneLow - zoneTolerance;
+        boolean buyCandleConfirmed = confirmationClose > confirmationOpen
+            && confirmationClose >= fib618 - atrM1 * 0.08;
+        boolean sellCandleConfirmed = confirmationClose < confirmationOpen
+            && confirmationClose <= fib618 + atrM1 * 0.08;
         boolean quoteInZone = entry >= zoneLow - zoneTolerance && entry <= zoneHigh + zoneTolerance;
         boolean candleConfirmed = trendBuy ? buyCandleConfirmed : sellCandleConfirmed;
         boolean wick = trendBuy
