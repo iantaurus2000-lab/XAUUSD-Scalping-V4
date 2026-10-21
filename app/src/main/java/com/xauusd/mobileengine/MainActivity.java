@@ -2217,6 +2217,13 @@ public class MainActivity extends Activity {
             Toast.makeText(this,"Kuotasi MT5/chart belum segar • order tidak diantrekan",Toast.LENGTH_LONG).show();
             return false;
         }
+        double[] brokerQueueQuote=freshBrokerQuote(selectedMarket);
+        if(brokerQueueQuote==null||!QuoteSafety.valid(brokerQueueQuote[0],brokerQueueQuote[1])){
+            queueBlockDiagnostic("quote/chart stale: valid broker quote missing");
+            AppLog.add(this,"ORDER_BLOCKED","queue LIMIT diblokir: quote MT5 tidak tersedia");
+            return false;
+        }
+        double limitBid=brokerQueueQuote[0],limitAsk=brokerQueueQuote[1];
         side=side==null?"":side.trim().toUpperCase(Locale.US);
         boolean marketOrder="BUY".equals(side)||"SELL".equals(side);
         if(!marketOrder&&!"BUY_LIMIT".equals(side)&&!"SELL_LIMIT".equals(side)){
@@ -2292,8 +2299,8 @@ public class MainActivity extends Activity {
             }
         }
         if("BUY_LIMIT".equals(side)){
-            if(entry>=chart.getAsk()){
-                queueBlockDiagnostic("BUY LIMIT entry="+price(entry)+" >= ask="+price(chart.getAsk()));
+            if(entry>=limitAsk){
+                queueBlockDiagnostic("BUY LIMIT entry="+price(entry)+" >= broker ask="+price(limitAsk));
                 Toast.makeText(this,"BUY LIMIT harus di bawah ASK",Toast.LENGTH_SHORT).show();return false;
             }
             if(!(sl<entry&&tp>entry)){
@@ -2302,8 +2309,8 @@ public class MainActivity extends Activity {
             }
         }
         if("SELL_LIMIT".equals(side)){
-            if(entry<=chart.getBid()){
-                queueBlockDiagnostic("SELL LIMIT entry="+price(entry)+" <= bid="+price(chart.getBid()));
+            if(entry<=limitBid){
+                queueBlockDiagnostic("SELL LIMIT entry="+price(entry)+" <= broker bid="+price(limitBid));
                 Toast.makeText(this,"SELL LIMIT harus di atas BID",Toast.LENGTH_SHORT).show();return false;
             }
             if(!(tp<entry&&sl>entry)){
@@ -2337,8 +2344,8 @@ public class MainActivity extends Activity {
         String id=Long.toString(System.currentTimeMillis());
         String tp1Field=tp1>0.0?";tp1="+Double.toString(tp1):"";
         String commandType=marketOrder?"MARKET":"LIMIT";
-        String refBid=marketOrder?Double.toString(marketRefBid):Double.toString(chart.getBid());
-        String refAsk=marketOrder?Double.toString(marketRefAsk):Double.toString(chart.getAsk());
+        String refBid=marketOrder?Double.toString(marketRefBid):Double.toString(limitBid);
+        String refAsk=marketOrder?Double.toString(marketRefAsk):Double.toString(limitAsk);
         String marketGuardFields=marketOrder
             ?";maxSpread="+Double.toString(marketMaxSpread)+";refTickMs="+Long.toString(marketRefTickMs)
             : "";
