@@ -785,6 +785,26 @@ public class MainActivity extends Activity {
         if(tp2View!=null)tp2View.setText("TP2\n"+(signal!=null&&signal.tp2>0?price(signal.tp2):"--"));
     }
 
+    private void resetEntryReadyUi(String reason){
+        entryReady=false;
+        readySide="WAIT";
+        readyCandleKey="";
+        readyCandleSide="WAIT";
+        signalUiHandler.removeCallbacks(entryBlinkRunnable);
+        blinkOn=false;
+        if(entryReadyView!=null)entryReadyView.setText("WAIT • "+(reason==null?"menunggu setup":reason));
+        if(signalSideButton!=null)signalSideButton.setBackground(roundBg(Color.rgb(110,115,125),1000));
+        applyEntryButtonColors();
+    }
+
+    private GradientDrawable entryButtonBg(int color,boolean ready,int radius){
+        GradientDrawable d=new GradientDrawable();
+        d.setColor(color);
+        d.setCornerRadius(uiDp(radius));
+        d.setStroke(uiDp(ready?2:1),ready?Color.WHITE:Color.rgb(65,86,98));
+        return d;
+    }
+
     private void applyEntryButtonColors(){
         if(buyLimitBtn==null||sellLimitBtn==null)return;
         // Both controls stay tappable for manual orders. Visual emphasis follows
