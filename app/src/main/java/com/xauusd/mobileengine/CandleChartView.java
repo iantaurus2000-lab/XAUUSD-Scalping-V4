@@ -226,8 +226,8 @@ public class CandleChartView extends View {
         text(c,"O "+f(last.o)+"   H "+f(last.h)+"   L "+f(last.l)+"   C "+f(last.c),L+7,34,10,chartTextColor());
         double e50=emaValue(50),e200=emaValue(200);
         float lx0=L+7;
-        if(showEMA50){text(c,"■ EMA 50",lx0,49,9,Color.rgb(255,193,7));text(c,f(e50),lx0+53,49,9,Color.rgb(255,193,7));lx0+=96;}
-        if(showEMA200){text(c,"■ EMA 200",lx0,49,9,Color.rgb(3,169,244));text(c,f(e200),lx0+60,49,9,Color.rgb(3,169,244));}
+        if(showEMA50){text(c,"■ EMA 50",lx0,49,9,Color.rgb(255,176,0));text(c,f(e50),lx0+53,49,9,Color.rgb(255,176,0));lx0+=96;}
+        if(showEMA200){text(c,"■ EMA 200",lx0,49,9,Color.rgb(186,85,211));text(c,f(e200),lx0+60,49,9,Color.rgb(186,85,211));}
 
         float T=55,B=mainBottom-22;
         // Main grid.
@@ -246,8 +246,8 @@ public class CandleChartView extends View {
             if(i==n-1){p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(3);p.setColor(chartTextColor());c.drawRect(x-cw/2-2,Math.min(yo,yc)-2,x+cw/2+2,Math.max(yo,yc)+2,p);p.setStyle(Paint.Style.FILL);}
         }
 
-        if(showEMA50)ema(c,50,Color.rgb(255,193,7),L,R,T,B,lo,hi,step);
-        if(showEMA200)ema(c,200,Color.rgb(3,169,244),L,R,T,B,lo,hi,step);
+        if(showEMA50)ema(c,50,Color.rgb(255,176,0),L,R,T,B,lo,hi,step);
+        if(showEMA200)ema(c,200,Color.rgb(186,85,211),L,R,T,B,lo,hi,step);
 
         if(showSR){
             double res=hi-pad*.25,sup=lo+pad*.25;float ry=py(res,lo,hi,T,B),sy=py(sup,lo,hi,T,B);
