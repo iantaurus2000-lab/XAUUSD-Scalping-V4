@@ -6,18 +6,18 @@ input int PollSeconds=1;
 input int SRLookbackBars=80;
 input int FiboLookbackBars=60;
 
-int hEma9=INVALID_HANDLE, hEma21=INVALID_HANDLE, hEma50=INVALID_HANDLE;
-bool onEma9=true,onEma21=true,onEma50=true,onSR=true,onFibo=true;
+int hEma50=INVALID_HANDLE, hEma200=INVALID_HANDLE, hEma50=INVALID_HANDLE;
+bool onEma50=true,onEma200=true,onEma50=true,onSR=true,onFibo=true;
 string lastCommandId="";
 uint lastScreenshotTick=0;
 datetime lastBar=0;
 
 int OnInit(){
-   hEma9=iMA(_Symbol,_Period,9,0,MODE_EMA,PRICE_CLOSE);
-   hEma21=iMA(_Symbol,_Period,21,0,MODE_EMA,PRICE_CLOSE);
    hEma50=iMA(_Symbol,_Period,50,0,MODE_EMA,PRICE_CLOSE);
-   if(hEma9==INVALID_HANDLE||hEma21==INVALID_HANDLE||hEma50==INVALID_HANDLE){
-      Print("RAYYAN8 INDICATOR INIT ERROR handles=",hEma9,",",hEma21,",",hEma50);
+   hEma200=iMA(_Symbol,_Period,200,0,MODE_EMA,PRICE_CLOSE);
+   hEma50=iMA(_Symbol,_Period,50,0,MODE_EMA,PRICE_CLOSE);
+   if(hEma50==INVALID_HANDLE||hEma200==INVALID_HANDLE||hEma50==INVALID_HANDLE){
+      Print("RAYYAN8 INDICATOR INIT ERROR handles=",hEma50,",",hEma200,",",hEma50);
       return INIT_FAILED;
    }
    EventSetTimer(MathMax(1,PollSeconds));
@@ -30,8 +30,8 @@ void OnDeinit(const int reason){
    ObjectDelete(0,"RAYYAN8_SR_RESISTANCE");
    ObjectDelete(0,"RAYYAN8_SR_SUPPORT");
    ObjectDelete(0,"RAYYAN8_FIBO");
-   if(hEma9!=INVALID_HANDLE)IndicatorRelease(hEma9);
-   if(hEma21!=INVALID_HANDLE)IndicatorRelease(hEma21);
+   if(hEma50!=INVALID_HANDLE)IndicatorRelease(hEma50);
+   if(hEma200!=INVALID_HANDLE)IndicatorRelease(hEma200);
    if(hEma50!=INVALID_HANDLE)IndicatorRelease(hEma50);
 }
 void OnTick(){}
@@ -51,8 +51,8 @@ void OnTimer(){
             }
             Print("RAYYAN8 chart sync failed target=",targetSymbol," tf=",field(cmd,"tf")," err=",GetLastError());
          }
-         onEma9=(field(cmd,"ema9")=="1");
-         onEma21=(field(cmd,"ema21")=="1");
+         onEma50=(field(cmd,"ema50")=="1");
+         onEma200=(field(cmd,"ema200")=="1");
          onEma50=(field(cmd,"ema50")=="1");
          onSR=(field(cmd,"sr")=="1");
          onFibo=(field(cmd,"fibo")=="1");
@@ -60,7 +60,7 @@ void OnTimer(){
          lastCommandId=id;
          string ack="";
          httpGet("/indicator_ack?id="+id,ack);
-         Print("RAYYAN8 indicators ACK id=",id," EMA9=",onEma9," EMA21=",onEma21,
+         Print("RAYYAN8 indicators ACK id=",id," EMA50=",onEma50," EMA200=",onEma200,
                " EMA50=",onEma50," SR=",onSR," FIBO=",onFibo);
       }
    }
@@ -117,8 +117,8 @@ string field(string source,string key){
    return StringSubstr(source,a,b-a);
 }
 void applyAll(){
-   setEma(hEma9,9,onEma9);
-   setEma(hEma21,21,onEma21);
+   setEma(hEma50,50,onEma50);
+   setEma(hEma200,200,onEma200);
    setEma(hEma50,50,onEma50);
    updateSR();
    updateFibo();
