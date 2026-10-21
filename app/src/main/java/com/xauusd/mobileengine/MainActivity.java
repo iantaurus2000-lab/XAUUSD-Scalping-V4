@@ -1110,10 +1110,9 @@ public class MainActivity extends Activity {
             double point=brokerPoint(gp);
             double spread=Math.max(0.0,ask-bid);
             double excursion="BUY".equals(side)?live.o-live.l:live.h-live.o;
-            double recoil="BUY".equals(side)?live.c-live.l:live.h-live.c;
             double threshold=OpenActionEntryPolicy.exhaustionTravelThreshold(m1[m1.length-2],atr);
-            double recoilThreshold=Math.max(point*2.0,Math.max(atr*0.04,spread*1.5));
-            boolean travelled=threshold>0.0&&excursion>=threshold&&recoil>=recoilThreshold;
+            // Open Action 1 is momentum/exhaustion entry: no bounce/recoil confirmation.
+            boolean travelled=threshold>0.0&&excursion>=threshold;
             if(!travelled){
                 String size;
                 if(atr<=0.0)size="ATR_PENDING";
@@ -2728,7 +2727,7 @@ public class MainActivity extends Activity {
         entryActionMode.setSelection(OPEN_ACTION_WAIT_BOUNCE.equals(
             gatewayPrefs.getString("open_action_entry_mode",OPEN_ACTION_SWEEP_FIRST))?1:0);
 
-        TextView entryActionHint=tv("Mode 1: pantau ekstrem M1 dan tunggu pantulan terkonfirmasi sebelum Market Order. Mode 2 tetap menunggu satu pantulan dari ujung wick sebelum LIMIT. SL di luar ekstrem; TP 2R/3,5R.",11);
+        TextView entryActionHint=tv("Mode 1: ikuti candle M1 yang sedang terbentuk; saat jarak exhaustion tercapai langsung Market Order tanpa menunggu pantulan. Mode 2 tetap menunggu pantulan dari ujung wick sebelum LIMIT. SL di luar ekstrem.",11);
         entryActionHint.setTextColor(Color.LTGRAY);
         entryActionHint.setGravity(Gravity.TOP|Gravity.START);
         entryActionHint.setPadding(uiDp(8),uiDp(5),uiDp(8),uiDp(5));
