@@ -146,16 +146,28 @@ public final class SignalEngine {
             double wickOffset=followSweepExtremes ? 0.0 : OpenActionEntryPolicy.wickTipOffset(
                 lower,atr,Math.max(Math.abs(wick.l)*1e-7,Math.abs(ask)*1e-7));
             entry=wick.l+Math.max(0.0,wickOffset);
-            sl=wick.l-Math.max(atr*0.12,spread*2);
+            // Fibonacci anchors: 0 at the swept/rejection low, 100 at candle high.
+            // SL is beyond -27.0 with a volatility/spread safety buffer.
+            double fibRange=Math.max(0.0,wick.h-wick.l);
+            double safetyBuffer=Math.max(atr*0.03,spread*2.0);
+            sl=wick.l-fibRange*0.27-safetyBuffer;
+            tp1=wick.l+fibRange*0.618;
+            tp2=wick.l+fibRange;
             double risk=entry-sl;
-            if(risk>0){tp1=entry+risk*2.0;tp2=entry+risk*3.5;rr=3.5;}
+            if(risk>0.0 && tp1>entry && tp2>tp1) rr=(tp2-entry)/risk;
         } else if ("SELL".equals(side)) {
             double wickOffset=followSweepExtremes ? 0.0 : OpenActionEntryPolicy.wickTipOffset(
                 upper,atr,Math.max(Math.abs(wick.h)*1e-7,Math.abs(bid)*1e-7));
             entry=wick.h-Math.max(0.0,wickOffset);
-            sl=wick.h+Math.max(atr*0.12,spread*2);
+            // Mirrored Fibonacci anchors: 0 at the swept/rejection high, 100 at candle low.
+            // SL is beyond -27.0 with a volatility/spread safety buffer.
+            double fibRange=Math.max(0.0,wick.h-wick.l);
+            double safetyBuffer=Math.max(atr*0.03,spread*2.0);
+            sl=wick.h+fibRange*0.27+safetyBuffer;
+            tp1=wick.h-fibRange*0.618;
+            tp2=wick.h-fibRange;
             double risk=sl-entry;
-            if(risk>0){tp1=entry-risk*2.0;tp2=entry-risk*3.5;rr=3.5;}
+            if(risk>0.0 && tp1<entry && tp2<tp1) rr=(entry-tp2)/risk;
         }
         // Never chase a feed setup that is far from the current executable quote.
         double live= "BUY".equals(side)?ask:bid;
