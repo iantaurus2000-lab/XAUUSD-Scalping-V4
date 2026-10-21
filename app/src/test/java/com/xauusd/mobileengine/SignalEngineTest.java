@@ -118,8 +118,9 @@ public class SignalEngineTest {
     }
 
     @Test public void openActionOneWaitsUntilExhaustionTravelThresholdIsReached() {
-        // Price has not yet travelled far enough from the open; no bounce is required after threshold.
-        SignalResult s=SignalEngine.evaluate(m1,context(),100.07,100.09,100.07,100.09,true);
+        // Small live candle range remains below the adaptive exhaustion threshold.
+        Candle[] m1=history(100.00,100.05,99.95,100.049);
+        SignalResult s=SignalEngine.evaluate(m1,context(),100.047,100.049,100.047,100.049,true);
         assertEquals("WAIT",s.side);
     }
 
