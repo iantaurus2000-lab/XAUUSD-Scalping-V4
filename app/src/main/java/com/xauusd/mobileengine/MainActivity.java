@@ -58,7 +58,6 @@ public class MainActivity extends Activity {
     private static final long ORDER_STATE_MAX_AGE_MS=8000L;
     private static final long M1_BAR_MAX_AGE_MS=120000L;
     private static final long M5_BAR_MAX_AGE_MS=600000L;
-    private static final int AUTO_ENTRY_OFFSET_POINTS=10;
     private Button signalSideButton, buyLimitBtn, sellLimitBtn;
     private TextView entryReadyView;
     private final Handler signalUiHandler = new Handler(Looper.getMainLooper());
@@ -1253,7 +1252,7 @@ public class MainActivity extends Activity {
             if(status!=null)status.setText("● SMART AUTO WAIT • "+reason);
             return;
         }
-        // AUTO LIMIT must use the same per-candle direction accepted by READY UI.
+        // SMART AUTO must use the same per-candle direction accepted by READY UI.
         // updateEntryReadyUi runs immediately before processAutoLimit in updateSignal.
         long liveStamp=m1[m1.length-1].t;
         String liveCandleKey=selectedMarket+"|"+selectedTf+"|"+liveStamp;
@@ -2078,7 +2077,7 @@ public class MainActivity extends Activity {
             .putBoolean("smart_reentry_enabled",smartReentry.isChecked())
             .putString("operation_mode",operation).apply();
         AppLog.add(this,"MODE",operation.equals("READY")?"SIAP TRADING":"ISTIRAHAT");
-        AppLog.add(this,"AUTO LIMIT","settings saved symbol="+symbol+" lot="+lotText(lot)
+        AppLog.add(this,"SMART AUTO","settings saved symbol="+symbol+" lot="+lotText(lot)
             +" auto="+auto.isChecked()+" mode="+operation);
         return true;
     }
@@ -2355,7 +2354,6 @@ public class MainActivity extends Activity {
         auto.setMinHeight(uiDp(52));auto.setMinimumHeight(uiDp(52));
         auto.setChecked(gatewayPrefs.getBoolean("auto",false));
 
-        entryActionHint.setPadding(uiDp(8),uiDp(5),uiDp(8),uiDp(5));
 
         Switch smartReentry=new Switch(this);
         smartReentry.setText("SMART LIMIT RE-ENTRY • evaluasi 3 candle M1");
@@ -2483,7 +2481,7 @@ public class MainActivity extends Activity {
         send.setOnClickListener(v->{
             try{
                 if(!validSmartReentryLimits(maxDistance,maxAge))return;
-                if(!saveAutoEntrySettings(auto,smartReentry,mode,entryActionMode,vol,gatewayPrefs,selectedMt5Symbol))return;
+                if(!saveAutoEntrySettings(auto,smartReentry,mode,vol,gatewayPrefs,selectedMt5Symbol))return;
                 persistSmartReentryLimits(maxDistance,maxAge,gatewayPrefs);
                 if(!GatewayService.isEaRecentlyOnline(this)){
                     queuedStatus.setTextColor(Color.rgb(255,190,70));
