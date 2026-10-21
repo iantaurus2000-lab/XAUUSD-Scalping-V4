@@ -14,7 +14,7 @@ public class CandleChartView extends View {
     private double bid, ask;
     private float cw = 17, ox = 0, oy = 0, lx, ly, ld, cx, cy;
     private final float leftPad = 54, rightAxis = 108, topPad = 8, bottomPad = 26, lastCandlePad = 32;
-    private boolean showEMA9=true, showEMA21=true, showEMA50=true;
+    private boolean showEMA50=true, showEMA200=true;
     private boolean showSR=true, showFibo=true, showRSI=true, showMACD=true, showATR=true;
     private boolean showSignals=true, showWickBos=true, showTradeLevels=true, showPosition=true, showBidAsk=true;
     private boolean follow=true;
@@ -112,9 +112,8 @@ public class CandleChartView extends View {
     /** Fixed entry price captured when READY/Manual/Smart Auto is recorded. */
     public void setPositionEntryLevel(double entry){positionEntry=entry>0?entry:0;invalidate();}
     public double getPositionEntryLevel(){return positionEntry;}
-    public void setShowEMA9(boolean v){showEMA9=v;invalidate();}
-    public void setShowEMA21(boolean v){showEMA21=v;invalidate();}
     public void setShowEMA50(boolean v){showEMA50=v;invalidate();}
+    public void setShowEMA200(boolean v){showEMA200=v;invalidate();}
     public void setShowSR(boolean v){showSR=v;invalidate();}
     public void setShowFibo(boolean v){showFibo=v;invalidate();}
     /** Levels are ratios: 23.6% is 0.236, and -27% is -0.27. */
@@ -225,11 +224,10 @@ public class CandleChartView extends View {
         drawCandleCountdown(c, L + 34f, 86f, 28f, last);
         bold(c,marketName+" • "+timeframe+"  ▾",L+7,16,12,Color.rgb(0,238,150));
         text(c,"O "+f(last.o)+"   H "+f(last.h)+"   L "+f(last.l)+"   C "+f(last.c),L+7,34,10,chartTextColor());
-        double e9=emaValue(9),e21=emaValue(21),e50=emaValue(50);
+        double e50=emaValue(50),e200=emaValue(200);
         float lx0=L+7;
-        if(showEMA9){text(c,"■ EMA 9",lx0,49,9,Color.rgb(255,193,7));text(c,f(e9),lx0+48,49,9,Color.rgb(255,193,7));lx0+=88;}
-        if(showEMA21){text(c,"■ EMA 21",lx0,49,9,Color.rgb(3,169,244));text(c,f(e21),lx0+53,49,9,Color.rgb(3,169,244));lx0+=96;}
-        if(showEMA50){text(c,"■ EMA 50",lx0,49,9,Color.rgb(210,70,220));text(c,f(e50),lx0+53,49,9,Color.rgb(210,70,220));}
+        if(showEMA50){text(c,"■ EMA 50",lx0,49,9,Color.rgb(255,193,7));text(c,f(e50),lx0+53,49,9,Color.rgb(255,193,7));lx0+=96;}
+        if(showEMA200){text(c,"■ EMA 200",lx0,49,9,Color.rgb(3,169,244));text(c,f(e200),lx0+60,49,9,Color.rgb(3,169,244));}
 
         float T=55,B=mainBottom-22;
         // Main grid.
@@ -248,9 +246,8 @@ public class CandleChartView extends View {
             if(i==n-1){p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(3);p.setColor(chartTextColor());c.drawRect(x-cw/2-2,Math.min(yo,yc)-2,x+cw/2+2,Math.max(yo,yc)+2,p);p.setStyle(Paint.Style.FILL);}
         }
 
-        if(showEMA9)ema(c,9,Color.rgb(255,193,7),L,R,T,B,lo,hi,step);
-        if(showEMA21)ema(c,21,Color.rgb(3,169,244),L,R,T,B,lo,hi,step);
-        if(showEMA50)ema(c,50,Color.rgb(210,70,220),L,R,T,B,lo,hi,step);
+        if(showEMA50)ema(c,50,Color.rgb(255,193,7),L,R,T,B,lo,hi,step);
+        if(showEMA200)ema(c,200,Color.rgb(3,169,244),L,R,T,B,lo,hi,step);
 
         if(showSR){
             double res=hi-pad*.25,sup=lo+pad*.25;float ry=py(res,lo,hi,T,B),sy=py(sup,lo,hi,T,B);
