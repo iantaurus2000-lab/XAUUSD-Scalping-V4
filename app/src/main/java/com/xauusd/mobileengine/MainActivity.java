@@ -1907,7 +1907,6 @@ public class MainActivity extends Activity {
             ";tf="+selectedTf+
             ";ema50="+(ind("ema50",true)?"1":"0")+
             ";ema200="+(ind("ema200",true)?"1":"0")+
-            ";ema50="+(ind("ema50",true)?"1":"0")+
             ";sr="+(ind("sr",true)?"1":"0")+
             ";fibo="+(ind("fibo",true)?"1":"0");
         getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putString("indicator_next",command).apply();

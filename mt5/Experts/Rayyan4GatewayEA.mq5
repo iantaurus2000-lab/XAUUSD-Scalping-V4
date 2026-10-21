@@ -25,17 +25,48 @@ void updateChartCountdown();
 void uploadChartSnapshot();
 uint lastScreenshotTick=0;
 
+// Native chart layers are managed by this same EA; no second EA is needed.
+input int SRLookbackBars=80;
+input int FiboLookbackBars=60;
+int hEma50=INVALID_HANDLE, hEma200=INVALID_HANDLE;
+bool onEma50=true, onEma200=true, onSR=true, onFibo=true;
+string lastIndicatorCommandId="";
+datetime lastIndicatorBar=0, lastIndicatorDiag=0;
+#define RAYYAN_EMA_DRAW_BARS 220
+
 int OnInit(){
+   hEma50=iMA(_Symbol,_Period,50,0,MODE_EMA,PRICE_CLOSE);
+   hEma200=iMA(_Symbol,_Period,200,0,MODE_EMA,PRICE_CLOSE);
+   if(hEma50==INVALID_HANDLE || hEma200==INVALID_HANDLE)
+      Print("RAYYAN4 INDICATOR WARNING EMA handles=",hEma50,",",hEma200);
+   ChartSetInteger(0,CHART_AUTOSCROLL,true);
+   ChartSetInteger(0,CHART_SHIFT,false);
+   ChartSetInteger(0,CHART_SCALE,4);
+   applyAll();
    EventSetTimer(MathMax(1,PollSeconds));
-   Print("RAYYAN4 START Gateway=",GatewayUrl," Symbol=",AllowedSymbol);
+   Print("RAYYAN4 START Gateway=",GatewayUrl," Symbol=",AllowedSymbol,
+         " trade queue=/next indicator queue=/indicator_next");
    return(INIT_SUCCEEDED);
 }
-void OnDeinit(const int r){ EventKillTimer(); ObjectDelete(0,"RAYYAN_MT5_BAR_TIMER"); }
+void OnDeinit(const int r){
+   EventKillTimer();
+   ObjectDelete(0,"RAYYAN_MT5_BAR_TIMER");
+   ObjectDelete(0,"RAYYAN8_SR_RESISTANCE");
+   ObjectDelete(0,"RAYYAN8_SR_SUPPORT");
+   ObjectDelete(0,"RAYYAN8_FIBO");
+   deleteEmaSegments("RAYYAN_EMA50_SEG_");
+   deleteEmaSegments("RAYYAN_EMA200_SEG_");
+   if(hEma50!=INVALID_HANDLE)IndicatorRelease(hEma50);
+   if(hEma200!=INVALID_HANDLE)IndicatorRelease(hEma200);
+}
 void OnTick(){ manageTP2RetraceProtection(); }
 
 void OnTimer(){
-   // Risk protection continues even if the APK gateway is temporarily unavailable.
+   // Risk protection, chart sync and snapshots stay active independently of /next.
    manageTP2RetraceProtection();
+   processIndicatorQueue();
+   updateChartCountdown();
+   uploadChartSnapshot();
    int code=-1;
    string cmd="",transportDetail="";
    ResetLastError();
@@ -53,8 +84,6 @@ void OnTimer(){
 
    publishOrderState();
    publishMarketQuotes();
-   updateChartCountdown();
-   uploadChartSnapshot();
 
    if(StringLen(cmd)<5){
       if(TimeCurrent()-lastDiag>=10){
@@ -714,4 +743,180 @@ string urlEncode(string s){
       else { out+="%"; out+=StringFormat("%02X",c); }
    }
    return out;
+}
+
+
+// The indicator queue is independent: it never reads or clears trade /next.
+bool indicatorGet(string path,string &out){
+   int code=-1;
+   string diagnostic="";
+   bool ok=gatewayGet(path,code,out,diagnostic);
+   if(!ok || code!=200){
+      if(TimeCurrent()-lastIndicatorDiag>=30){
+         lastIndicatorDiag=TimeCurrent();
+         Print("RAYYAN4 INDICATOR HTTP ERROR code=",code,
+               " detail=",diagnostic," path=",path);
+      }
+      return false;
+   }
+   return true;
+}
+
+void processIndicatorQueue(){
+   string cmd="";
+   if(indicatorGet("/indicator_next",cmd) && StringLen(cmd)>5){
+      string id=field(cmd,"id");
+      if(id!="" && id!=lastIndicatorCommandId){
+         string targetSymbol=field(cmd,"symbol");
+         ENUM_TIMEFRAMES targetPeriod=parsePeriod(field(cmd,"tf"));
+         if(targetSymbol!="" && targetPeriod!=PERIOD_CURRENT &&
+            (ChartSymbol(0)!=targetSymbol || ChartPeriod(0)!=targetPeriod)){
+            ResetLastError();
+            if(SymbolSelect(targetSymbol,true) &&
+               ChartSetSymbolPeriod(0,targetSymbol,targetPeriod)){
+               Print("RAYYAN4 chart sync requested ",targetSymbol," ",field(cmd,"tf"));
+               return; // leave command pending until the chart change is active
+            }
+            Print("RAYYAN4 chart sync failed target=",targetSymbol,
+                  " tf=",field(cmd,"tf")," err=",GetLastError());
+            return; // never ACK a chart state that was not applied
+         }
+
+         onEma50=(field(cmd,"ema50")=="1");
+         onEma200=(field(cmd,"ema200")=="1");
+         onSR=(field(cmd,"sr")=="1");
+         onFibo=(field(cmd,"fibo")=="1");
+         applyAll();
+
+         string ack="";
+         if(indicatorGet("/indicator_ack?id="+id,ack) &&
+            StringFind(ack,"INDICATOR ACK OK")>=0){
+            lastIndicatorCommandId=id;
+            Print("RAYYAN4 indicators ACK id=",id,
+                  " EMA50=",onEma50," EMA200=",onEma200,
+                  " SR=",onSR," FIBO=",onFibo);
+         }else{
+            Print("RAYYAN4 indicator ACK not confirmed id=",id,
+                  " response=",ack);
+            return;
+         }
+      }
+   }
+
+   datetime bar=iTime(_Symbol,_Period,0);
+   if(bar!=0 && bar!=lastIndicatorBar){
+      lastIndicatorBar=bar;
+      applyAll();
+   }
+}
+
+ENUM_TIMEFRAMES parsePeriod(string tf){
+   if(tf=="M1")return PERIOD_M1;
+   if(tf=="M5")return PERIOD_M5;
+   if(tf=="M15")return PERIOD_M15;
+   if(tf=="H1")return PERIOD_H1;
+   if(tf=="H4")return PERIOD_H4;
+   if(tf=="D1")return PERIOD_D1;
+   return PERIOD_CURRENT;
+}
+
+void applyAll(){
+   drawEmaSegments(hEma50,"RAYYAN_EMA50_SEG_",onEma50,clrOrange);
+   drawEmaSegments(hEma200,"RAYYAN_EMA200_SEG_",onEma200,clrMediumOrchid);
+   updateSR();
+   updateFibo();
+   ChartRedraw(0);
+}
+
+void deleteEmaSegments(string prefix){
+   int total=ObjectsTotal(0,0,-1);
+   for(int i=total-1;i>=0;i--){
+      string name=ObjectName(0,i,0,-1);
+      if(StringFind(name,prefix)==0)ObjectDelete(0,name);
+   }
+}
+
+// EMA curves use chart objects so their colors are controlled by the EA itself;
+// a separate EA or custom indicator is not required.
+void drawEmaSegments(int handle,string prefix,bool enabled,color lineColor){
+   deleteEmaSegments(prefix);
+   if(!enabled || handle==INVALID_HANDLE)return;
+
+   int available=Bars(_Symbol,_Period);
+   if(available<3)return;
+   int count=(int)MathMin(RAYYAN_EMA_DRAW_BARS,available-1);
+   double values[];
+   datetime times[];
+   ArraySetAsSeries(values,true);
+   ArraySetAsSeries(times,true);
+   int copiedValues=CopyBuffer(handle,0,0,count,values);
+   int copiedTimes=CopyTime(_Symbol,_Period,0,count,times);
+   int usable=(int)MathMin(copiedValues,copiedTimes);
+   if(usable<3)return;
+
+   for(int i=usable-2;i>=0;i--){
+      string name=prefix+IntegerToString(i);
+      if(!ObjectCreate(0,name,OBJ_TREND,0,
+                       times[i+1],values[i+1],times[i],values[i]))
+         continue;
+      ObjectSetInteger(0,name,OBJPROP_COLOR,lineColor);
+      ObjectSetInteger(0,name,OBJPROP_WIDTH,2);
+      ObjectSetInteger(0,name,OBJPROP_STYLE,STYLE_SOLID);
+      ObjectSetInteger(0,name,OBJPROP_RAY_LEFT,false);
+      ObjectSetInteger(0,name,OBJPROP_RAY_RIGHT,false);
+      ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,name,OBJPROP_SELECTED,false);
+      ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
+      ObjectSetInteger(0,name,OBJPROP_BACK,false);
+   }
+}
+
+void updateSR(){
+   if(!onSR){
+      ObjectDelete(0,"RAYYAN8_SR_RESISTANCE");
+      ObjectDelete(0,"RAYYAN8_SR_SUPPORT");
+      return;
+   }
+   int hi=iHighest(_Symbol,_Period,MODE_HIGH,SRLookbackBars,1);
+   int lo=iLowest(_Symbol,_Period,MODE_LOW,SRLookbackBars,1);
+   if(hi<0||lo<0)return;
+   drawLevel("RAYYAN8_SR_RESISTANCE",iHigh(_Symbol,_Period,hi),clrTomato);
+   drawLevel("RAYYAN8_SR_SUPPORT",iLow(_Symbol,_Period,lo),clrDeepSkyBlue);
+}
+
+void drawLevel(string name,double price,color c){
+   if(ObjectFind(0,name)<0)ObjectCreate(0,name,OBJ_HLINE,0,0,price);
+   ObjectSetDouble(0,name,OBJPROP_PRICE,price);
+   ObjectSetInteger(0,name,OBJPROP_COLOR,c);
+   ObjectSetInteger(0,name,OBJPROP_STYLE,STYLE_DASH);
+   ObjectSetInteger(0,name,OBJPROP_WIDTH,1);
+   ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+}
+
+void updateFibo(){
+   if(!onFibo){ObjectDelete(0,"RAYYAN8_FIBO");return;}
+   int hi=iHighest(_Symbol,_Period,MODE_HIGH,FiboLookbackBars,1);
+   int lo=iLowest(_Symbol,_Period,MODE_LOW,FiboLookbackBars,1);
+   if(hi<0||lo<0)return;
+   datetime th=iTime(_Symbol,_Period,hi),tl=iTime(_Symbol,_Period,lo);
+   double ph=iHigh(_Symbol,_Period,hi),pl=iLow(_Symbol,_Period,lo);
+   datetime t1=th<tl?th:tl;
+   datetime t2=th<tl?tl:th;
+   double p1=th<tl?ph:pl;
+   double p2=th<tl?pl:ph;
+   if(ObjectFind(0,"RAYYAN8_FIBO")<0)
+      ObjectCreate(0,"RAYYAN8_FIBO",OBJ_FIBO,0,t1,p1,t2,p2);
+   else{
+      ObjectMove(0,"RAYYAN8_FIBO",0,t1,p1);
+      ObjectMove(0,"RAYYAN8_FIBO",1,t2,p2);
+   }
+   ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_COLOR,clrGold);
+   ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_RAY_RIGHT,true);
+   ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_LEVELS,6);
+   double levels[]={0.0,0.236,0.382,0.5,0.618,1.0};
+   string labels[]={"0","23.6","38.2","50","61.8","100"};
+   for(int i=0;i<6;i++){
+      ObjectSetDouble(0,"RAYYAN8_FIBO",OBJPROP_LEVELVALUE,i,levels[i]);
+      ObjectSetString(0,"RAYYAN8_FIBO",OBJPROP_LEVELTEXT,i,labels[i]);
+   }
 }
