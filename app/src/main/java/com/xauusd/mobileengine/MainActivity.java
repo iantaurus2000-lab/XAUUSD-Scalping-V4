@@ -1894,7 +1894,7 @@ public class MainActivity extends Activity {
 
     void loadIndicatorSettings(){
         chart.setFibonacciLevels(readFibonacciLevels());
-        chart.setShowEMA9(ind("ema9",true));chart.setShowEMA21(ind("ema21",true));chart.setShowEMA50(ind("ema50",true));
+        chart.setShowEMA50(ind("ema50",true));chart.setShowEMA200(ind("ema200",true));
         chart.setShowSR(ind("sr",true));chart.setShowFibo(ind("fibo",true));chart.setShowRSI(ind("rsi",true));chart.setShowMACD(ind("macd",true));chart.setShowATR(ind("atr",true));
         chart.setShowSignals(ind("signals",true));chart.setShowWickBos(ind("wickbos",true));chart.setShowTradeLevels(ind("orders",true));chart.setShowPosition(ind("position",true));chart.setShowBidAsk(ind("bidask",true));
         queueNativeIndicatorState();
@@ -1905,8 +1905,8 @@ public class MainActivity extends Activity {
         String command="id="+id+
             ";symbol="+mt5SymbolForMarket(selectedMarket)+
             ";tf="+selectedTf+
-            ";ema9="+(ind("ema9",true)?"1":"0")+
-            ";ema21="+(ind("ema21",true)?"1":"0")+
+            ";ema50="+(ind("ema50",true)?"1":"0")+
+            ";ema200="+(ind("ema200",true)?"1":"0")+
             ";ema50="+(ind("ema50",true)?"1":"0")+
             ";sr="+(ind("sr",true)?"1":"0")+
             ";fibo="+(ind("fibo",true)?"1":"0");
@@ -1916,10 +1916,10 @@ public class MainActivity extends Activity {
 
     void setInd(String key,boolean enabled){
         prefs.edit().putBoolean(key,enabled).apply();
-        if("ema9".equals(key)||"ema21".equals(key)||"ema50".equals(key)||"sr".equals(key)||"fibo".equals(key))
+        if("ema50".equals(key)||"ema200".equals(key)||"sr".equals(key)||"fibo".equals(key))
             queueNativeIndicatorState();
         switch(key){
-            case "ema9":chart.setShowEMA9(enabled);break;case "ema21":chart.setShowEMA21(enabled);break;case "ema50":chart.setShowEMA50(enabled);break;
+            case "ema50":chart.setShowEMA50(enabled);break;case "ema200":chart.setShowEMA200(enabled);break;
             case "sr":chart.setShowSR(enabled);break;case "fibo":chart.setShowFibo(enabled);break;case "rsi":chart.setShowRSI(enabled);break;case "macd":chart.setShowMACD(enabled);break;case "atr":chart.setShowATR(enabled);break;
             case "signals":chart.setShowSignals(enabled);break;case "wickbos":chart.setShowWickBos(enabled);break;case "orders":chart.setShowTradeLevels(enabled);break;case "position":chart.setShowPosition(enabled);break;case "bidask":chart.setShowBidAsk(enabled);break;
         }
@@ -1968,20 +1968,20 @@ public class MainActivity extends Activity {
 
     void bindQuickLayer(Button b,String label){
         b.setOnClickListener(v->{if(label.contains("S/R"))setInd("sr",!ind("sr",true));else if(label.contains("Fibo"))showFibonacciDialog();
-            else if(label.contains("EMA")){boolean next=!(ind("ema9",true)&&ind("ema21",true)&&ind("ema50",true));setInd("ema9",next);setInd("ema21",next);setInd("ema50",next);}
+            else if(label.contains("EMA")){boolean next=!(ind("ema50",true)&&ind("ema200",true));setInd("ema50",next);setInd("ema200",next);}
             else if(label.contains("Buy/Sell"))setInd("signals",!ind("signals",true));else if(label.contains("Order"))setInd("orders",!ind("orders",true));else if(label.contains("Posisi")){setInd("position",true);if(chart!=null)chart.setShowPosition(true);showWinRateDialog();}updateQuickLayerButton(b,label);});
         updateQuickLayerButton(b,label);
     }
 
     void updateQuickLayerButton(Button b,String label){
-        boolean on;if(label.contains("S/R"))on=ind("sr",true);else if(label.contains("Fibo"))on=ind("fibo",true);else if(label.contains("EMA"))on=ind("ema9",true)||ind("ema21",true)||ind("ema50",true);else if(label.contains("Buy/Sell"))on=ind("signals",true);else if(label.contains("Order"))on=ind("orders",true);else on=ind("position",true);
+        boolean on;if(label.contains("S/R"))on=ind("sr",true);else if(label.contains("Fibo"))on=ind("fibo",true);else if(label.contains("EMA"))on=ind("ema50",true)||ind("ema200",true);else if(label.contains("Buy/Sell"))on=ind("signals",true);else if(label.contains("Order"))on=ind("orders",true);else on=ind("position",true);
         b.setTextColor(on?green:Color.LTGRAY);b.setBackground(roundBg(on?Color.rgb(8,65,48):Color.rgb(7,34,60),12));
     }
 
     void showIndicatorDialog(){
-        final String[] names={"EMA 9","EMA 21","EMA 50","Support / Resistance","Fibonacci","RSI 14","MACD","ATR","Buy / Sell","Trend / Structure","Bid / Ask","Entry / SL / TP"};
-        final String[] keys={"ema9","ema21","ema50","sr","fibo","rsi","macd","atr","signals","wickbos","bidask","orders"};
-        final String[] icons={"〽","〽","〽","⌗","⟋","◌","∿","↕","↗","〰","⇄","▤"};
+        final String[] names={"EMA 50","EMA 200","Support / Resistance","Fibonacci","RSI 14","MACD","ATR","Buy / Sell","Trend / Structure","Bid / Ask","Entry / SL / TP"};
+        final String[] keys={"ema50","ema200","sr","fibo","rsi","macd","atr","signals","wickbos","bidask","orders"};
+        final String[] icons={"〽","〽","⌗","⟋","◌","∿","↕","↗","〰","⇄","▤"};
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(22,16,22,14);box.setBackground(roundBg(Color.rgb(3,18,30),16));
         TextView title=tv("CHART LAYERS",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);box.addView(title,new LinearLayout.LayoutParams(-1,40));
         TextView note=tv("Aktifkan layer yang ingin ditampilkan pada chart",12);note.setTextColor(Color.LTGRAY);box.addView(note,new LinearLayout.LayoutParams(-1,38));
