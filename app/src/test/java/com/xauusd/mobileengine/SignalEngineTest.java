@@ -102,7 +102,7 @@ public class SignalEngineTest {
         SignalResult s=SignalEngine.evaluate(m1,context(),100.21,100.23,100.21,100.23,true);
         assertEquals("SELL",s.side);
         assertFalse("Open Action 1 must not require a rejection wick",s.wickRejection);
-        assertEquals("CANDLE EXHAUSTION RECOIL • SELL",s.setup);
+        assertEquals("CANDLE EXHAUSTION • MARKET SELL",s.setup);
         assertEquals("Entry follows the current candle high",m1[m1.length-1].h,s.entry,1e-9);
         assertTrue(s.sl>s.entry&&s.tp1<s.entry&&s.tp2<s.tp1);
     }
@@ -112,14 +112,13 @@ public class SignalEngineTest {
         SignalResult s=SignalEngine.evaluate(m1,context(),99.77,99.79,99.77,99.79,true);
         assertEquals("BUY",s.side);
         assertFalse("Open Action 1 must not require a rejection wick",s.wickRejection);
-        assertEquals("CANDLE EXHAUSTION RECOIL • BUY",s.setup);
+        assertEquals("CANDLE EXHAUSTION • MARKET BUY",s.setup);
         assertEquals("Entry follows the current candle low",m1[m1.length-1].l,s.entry,1e-9);
         assertTrue(s.sl<s.entry&&s.tp1>s.entry&&s.tp2>s.tp1);
     }
 
-    @Test public void openActionOneWaitsUntilExtremeRecoilIsConfirmed() {
-        // Price reaches a local high but has not recoiled enough to confirm BUY/SELL exhaustion.
-        Candle[] m1=history(100.00,100.10,99.95,100.099);
+    @Test public void openActionOneWaitsUntilExhaustionTravelThresholdIsReached() {
+        // Price has not yet travelled far enough from the open; no bounce is required after threshold.
         SignalResult s=SignalEngine.evaluate(m1,context(),100.07,100.09,100.07,100.09,true);
         assertEquals("WAIT",s.side);
     }
