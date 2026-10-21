@@ -31,7 +31,12 @@ public class SignalEngineTest {
         assertTrue(s.entry>0&&s.entry<98.91);
         assertTrue(s.entry-m1[m1.length-1].l
             <= (Math.min(m1[m1.length-1].o,m1[m1.length-1].c)-m1[m1.length-1].l)*0.10+1e-9);
-        assertTrue(s.sl<s.entry&&s.tp1>s.entry);
+        assertTrue(s.sl<s.entry&&s.tp1>s.entry&&s.tp2>s.tp1);
+        double range=m1[m1.length-1].h-m1[m1.length-1].l;
+        assertEquals(m1[m1.length-1].l-range*0.27
+            -Math.max(SignalEngine.atr(m1,14)*0.03,(98.91-98.89)*2.0),s.sl,1e-8);
+        assertEquals(m1[m1.length-1].l+range*0.618,s.tp1,1e-8);
+        assertEquals(m1[m1.length-1].h,s.tp2,1e-8);
         assertTrue(s.setup.contains("EARLY WICK")||s.setup.contains("NEEDLE WICK"));
     }
 
@@ -43,7 +48,12 @@ public class SignalEngineTest {
         assertTrue(s.entry>101.09);
         assertTrue(m1[m1.length-1].h-s.entry
             <= (m1[m1.length-1].h-Math.max(m1[m1.length-1].o,m1[m1.length-1].c))*0.10+1e-9);
-        assertTrue(s.sl>s.entry&&s.tp1<s.entry);
+        assertTrue(s.sl>s.entry&&s.tp1<s.entry&&s.tp2<s.tp1);
+        double range=m1[m1.length-1].h-m1[m1.length-1].l;
+        assertEquals(m1[m1.length-1].h+range*0.27
+            +Math.max(SignalEngine.atr(m1,14)*0.03,(101.11-101.09)*2.0),s.sl,1e-8);
+        assertEquals(m1[m1.length-1].h-range*0.618,s.tp1,1e-8);
+        assertEquals(m1[m1.length-1].l,s.tp2,1e-8);
     }
     @Test public void acceptsNearSweepWhenWickRejectionIsValid() {
         Candle[] m1=history(100.0,100.1,98.8,98.9);
