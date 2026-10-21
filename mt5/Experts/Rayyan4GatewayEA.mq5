@@ -65,11 +65,18 @@ void OnDeinit(const int r){
 void OnTick(){ manageTP2RetraceProtection(); }
 
 void OnTimer(){
-   // Risk protection, chart sync and snapshots stay active independently of /next.
+   // Always service the trade queue first. Chart screenshots, indicator commands,
+   // and quote publication are auxiliary and must never delay an incoming order.
    manageTP2RetraceProtection();
+   processTradeQueue();
+   publishOrderState();
+   publishMarketQuotes();
    processIndicatorQueue();
    updateChartCountdown();
    uploadChartSnapshot();
+}
+
+void processTradeQueue(){
    int code=-1;
    string cmd="",transportDetail="";
    ResetLastError();
@@ -84,9 +91,6 @@ void OnTimer(){
       }
       return;
    }
-
-   publishOrderState();
-   publishMarketQuotes();
 
    if(StringLen(cmd)<5){
       if(TimeCurrent()-lastDiag>=10){
