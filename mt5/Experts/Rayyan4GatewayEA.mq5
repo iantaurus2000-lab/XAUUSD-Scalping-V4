@@ -32,9 +32,12 @@ int hEma50=INVALID_HANDLE, hEma200=INVALID_HANDLE;
 bool onEma50=true, onEma200=true, onSR=true, onFibo=true;
 string lastIndicatorCommandId="";
 datetime lastIndicatorBar=0, lastIndicatorDiag=0;
-#define RAYYAN_EMA_DRAW_BARS 220
+#define RAYYAN_EMA_DRAW_BARS 140
 
 int OnInit(){
+   // Remove legacy chart-attached EMA/MA indicators and old Rayyan EMA objects.
+   // The EA below is the sole owner of the two colored EMA curves.
+   cleanupDuplicateEmaLayers();
    hEma50=iMA(_Symbol,_Period,50,0,MODE_EMA,PRICE_CLOSE);
    hEma200=iMA(_Symbol,_Period,200,0,MODE_EMA,PRICE_CLOSE);
    if(hEma50==INVALID_HANDLE || hEma200==INVALID_HANDLE)
@@ -383,11 +386,12 @@ void updateChartCountdown(){
       ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
    }
    ObjectSetString(0,name,OBJPROP_TEXT,label);
-   ChartRedraw(0);
 }
 
 void uploadChartSnapshot(){
-   if(GetTickCount()-lastScreenshotTick<900) return;
+   // Full chart screenshots are expensive under Winlator; trade polling stays at 1s,
+   // while the visual mirror refreshes at a lighter cadence.
+   if(GetTickCount()-lastScreenshotTick<2500) return;
    lastScreenshotTick=GetTickCount();
    string filename="rayyan_mt5_chart.png";
    ResetLastError();
@@ -818,6 +822,31 @@ ENUM_TIMEFRAMES parsePeriod(string tf){
    if(tf=="H4")return PERIOD_H4;
    if(tf=="D1")return PERIOD_D1;
    return PERIOD_CURRENT;
+}
+
+void cleanupDuplicateEmaLayers(){
+   long windows=ChartGetInteger(0,CHART_WINDOWS_TOTAL);
+   for(int window=(int)windows-1;window>=0;window--){
+      int total=ChartIndicatorsTotal(0,window);
+      for(int i=total-1;i>=0;i--){
+         string shortName=ChartIndicatorName(0,window,i);
+         string upper=shortName;
+         StringToUpper(upper);
+         if(StringFind(upper,"EMA")>=0 || StringFind(upper,"RAYYANCOLOREDEMA")>=0
+            || StringFind(upper,"MOVING AVERAGE")>=0){
+            if(ChartIndicatorDelete(0,window,shortName))
+               Print("RAYYAN4 removed duplicate chart MA indicator: ",shortName);
+         }
+      }
+   }
+   int totalObjects=ObjectsTotal(0,0,-1);
+   for(int i=totalObjects-1;i>=0;i--){
+      string objectName=ObjectName(0,i,0,-1);
+      string upperObject=objectName;
+      StringToUpper(upperObject);
+      if(StringFind(upperObject,"RAYYAN")==0 && StringFind(upperObject,"EMA")>=0)
+         ObjectDelete(0,objectName);
+   }
 }
 
 void applyAll(){
