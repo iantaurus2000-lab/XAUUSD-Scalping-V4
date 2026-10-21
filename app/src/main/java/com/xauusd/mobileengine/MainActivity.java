@@ -946,7 +946,7 @@ public class MainActivity extends Activity {
                 &&"M1".equals(selectedTf);
         if(m1==null||m1.length<30||m5==null||m5.length<60){
             autoDiagnostic(gp,"DATA_M1M5_SHORT|"+selectedMarket+"|"+selectedTf,
-                "ENTRY BLOCKED • M1 kurang dari 30 atau M5 kurang dari 200 candle • market="+selectedMarket+" TF="+selectedTf);
+                "ENTRY BLOCKED • M1 kurang dari 30 atau M5 kurang dari 60 candle • market="+selectedMarket+" TF="+selectedTf);
             return;
         }
 
