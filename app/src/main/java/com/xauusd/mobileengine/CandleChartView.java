@@ -303,9 +303,9 @@ public class CandleChartView extends View {
                 float fy=py(level,lo,hi,T,B);
                 if(fy>=T&&fy<=B){
                     p.setPathEffect(new DashPathEffect(new float[]{4,4},0));
-                    ln(c,L,fy,R,fy,fibCols[i],1);
+                    ln(c,L,fy,R,fy,fibColor,1);
                     p.setPathEffect(null);
-                    text(c,String.format(Locale.US,"F%.1f %.2f",fib[i]*100,level),L+4,fy-3,8,fibCols[i]);
+                    text(c,String.format(Locale.US,"F%.1f %.2f",fib[i]*100,level),L+4,fy-3,8,fibColor);
                 }
             }
 
