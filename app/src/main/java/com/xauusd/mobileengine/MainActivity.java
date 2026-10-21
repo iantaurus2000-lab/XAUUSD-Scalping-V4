@@ -1147,14 +1147,16 @@ public class MainActivity extends Activity {
                         .putString("smart_last_log_key","EXECUTED_WITHOUT_ACTIVE_ORDER").apply();
                     AppLog.add(this,"SMART LIMIT","EA reports no pending order/position after EXECUTED; no immediate resend");
                 }else if(now-gp.getLong("smart_active_queue_ms",now)>10000L){
-                    gp.edit().putString("smart_phase","LOCKED_UNCERTAIN").apply();
-                    AppLog.add(this,"SMART LIMIT","execution acknowledged but state is inconclusive; AUTO locked to prevent duplicate");
+                    gp.edit().putString("smart_phase","LOCKED_UNCERTAIN")
+                        .putLong("smart_uncertain_since_ms",now).apply();
+                    AppLog.add(this,"SMART LIMIT","execution acknowledged but state is inconclusive; waiting for a fresh flat EA state");
                 }
                 return;
             }
             if(activeId.equals(orderId)&&("NO_BROKER_CONNECTION".equals(result)||"UNKNOWN".equals(result))){
-                gp.edit().putString("smart_phase","LOCKED_UNCERTAIN").apply();
-                AppLog.add(this,"SMART LIMIT","ambiguous execution result; locked pending manual MT5 verification");
+                gp.edit().putString("smart_phase","LOCKED_UNCERTAIN")
+                    .putLong("smart_uncertain_since_ms",now).apply();
+                AppLog.add(this,"SMART LIMIT","ambiguous execution result; waiting for confirmed flat EA state");
                 return;
             }
             if(activeId.equals(orderId)&&!"QUEUED".equals(result)){
@@ -1167,7 +1169,27 @@ public class MainActivity extends Activity {
         }
 
         if("LOCKED_UNCERTAIN".equals(phase)){
-            // Explicitly fail closed: connection/ACK ambiguity must be checked in MT5.
+            // Do not stay disabled forever after an ambiguous ACK. Re-arm only after
+            // 30s of uncertainty AND a fresh EA heartbeat that reports NONE with an
+            // empty gateway queue and a terminal/non-queued command result. Pending
+            // orders and positions remain locked; a same-candle signal is still deduped.
+            long uncertainSince=gp.getLong("smart_uncertain_since_ms",0L);
+            if(uncertainSince<=0L){
+                uncertainSince=now;
+                gp.edit().putLong("smart_uncertain_since_ms",uncertainSince).apply();
+            }
+            String pendingCommand=gp.getString("next","");
+            String statusId=gp.getString("order_status_id","");
+            String orderStatus=gp.getString("order_status","UNKNOWN");
+            boolean queueEmpty=pendingCommand==null||pendingCommand.trim().isEmpty();
+            boolean commandSettled=!activeId.equals(statusId)||!"QUEUED".equals(orderStatus);
+            if(stateFresh&&"NONE".equals(remoteState)&&queueEmpty&&commandSettled
+                    &&now-uncertainSince>=30000L){
+                gp.edit().putString("smart_phase","IDLE").remove("smart_active_id")
+                    .remove("smart_uncertain_since_ms")
+                    .putBoolean("smart_reentry_allowed",false).apply();
+                AppLog.add(this,"SMART LIMIT","AUTO re-armed after 30s + fresh EA NONE + empty queue; awaiting a new signal");
+            }
             return;
         }
 
