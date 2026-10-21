@@ -732,7 +732,9 @@ public class MainActivity extends Activity {
             AppLog.add(this,"ORDER_BLOCKED","Manual chart entry • level wick-tip/quote broker tidak valid");
             return;
         }
-        String side="BUY".equals(orderSignal.side)?"BUY_LIMIT":"SELL_LIMIT";
+        boolean marketEntry=isOpenActionSweepMode(actionPrefs);
+        String side=marketEntry?orderSignal.side:
+            ("BUY".equals(orderSignal.side)?"BUY_LIMIT":"SELL_LIMIT");
         double lot=lotForMarket();
         double target=validAutoTarget(orderSignal);
         if(target<=0.0||lot<=0.0){
@@ -740,7 +742,10 @@ public class MainActivity extends Activity {
             return;
         }
         boolean queued=queueLimit(side,lot,orderSignal.entry,orderSignal.sl,target,orderSignal.tp1);
-        if(queued)startGateway();
+        if(queued){
+            AppLog.add(this,"ORDER","manual Open Action execution="+(marketEntry?"MARKET":"LIMIT"));
+            startGateway();
+        }
     }
 
     private boolean isEntryReady(SignalResult signal,double bid,double ask){
@@ -797,9 +802,18 @@ public class MainActivity extends Activity {
                 &&!signal.liquiditySweep&&signal.confidence<4)
             return "ARAH M5 BERLAWANAN • WICK BELUM KUAT";
         if(signal.entry<=0||signal.sl<=0||signal.tp1<=0)return "LEVEL ENTRY/SL/TP TIDAK VALID";
-        if("BUY".equals(signal.side)&&!(signal.entry<ask&&signal.sl<signal.entry&&signal.tp1>signal.entry))return "LEVEL BUY LIMIT/SL/TP TIDAK VALID";
-        if("SELL".equals(signal.side)&&!(signal.entry>bid&&signal.tp1<signal.entry&&signal.sl>signal.entry))return "LEVEL SELL LIMIT/SL/TP TIDAK VALID";
-        if(validAutoTarget(signal)<=0)return "TARGET LIMIT TIDAK VALID";
+        boolean marketMode=isOpenActionSweepMode(actionPrefs);
+        // Mode 1 is a MARKET entry: never apply BUY_LIMIT/SELL_LIMIT price-position gates.
+        // Mode 2 remains a wick-tip LIMIT and must stay on the correct side of live quotes.
+        if("BUY".equals(signal.side)){
+            if(!(signal.sl<signal.entry&&signal.tp1>signal.entry))return "LEVEL BUY SL/TP TIDAK VALID";
+            if(!marketMode&&signal.entry>=ask)return "BUY LIMIT harus di bawah ASK";
+        }
+        if("SELL".equals(signal.side)){
+            if(!(signal.tp1<signal.entry&&signal.sl>signal.entry))return "LEVEL SELL SL/TP TIDAK VALID";
+            if(!marketMode&&signal.entry<=bid)return "SELL LIMIT harus di atas BID";
+        }
+        if(validAutoTarget(signal)<=0)return marketMode?"TARGET MARKET TIDAK VALID":"TARGET LIMIT TIDAK VALID";
         return "READY";
     }
 
@@ -1091,8 +1105,8 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * OPEN ACTION 1 waits for adaptive travel to an extreme and a confirmed recoil.
-     * OPEN ACTION 2 still waits for one recoil from a rejected wick extreme.
+     * OPEN ACTION 1 fires as soon as the forming M1 candle reaches adaptive exhaustion travel.
+     * OPEN ACTION 1 has no bounce/recoil confirmation gate. OPEN ACTION 2 waits for one recoil.
      */
     private boolean isOpenActionEntryReady(SignalResult s,Candle[] m1,double bid,double ask,
                                            long candleStamp,SharedPreferences gp){
@@ -1123,7 +1137,7 @@ public class MainActivity extends Activity {
                     "OPEN ACTION SAPUAN WAIT • side="+side+" excursion="+price(Math.max(0.0,excursion))+
                     " threshold="+price(threshold)+" prevRange="+price(m1[m1.length-2].h-m1[m1.length-2].l)+
                     " ATR="+price(atr)+" candleSize="+size+
-                    ("BUY".equals(side)?" • BUY menunggu exhaustion + pantulan dari low":" • SELL menunggu exhaustion + pantulan dari high"));
+                    ("BUY".equals(side)?" • BUY menunggu jarak exhaustion candle":" • SELL menunggu jarak exhaustion candle"));
                 if(status!=null)status.setText("● OPEN ACTION WAIT • "+side+" EXHAUSTION");
             }
             return travelled;
