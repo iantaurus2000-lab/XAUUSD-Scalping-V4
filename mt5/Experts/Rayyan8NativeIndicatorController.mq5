@@ -1,7 +1,7 @@
 #property strict
 // Rayyan8 native MT5 chart indicator controller.
 // Independent queue: does NOT poll /next and cannot consume trade commands.
-input string GatewayUrl="http://192.168.0.109:8787";
+input string GatewayUrl="http://192.168.0.112:8787";
 input int PollSeconds=1;
 input int SRLookbackBars=80;
 input int FiboLookbackBars=60;
@@ -26,7 +26,7 @@ int OnInit(){
    }
    EventSetTimer(MathMax(1,PollSeconds));
    applyAll();
-   Print("RAYYAN8 native indicators controller started. Separate /indicator_next queue; trade EA untouched.");
+   Print("RAYYAN8 INDICATOR CONTROLLER START Gateway=",GatewayUrl," queue=/indicator_next only; DOES NOT handle trade /next or /ack. Keep Rayyan4GatewayEA attached for orders.");
    return INIT_SUCCEEDED;
 }
 void OnDeinit(const int reason){
