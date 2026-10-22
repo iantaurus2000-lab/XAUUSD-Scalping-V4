@@ -1668,6 +1668,64 @@ public class MainActivity extends Activity {
         showSizedDialog(d,0.80f,450);
     }
 
+    private void showStandardWickFiboDialog(){
+        SignalResult s=lastSignal;
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(12));
+        box.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("ANALISA STANDAR WICK + FIBONACCI",20);
+        title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        title.setMaxLines(2);title.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);
+        box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(58)));
+        TextView note=tv("Smart Auto • analisa entry LIMIT • "+selectedMarket+" • "+selectedTf,14);
+        note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
+        box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(42)));
+
+        LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
+        if(s==null){
+            addLargeAnalysisRow(rows,"STATUS ANALISA","MENUNGGU DATA OHLC M1/M5",Color.rgb(255,205,95));
+        }else{
+            boolean directional="BUY".equals(s.side)||"SELL".equals(s.side);
+            int sideColor="BUY".equals(s.side)?green:"SELL".equals(s.side)?red:Color.rgb(255,205,95);
+            addLargeAnalysisRow(rows,"STATUS ANALISA",entryReady?"ENTRY READY • "+s.side+" LIMIT":(directional?"SETUP TERBACA • VALIDASI ENTRY":"WAIT • "+s.setup),sideColor);
+            addLargeAnalysisRow(rows,"ARAH ENTRY",s.side,sideColor);
+            addLargeAnalysisRow(rows,"BIAS EMA M5",String.valueOf(s.m5Bias),Color.CYAN);
+            addLargeAnalysisRow(rows,"MODEL ENTRY",s.setup,Color.WHITE);
+            addLargeAnalysisRow(rows,"WICK REJECTION",onoff(s.wickRejection),s.wickRejection?green:Color.LTGRAY);
+            String fibo=s.setup!=null&&s.setup.contains("FIBO")?s.setup.substring(s.setup.indexOf("FIBO")):"LEVEL FIBONACCI TIDAK DIPILIH • WICK LIMIT FALLBACK";
+            addLargeAnalysisRow(rows,"LEVEL FIBONACCI",fibo,Color.CYAN);
+            addLargeAnalysisRow(rows,"ENTRY LIMIT",directional?price(s.entry):"—",Color.WHITE);
+            addLargeAnalysisRow(rows,"STOP LOSS (SL)",directional?price(s.sl):"—",red);
+            addLargeAnalysisRow(rows,"TAKE PROFIT 1 (TP1)",directional?price(s.tp1):"—",green);
+            addLargeAnalysisRow(rows,"TAKE PROFIT 2 (TP2)",directional?price(s.tp2):"—",green);
+            addLargeAnalysisRow(rows,"CONFIDENCE",s.confidence+"/5 • "+s.score+"%",Color.CYAN);
+            addLargeAnalysisRow(rows,"ATR M1 / FILTER",onoff(s.atrFilter),s.atrFilter?green:red);
+            addLargeAnalysisRow(rows,"SPREAD MT5 / FILTER",onoff(s.spreadFilter),s.spreadFilter?green:red);
+        }
+        addLargeAnalysisRow(rows,"ATURAN M5","EMA M5 menjadi konteks arah, bukan larangan mutlak saat wick rejection jelas.",Color.WHITE);
+        addLargeAnalysisRow(rows,"ATURAN FIBONACCI","Cari level 38.2%, 50%, 61.8%, atau 78.6%; bila level tidak valid, strategi dapat memakai wick LIMIT fallback.",Color.WHITE);
+        addLargeAnalysisRow(rows,"PENGAMAN ORDER","Entry tetap memerlukan quote MT5 segar, spread/ATR valid, SL/TP valid, EA online, dan antrean aman.",Color.rgb(255,205,95));
+        ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
+        box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
+        AlertDialog d=new AlertDialog.Builder(this).setView(box).setPositiveButton("TUTUP",null).create();
+        showSizedDialog(d,0.84f,460);
+        AppLog.add(this,"ANALISA","opened Standar Wick + Fibonacci panel • "+selectedMarket+" • "+selectedTf);
+    }
+
+    private void addLargeAnalysisRow(LinearLayout parent,String label,String value,int valueColor){
+        LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(uiDp(14),uiDp(10),uiDp(14),uiDp(10));
+        card.setBackground(roundBg(Color.rgb(7,30,47),12));
+        TextView key=tv(label,14);key.setTextColor(Color.CYAN);key.setTypeface(null,Typeface.BOLD);
+        card.addView(key,new LinearLayout.LayoutParams(-1,uiDp(25)));
+        TextView val=tv(value==null||value.trim().isEmpty()?"—":value,16);
+        val.setTextColor(valueColor);val.setGravity(Gravity.TOP|Gravity.START);
+        val.setPadding(uiDp(2),uiDp(3),uiDp(2),uiDp(3));val.setMaxLines(4);
+        card.addView(val,new LinearLayout.LayoutParams(-1,-2));
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);
+        params.setMargins(0,0,0,uiDp(8));parent.addView(card,params);
+    }
+
     private void showRiskManagementDialog(){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(12));
@@ -1691,7 +1749,10 @@ public class MainActivity extends Activity {
 
     private void handleMenuAction(String action){
         RayyanMenuLayout.dismissActive();
-        if("confidence".equals(action))showConfidenceDialog();
+        if("smart_auto".equals(action))RayyanMenuLayout.showSmartAuto(this,selectedMarket,selectedTf,this::handleMenuAction);
+        else if("standard_wick_fibo".equals(action))showStandardWickFiboDialog();
+        else if("excellent_machine".equals(action))Toast.makeText(this,"Excellent Analisa Machine akan ditambahkan terpisah; belum diaktifkan.",Toast.LENGTH_LONG).show();
+        else if("confidence".equals(action))showConfidenceDialog();
         else if("market".equals(action)||"settings_market".equals(action))showMarketDialog();
         else if("chart".equals(action)){if(chart!=null)chart.goLive();}
         else if("indicators".equals(action)||"settings_indicators".equals(action))showIndicatorDialog();
