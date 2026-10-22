@@ -21,7 +21,7 @@ public final class SignalEngine {
                                         double spreadBid, double spreadAsk) {
         // Preserve the original API for existing callers/tests.
         return evaluate(m1,m5,bid,ask,spreadBid,spreadAsk,
-                new double[]{0.618,0.500,0.382,0.786});
+                new double[]{-0.27,0.0,0.236,0.382,0.500,0.618,0.786,1.0});
     }
 
     /**
@@ -122,11 +122,11 @@ public final class SignalEngine {
                                     : swing.low + range * 0.786 + shift;
                 sl = buy ? Math.min(l + shift, fib786) - buffer
                          : Math.max(h + shift, fib786) + buffer;
-                // TP1 returns to the swing origin's opposite endpoint; TP2 is the
-                // 127.2% extension. Keep both targets on the profitable side.
+                // TP1 returns to the swing origin's opposite endpoint; TP2 matches
+                // the configured -27.0% extension exactly. Keep targets profitable.
                 tp1 = buy ? swing.high + shift : swing.low + shift;
-                tp2 = buy ? swing.high + range * 0.272 + shift
-                          : swing.low - range * 0.272 + shift;
+                tp2 = buy ? swing.high + range * 0.270 + shift
+                          : swing.low - range * 0.270 + shift;
                 boolean geometry = buy ? (sl < entry && tp1 > entry && tp2 > tp1)
                                        : (sl > entry && tp1 < entry && tp2 < tp1);
                 if (geometry) entryModel = "FIBO " + fibLabel(chosenFib) + " + " + (wick ? "WICK REJECTION" : "CANDLE");
