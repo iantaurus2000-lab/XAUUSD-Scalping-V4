@@ -1731,7 +1731,7 @@ public class MainActivity extends Activity {
     }
 
     /** Builds a strategy-owned chart snapshot; it never replaces the main chart or feed. */
-    private CandleChartView buildStrategyChart(Candle[] bars,String timeframe,boolean machine,
+    private CandleChartView buildStrategyChart(Candle[] bars,String timeframe,boolean machine,boolean fiboSetup,
                                                 String side,double entry,double sl,double tp1,double tp2){
         CandleChartView view=new CandleChartView(this);
         view.setMarket(selectedMarket);
@@ -1750,7 +1750,10 @@ public class MainActivity extends Activity {
             view.setShowEMA50(false);
             view.setShowEMA200(false);
             view.setShowSR(false);
-            view.setShowFibo(true);
+            // Do not draw generic whole-chart retracements: only show the actual
+            // SignalEngine fib ladder when this specific setup selected Fibonacci.
+            view.setShowFibo(false);
+            view.setShowTradeFiboLadder(fiboSetup);
         }
         view.setData(bars);
         double[] broker=freshBrokerQuote(selectedMarket);
@@ -1778,7 +1781,7 @@ public class MainActivity extends Activity {
         note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
         box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(42)));
         String chartSide=s==null?"WAIT":s.side;
-        CandleChartView standardChart=buildStrategyChart(m1Data,"M1",false,chartSide,
+        CandleChartView standardChart=buildStrategyChart(m1Data,"M1",false,s!=null&&s.setup!=null&&s.setup.contains("FIBO"),chartSide,
                 s==null?0:s.entry,s==null?0:s.sl,s==null?0:s.tp1,s==null?0:s.tp2);
         box.addView(standardChart,new LinearLayout.LayoutParams(-1,uiDp(220)));
 
@@ -2066,7 +2069,7 @@ public class MainActivity extends Activity {
         TextView note=tv("MODEL TERPISAH • "+selectedMarket+" • TF "+selectedTf+" • TAHAP 3",14);
         note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
         box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(42)));
-        CandleChartView machineChart=buildStrategyChart(analysisCandles,selectedTf,true,
+        CandleChartView machineChart=buildStrategyChart(analysisCandles,selectedTf,true,false,
                 r.ready?r.side:"WAIT",r.ready?r.entry:0,r.ready?r.sl:0,r.ready?r.tp1:0,r.ready?r.tp2:0);
         box.addView(machineChart,new LinearLayout.LayoutParams(-1,uiDp(220)));
 
