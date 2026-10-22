@@ -4,10 +4,14 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class ExcellentMachineBacktestTest {
-    @Test public void refusesOtherMarket() {
-        ExcellentMachineBacktest.Report r=ExcellentMachineBacktest.run("BTCUSD","M1",synthetic(360));
-        assertFalse(r.valid);
-        assertTrue(r.reason.contains("XAUUSD"));
+    @Test public void supportsAllConfiguredMarketsAndRefusesUnknownMarket() {
+        Candle[] bars=synthetic(360);
+        assertTrue(ExcellentMachineBacktest.run("XAUUSDm","M1",bars).valid);
+        assertTrue(ExcellentMachineBacktest.run("BTCUSDm","M1",bars).valid);
+        assertTrue(ExcellentMachineBacktest.run("ETHUSDm","M1",bars).valid);
+        ExcellentMachineBacktest.Report unknown=ExcellentMachineBacktest.run("EURUSD","M1",bars);
+        assertFalse(unknown.valid);
+        assertTrue(unknown.reason.contains("TIDAK DIDUKUNG"));
     }
 
     @Test public void refusesShortHistory() {
