@@ -21,6 +21,7 @@ public class MainActivity extends Activity {
     public static boolean isAppVisible(){ return visible; }
     private CandleChartView chart;
     private ImageView chartMirror;
+    private TextView chartMirrorStatus;
     private View mainRoot;
     private String appTheme = RayyanTheme.DEFAULT;
     private int defaultNavigationBarColor = Color.BLACK;
@@ -42,10 +43,34 @@ public class MainActivity extends Activity {
                         chartMirrorModified=modified;
                     }
                 }
+                SharedPreferences chartPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+                long receivedAt=chartPrefs.getLong("mt5_chart_received_ms",0L);
+                String imageSymbol=chartPrefs.getString("mt5_chart_symbol","");
+                String imageTf=chartPrefs.getString("mt5_chart_tf","");
+                boolean showMt5="MT5".equals(chartDisplayMode);
                 if(chartMirror!=null){
-                    boolean showMt5 = "MT5".equals(chartDisplayMode) && chartMirror.getDrawable()!=null;
-                    chartMirror.setVisibility(showMt5 ? View.VISIBLE : View.GONE);
-                    if(chart!=null)chart.setVisibility(showMt5 ? View.GONE : View.VISIBLE);
+                    chartMirror.setVisibility(showMt5?View.VISIBLE:View.GONE);
+                    if(chart!=null)chart.setVisibility(showMt5?View.GONE:View.VISIBLE);
+                }
+                if(chartMirrorStatus!=null){
+                    chartMirrorStatus.setVisibility(showMt5?View.VISIBLE:View.GONE);
+                    if(showMt5){
+                        long age=receivedAt>0L?Math.max(0L,System.currentTimeMillis()-receivedAt):Long.MAX_VALUE;
+                        String expectedSymbol=mt5SymbolForMarket(selectedMarket);
+                        String state;
+                        if(chartMirror==null||chartMirror.getDrawable()==null){
+                            state="MENUNGGU SNAPSHOT MT5 • periksa EA / WebRequest";
+                        }else if(receivedAt<=0L){
+                            state="MT5 CHART • METADATA BELUM TERSEDIA";
+                        }else if(age>8000L){
+                            state="MT5 CHART STALE • "+(age/1000L)+"s";
+                        }else if(!expectedSymbol.equalsIgnoreCase(imageSymbol)||!selectedTf.equalsIgnoreCase(imageTf)){
+                            state="MT5 CHART MISMATCH • "+imageSymbol+" "+imageTf+" • target "+expectedSymbol+" "+selectedTf;
+                        }else{
+                            state="MT5 CHART LIVE • "+imageSymbol+" "+imageTf+" • "+(age/1000L)+"s";
+                        }
+                        chartMirrorStatus.setText(state);
+                    }
                 }
             }catch(Exception ignored){}
             chartMirrorHandler.postDelayed(this,750L);
@@ -198,6 +223,17 @@ public class MainActivity extends Activity {
         chartMirror.setClickable(false);chartMirror.setFocusable(false);
         chartMirror.setVisibility(View.GONE);
         chartArea.addView(chartMirror,new FrameLayout.LayoutParams(-1,-1));
+        chartMirrorStatus=tv("MENUNGGU SNAPSHOT MT5 • periksa EA / WebRequest",10);
+        chartMirrorStatus.setTextColor(Color.WHITE);
+        chartMirrorStatus.setMaxLines(2);
+        chartMirrorStatus.setPadding(uiDp(8),uiDp(5),uiDp(8),uiDp(5));
+        chartMirrorStatus.setBackground(roundBg(Color.argb(205,2,10,18),8));
+        chartMirrorStatus.setVisibility(View.GONE);
+        FrameLayout.LayoutParams chartStatusParams=new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM|Gravity.START);
+        chartStatusParams.setMargins(uiDp(8),0,uiDp(8),uiDp(8));
+        chartArea.addView(chartMirrorStatus,chartStatusParams);
         root.addView(chartArea,new LinearLayout.LayoutParams(-1,0,1));
         chartMirrorHandler.removeCallbacks(chartMirrorRefresh);
         chartMirrorHandler.post(chartMirrorRefresh);
@@ -331,10 +367,12 @@ public class MainActivity extends Activity {
         chartDisplayMode="MT5".equals(mode)?"MT5":"BIQUOTE";
         getSharedPreferences("rayyan4_ui",MODE_PRIVATE).edit()
             .putString("chart_display_mode",chartDisplayMode).apply();
-        boolean showMt5="MT5".equals(chartDisplayMode)&&chartMirror!=null&&chartMirror.getDrawable()!=null;
+        boolean showMt5="MT5".equals(chartDisplayMode);
         if(chart!=null)chart.setVisibility(showMt5?View.GONE:View.VISIBLE);
         if(chartMirror!=null)chartMirror.setVisibility(showMt5?View.VISIBLE:View.GONE);
-        Toast.makeText(this,"Tampilan: "+("MT5".equals(chartDisplayMode)?"Chart MT5":"LIVE BIQUOTE"),Toast.LENGTH_SHORT).show();
+        if(chartMirrorStatus!=null)chartMirrorStatus.setVisibility(showMt5?View.VISIBLE:View.GONE);
+        if(showMt5)queueNativeIndicatorState();
+        Toast.makeText(this,"Tampilan: "+(showMt5?"Chart MT5":"LIVE BIQUOTE"),Toast.LENGTH_SHORT).show();
     }
 
     LinearLayout priceBox(){
