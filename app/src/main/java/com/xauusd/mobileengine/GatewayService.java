@@ -59,11 +59,21 @@ public final class GatewayService extends Service {
             String method=requestLine.split(" ")[0];
             String path=first(requestLine);
             int contentLength=0;
+            String chartSymbolHeader="";
+            String chartTimeframeHeader="";
             String line;
             while((line=readHttpLine(in))!=null&&!line.isEmpty()){
                 int colon=line.indexOf(':');
-                if(colon>0&&"content-length".equalsIgnoreCase(line.substring(0,colon).trim())){
-                    try{contentLength=Integer.parseInt(line.substring(colon+1).trim());}catch(Exception ignored){}
+                if(colon>0){
+                    String headerName=line.substring(0,colon).trim();
+                    String headerValue=line.substring(colon+1).trim();
+                    if("content-length".equalsIgnoreCase(headerName)){
+                        try{contentLength=Integer.parseInt(headerValue);}catch(Exception ignored){}
+                    }else if("x-rayyan-symbol".equalsIgnoreCase(headerName)){
+                        chartSymbolHeader=headerValue;
+                    }else if("x-rayyan-timeframe".equalsIgnoreCase(headerName)){
+                        chartTimeframeHeader=headerValue;
+                    }
                 }
             }
             if(path.startsWith("/chart/upload")&&"POST".equalsIgnoreCase(method)){
@@ -93,7 +103,9 @@ public final class GatewayService extends Service {
                 }
                 long receivedAt=System.currentTimeMillis();
                 getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit()
-                    .putLong("mt5_chart_received_ms",receivedAt).putInt("mt5_chart_bytes",png.length).apply();
+                    .putLong("mt5_chart_received_ms",receivedAt).putInt("mt5_chart_bytes",png.length)
+                    .putString("mt5_chart_symbol",chartSymbolHeader)
+                    .putString("mt5_chart_tf",chartTimeframeHeader).apply();
                 writeResponse(socket,200,"text/plain; charset=utf-8","CHART OK".getBytes(StandardCharsets.UTF_8));return;
             }
             if(path.startsWith("/chart/latest")){
