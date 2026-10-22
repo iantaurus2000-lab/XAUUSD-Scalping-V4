@@ -1432,8 +1432,12 @@ public class MainActivity extends Activity {
         double[] brokerForSignal=freshBrokerQuote(selectedMarket);
         double spreadBid=brokerForSignal==null?0.0:brokerForSignal[0];
         double spreadAsk=brokerForSignal==null?0.0:brokerForSignal[1];
+        // Standard keeps its own Wick+Fibonacci rules, but its price-side checks
+        // must use the same broker Bid/Ask that the shared execution gate validates.
+        double analysisBid=brokerForSignal!=null?brokerForSignal[0]:bid;
+        double analysisAsk=brokerForSignal!=null?brokerForSignal[1]:ask;
         SignalResult previous=lastExecutionSignal;
-        lastSignal=evaluateSignal(m1,m5,bid,ask,spreadBid,spreadAsk);
+        lastSignal=evaluateSignal(m1,m5,analysisBid,analysisAsk,spreadBid,spreadAsk);
         SignalResult standardSignal=lastSignal;
         boolean machineSelected=isExcellentMachineStrategySelected();
         // Strategy calculations stay separate; the shared execution-safety layer
