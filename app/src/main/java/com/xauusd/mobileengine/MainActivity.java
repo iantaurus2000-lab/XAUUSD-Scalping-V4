@@ -2579,7 +2579,16 @@ public class MainActivity extends Activity {
                 if(standardStrategyChartView!=null)
                     standardStrategyChartView.setFibonacciLevels(appliedLevels);
                 setInd("fibo",true);
-                AppLog.add(this,"FIBONACCI","levels updated: "+normalized);
+                // A previous Standard signal was calculated with the old level list.
+                // Invalidate only that strategy's signal before a manual/auto action
+                // can reuse it; Excellent Machine's own execution signal is untouched.
+                lastSignal=null;
+                if(!isExcellentMachineStrategySelected()){
+                    lastExecutionSignal=null;
+                    resetEntryReadyUi("level Fibonacci berubah • evaluasi ulang");
+                    if(chart!=null)chart.setSignalLevels("BUY",0,0,0,0,false);
+                }
+                AppLog.add(this,"FIBONACCI","levels updated: "+normalized+" • Standard signal invalidated for recalculation");
                 Toast.makeText(this,"Level Fibonacci disimpan",Toast.LENGTH_SHORT).show();
                 d.dismiss();
             });
