@@ -15,6 +15,7 @@ public class CandleChartView extends View {
     private float cw = 17, ox = 0, oy = 0, lx, ly, ld, cx, cy;
     private final float leftPad = 54, rightAxis = 108, topPad = 8, bottomPad = 26, lastCandlePad = 32;
     private boolean showEMA50=true, showEMA200=true;
+    private boolean excellentMachineOverlay=false;
     private boolean showSR=true, showFibo=true, showRSI=true, showMACD=true, showATR=true;
     private boolean showSignals=true, showWickBos=true, showTradeLevels=true, showPosition=true, showBidAsk=true;
     private boolean follow=true;
@@ -125,6 +126,15 @@ public class CandleChartView extends View {
     /** Fixed entry price captured when READY/Manual/Smart Auto is recorded. */
     public void setPositionEntryLevel(double entry){positionEntry=entry>0?entry:0;invalidate();}
     public double getPositionEntryLevel(){return positionEntry;}
+    /** Configure the dedicated Excellent Machine chart without changing the main chart. */
+    public void setExcellentMachineOverlay(boolean enabled){
+        excellentMachineOverlay=enabled;
+        if(enabled){
+            showEMA50=false;showEMA200=false;showFibo=false;showSR=false;
+            showRSI=false;showMACD=false;showATR=false;showSignals=false;showWickBos=false;
+        }
+        invalidate();
+    }
     public void setShowEMA50(boolean v){showEMA50=v;invalidate();}
     public void setShowEMA200(boolean v){showEMA200=v;invalidate();}
     public void setShowSR(boolean v){showSR=v;invalidate();}
@@ -237,10 +247,15 @@ public class CandleChartView extends View {
         drawCandleCountdown(c, L + 34f, 86f, 28f, last);
         bold(c,marketName+" • "+timeframe+"  ▾",L+7,16,12,Color.rgb(0,238,150));
         text(c,"O "+f(last.o)+"   H "+f(last.h)+"   L "+f(last.l)+"   C "+f(last.c),L+7,34,10,chartTextColor());
-        double e50=emaValue(50),e200=emaValue(200);
         float lx0=L+7;
-        if(showEMA50){text(c,"■ EMA 50",lx0,49,9,Color.rgb(255,176,0));text(c,f(e50),lx0+53,49,9,Color.rgb(255,176,0));lx0+=96;}
-        if(showEMA200){text(c,"■ EMA 200",lx0,49,9,Color.rgb(186,85,211));text(c,f(e200),lx0+60,49,9,Color.rgb(186,85,211));}
+        if(excellentMachineOverlay){
+            text(c,"■ DONCHIAN 64",lx0,49,9,Color.rgb(0,210,255));
+            text(c,"■ EMA 150",lx0+105,49,9,Color.rgb(255,176,0));
+        }else{
+            double e50=emaValue(50),e200=emaValue(200);
+            if(showEMA50){text(c,"■ EMA 50",lx0,49,9,Color.rgb(255,176,0));text(c,f(e50),lx0+53,49,9,Color.rgb(255,176,0));lx0+=96;}
+            if(showEMA200){text(c,"■ EMA 200",lx0,49,9,Color.rgb(186,85,211));text(c,f(e200),lx0+60,49,9,Color.rgb(186,85,211));}
+        }
 
         float T=55,B=mainBottom-22;
         // Main grid.
@@ -261,6 +276,11 @@ public class CandleChartView extends View {
 
         if(showEMA50)ema(c,50,Color.rgb(255,176,0),L,R,T,B,lo,hi,step);
         if(showEMA200)ema(c,200,Color.rgb(186,85,211),L,R,T,B,lo,hi,step);
+        if(excellentMachineOverlay){
+            ema(c,150,Color.rgb(255,176,0),L,R,T,B,lo,hi,step);
+            donchian(c,64,true,Color.rgb(0,210,255),L,R,T,B,lo,hi,step);
+            donchian(c,64,false,Color.rgb(0,170,220),L,R,T,B,lo,hi,step);
+        }
 
         if(showSR){
             double res=hi-pad*.25,sup=lo+pad*.25;float ry=py(res,lo,hi,T,B),sy=py(sup,lo,hi,T,B);
@@ -480,6 +500,24 @@ public class CandleChartView extends View {
         int n=Math.min(14,cs.size()-1);if(n<=0)return 50;double g=0,l=0;
         for(int i=cs.size()-n;i<cs.size();i++){double d=cs.get(i).c-cs.get(i-1).c;if(d>0)g+=d;else l-=d;}
         if(l<1e-9)return 100;double rs=(g/n)/(l/n);return 100-(100/(1+rs));
+    }
+
+    private void donchian(Canvas c,int period,boolean upper,int color,float L,float R,float T,float B,double lo,double hi,float step){
+        int n=cs.size();
+        if(n<period)return;
+        float prevX=0,prevY=0;boolean started=false;
+        for(int i=period-1;i<n;i++){
+            double value=upper?-Double.MAX_VALUE:Double.MAX_VALUE;
+            for(int j=i-period+1;j<=i;j++){
+                Candle bar=cs.get(j);
+                value=upper?Math.max(value,bar.h):Math.min(value,bar.l);
+            }
+            float x=L+i*step+ox+step/2;
+            float y=py(value,lo,hi,T,B);
+            if(x<L-2||x>R+2){prevX=x;prevY=y;continue;}
+            if(started)ln(c,prevX,prevY,x,y,color,1.6f);
+            prevX=x;prevY=y;started=true;
+        }
     }
 
     private double emaValue(int n){
