@@ -2619,7 +2619,8 @@ public class MainActivity extends Activity {
             ";ema50="+(ind("ema50",true)?"1":"0")+
             ";ema200="+(ind("ema200",true)?"1":"0")+
             ";sr="+(ind("sr",true)?"1":"0")+
-            ";fibo="+(ind("fibo",true)?"1":"0");
+            ";fibo="+(ind("fibo",true)?"1":"0")+
+            ";fiboLevels="+fibonacciLevelsText();
         getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putString("indicator_next",command).apply();
         AppLog.add(this,"MT5 INDICATORS","queued native chart state id="+id);
     }
