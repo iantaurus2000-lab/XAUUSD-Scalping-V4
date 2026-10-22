@@ -2456,6 +2456,7 @@ public class MainActivity extends Activity {
 
     private void showWinRateDialog(){
         WinRateTracker.Stats ready=WinRateTracker.stats(this,"READY");
+        WinRateTracker.Stats readyMachine=WinRateTracker.stats(this,"READY_EXCELLENT_MACHINE");
         WinRateTracker.Stats manual=WinRateTracker.stats(this,"MANUAL");
         WinRateTracker.Stats smart=WinRateTracker.stats(this,"SMART_AUTO");
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
@@ -2467,9 +2468,10 @@ public class MainActivity extends Activity {
         note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
         box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(42)));
         LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
-        addWinRateRow(rows,"1. SINYAL ENTRY READY",ready);
-        addWinRateRow(rows,"2. ORDER MANUAL",manual);
-        addWinRateRow(rows,"3. SMART AUTO ENTRY",smart);
+        addWinRateRow(rows,"1. SINYAL READY • STANDAR WICK + FIBO",ready);
+        addWinRateRow(rows,"2. SINYAL READY • EXCELLENT MACHINE",readyMachine);
+        addWinRateRow(rows,"3. ORDER MANUAL",manual);
+        addWinRateRow(rows,"4. SMART AUTO ENTRY",smart);
         TextView rule=tv("WIN: TP1 tersentuh dahulu • LOSS: SL tersentuh dahulu • OPEN: belum selesai • AMBIGU: TP1 dan SL tersentuh dalam candle sama. Garis ENTRY tetap pada harga yang dicatat terakhir.",11);
         rule.setTextColor(Color.rgb(255,205,95));rule.setGravity(Gravity.TOP|Gravity.START);
         rule.setPadding(uiDp(10),uiDp(8),uiDp(10),uiDp(8));rule.setBackground(roundBg(Color.rgb(7,30,47),10));
@@ -2479,7 +2481,7 @@ public class MainActivity extends Activity {
         disclaimer.setPadding(uiDp(10),uiDp(8),uiDp(10),uiDp(8));rows.addView(disclaimer);
         TextView detailTitle=tv("RIWAYAT TERAKHIR",13);detailTitle.setTextColor(Color.CYAN);detailTitle.setTypeface(null,Typeface.BOLD);
         rows.addView(detailTitle,new LinearLayout.LayoutParams(-1,uiDp(32)));
-        TextView details=tv("READY\n"+WinRateTracker.details(this,"READY")+"\n\nMANUAL\n"+WinRateTracker.details(this,"MANUAL")+"\n\nSMART AUTO\n"+WinRateTracker.details(this,"SMART_AUTO"),11);
+        TextView details=tv("READY • STANDARD WICK + FIBO\n"+WinRateTracker.details(this,"READY")+"\n\nREADY • EXCELLENT MACHINE\n"+WinRateTracker.details(this,"READY_EXCELLENT_MACHINE")+"\n\nMANUAL\n"+WinRateTracker.details(this,"MANUAL")+"\n\nSMART AUTO\n"+WinRateTracker.details(this,"SMART_AUTO"),11);
         details.setTextIsSelectable(true);details.setGravity(Gravity.TOP|Gravity.START);
         details.setPadding(uiDp(10),uiDp(8),uiDp(10),uiDp(8));details.setBackground(roundBg(Color.rgb(6,25,40),10));
         rows.addView(details,new LinearLayout.LayoutParams(-1,-2));
