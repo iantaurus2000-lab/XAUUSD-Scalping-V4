@@ -47,8 +47,8 @@ public class BiquoteClient {
     }
 
     private static String normalizeMarket(String market) throws Exception {
-        String s=market==null?"XAUUSD":market.trim().toUpperCase(Locale.US);
-        if(!s.equals("XAUUSD")&&!s.equals("BTCUSD")&&!s.equals("ETHUSD"))
+        String s=market==null?"XAUUSD":MarketSupport.baseSymbol(market);
+        if(!MarketSupport.isSupportedMarket(s))
             throw new IOException("Unsupported market: "+s);
         return s;
     }
