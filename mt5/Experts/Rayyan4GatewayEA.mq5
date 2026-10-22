@@ -27,7 +27,7 @@ uint lastScreenshotTick=0;
 
 // Native chart layers are managed by this same EA; no second EA is needed.
 input int SRLookbackBars=80;
-input int FiboLookbackBars=60;
+input int FiboLookbackBars=40;
 int hEma50=INVALID_HANDLE, hEma200=INVALID_HANDLE;
 bool onEma50=true, onEma200=true, onSR=true, onFibo=true;
 string lastIndicatorCommandId="";
@@ -74,6 +74,60 @@ void OnTimer(){
    processIndicatorQueue();
    updateChartCountdown();
    uploadChartSnapshot();
+}
+
+bool hasExistingRayyanTrade(const string expectedComment,const string symbol,string &detail){
+   // First check active pending orders. The order comment is the stable command ID.
+   for(int i=OrdersTotal()-1;i>=0;i--){
+      ulong ticket=OrderGetTicket(i);
+      if(ticket==0 || !OrderSelect(ticket)) continue;
+      if(OrderGetString(ORDER_SYMBOL)==symbol
+         && OrderGetInteger(ORDER_MAGIC)==RAYYAN_MAGIC
+         && OrderGetString(ORDER_COMMENT)==expectedComment){
+         detail="active pending order ticket="+(string)ticket;
+         return true;
+      }
+   }
+   // A LIMIT may have filled before the EA could ACK; detect its live position too.
+   for(int i=PositionsTotal()-1;i>=0;i--){
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0 || !PositionSelectByTicket(ticket)) continue;
+      if(PositionGetString(POSITION_SYMBOL)==symbol
+         && PositionGetInteger(POSITION_MAGIC)==RAYYAN_MAGIC
+         && PositionGetString(POSITION_COMMENT)==expectedComment){
+         detail="active position ticket="+(string)ticket;
+         return true;
+      }
+   }
+   // If it opened and closed before restart, history still prevents a replay.
+   datetime toTime=TimeCurrent();
+   if(HistorySelect(toTime-14*86400,toTime)){
+      for(int i=HistoryOrdersTotal()-1;i>=0;i--){
+         ulong ticket=HistoryOrderGetTicket(i);
+         if(ticket==0) continue;
+         long state=HistoryOrderGetInteger(ticket,ORDER_STATE);
+         if((state==ORDER_STATE_FILLED || state==ORDER_STATE_PARTIAL)
+            && HistoryOrderGetString(ticket,ORDER_SYMBOL)==symbol
+            && HistoryOrderGetInteger(ticket,ORDER_MAGIC)==RAYYAN_MAGIC
+            && HistoryOrderGetString(ticket,ORDER_COMMENT)==expectedComment){
+            detail="filled history order ticket="+(string)ticket;
+            return true;
+         }
+      }
+      for(int i=HistoryDealsTotal()-1;i>=0;i--){
+         ulong ticket=HistoryDealGetTicket(i);
+         if(ticket==0) continue;
+         long entry=HistoryDealGetInteger(ticket,DEAL_ENTRY);
+         if((entry==DEAL_ENTRY_IN || entry==DEAL_ENTRY_INOUT)
+            && HistoryDealGetString(ticket,DEAL_SYMBOL)==symbol
+            && HistoryDealGetInteger(ticket,DEAL_MAGIC)==RAYYAN_MAGIC
+            && HistoryDealGetString(ticket,DEAL_COMMENT)==expectedComment){
+            detail="filled history deal ticket="+(string)ticket;
+            return true;
+         }
+      }
+   }
+   return false;
 }
 
 void processTradeQueue(){
@@ -226,7 +280,15 @@ void processTradeQueue(){
    tp=NormalizeDouble(tp,digits);
    if(tp1>0.0) tp1=NormalizeDouble(tp1,digits);
 
-   if(DemoOnly && AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
+   string duplicateDetail="";
+   bool tradeSide=(side=="BUY_LIMIT" || side=="SELL_LIMIT" || side=="BUY" || side=="SELL");
+   bool duplicateCommand=tradeSide && supported
+      && hasExistingRayyanTrade("R4-"+id,sym,duplicateDetail);
+   if(duplicateCommand){
+      resultText="EXECUTED";
+      detail="Duplicate suppressed; "+duplicateDetail;
+      Print("RAYYAN4 DUPLICATE SUPPRESSED id=",id," symbol=",sym," detail=",duplicateDetail);
+   }else if(DemoOnly && AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
       resultText="NOT_DEMO";
    }else if(!supported){
       resultText="UNSUPPORTED_SYMBOL"; detail=sym;
@@ -933,10 +995,15 @@ void updateFibo(){
    if(hi<0||lo<0)return;
    datetime th=iTime(_Symbol,_Period,hi),tl=iTime(_Symbol,_Period,lo);
    double ph=iHigh(_Symbol,_Period,hi),pl=iLow(_Symbol,_Period,lo);
-   datetime t1=th<tl?th:tl;
-   datetime t2=th<tl?tl:th;
-   double p1=th<tl?ph:pl;
-   double p2=th<tl?pl:ph;
+   // Anchor the 0% level at the most recent swing extreme:
+   // bullish impulse: 0% at high and retrace downward toward the older low;
+   // bearish impulse: 0% at low and retrace upward toward the older high.
+   // This orientation matches SignalEngine's BUY high-range*ratio / SELL low+range*ratio.
+   bool highIsRecent=(th>tl);
+   datetime t1=highIsRecent?th:tl;
+   datetime t2=highIsRecent?tl:th;
+   double p1=highIsRecent?ph:pl;
+   double p2=highIsRecent?pl:ph;
    if(ObjectFind(0,"RAYYAN8_FIBO")<0)
       ObjectCreate(0,"RAYYAN8_FIBO",OBJ_FIBO,0,t1,p1,t2,p2);
    else{
@@ -945,10 +1012,12 @@ void updateFibo(){
    }
    ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_COLOR,clrGold);
    ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_RAY_RIGHT,true);
-   ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_LEVELS,6);
-   double levels[]={0.0,0.236,0.382,0.5,0.618,1.0};
-   string labels[]={"0","23.6","38.2","50","61.8","100"};
-   for(int i=0;i<6;i++){
+   // Keep chart levels aligned with SignalEngine's M1 retracement and TP2 extension.
+   ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_LEVELS,8);
+   // -27.2% extends beyond the 0% swing extreme (127.2% target).
+   double levels[]={0.0,0.236,0.382,0.5,0.618,0.786,1.0,-0.272};
+   string labels[]={"0","23.6","38.2","50","61.8","78.6","100","127.2 TP2"};
+   for(int i=0;i<8;i++){
       ObjectSetDouble(0,"RAYYAN8_FIBO",OBJPROP_LEVELVALUE,i,levels[i]);
       ObjectSetString(0,"RAYYAN8_FIBO",OBJPROP_LEVELTEXT,i,labels[i]);
    }
