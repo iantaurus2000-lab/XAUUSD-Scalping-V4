@@ -14,13 +14,22 @@ public class ExcellentMachineLiveGateTest {
         assertTrue(d.reason,d.allowed);
     }
 
-    @Test public void refusesNonXauMarketAndNonM1Execution() {
+    @Test public void acceptsSupportedMarketsButRefusesNonM1Execution() {
         Candle[] bars=uptrend(360);
-        ExcellentMachineEngine.Result signal=ExcellentMachineEngine.evaluate("XAUUSD","M1",bars);
         long now=bars[359].t+30_000L;
-        double ask=signal.entry+0.05,bid=ask-0.10;
-        assertFalse(ExcellentMachineLiveGate.evaluate("BTCUSD","M1",bars,signal,bid,ask,now-1000,now-1000,now,true).allowed);
-        assertFalse(ExcellentMachineLiveGate.evaluate("XAUUSD","M5",bars,signal,bid,ask,now-1000,now-1000,now,true).allowed);
+        for (String market : new String[]{"XAUUSD","BTCUSD","ETHUSD"}) {
+            ExcellentMachineEngine.Result signal=ExcellentMachineEngine.evaluate(market,"M1",bars);
+            double ask=signal.entry+0.05,bid=ask-0.10;
+            ExcellentMachineLiveGate.Decision d=ExcellentMachineLiveGate.evaluate(
+                    market,"M1",bars,signal,bid,ask,now-1000,now-1000,now,true);
+            assertTrue(market+" should be supported: "+d.reason,d.allowed);
+        }
+        ExcellentMachineEngine.Result xau=ExcellentMachineEngine.evaluate("XAUUSD","M1",bars);
+        double ask=xau.entry+0.05,bid=ask-0.10;
+        assertFalse(ExcellentMachineLiveGate.evaluate(
+                "XAUUSD","M5",bars,xau,bid,ask,now-1000,now-1000,now,true).allowed);
+        assertFalse(ExcellentMachineLiveGate.evaluate(
+                "EURUSD","M1",bars,xau,bid,ask,now-1000,now-1000,now,true).allowed);
     }
 
     @Test public void refusesStaleBrokerTick() {
