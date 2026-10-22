@@ -46,8 +46,8 @@ public final class ExcellentMachineLiveGate {
         boolean quoteFresh=QuoteSafety.isFresh(quoteReceivedAtMs,brokerTickAtMs,nowMs)
                 &&upstreamQuotesFresh;
 
-        if(market==null||!market.trim().toUpperCase(Locale.US).startsWith("XAUUSD"))
-            return decision(false,atrValid,spreadValid,quoteFresh,"MODEL HANYA XAUUSD",atr,spread,maxSpread,distance,maxDistance,risk);
+        if(!MarketSupport.isSupportedMarket(market))
+            return decision(false,atrValid,spreadValid,quoteFresh,"MARKET TIDAK DIDUKUNG • XAUUSD / BTCUSD / ETHUSD",atr,spread,maxSpread,distance,maxDistance,risk);
         if(!"M1".equalsIgnoreCase(timeframe))
             return decision(false,atrValid,spreadValid,quoteFresh,"AUTO MACHINE HANYA BOLEH ENTRY M1",atr,spread,maxSpread,distance,maxDistance,risk);
         if(bars==null||bars.length<MIN_BARS)
