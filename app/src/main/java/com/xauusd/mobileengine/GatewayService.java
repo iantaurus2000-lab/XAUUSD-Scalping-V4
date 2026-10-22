@@ -204,7 +204,7 @@ public final class GatewayService extends Service {
     /** Persist real MT5 Bid/Ask, SYMBOL_POINT and terminal tick time. */
     private synchronized String receiveQuote(String path){
         String symbol=query(path,"symbol");
-        if(!"XAUUSDm".equals(symbol)&&!"BTCUSDm".equals(symbol)&&!"ETHUSDm".equals(symbol))
+        if(!MarketSupport.isSupportedMt5Symbol(symbol))
             return "QUOTE ERROR SYMBOL";
         try{
             double bid=Double.parseDouble(query(path,"bid"));
