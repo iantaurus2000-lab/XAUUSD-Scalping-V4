@@ -1121,7 +1121,16 @@ bool setFiboLevelsFromPercent(string raw){
    }
    if(count<=0)return false;
    ArrayResize(parsed,count);
-   ArraySort(parsed,WHOLE_ARRAY,0,MODE_ASCEND);
+   // Keep ascending Fibonacci order without relying on ArraySort overload variants.
+   for(int a=0;a<count-1;a++){
+      for(int b=a+1;b<count;b++){
+         if(parsed[b]<parsed[a]){
+            double swapValue=parsed[a];
+            parsed[a]=parsed[b];
+            parsed[b]=swapValue;
+         }
+      }
+   }
    ArrayResize(fiboLevelValues,count);
    ArrayCopy(fiboLevelValues,parsed,0,0,count);
    fiboLevelCount=count;
