@@ -1857,42 +1857,75 @@ public class MainActivity extends Activity {
                 if(pulled==null||pulled.length<180)throw new IllegalStateException("History < 180 candles");
                 runOnUiThread(()->{
                     boolean changedContext=!market.equals(selectedMarket)||!tf.equals(selectedTf);
-                    try{
-                        if(!changedContext){
-                            excellentMachineData=pulled;
-                            excellentMachineDataMarket=market;
-                            excellentMachineDataTimeframe=tf;
-                            excellentMachineDataReceivedAt=System.currentTimeMillis();
-                            AppLog.add(this,"EM_HISTORY","loaded "+market+" "+tf+" bars="+pulled.length);
-                            if(isExcellentMachineStrategySelected()&&m1Data!=null&&m1Data.length>=30
-                                    &&m5Data!=null&&m5Data.length>=20)updateSignal(m1Data,m5Data);
-                        }
-                    }finally{
-                        synchronized(excellentMachineFetchLock){excellentMachineHistoryFetchInFlight=false;}
-                    }
                     boolean reopen;
+                    boolean currentIsXau=selectedMarket.toUpperCase(Locale.US).startsWith("XAUUSD");
                     synchronized(excellentMachineFetchLock){
+                        excellentMachineHistoryFetchInFlight=false;
                         reopen=reopenExcellentMachinePanelAfterFetch;
-                        reopenExcellentMachinePanelAfterFetch=false;
+                        if(!changedContext||!currentIsXau)reopenExcellentMachinePanelAfterFetch=false;
                     }
-                    if(reopen){
-                        if(changedContext)Toast.makeText(this,"Market/timeframe berubah saat data dimuat; buka ulang analisa.",Toast.LENGTH_LONG).show();
-                        else showExcellentMachineDialog();
+                    if(changedContext){
+                        // Do not strand a pending panel refresh when the user changes
+                        // market/timeframe while an older network request is in flight.
+                        if(!currentIsXau){
+                            if(reopen&&isExcellentMachineStrategySelected())showMachineRestrictedDialog();
+                        }else{
+                            requestExcellentMachineHistory();
+                        }
+                        return;
                     }
+                    excellentMachineData=pulled;
+                    excellentMachineDataMarket=market;
+                    excellentMachineDataTimeframe=tf;
+                    excellentMachineDataReceivedAt=System.currentTimeMillis();
+                    AppLog.add(this,"EM_HISTORY","loaded "+market+" "+tf+" bars="+pulled.length);
+                    if(isExcellentMachineStrategySelected()&&m1Data!=null&&m1Data.length>=30
+                            &&m5Data!=null&&m5Data.length>=20)updateSignal(m1Data,m5Data);
+                    if(reopen)showExcellentMachineDialog();
                 });
             }catch(Exception error){
                 runOnUiThread(()->{
-                    synchronized(excellentMachineFetchLock){excellentMachineHistoryFetchInFlight=false;}
-                    AppLog.add(this,"EM_HISTORY_ERROR",market+" "+tf+" • "+error.getClass().getSimpleName()+" "+String.valueOf(error.getMessage()));
+                    boolean changedContext=!market.equals(selectedMarket)||!tf.equals(selectedTf);
+                    boolean currentIsXau=selectedMarket.toUpperCase(Locale.US).startsWith("XAUUSD");
                     boolean reopen;
                     synchronized(excellentMachineFetchLock){
+                        excellentMachineHistoryFetchInFlight=false;
                         reopen=reopenExcellentMachinePanelAfterFetch;
-                        reopenExcellentMachinePanelAfterFetch=false;
+                        if(!changedContext||!currentIsXau)reopenExcellentMachinePanelAfterFetch=false;
+                    }
+                    AppLog.add(this,"EM_HISTORY_ERROR",market+" "+tf+" • "+error.getClass().getSimpleName()+" "+String.valueOf(error.getMessage()));
+                    if(changedContext){
+                        if(!currentIsXau){
+                            if(reopen&&isExcellentMachineStrategySelected())showMachineRestrictedDialog();
+                        }else{
+                            requestExcellentMachineHistory();
+                        }
+                        return;
                     }
                     if(reopen)Toast.makeText(this,"Riwayat Excellent Machine gagal dimuat • periksa internet / Log.",Toast.LENGTH_LONG).show();
                 });
             }
         },"excellent-machine-history").start();
+    }
+
+    private void showMachineRestrictedDialog(){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(12));
+        box.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("EXCELLENT MACHINE • KHUSUS XAUUSD",18);
+        title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(52)));
+        TextView note=tv("Market aktif: "+selectedMarket+". Model tidak memberi sinyal untuk market ini. Kembalikan strategi ke Smart Standar Wick + Fibonacci sebelum melanjutkan.",14);
+        note.setTextColor(Color.WHITE);note.setGravity(Gravity.TOP|Gravity.START);
+        box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(86)));
+        Button revert=btn("KEMBALI KE WICK + FIBONACCI");
+        revert.setTextSize(13);revert.setTypeface(null,Typeface.BOLD);
+        revert.setBackground(roundBg(Color.rgb(90,65,22),12));
+        box.addView(revert,new LinearLayout.LayoutParams(-1,uiDp(48)));
+        AlertDialog d=new AlertDialog.Builder(this).setView(box)
+                .setNegativeButton("TUTUP",null).create();
+        revert.setOnClickListener(v->{d.dismiss();requestExcellentMachineStrategyChange();});
+        showSizedDialog(d,0.38f,440);
     }
 
     private SignalResult evaluateExcellentMachineExecutionSignal(){
@@ -1929,7 +1962,8 @@ public class MainActivity extends Activity {
                 && excellentMachineData!=null&&excellentMachineData.length>=180;
         if(!chartMatches){
             if(!selectedMarket.toUpperCase(Locale.US).startsWith("XAUUSD")){
-                Toast.makeText(this,"Excellent Machine hanya untuk XAUUSD.",Toast.LENGTH_LONG).show();
+                if(isExcellentMachineStrategySelected())showMachineRestrictedDialog();
+                else Toast.makeText(this,"Excellent Machine hanya untuk XAUUSD.",Toast.LENGTH_LONG).show();
                 return;
             }
             synchronized(excellentMachineFetchLock){reopenExcellentMachinePanelAfterFetch=true;}
