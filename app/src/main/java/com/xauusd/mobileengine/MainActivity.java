@@ -1438,7 +1438,8 @@ public class MainActivity extends Activity {
         scoreView.setGravity(Gravity.CENTER);
         scoreView.setTextColor(displayScore>=75?Color.YELLOW:displayScore>=60?Color.CYAN:Color.WHITE);
         boolean directional="BUY".equals(s.side)||"SELL".equals(s.side);
-        signalSummary.setText((directional?("M1 "+s.side+" • M5 "+s.m5Bias):"WAIT • "+s.m5Bias)+"\n"+s.setup+" • CONF "+s.confidence+"/5");
+        String biasLabel=machineSelected?"EMA150 ":"M5 ";
+        signalSummary.setText((directional?("M1 "+s.side+" • "+biasLabel+s.m5Bias):"WAIT • "+biasLabel+s.m5Bias)+"\n"+s.setup+" • CONF "+s.confidence+"/5");
         entryView.setText("Entry\n"+price(directional?s.entry:0));slView.setText("SL\n"+price(directional?s.sl:0));
         tp1View.setText("TP1\n"+price(directional?s.tp1:0));tp2View.setText("TP2\n"+price(directional?s.tp2:0));
         // Use the same M1 bar timestamp as Smart Auto Entry and order lifecycle.
@@ -1479,7 +1480,7 @@ public class MainActivity extends Activity {
         // queues, cancels, and re-enters only after fresh EA state plus matching ACK.
         processAutoLimit(s,m1,m5,bid,ask,candleStamp);
         if(changed&&("BUY".equals(s.side)||"SELL".equals(s.side))){
-            String msg=selectedMarket+" SCALPING\n\n"+s.side+"\nEntry: "+price(s.entry)+"\nSL: "+price(s.sl)+"\nTP1: "+price(s.tp1)+"\nTP2: "+price(s.tp2)+"\nTF: M1\nBias: M5 "+s.m5Bias+"\nSetup: "+s.setup+"\nConfidence: "+s.confidence+"/5";
+            String msg=selectedMarket+(machineSelected?" EXCELLENT MACHINE":" SCALPING")+"\n\n"+s.side+"\nEntry: "+price(s.entry)+"\nSL: "+price(s.sl)+"\nTP1: "+price(s.tp1)+"\nTP2: "+price(s.tp2)+"\nTF: M1\nBias: "+(machineSelected?"EMA150 ":"M5 ")+s.m5Bias+"\nSetup: "+s.setup+"\nConfidence: "+s.confidence+"/5";
             AppLog.add(this,"SIGNAL",s.side+" "+price(s.entry)+" score="+s.score);
             if(!alreadyNotified){
                 noticePrefs.edit().putString(noticePrefKey,noticeKey).apply();
@@ -1743,8 +1744,8 @@ public class MainActivity extends Activity {
 
 
     /**
-     * Independent analysis panel. This model does not call processAutoLimit,
-     * queueLimit, submitWickLimitEntry, or modify the Standard Wick+Fibonacci signal.
+     * Display-only Machine panel. The separate live signal is routed by updateSignal()
+     * only after explicit engine selection and the Stage 3 gate; lastSignal remains Standard Wick+Fibonacci.
      */
 
     private boolean isExcellentMachineStrategySelected(){
@@ -1961,7 +1962,7 @@ public class MainActivity extends Activity {
         box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(42)));
 
         LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
-        int statusColor=r.ready?("BUY".equals(r.side)?green:red):Color.rgb(255,205,95);
+        int statusColor=r.ready&&liveGate.allowed?("BUY".equals(r.side)?green:red):Color.rgb(255,205,95);
         addLargeAnalysisRow(rows,"STATUS ANALISA",r.ready
                 ?"ANALISA SEARAH • "+r.side+(liveGate.allowed?" • GATE LIVE LOLOS":" • ENTRY DITAHAN")
                 :"WAIT • "+waitReason,statusColor);
