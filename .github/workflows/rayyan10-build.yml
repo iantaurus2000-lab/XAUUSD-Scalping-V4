@@ -1,7 +1,7 @@
 name: Rayyan10 Simple Entry Build
 on:
   push:
-    branches: [ rayyan10-simple-m1-wick-entry, rayyan10-synced-entry-atr-chart-fix ]
+    branches: [ rayyan10-simple-m1-wick-entry, rayyan10-synced-entry-atr-chart-fix, rayyan10-wick-fibo-sync-prebuild ]
   workflow_dispatch:
 jobs:
   build:
