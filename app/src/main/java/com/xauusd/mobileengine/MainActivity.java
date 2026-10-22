@@ -1735,7 +1735,7 @@ public class MainActivity extends Activity {
         addPanelRow(rows,"01 • TREND M5","EMA M5 menjadi konteks; wick rejection + Fibonacci M1 menentukan setup BUY/SELL.",Color.WHITE);
         addPanelRow(rows,"02 • ENTRY LIMIT UJUNG WICK","Harga LIMIT ditempatkan sedikit masuk dari ujung wick M1 yang sudah tertutup; tidak mengejar harga dengan MARKET.",Color.WHITE);
         addPanelRow(rows,"03 • KONFIRMASI CANDLE","Candle M1 tertutup harus mendukung arah tren atau menunjukkan rejection wick yang valid.",Color.WHITE);
-        addPanelRow(rows,"04 • ENTRY / SL / TARGET","SL berada di luar ujung wick dengan buffer ATR; TP1 = 1R dan TP2 = 1,8R.",Color.WHITE);
+        addPanelRow(rows,"04 • ENTRY / SL / TARGET","SL berada di luar ujung wick dengan buffer ATR. Setup Fibonacci: TP1 pada jangkar 0% dan TP2 pada ekstensi -27.0%; fallback wick LIMIT memakai TP1 = 1R dan TP2 = 1,8R.",Color.WHITE);
         addPanelRow(rows,"05 • PENGAMAN","ATR dan spread tetap divalidasi. Quote MT5 harus segar, EA online, antrean kosong, dan tidak ada exposure aktif.",Color.CYAN);
         ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
         box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
@@ -2514,7 +2514,10 @@ public class MainActivity extends Activity {
         addPanelRow(rows,"RISK : REWARD",String.format(Locale.US,"%.2f",s.rr),Color.WHITE);
         addPanelRow(rows,"CONFIDENCE",s.confidence+"/5  •  ENTRY SCORE "+s.score+"%",Color.CYAN);
         addPanelRow(rows,"M5 TREND / EMA50-200",String.valueOf(s.m5Bias),("BUY".equals(s.m5Bias)||"SELL".equals(s.m5Bias))?green:Color.LTGRAY);
-        addPanelRow(rows,"FIBONACCI ZONE 50–61.8%",onoff("BUY".equals(s.side)||"SELL".equals(s.side)),("BUY".equals(s.side)||"SELL".equals(s.side))?green:Color.LTGRAY);
+        String fibLevel=s.setup!=null&&s.setup.contains("FIBO")
+            ?s.setup.substring(s.setup.indexOf("FIBO")):"WICK LIMIT FALLBACK • tidak ada retracement aktif yang valid";
+        addPanelRow(rows,"FIBONACCI ENTRY LEVEL",fibLevel,
+            s.setup!=null&&s.setup.contains("FIBO")?Color.CYAN:Color.rgb(255,205,95));
         addPanelRow(rows,"CANDLE CONFIRMATION",onoff("BUY".equals(s.side)||"SELL".equals(s.side)),("BUY".equals(s.side)||"SELL".equals(s.side))?green:Color.LTGRAY);
         addPanelRow(rows,"WICK CONFLUENCE (OPSIONAL)",onoff(s.wickRejection),s.wickRejection?green:Color.LTGRAY);
         addPanelRow(rows,"ATR FILTER",onoff(s.atrFilter),s.atrFilter?green:Color.LTGRAY);
