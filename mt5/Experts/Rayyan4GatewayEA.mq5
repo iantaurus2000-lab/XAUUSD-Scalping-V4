@@ -30,6 +30,8 @@ input int SRLookbackBars=80;
 input int FiboLookbackBars=40;
 int hEma50=INVALID_HANDLE, hEma200=INVALID_HANDLE;
 bool onEma50=true, onEma200=true, onSR=true, onFibo=true;
+double fiboLevelValues[];
+int fiboLevelCount=0;
 string lastIndicatorCommandId="";
 datetime lastIndicatorBar=0, lastIndicatorDiag=0;
 #define RAYYAN_EMA_DRAW_BARS 140
@@ -45,6 +47,7 @@ int OnInit(){
    ChartSetInteger(0,CHART_AUTOSCROLL,true);
    ChartSetInteger(0,CHART_SHIFT,false);
    ChartSetInteger(0,CHART_SCALE,4);
+   resetFiboLevels();
    applyAll();
    EventSetTimer(MathMax(1,PollSeconds));
    Print("RAYYAN4 START Gateway=",GatewayUrl," Symbol=",AllowedSymbol,
@@ -946,6 +949,9 @@ void processIndicatorQueue(){
          onEma200=(field(cmd,"ema200")=="1");
          onSR=(field(cmd,"sr")=="1");
          onFibo=(field(cmd,"fibo")=="1");
+         string fibConfig=field(cmd,"fiboLevels");
+         if(StringLen(fibConfig)>0 && !setFiboLevelsFromPercent(fibConfig))
+            Print("RAYYAN4 invalid Fibonacci level list; retaining previous chart levels");
          applyAll();
 
          string ack="";
@@ -1078,17 +1084,67 @@ void drawLevel(string name,double price,color c){
    ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
 }
 
+void resetFiboLevels(){
+   ArrayResize(fiboLevelValues,8);
+   fiboLevelValues[0]=-0.270;
+   fiboLevelValues[1]=0.0;
+   fiboLevelValues[2]=0.236;
+   fiboLevelValues[3]=0.382;
+   fiboLevelValues[4]=0.5;
+   fiboLevelValues[5]=0.618;
+   fiboLevelValues[6]=0.786;
+   fiboLevelValues[7]=1.0;
+   fiboLevelCount=8;
+}
+
+bool setFiboLevelsFromPercent(string raw){
+   if(StringLen(raw)==0)return false;
+   string parts[];
+   int found=StringSplit(raw,StringGetCharacter(",",0),parts);
+   if(found<=0)return false;
+   double parsed[];
+   ArrayResize(parsed,found);
+   int count=0;
+   for(int i=0;i<found && count<32;i++){
+      string item=parts[i];
+      StringTrimLeft(item);
+      StringTrimRight(item);
+      if(StringLen(item)==0)continue;
+      double percent=StringToDouble(item);
+      if(!MathIsValidNumber(percent)||percent < -500.0||percent > 500.0)continue;
+      double ratio=percent/100.0;
+      bool duplicate=false;
+      for(int j=0;j<count;j++){
+         if(MathAbs(parsed[j]-ratio)<0.0000001){duplicate=true;break;}
+      }
+      if(!duplicate)parsed[count++]=ratio;
+   }
+   if(count<=0)return false;
+   ArrayResize(parsed,count);
+   ArraySort(parsed,WHOLE_ARRAY,0,MODE_ASCEND);
+   ArrayResize(fiboLevelValues,count);
+   ArrayCopy(fiboLevelValues,parsed,0,0,count);
+   fiboLevelCount=count;
+   return true;
+}
+
+string fiboLevelLabel(double ratio){
+   if(MathAbs(ratio+0.270)<0.000001)return "127.0 TP2";
+   double percent=ratio*100.0;
+   if(ratio<0.0)return DoubleToString((1.0-ratio)*100.0,1)+" EXT";
+   if(MathAbs(percent-MathRound(percent))<0.00001)return DoubleToString(percent,0);
+   return DoubleToString(percent,1);
+}
+
 void updateFibo(){
    if(!onFibo){ObjectDelete(0,"RAYYAN8_FIBO");return;}
    int hi=iHighest(_Symbol,_Period,MODE_HIGH,FiboLookbackBars,1);
    int lo=iLowest(_Symbol,_Period,MODE_LOW,FiboLookbackBars,1);
-   if(hi<0||lo<0)return;
+   if(hi<0||lo<0||fiboLevelCount<=0)return;
    datetime th=iTime(_Symbol,_Period,hi),tl=iTime(_Symbol,_Period,lo);
    double ph=iHigh(_Symbol,_Period,hi),pl=iLow(_Symbol,_Period,lo);
-   // Anchor the 0% level at the most recent swing extreme:
-   // bullish impulse: 0% at high and retrace downward toward the older low;
-   // bearish impulse: 0% at low and retrace upward toward the older high.
-   // This orientation matches SignalEngine's BUY high-range*ratio / SELL low+range*ratio.
+   // Anchor 0% at the most recent swing extreme, matching the Standard engine's
+   // BUY high-range*ratio / SELL low+range*ratio orientation.
    bool highIsRecent=(th>tl);
    datetime t1=highIsRecent?th:tl;
    datetime t2=highIsRecent?tl:th;
@@ -1102,13 +1158,9 @@ void updateFibo(){
    }
    ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_COLOR,clrGold);
    ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_RAY_RIGHT,true);
-   // Keep chart levels aligned with the Standard signal engine's configured defaults.
-   ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_LEVELS,8);
-   // -27.0% extends beyond the 0% swing extreme (127.0% target).
-   double levels[]={0.0,0.236,0.382,0.5,0.618,0.786,1.0,-0.270};
-   string labels[]={"0","23.6","38.2","50","61.8","78.6","100","127.0 TP2"};
-   for(int i=0;i<8;i++){
-      ObjectSetDouble(0,"RAYYAN8_FIBO",OBJPROP_LEVELVALUE,i,levels[i]);
-      ObjectSetString(0,"RAYYAN8_FIBO",OBJPROP_LEVELTEXT,i,labels[i]);
+   ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_LEVELS,fiboLevelCount);
+   for(int i=0;i<fiboLevelCount;i++){
+      ObjectSetDouble(0,"RAYYAN8_FIBO",OBJPROP_LEVELVALUE,i,fiboLevelValues[i]);
+      ObjectSetString(0,"RAYYAN8_FIBO",OBJPROP_LEVELTEXT,i,fiboLevelLabel(fiboLevelValues[i]));
    }
 }
