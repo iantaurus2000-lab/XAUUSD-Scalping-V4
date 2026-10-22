@@ -220,7 +220,7 @@ public class MainActivity extends Activity {
         side.setBackground(roundBg(Color.rgb(110,115,125),1000));
         side.setOnClickListener(v->Toast.makeText(this,"Entry Ready menyiapkan BUY LIMIT / SELL LIMIT di area wick",Toast.LENGTH_SHORT).show());
         top.addView(side,new LinearLayout.LayoutParams(30,30));
-        signalSummary=tv("Menunggu setup trend M5 + candle / wick M1",10);
+        signalSummary=tv("Menunggu setup Fibonacci + wick rejection M1 / EMA M5",10);
         signalSummary.setIncludeFontPadding(false);signalSummary.setMaxLines(2);
         signalSummary.setEllipsize(android.text.TextUtils.TruncateAt.END);
         signalSummary.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);
@@ -514,7 +514,7 @@ public class MainActivity extends Activity {
         }
         if(chart!=null)chart.setTimeframe(tf);
         queueNativeIndicatorState();
-        if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+tf+"\nTrend M5 + candle / wick M1");
+        if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+tf+"\nEMA M5 konteks • Fibonacci + wick rejection M1");
         if(status!=null)status.setText("● "+("M1".equals(tf)?"LIVE":"LOADING")+" • RAYYAN4 • "+tf);
         if(reload)load(interval(tf),tf);
     }
@@ -627,9 +627,9 @@ public class MainActivity extends Activity {
                 AppLog.add(this,"ORDER_BLOCKED",origin+" • wick LIMIT hanya dikirim dari M1");
                 Toast.makeText(this,"Pilih timeframe M1 untuk entry LIMIT ujung wick",Toast.LENGTH_LONG).show();return;
             }
-            if(chart==null||m1Data==null||m1Data.length<30||m5Data==null||m5Data.length<201){
-                AppLog.add(this,"ORDER_BLOCKED",origin+" • data M1 / trend EMA200 M5 belum cukup");
-                Toast.makeText(this,"Menunggu data M1 dan minimal 200 candle M5",Toast.LENGTH_LONG).show();return;
+            if(chart==null||m1Data==null||m1Data.length<30||m5Data==null||m5Data.length<20){
+                AppLog.add(this,"ORDER_BLOCKED",origin+" • data M1/M5 untuk konteks EMA belum cukup");
+                Toast.makeText(this,"Menunggu data M1/M5 yang cukup",Toast.LENGTH_LONG).show();return;
             }
             double[] broker=freshBrokerQuote(selectedMarket);
             if(broker==null||!hasFreshEntryQuotes()||!QuoteSafety.valid(broker[0],broker[1])){
@@ -758,7 +758,7 @@ public class MainActivity extends Activity {
     private void updateEntryReadyUi(SignalResult signal,double bid,double ask,Candle[] activeM1,long candleStamp){
         String candleKey=selectedMarket+"|"+selectedTf+"|"+candleStamp;
         if(!candleKey.equals(readyCandleKey)){readyCandleKey=candleKey;readyCandleSide="WAIT";}
-        boolean context="M1".equals(selectedTf)&&activeM1!=null&&activeM1.length>=30&&m5Data!=null&&m5Data.length>=201;
+        boolean context="M1".equals(selectedTf)&&activeM1!=null&&activeM1.length>=30&&m5Data!=null&&m5Data.length>=20;
         boolean nextReady=isAutoEntryEligible(signal,bid,ask,context);
         String nextSide=nextReady?signal.side:"WAIT";
         readyCandleSide=nextReady?nextSide:"WAIT";
@@ -940,9 +940,9 @@ public class MainActivity extends Activity {
         boolean autoEnabled=gp.getBoolean("auto",false)
                 &&"READY".equals(gp.getString("operation_mode","REST"))
                 &&"M1".equals(selectedTf);
-        if(m1==null||m1.length<30||m5==null||m5.length<201){
+        if(m1==null||m1.length<30||m5==null||m5.length<20){
             autoDiagnostic(gp,"DATA_M1M5_SHORT|"+selectedMarket+"|"+selectedTf,
-                "ENTRY BLOCKED • M1 kurang dari 30 atau M5 kurang dari 200 candle • market="+selectedMarket+" TF="+selectedTf);
+                "ENTRY BLOCKED • M1 kurang dari 30 atau M5 kurang dari 20 candle • market="+selectedMarket+" TF="+selectedTf);
             return;
         }
 
@@ -1352,7 +1352,7 @@ public class MainActivity extends Activity {
 
     void updateSignal(Candle[] m1,Candle[] m5){
         syncBrokerEntryLine();
-        if(m1==null||m1.length<30||m5==null||m5.length<201){
+        if(m1==null||m1.length<30||m5==null||m5.length<20){
             if(scoreView!=null)scoreView.setText("SCORE 0%");
             resetEntryReadyUi("menunggu data M1/M5");
             return;
@@ -1616,7 +1616,7 @@ public class MainActivity extends Activity {
         TextView note=tv("Panduan baca-sinyal • bukan jaminan hasil",12);note.setTextColor(Color.LTGRAY);
         box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(36)));
         LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
-        addPanelRow(rows,"01 • TREND M5","EMA50/EMA200 pada candle M5 tertutup menentukan bias BUY atau SELL.",Color.WHITE);
+        addPanelRow(rows,"01 • TREND M5","EMA M5 menjadi konteks; wick rejection + Fibonacci M1 menentukan setup BUY/SELL.",Color.WHITE);
         addPanelRow(rows,"02 • ENTRY LIMIT UJUNG WICK","Harga LIMIT ditempatkan sedikit masuk dari ujung wick M1 yang sudah tertutup; tidak mengejar harga dengan MARKET.",Color.WHITE);
         addPanelRow(rows,"03 • KONFIRMASI CANDLE","Candle M1 tertutup harus mendukung arah tren atau menunjukkan rejection wick yang valid.",Color.WHITE);
         addPanelRow(rows,"04 • ENTRY / SL / TARGET","SL berada di luar ujung wick dengan buffer ATR; TP1 = 1R dan TP2 = 1,8R.",Color.WHITE);
