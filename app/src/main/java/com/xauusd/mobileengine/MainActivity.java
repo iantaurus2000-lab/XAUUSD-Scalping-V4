@@ -1439,8 +1439,11 @@ public class MainActivity extends Activity {
     void updateSignal(Candle[] m1,Candle[] m5){
         syncBrokerEntryLine();
         if(m1==null||m1.length<30||m5==null||m5.length<20){
+            lastSignal=null;
+            lastExecutionSignal=null;
             if(scoreView!=null)scoreView.setText("SCORE 0%");
             resetEntryReadyUi("menunggu data M1/M5");
+            syncStandardStrategyPanel(null,0.0,0.0,m1,m5);
             return;
         }
         double bid=chart==null?0:chart.getBid(),ask=chart==null?0:chart.getAsk();
@@ -1461,6 +1464,9 @@ public class MainActivity extends Activity {
         double executionAsk=brokerForSignal!=null?brokerForSignal[1]:ask;
         SignalResult s=machineSelected?evaluateExcellentMachineExecutionSignal():standardSignal;
         lastExecutionSignal=s;
+        // Keep the Standard-only chart and numeric panel synchronized even while
+        // Excellent Machine is the selected execution strategy.
+        syncStandardStrategyPanel(standardSignal,executionBid,executionAsk,m1,m5);
 
         int displayScore=Math.max(0,Math.min(100,s.score));
         scoreView.setText("SCORE "+displayScore+"%");
