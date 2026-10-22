@@ -323,20 +323,22 @@ public class CandleChartView extends View {
             p.setColor(Color.argb(24,0,155,100));
             c.drawRect(L,Math.min(y1,y2),R,Math.max(y1,y2),p);
 
-            // Trade-specific Fibonacci ladder: TP1 marks 0.0% (the prior swing),
-            // while TP2 marks the -27.0% extension used as the second target.
-            double fibRange=Math.abs(signalTp2-signalTp1)/0.27;
-            double fib0=signalTp1;
-            double[] fib=fibonacciLevels;
-            for(int i=0;i<fib.length;i++){
-                int fibColor=fib[i]<0?Color.rgb(245,145,65):(Math.abs(fib[i]-.5)<.0001?Color.rgb(0,188,212):Color.rgb(160,130,210));
-                double level="BUY".equals(signalSide)?fib0-fibRange*fib[i]:fib0+fibRange*fib[i];
-                float fy=py(level,lo,hi,T,B);
-                if(fy>=T&&fy<=B){
-                    p.setPathEffect(new DashPathEffect(new float[]{4,4},0));
-                    ln(c,L,fy,R,fy,fibColor,1);
-                    p.setPathEffect(null);
-                    text(c,String.format(Locale.US,"F%.1f %.2f",fib[i]*100,level),L+4,fy-3,8,fibColor);
+            // Fibonacci extension ladder belongs only to Standard Wick + Fibonacci.
+            // Excellent Machine displays its own Donchian/EMA150 overlays, never Standard's fibo rules.
+            if(!excellentMachineOverlay){
+                double fibRange=Math.abs(signalTp2-signalTp1)/0.27;
+                double fib0=signalTp1;
+                double[] fib=fibonacciLevels;
+                for(int i=0;i<fib.length;i++){
+                    int fibColor=fib[i]<0?Color.rgb(245,145,65):(Math.abs(fib[i]-.5)<.0001?Color.rgb(0,188,212):Color.rgb(160,130,210));
+                    double level="BUY".equals(signalSide)?fib0-fibRange*fib[i]:fib0+fibRange*fib[i];
+                    float fy=py(level,lo,hi,T,B);
+                    if(fy>=T&&fy<=B){
+                        p.setPathEffect(new DashPathEffect(new float[]{4,4},0));
+                        ln(c,L,fy,R,fy,fibColor,1);
+                        p.setPathEffect(null);
+                        text(c,String.format(Locale.US,"F%.1f %.2f",fib[i]*100,level),L+4,fy-3,8,fibColor);
+                    }
                 }
             }
 
