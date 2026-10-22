@@ -1274,7 +1274,7 @@ public class MainActivity extends Activity {
             return;
         }
 
-        boolean m1Context="M1".equals(selectedTf)&&m1.length>=30&&m5.length>=201;
+        boolean m1Context="M1".equals(selectedTf)&&m1.length>=30&&m5.length>=20;
         if(!isAutoEntryEligible(s,bid,ask,m1Context)){
             String reason=autoEntryBlockReason(s,bid,ask,m1Context);
             autoDiagnostic(gp,"FILTER|"+signalKey+"|"+reason,
