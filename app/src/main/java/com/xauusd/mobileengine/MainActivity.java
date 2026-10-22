@@ -28,23 +28,26 @@ public class MainActivity extends Activity {
     private int defaultSystemUiVisibility = 0;
     private String chartDisplayMode = "BIQUOTE";
     private long chartMirrorModified=0L;
+    private long chartMirrorReceivedAt=0L;
     private final Handler chartMirrorHandler=new Handler(Looper.getMainLooper());
     private final Runnable chartMirrorRefresh=new Runnable(){
         @Override public void run(){
             try{
                 java.io.File f=getFileStreamPath("mt5_chart.png");
                 long modified=f.isFile()?f.lastModified():0L;
-                // Keep the last valid MT5 image visible through brief upload/network pauses.
-                // Never cover the native chart with an empty ImageView if a PNG is partial/corrupt.
-                if(chartMirror!=null&&modified>0L&&modified!=chartMirrorModified){
+                SharedPreferences chartPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+                long receivedAt=chartPrefs.getLong("mt5_chart_received_ms",0L);
+                // Receipt time is authoritative: filesystem timestamp resolution can be coarse.
+                // Decode only after Gateway has committed a complete PNG and updated metadata.
+                if(chartMirror!=null&&modified>0L&&receivedAt>0L
+                        &&(modified!=chartMirrorModified||receivedAt!=chartMirrorReceivedAt)){
                     Bitmap b=BitmapFactory.decodeFile(f.getAbsolutePath());
                     if(b!=null){
                         chartMirror.setImageBitmap(b);
                         chartMirrorModified=modified;
+                        chartMirrorReceivedAt=receivedAt;
                     }
                 }
-                SharedPreferences chartPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-                long receivedAt=chartPrefs.getLong("mt5_chart_received_ms",0L);
                 String imageSymbol=chartPrefs.getString("mt5_chart_symbol","");
                 String imageTf=chartPrefs.getString("mt5_chart_tf","");
                 boolean showMt5="MT5".equals(chartDisplayMode);
