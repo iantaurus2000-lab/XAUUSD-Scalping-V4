@@ -1102,11 +1102,11 @@ void updateFibo(){
    }
    ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_COLOR,clrGold);
    ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_RAY_RIGHT,true);
-   // Keep chart levels aligned with SignalEngine's M1 retracement and TP2 extension.
+   // Keep chart levels aligned with the Standard signal engine's configured defaults.
    ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_LEVELS,8);
-   // -27.2% extends beyond the 0% swing extreme (127.2% target).
-   double levels[]={0.0,0.236,0.382,0.5,0.618,0.786,1.0,-0.272};
-   string labels[]={"0","23.6","38.2","50","61.8","78.6","100","127.2 TP2"};
+   // -27.0% extends beyond the 0% swing extreme (127.0% target).
+   double levels[]={0.0,0.236,0.382,0.5,0.618,0.786,1.0,-0.270};
+   string labels[]={"0","23.6","38.2","50","61.8","78.6","100","127.0 TP2"};
    for(int i=0;i<8;i++){
       ObjectSetDouble(0,"RAYYAN8_FIBO",OBJPROP_LEVELVALUE,i,levels[i]);
       ObjectSetString(0,"RAYYAN8_FIBO",OBJPROP_LEVELTEXT,i,labels[i]);
