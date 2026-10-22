@@ -138,7 +138,7 @@ public final class RayyanMenuLayout {
         addSection(host, content, "PILIH MODEL ANALISA");
         addItems(host, content, Arrays.asList(
             new Item("◉", "Smart Standar Wick + Fibonacci", "Analisa wick rejection, level Fibonacci, EMA M5, dan entry LIMIT", "standard_wick_fibo"),
-            new Item("✧", "Excellent Analisa Machine", "Model analisa berikutnya • belum diaktifkan", "excellent_machine")
+            new Item("✧", "Excellent Analisa Machine", "XAUUSD • Donchian 64 + EMA 150 + ML 5NN", "excellent_machine")
         ), actions);
 
         addSection(host, content, "PENGATURAN EKSEKUSI");

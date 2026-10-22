@@ -113,6 +113,8 @@ public class MainActivity extends Activity {
     private String selectedMarket="XAUUSD";
     private Candle[] m1Data=new Candle[0];
     private Candle[] m5Data=new Candle[0];
+    // Active selected-timeframe OHLC is kept separately for Excellent Machine analysis only.
+    private Candle[] activeChartData=new Candle[0];
     private SignalResult lastSignal;
     private final Map<String,Button> tfButtons=new HashMap<>();
     private final int bg=Color.rgb(3,10,18);
@@ -574,7 +576,7 @@ public class MainActivity extends Activity {
                 Candle[] m5="M5".equals(tf)?c:BiquoteClient.candles(market,"5m");
                 runOnUiThread(()->{
                     if(!tf.equals(selectedTf)||!market.equals(selectedMarket))return;
-                    chart.setData(c);chart.goLive();m1Data=m1;m5Data=m5;
+                    chart.setData(c);chart.goLive();activeChartData=c;m1Data=m1;m5Data=m5;
                     syncBrokerEntryLine();updateSignal(m1Data,m5Data);
                     status.setText("● CHART LOADED • "+market+" • "+tf);
                 });
@@ -611,7 +613,7 @@ public class MainActivity extends Activity {
                     runOnUiThread(()->{
                         if(!market.equals(selectedMarket)||!tfNow.equals(selectedTf))return;
                         boolean wasFollowing=chart.isFollow();
-                        chart.setData(fresh);
+                        chart.setData(fresh);activeChartData=fresh;
                         if(wasFollowing)chart.goLive();
                         m1Data=freshM1;m5Data=freshM5;
                         syncBrokerEntryLine();updateSignal(m1Data,m5Data);
@@ -1712,6 +1714,83 @@ public class MainActivity extends Activity {
         AppLog.add(this,"ANALISA","opened Standar Wick + Fibonacci panel • "+selectedMarket+" • "+selectedTf);
     }
 
+
+    /**
+     * Independent analysis panel. This model does not call processAutoLimit,
+     * queueLimit, submitWickLimitEntry, or modify the Standard Wick+Fibonacci signal.
+     */
+    private void showExcellentMachineDialog(){
+        ExcellentMachineEngine.Result r=ExcellentMachineEngine.evaluate(selectedMarket,selectedTf,activeChartData);
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(12));
+        box.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("EXCELLENT ANALISA MACHINE",20);
+        title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        title.setMaxLines(2);title.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);
+        box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(58)));
+        TextView note=tv("MODEL TERPISAH • "+selectedMarket+" • TF "+selectedTf+" • TAHAP 1",14);
+        note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
+        box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(42)));
+
+        LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
+        int statusColor=r.ready?("BUY".equals(r.side)?green:red):Color.rgb(255,205,95);
+        addLargeAnalysisRow(rows,"STATUS ANALISA",r.ready
+                ?"ANALISA SEARAH • "+r.side+" • BELUM ADA ORDER"
+                :"WAIT • "+r.reason,statusColor);
+        addLargeAnalysisRow(rows,"MARKET / TIMEFRAME",selectedMarket+" / "+selectedTf,Color.WHITE);
+        addLargeAnalysisRow(rows,"TREND DONCHIAN 64",r.donchianSide,Color.CYAN);
+        addLargeAnalysisRow(rows,"FILTER EMA 150",r.emaSide+(r.ema150>0?" • EMA "+price(r.ema150):""),Color.CYAN);
+        addLargeAnalysisRow(rows,"ML LORENTZIAN-STYLE 5NN",
+                r.mlSide+" • BUY "+r.buyVotes+"/5 • SELL "+r.sellVotes+"/5 • vote "+r.confidence+"%",Color.WHITE);
+        addLargeAnalysisRow(rows,"FITUR ML",String.format(Locale.US,"RSI(6) %.1f • CCI(15) %.1f • RSI(14) %.1f",r.rsi6,r.cci15,r.rsi14),Color.WHITE);
+        addLargeAnalysisRow(rows,"DONCHIAN RANGE",r.donchianHigh>0?price(r.donchianLow)+" — "+price(r.donchianHigh):"—",Color.WHITE);
+        addLargeAnalysisRow(rows,"ATR CANDLE",r.atr>0?price(r.atr):"—",Color.WHITE);
+        if(r.candleTime>0){
+            String candleAt=new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm",Locale.US).format(new java.util.Date(r.candleTime));
+            addLargeAnalysisRow(rows,"CANDLE SUDAH TUTUP",candleAt+" • close "+price(r.signalClose),Color.WHITE);
+        }else{
+            addLargeAnalysisRow(rows,"DATA CANDLE","Menunggu OHLC yang cukup",Color.WHITE);
+        }
+        addLargeAnalysisRow(rows,"ENTRY REFERENSI",r.ready?price(r.entry):"—",Color.WHITE);
+        addLargeAnalysisRow(rows,"STOP LOSS",r.ready?price(r.sl):"—",red);
+        addLargeAnalysisRow(rows,"TAKE PROFIT 1 (1R)",r.ready?price(r.tp1):"—",green);
+        addLargeAnalysisRow(rows,"TAKE PROFIT 2 (2R)",r.ready?price(r.tp2):"—",green);
+        addLargeAnalysisRow(rows,"TAKE PROFIT 3 (3R)",r.ready?price(r.tp3):"—",green);
+        addLargeAnalysisRow(rows,"ATURAN TREND","Donchian 64 dan EMA 150 harus searah; vote ML 5-neighbor juga harus searah. Jika konflik, WAIT.",Color.WHITE);
+        addLargeAnalysisRow(rows,"ATURAN DATA","Hanya candle tertutup. Model melihat maksimum 200 bar historis; label tetangga memakai arah close 4 candle berikutnya.",Color.WHITE);
+        addLargeAnalysisRow(rows,"BATASAN MODEL","Prototype Lorentzian-style 5NN; bukan salinan persis Pine Script jdehorty. Formula Donchian merupakan proxy untuk uji awal.",Color.rgb(255,205,95));
+        addLargeAnalysisRow(rows,"EKSEKUSI MT5","TAHAP 1 ANALISA SAJA • tidak mengirim atau mengubah order • Smart Standar Wick + Fibonacci tetap terpisah.",Color.CYAN);
+        ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
+        box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
+        AlertDialog d=new AlertDialog.Builder(this).setView(box)
+                .setPositiveButton("TUTUP",null).setNeutralButton("PERBARUI",null).create();
+        d.setOnShowListener(ignored->{
+            resizeDialogButtons(d);
+            if(d.getButton(AlertDialog.BUTTON_NEUTRAL)!=null){
+                d.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v->{d.dismiss();showExcellentMachineDialog();});
+            }
+            if(d.getWindow()!=null){
+                RayyanTheme.apply(this,d.getWindow().getDecorView(),appTheme);
+                d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+                int sw=getResources().getDisplayMetrics().widthPixels;
+                int sh=getResources().getDisplayMetrics().heightPixels;
+                d.getWindow().setLayout(Math.min(sw-uiDp(32),uiDp(460)),
+                        Math.min((int)(sh*0.86f),Math.min(uiDp(780),sh-uiDp(72))));
+            }
+        });
+        d.show();
+        if(d.getWindow()!=null){
+            RayyanTheme.apply(this,d.getWindow().getDecorView(),appTheme);
+            d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+            int sw=getResources().getDisplayMetrics().widthPixels;
+            int sh=getResources().getDisplayMetrics().heightPixels;
+            d.getWindow().setLayout(Math.min(sw-uiDp(32),uiDp(460)),
+                    Math.min((int)(sh*0.86f),Math.min(uiDp(780),sh-uiDp(72))));
+        }
+        AppLog.add(this,"ANALISA","opened Excellent Machine Stage 1 • "+selectedMarket+" • "+selectedTf
+                +" • "+(r.ready?r.side:"WAIT")+" • "+r.reason);
+    }
+
     private void addLargeAnalysisRow(LinearLayout parent,String label,String value,int valueColor){
         LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(uiDp(14),uiDp(10),uiDp(14),uiDp(10));
@@ -1751,7 +1830,7 @@ public class MainActivity extends Activity {
         RayyanMenuLayout.dismissActive();
         if("smart_auto".equals(action))RayyanMenuLayout.showSmartAuto(this,selectedMarket,selectedTf,this::handleMenuAction);
         else if("standard_wick_fibo".equals(action))showStandardWickFiboDialog();
-        else if("excellent_machine".equals(action))Toast.makeText(this,"Excellent Analisa Machine akan ditambahkan terpisah; belum diaktifkan.",Toast.LENGTH_LONG).show();
+        else if("excellent_machine".equals(action))showExcellentMachineDialog();
         else if("confidence".equals(action))showConfidenceDialog();
         else if("market".equals(action)||"settings_market".equals(action))showMarketDialog();
         else if("chart".equals(action)){if(chart!=null)chart.goLive();}
