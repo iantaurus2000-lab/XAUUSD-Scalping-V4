@@ -1827,9 +1827,7 @@ public class MainActivity extends Activity {
                 runOnUiThread(()->{
                     try{progress.dismiss();}catch(Exception ignored){}
                     new AlertDialog.Builder(this).setTitle("BACKTEST GAGAL")
-                            .setMessage("Data historis tidak bisa dipakai. Periksa koneksi internet dan Log.
-
-"+error)
+                            .setMessage("Data historis tidak bisa dipakai. Periksa koneksi internet dan Log.\n\n"+error)
                             .setPositiveButton("TUTUP",null).show();
                 });
             }

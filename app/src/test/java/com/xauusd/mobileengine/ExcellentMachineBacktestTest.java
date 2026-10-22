@@ -38,7 +38,7 @@ public class ExcellentMachineBacktestTest {
         assertTrue(r.oneR.entries>=r.oneR.wins);
         assertTrue(r.twoR.entries>=r.twoR.wins);
         assertTrue(r.threeR.entries>=r.threeR.wins);
-        assertEquals(r.oneR.entries,r.oneR.wins+r.oneR.losses+r.oneR.ambiguous+r.oneR.open+r.oneR.rejectedGap);
+        assertEquals(r.oneR.entries,r.oneR.wins+r.oneR.losses+r.oneR.ambiguous+r.oneR.open);
     }
 
     private static Candle[] synthetic(int size) {
