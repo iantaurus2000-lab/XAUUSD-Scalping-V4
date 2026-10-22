@@ -2121,6 +2121,7 @@ public class MainActivity extends Activity {
             Toast.makeText(this,"Memuat riwayat Excellent Machine XAUUSD • panel akan dibuka setelah data siap.",Toast.LENGTH_LONG).show();
             return;
         }
+        machinePanelValues.clear();
         Candle[] analysisCandles=excellentMachineData;
         ExcellentMachineEngine.Result r=ExcellentMachineEngine.evaluate(selectedMarket,selectedTf,analysisCandles);
         SharedPreferences machinePrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
@@ -2242,6 +2243,78 @@ public class MainActivity extends Activity {
         }
         AppLog.add(this,"ANALISA","opened Excellent Machine Stage 1 • "+selectedMarket+" • "+selectedTf
                 +" • "+(r.ready?r.side:"WAIT")+" • "+r.reason);
+    }
+
+    /** Refresh the visible Machine panel from the same latest closed-bar engine/gate used by Smart Auto. */
+    private void refreshExcellentMachinePanel(){
+        if(machinePanelValues.isEmpty())return;
+        final String market=selectedMarket,tf=selectedTf;
+        boolean contextMatches=market.equalsIgnoreCase(excellentMachineDataMarket)
+                &&tf.equalsIgnoreCase(excellentMachineDataTimeframe)
+                &&excellentMachineData!=null&&excellentMachineData.length>0;
+        Candle[] bars=contextMatches?excellentMachineData:new Candle[0];
+        ExcellentMachineEngine.Result r=ExcellentMachineEngine.evaluate(market,tf,bars);
+        SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        double[] broker=freshBrokerQuote(market);
+        double bid=broker==null?0.0:broker[0],ask=broker==null?0.0:broker[1];
+        String symbol=mt5SymbolForMarket(market);
+        ExcellentMachineLiveGate.Decision gate=ExcellentMachineLiveGate.evaluate(
+                market,tf,bars,r,bid,ask,
+                gp.getLong("broker_quote_received_ms_"+symbol,0L),
+                gp.getLong("broker_quote_tick_ms_"+symbol,0L),
+                System.currentTimeMillis(),hasFreshEntryQuotes()&&contextMatches);
+        boolean selected=isExcellentMachineStrategySelected();
+        boolean liveReady=r.ready&&gate.allowed;
+        String reason=r.ready?gate.reason:r.reason;
+        int sideColor="BUY".equals(r.side)?green:("SELL".equals(r.side)?red:Color.rgb(255,205,95));
+
+        setMachinePanelValue("STATUS",r.ready
+                ?"ANALISA SEARAH • "+r.side+(gate.allowed?" • GATE LIVE LOLOS":" • ENTRY DITAHAN")
+                :"WAIT • "+reason,liveReady?sideColor:Color.rgb(255,205,95));
+        setMachinePanelValue("MODE",selected?"EXCELLENT MACHINE DIPILIH":"SMART STANDAR WICK + FIBONACCI",selected?Color.CYAN:Color.WHITE);
+        setMachinePanelValue("GATE",gate.allowed
+                ?"READY • CANDLE / QUOTE / SPREAD / SL / TP VALID":gate.reason,
+                gate.allowed?green:Color.rgb(255,205,95));
+        setMachinePanelValue("DATA",contextMatches
+                ?excellentMachineDataMarket+" / "+excellentMachineDataTimeframe+" • "+excellentMachineData.length+" candle"
+                :"MENUNGGU RIWAYAT "+market+" "+tf,Color.WHITE);
+        setMachinePanelValue("QUOTE",broker==null?"STALE / TIDAK TERSEDIA"
+                :price(bid)+" / "+price(ask)+" • spread "+price(gate.spread)+" • max "+price(gate.maxSpread),
+                gate.quoteFresh?Color.WHITE:Color.rgb(255,205,95));
+        setMachinePanelValue("DONCHIAN",r.donchianSide,Color.CYAN);
+        setMachinePanelValue("EMA",r.emaSide+(r.ema150>0?" • EMA "+price(r.ema150):""),Color.CYAN);
+        setMachinePanelValue("ML",r.mlSide+" • BUY "+r.buyVotes+"/5 • SELL "+r.sellVotes+"/5 • vote "+r.confidence+"%",Color.WHITE);
+        setMachinePanelValue("FEATURES",String.format(Locale.US,
+                "RSI(6) %.1f • CCI(15) %.1f • RSI(14) %.1f",r.rsi6,r.cci15,r.rsi14),Color.WHITE);
+        setMachinePanelValue("RANGE",r.donchianHigh>0
+                ?price(r.donchianLow)+" — "+price(r.donchianHigh):"—",Color.WHITE);
+        setMachinePanelValue("ATR",r.atr>0?price(r.atr):"—",Color.WHITE);
+        setMachinePanelValue("CANDLE",r.candleTime>0
+                ?new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm",Locale.US).format(new java.util.Date(r.candleTime))
+                    +" • close "+price(r.signalClose)
+                :"Menunggu OHLC candle tertutup",Color.WHITE);
+        setMachinePanelValue("ENTRY",r.ready?price(r.entry):"—",Color.WHITE);
+        setMachinePanelValue("SL",r.ready?price(r.sl):"—",red);
+        setMachinePanelValue("TP1",r.ready?price(r.tp1):"—",green);
+        setMachinePanelValue("TP2",r.ready?price(r.tp2):"—",green);
+        setMachinePanelValue("TP3",r.ready?price(r.tp3):"—",green);
+
+        if(machineStrategyChartView!=null){
+            // Keep chart OHLC window, overlays, and numeric analysis on the same history snapshot.
+            machineStrategyChartView.setData(bars);
+            if(broker!=null)machineStrategyChartView.setQuote(bid,ask,tf);
+            else machineStrategyChartView.clearQuote();
+            if(liveReady)machineStrategyChartView.setSignalLevels(r.side,r.entry,r.sl,r.tp1,r.tp2,true);
+            else machineStrategyChartView.setSignalLevels("BUY",0,0,0,0,false);
+        }
+    }
+
+    private void setMachinePanelValue(String key,String value,int color){
+        TextView view=machinePanelValues.get(key);
+        if(view!=null){
+            view.setText(value==null||value.trim().isEmpty()?"—":value);
+            view.setTextColor(color);
+        }
     }
 
     /** Stage 2 is OHLC-only historical validation; it cannot send or queue any order. */
