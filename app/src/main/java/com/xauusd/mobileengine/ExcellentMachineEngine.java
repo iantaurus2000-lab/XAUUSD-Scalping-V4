@@ -6,7 +6,7 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Separate Stage-1 analysis engine for XAUUSD.
+ * Separate Stage-1 analysis engine for the APK-supported markets (XAUUSD, BTCUSD, ETHUSD).
  *
  * This is an auditable Lorentzian-style 5-nearest-neighbour prototype, not a
  * byte-for-byte port of the TradingView "Lorentzian Classification" script.
@@ -55,8 +55,8 @@ public final class ExcellentMachineEngine {
     }
 
     public static Result evaluate(String market, String timeframe, Candle[] candles) {
-        if (market == null || !market.toUpperCase(java.util.Locale.US).startsWith("XAUUSD")) {
-            return waitResult("MODEL TAHAP 1 KHUSUS XAUUSD", 0, 0, 0L, 0.0);
+        if (!MarketSupport.isSupportedMarket(market)) {
+            return waitResult("MARKET TIDAK DIDUKUNG • PILIH XAUUSD / BTCUSD / ETHUSD", 0, 0, 0L, 0.0);
         }
         if (candles == null || candles.length < MIN_BARS) {
             return waitResult("RIWAYAT OHLC KURANG • PERLU MINIMAL " + MIN_BARS + " CANDLE", 
