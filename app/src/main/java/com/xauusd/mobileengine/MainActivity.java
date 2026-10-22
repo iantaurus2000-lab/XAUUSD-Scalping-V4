@@ -20,6 +20,8 @@ public class MainActivity extends Activity {
     private static volatile boolean visible = false;
     public static boolean isAppVisible(){ return visible; }
     private CandleChartView chart;
+    private CandleChartView standardStrategyChartView;
+    private CandleChartView machineStrategyChartView;
     private ImageView chartMirror;
     private TextView chartMirrorStatus;
     private View mainRoot;
@@ -461,6 +463,10 @@ public class MainActivity extends Activity {
                         LiveCandleUpdater.periodMillis(selectedTf),feedMid,now);
             }
             if(chart!=null)chart.updateLiveBar(feedTick[0],feedTick[1],now,selectedTf);
+            if(standardStrategyChartView!=null)
+                standardStrategyChartView.updateLiveBar(feedTick[0],feedTick[1],now,"M1");
+            if(machineStrategyChartView!=null)
+                machineStrategyChartView.updateLiveBar(feedTick[0],feedTick[1],now,selectedTf);
             updateHeaderPrice(feedTick[0],feedTick[1]);
         }
         boolean feedFresh=lastFeedQuoteAt>0L&&now>=lastFeedQuoteAt
@@ -471,6 +477,8 @@ public class MainActivity extends Activity {
             // The MT5 broker quote is the execution reference. Keep the candle history
             // from the chart feed, but align the live price/header and signal tick to MT5.
             chart.setQuote(broker[0],broker[1],selectedTf);
+            if(standardStrategyChartView!=null)standardStrategyChartView.setQuote(broker[0],broker[1],"M1");
+            if(machineStrategyChartView!=null)machineStrategyChartView.setQuote(broker[0],broker[1],selectedTf);
             updateHeaderPrice(broker[0],broker[1]);
             SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
             double spread=broker[1]-broker[0];
@@ -634,6 +642,12 @@ public class MainActivity extends Activity {
                         chart.setData(fresh);activeChartData=fresh;activeChartMarket=market;activeChartTimeframe=tfNow;
                         if(wasFollowing)chart.goLive();
                         m1Data=freshM1;m5Data=freshM5;
+                        if(standardStrategyChartView!=null)standardStrategyChartView.setData(freshM1);
+                        if(machineStrategyChartView!=null
+                                &&market.equalsIgnoreCase(excellentMachineDataMarket)
+                                &&tfNow.equalsIgnoreCase(excellentMachineDataTimeframe)
+                                &&excellentMachineData!=null&&excellentMachineData.length>0)
+                            machineStrategyChartView.setData(excellentMachineData);
                         syncBrokerEntryLine();updateSignal(m1Data,m5Data);
                         status.setText("● OHLC REFRESHED • "+market+" • "+tfNow);
                     });
@@ -1747,6 +1761,7 @@ public class MainActivity extends Activity {
         view.setContentDescription(machine
                 ?"Chart khusus Excellent Machine: Donchian 64, EMA 150, level entry dan risiko"
                 :"Chart khusus Standar Wick Fibonacci M1: Fibonacci, entry LIMIT, SL, TP1, TP2");
+        if(machine)machineStrategyChartView=view;else standardStrategyChartView=view;
         return view;
     }
 
@@ -1794,6 +1809,7 @@ public class MainActivity extends Activity {
         ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
         box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
         AlertDialog d=new AlertDialog.Builder(this).setView(box).setPositiveButton("TUTUP",null).create();
+        d.setOnDismissListener(ignored->{if(standardStrategyChartView==standardChart)standardStrategyChartView=null;});
         showSizedDialog(d,0.84f,460);
         AppLog.add(this,"ANALISA","opened Standar Wick + Fibonacci panel • "+selectedMarket+" • "+selectedTf);
     }
@@ -2104,6 +2120,7 @@ public class MainActivity extends Activity {
         AlertDialog d=new AlertDialog.Builder(this).setView(box)
                 .setPositiveButton("TUTUP",null).setNegativeButton("BACKTEST",null).setNeutralButton("MUAT ULANG",null).create();
         machinePanelDialogRef[0]=d;
+        d.setOnDismissListener(ignored->{if(machineStrategyChartView==machineChart)machineStrategyChartView=null;});
         d.setOnShowListener(ignored->{
             resizeDialogButtons(d);
             if(d.getButton(AlertDialog.BUTTON_NEUTRAL)!=null){
