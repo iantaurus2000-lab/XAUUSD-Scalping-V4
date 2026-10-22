@@ -16,6 +16,7 @@ public class CandleChartView extends View {
     private final float leftPad = 54, rightAxis = 108, topPad = 8, bottomPad = 26, lastCandlePad = 32;
     private boolean showEMA50=true, showEMA200=true;
     private boolean excellentMachineOverlay=false;
+    private boolean showTradeFiboLadder=true;
     private boolean showSR=true, showFibo=true, showRSI=true, showMACD=true, showATR=true;
     private boolean showSignals=true, showWickBos=true, showTradeLevels=true, showPosition=true, showBidAsk=true;
     private boolean follow=true;
@@ -127,6 +128,8 @@ public class CandleChartView extends View {
     public void setPositionEntryLevel(double entry){positionEntry=entry>0?entry:0;invalidate();}
     public double getPositionEntryLevel(){return positionEntry;}
     /** Configure the dedicated Excellent Machine chart without changing the main chart. */
+    public void setShowTradeFiboLadder(boolean enabled){showTradeFiboLadder=enabled;invalidate();}
+
     public void setExcellentMachineOverlay(boolean enabled){
         excellentMachineOverlay=enabled;
         if(enabled){
@@ -325,7 +328,7 @@ public class CandleChartView extends View {
 
             // Fibonacci extension ladder belongs only to Standard Wick + Fibonacci.
             // Excellent Machine displays its own Donchian/EMA150 overlays, never Standard's fibo rules.
-            if(!excellentMachineOverlay){
+            if(!excellentMachineOverlay&&showTradeFiboLadder){
                 double fibRange=Math.abs(signalTp2-signalTp1)/0.27;
                 double fib0=signalTp1;
                 double[] fib=fibonacciLevels;
