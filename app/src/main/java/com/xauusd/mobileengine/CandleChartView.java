@@ -228,7 +228,7 @@ public class CandleChartView extends View {
         if(follow)positionLatestCandle();
         if(cs.isEmpty()){
             text(c,marketName+" • "+timeframe,L+7,22,12,Color.rgb(0,235,150));
-            text(c,"Menunggu candle XAUUSD...",L+15,H/2,17,chartMutedTextColor());
+            text(c,"Menunggu candle "+marketName+"...",L+15,H/2,17,chartMutedTextColor());
             // Render after the empty-state background/text so the countdown cannot be covered.
             drawCandleCountdown(c, L + 34f, 86f, 28f, null);
             return;
