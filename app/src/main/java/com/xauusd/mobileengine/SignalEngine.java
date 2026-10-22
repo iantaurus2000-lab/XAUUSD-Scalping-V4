@@ -58,7 +58,7 @@ public final class SignalEngine {
         String side;
         if (bullishWick && (!bearishWick || lowerWick >= upperWick * 1.10)) {
             side = "BUY";
-        } else if (bearishWick && (!bullishWick || upperWick > lowerWick * 1.10)) {
+        } else if (bearishWick && (!bullishWick || upperWick >= lowerWick * 1.10)) {
             side = "SELL";
         } else {
             side = bias;
