@@ -1519,7 +1519,7 @@ public class MainActivity extends Activity {
         TextView title=tv("ENTRY CONFIDENCE",18); title.setTextColor(Color.CYAN); title.setTypeface(null,Typeface.BOLD); box.addView(title,new LinearLayout.LayoutParams(-1,42));
         TextView note=tv("Pilih ambang confidence minimum",12); note.setTextColor(Color.LTGRAY); box.addView(note,new LinearLayout.LayoutParams(-1,34));
         LinearLayout choices=new LinearLayout(this); choices.setOrientation(LinearLayout.VERTICAL);
-        for(int value:new int[]{60,70,80,90}){ Button option=btn((current==value?"✓  ":"")+"CONFIDENCE "+value+"%"); option.setTextSize(14); option.setBackground(roundBg(current==value?Color.rgb(0,105,83):Color.rgb(7,34,60),12)); LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,58);p.setMargins(0,6,0,6);choices.addView(option,p);option.setOnClickListener(v->{getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putInt("min_entry_score",value).apply();Toast.makeText(this,"Confidence minimum "+value+"%",Toast.LENGTH_SHORT).show();if(lastSignal!=null&&m1Data!=null&&m1Data.length>0)updateEntryReadyUi(lastSignal,chart.getBid(),chart.getAsk(),m1Data,m1Data[m1Data.length-1].t);((Dialog)box.getTag()).dismiss();}); }
+        for(int value:new int[]{60,70,80,90}){ Button option=btn((current==value?"✓  ":"")+"CONFIDENCE "+value+"%"); option.setTextSize(14); option.setBackground(roundBg(current==value?Color.rgb(0,105,83):Color.rgb(7,34,60),12)); LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,58);p.setMargins(0,6,0,6);choices.addView(option,p);option.setOnClickListener(v->{getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putInt("min_entry_score",value).apply();Toast.makeText(this,"Confidence minimum "+value+"%",Toast.LENGTH_SHORT).show();SignalResult activeForUi=lastExecutionSignal!=null?lastExecutionSignal:lastSignal;if(activeForUi!=null&&m1Data!=null&&m1Data.length>0)updateEntryReadyUi(activeForUi,chart.getBid(),chart.getAsk(),m1Data,m1Data[m1Data.length-1].t);((Dialog)box.getTag()).dismiss();}); }
         box.addView(choices); AlertDialog d=new AlertDialog.Builder(this).setView(box).setNegativeButton("Tutup",null).create();box.setTag(d);d.setOnShowListener(x->{if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-40,420),-2);}});d.show();if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-40,420),-2);}
     }
 
@@ -1994,17 +1994,22 @@ public class MainActivity extends Activity {
         addLargeAnalysisRow(rows,"ATURAN DATA","Hanya candle tertutup. Model melihat maksimum 200 bar historis; label tetangga memakai arah close 4 candle berikutnya.",Color.WHITE);
         addLargeAnalysisRow(rows,"BATASAN MODEL","Prototype Lorentzian-style 5NN; bukan salinan persis Pine Script jdehorty. Formula Donchian merupakan proxy untuk uji awal.",Color.rgb(255,205,95));
         addLargeAnalysisRow(rows,"EKSEKUSI MT5","LIMIT SAJA • mode Machine harus dipilih secara eksplisit, Smart Auto + MODE SIAP TRADING aktif, EA online, status NONE, antrean kosong, dan DemoOnly=true pada EA.",Color.CYAN);
+        final AlertDialog[] machinePanelDialogRef=new AlertDialog[1];
         Button chooseEngine=btn(machineSelected?"KEMBALI KE WICK + FIBO":"PAKAI MACHINE UNTUK SMART AUTO");
         chooseEngine.setTextSize(13);chooseEngine.setTypeface(null,Typeface.BOLD);
         chooseEngine.setBackground(roundBg(machineSelected?Color.rgb(90,65,22):Color.rgb(0,105,83),12));
         LinearLayout.LayoutParams engineButtonParams=new LinearLayout.LayoutParams(-1,uiDp(48));
         engineButtonParams.setMargins(0,uiDp(5),0,uiDp(7));
         box.addView(chooseEngine,engineButtonParams);
-        chooseEngine.setOnClickListener(v->requestExcellentMachineStrategyChange());
+        chooseEngine.setOnClickListener(v->{
+            if(machinePanelDialogRef[0]!=null)machinePanelDialogRef[0].dismiss();
+            requestExcellentMachineStrategyChange();
+        });
         ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
         box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
         AlertDialog d=new AlertDialog.Builder(this).setView(box)
                 .setPositiveButton("TUTUP",null).setNegativeButton("BACKTEST",null).setNeutralButton("MUAT ULANG",null).create();
+        machinePanelDialogRef[0]=d;
         d.setOnShowListener(ignored->{
             resizeDialogButtons(d);
             if(d.getButton(AlertDialog.BUTTON_NEUTRAL)!=null){
