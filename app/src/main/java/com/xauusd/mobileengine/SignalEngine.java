@@ -19,6 +19,22 @@ public final class SignalEngine {
     public static SignalResult evaluate(Candle[] m1, Candle[] m5,
                                         double bid, double ask,
                                         double spreadBid, double spreadAsk) {
+        // Preserve the original API for existing callers/tests.
+        return evaluate(m1,m5,bid,ask,spreadBid,spreadAsk,
+                new double[]{0.618,0.500,0.382,0.786});
+    }
+
+    /**
+     * @param configuredFibLevels Fibonacci ratios in decimal form, as provided by
+     *                             MainActivity.readFibonacciLevels(). Only configured
+     *                             retracement levels strictly between 0% and 100%
+     *                             are candidates for LIMIT entry; 0/100 are swing
+     *                             anchors and negative levels are target extensions.
+     */
+    public static SignalResult evaluate(Candle[] m1, Candle[] m5,
+                                        double bid, double ask,
+                                        double spreadBid, double spreadAsk,
+                                        double[] configuredFibLevels) {
         if (m1 == null || m1.length < 30 || m5 == null || m5.length < MIN_M5_HISTORY)
             return wait("MENUNGGU DATA OHLC M1/M5", false, false, false, false);
         if (!QuoteSafety.valid(bid, ask))
@@ -84,7 +100,7 @@ public final class SignalEngine {
 
         if (swing != null) {
             double range = swing.high - swing.low;
-            double[] ratios = new double[]{0.618, 0.500, 0.382, 0.786};
+            double[] ratios = entryRetracementLevels(configuredFibLevels);
             double anchor = buy ? l + shift : h + shift;
             double clearance = Math.max(atrM1 * 0.01, spread * 0.25);
             double bestDistance = Double.POSITIVE_INFINITY;
@@ -196,11 +212,20 @@ public final class SignalEngine {
         }
     }
 
+    private static double[] entryRetracementLevels(double[] configured) {
+        if (configured == null || configured.length == 0) return new double[0];
+        java.util.TreeSet<Double> levels = new java.util.TreeSet<>();
+        for (double level : configured) {
+            if (Double.isFinite(level) && level > 0.0 && level < 1.0) levels.add(level);
+        }
+        double[] out = new double[levels.size()];
+        int i = 0;
+        for (Double level : levels) out[i++] = level;
+        return out;
+    }
+
     private static String fibLabel(double ratio) {
-        if (Math.abs(ratio - 0.382) < 0.001) return "38.2%";
-        if (Math.abs(ratio - 0.500) < 0.001) return "50%";
-        if (Math.abs(ratio - 0.618) < 0.001) return "61.8%";
-        return "78.6%";
+        return String.format(java.util.Locale.US, "%.1f%%", ratio * 100.0);
     }
 
     private static SignalResult wait(String setup, boolean atrOk, boolean spreadOk,
