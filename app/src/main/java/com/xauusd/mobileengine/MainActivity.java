@@ -200,7 +200,9 @@ public class MainActivity extends Activity {
         prefs=getSharedPreferences("rayyan4_indicators",MODE_PRIVATE);
         tgPrefs=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE);
         telegramEnabled=tgPrefs.getBoolean("enabled",false);
-        selectedMarket=prefs.getString("market","XAUUSD");
+        String savedMarket=prefs.getString("market","XAUUSD");
+        selectedMarket=MarketSupport.isSupportedMarket(savedMarket)?MarketSupport.baseSymbol(savedMarket):"XAUUSD";
+        if(!selectedMarket.equals(savedMarket))prefs.edit().putString("market",selectedMarket).apply();
         SharedPreferences uiPrefs=getSharedPreferences("rayyan4_ui",MODE_PRIVATE);
         chartDisplayMode=uiPrefs.getString("chart_display_mode","BIQUOTE");
         appTheme=RayyanTheme.normalize(uiPrefs.getString("app_theme",RayyanTheme.DEFAULT));
@@ -787,6 +789,7 @@ public class MainActivity extends Activity {
         return SignalEngine.evaluate(m1,m5,bid,ask,spreadBid,spreadAsk,readFibonacciLevels());
     }
     private String autoEntryBlockReason(SignalResult signal,double bid,double ask,boolean m1Context){
+        if(!MarketSupport.isSupportedMarket(selectedMarket))return "MARKET TIDAK DIDUKUNG";
         if(!m1Context)return "TF/DATA M1-M5 BELUM SIAP";
         if(signal==null)return "SIGNAL BELUM TERSEDIA";
         if(!hasFreshEntryQuotes()||!QuoteSafety.valid(bid,ask))return "QUOTE BROKER/CHART STALE";
@@ -1919,9 +1922,9 @@ public class MainActivity extends Activity {
 
     private void requestExcellentMachineStrategyChange(){
         final boolean enable=!isExcellentMachineStrategySelected();
-        if(enable&&!selectedMarket.toUpperCase(Locale.US).startsWith("XAUUSD")){
-            new AlertDialog.Builder(this).setTitle("KHUSUS XAUUSD")
-                    .setMessage("Excellent Machine hanya boleh dipakai untuk market XAUUSD.")
+        if(enable&&!MarketSupport.isSupportedMarket(selectedMarket)){
+            new AlertDialog.Builder(this).setTitle("MARKET TIDAK DIDUKUNG")
+                    .setMessage("Excellent Machine mendukung market XAUUSD, BTCUSD, dan ETHUSD yang tersedia di APK.")
                     .setPositiveButton("TUTUP",null).show();
             return;
         }
@@ -1934,7 +1937,7 @@ public class MainActivity extends Activity {
             return;
         }
         String msg=enable
-                ?"Excellent Machine akan menjadi sinyal yang dipakai oleh jalur Smart Auto LIMIT untuk XAUUSD M1. Order hanya dapat dikirim jika switch Smart Auto dan MODE SIAP TRADING aktif serta seluruh gate lolos. Pastikan input DemoOnly=true di EA MT5 dan akun demo. Mesin hanya mengirim LIMIT, bukan MARKET. Aktifkan?"
+                ?"Excellent Machine akan menjadi sinyal yang dipakai oleh jalur Smart Auto LIMIT untuk "+selectedMarket+" M1. Order hanya dapat dikirim jika switch Smart Auto dan MODE SIAP TRADING aktif serta seluruh gate lolos. Pastikan input DemoOnly=true di EA MT5 dan akun demo. Mesin hanya mengirim LIMIT, bukan MARKET. Aktifkan?"
                 :"Kembali ke Smart Standar Wick + Fibonacci. Mode tidak boleh diganti saat ada order/posisi atau ACK yang belum jelas. Matikan Machine?";
         new AlertDialog.Builder(this)
                 .setTitle(enable?"AKTIFKAN MACHINE UNTUK SMART AUTO?":"NONAKTIFKAN MACHINE?")
@@ -1959,7 +1962,7 @@ public class MainActivity extends Activity {
                     resetEntryReadyUi(enable?"switch ke Excellent Machine":"kembali ke Wick + Fibonacci");
                     AppLog.add(this,"EM_MODE",enable?"Excellent Machine selected for Smart Auto LIMIT":"Standard Wick + Fibonacci restored");
                     Toast.makeText(this,enable
-                            ?"Excellent Machine dipilih • auto hanya XAUUSD M1 dan gate wajib lolos"
+                            ?"Excellent Machine dipilih • auto hanya "+selectedMarket+" M1 dan gate wajib lolos"
                             :"Smart Standar Wick + Fibonacci aktif kembali",Toast.LENGTH_LONG).show();
                     if(m1Data!=null&&m1Data.length>=30&&m5Data!=null&&m5Data.length>=20)
                         updateSignal(m1Data,m5Data);
@@ -1988,8 +1991,8 @@ public class MainActivity extends Activity {
     private void requestExcellentMachineHistory(){
         final String market=selectedMarket;
         final String tf=selectedTf;
-        if(market==null||!market.toUpperCase(Locale.US).startsWith("XAUUSD")){
-            AppLog.add(this,"EM_HISTORY","blocked non-XAU market="+market);
+        if(!MarketSupport.isSupportedMarket(market)){
+            AppLog.add(this,"EM_HISTORY","blocked unsupported market="+market);
             return;
         }
         synchronized(excellentMachineFetchLock){
@@ -2003,16 +2006,16 @@ public class MainActivity extends Activity {
                 runOnUiThread(()->{
                     boolean changedContext=!market.equals(selectedMarket)||!tf.equals(selectedTf);
                     boolean reopen;
-                    boolean currentIsXau=selectedMarket.toUpperCase(Locale.US).startsWith("XAUUSD");
+                    boolean currentMarketSupported=MarketSupport.isSupportedMarket(selectedMarket);
                     synchronized(excellentMachineFetchLock){
                         excellentMachineHistoryFetchInFlight=false;
                         reopen=reopenExcellentMachinePanelAfterFetch;
-                        if(!changedContext||!currentIsXau)reopenExcellentMachinePanelAfterFetch=false;
+                        if(!changedContext||!currentMarketSupported)reopenExcellentMachinePanelAfterFetch=false;
                     }
                     if(changedContext){
                         // Do not strand a pending panel refresh when the user changes
                         // market/timeframe while an older network request is in flight.
-                        if(!currentIsXau){
+                        if(!currentMarketSupported){
                             if(reopen&&isExcellentMachineStrategySelected())showMachineRestrictedDialog();
                         }else{
                             requestExcellentMachineHistory();
@@ -2036,16 +2039,16 @@ public class MainActivity extends Activity {
             }catch(Exception error){
                 runOnUiThread(()->{
                     boolean changedContext=!market.equals(selectedMarket)||!tf.equals(selectedTf);
-                    boolean currentIsXau=selectedMarket.toUpperCase(Locale.US).startsWith("XAUUSD");
+                    boolean currentMarketSupported=MarketSupport.isSupportedMarket(selectedMarket);
                     boolean reopen;
                     synchronized(excellentMachineFetchLock){
                         excellentMachineHistoryFetchInFlight=false;
                         reopen=reopenExcellentMachinePanelAfterFetch;
-                        if(!changedContext||!currentIsXau)reopenExcellentMachinePanelAfterFetch=false;
+                        if(!changedContext||!currentMarketSupported)reopenExcellentMachinePanelAfterFetch=false;
                     }
                     AppLog.add(this,"EM_HISTORY_ERROR",market+" "+tf+" • "+error.getClass().getSimpleName()+" "+String.valueOf(error.getMessage()));
                     if(changedContext){
-                        if(!currentIsXau){
+                        if(!currentMarketSupported){
                             if(reopen&&isExcellentMachineStrategySelected())showMachineRestrictedDialog();
                         }else{
                             requestExcellentMachineHistory();
@@ -2062,10 +2065,10 @@ public class MainActivity extends Activity {
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(12));
         box.setBackground(roundBg(Color.rgb(3,18,30),16));
-        TextView title=tv("EXCELLENT MACHINE • KHUSUS XAUUSD",18);
+        TextView title=tv("EXCELLENT MACHINE • MARKET TIDAK DIDUKUNG",18);
         title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
         box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(52)));
-        TextView note=tv("Market aktif: "+selectedMarket+". Model tidak memberi sinyal untuk market ini. Kembalikan strategi ke Smart Standar Wick + Fibonacci sebelum melanjutkan.",14);
+        TextView note=tv("Market aktif: "+selectedMarket+". Market ini tidak termasuk dukungan APK. Pilih XAUUSD, BTCUSD, atau ETHUSD, atau kembali ke Smart Standar Wick + Fibonacci.",14);
         note.setTextColor(Color.WHITE);note.setGravity(Gravity.TOP|Gravity.START);
         box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(86)));
         Button revert=btn("KEMBALI KE WICK + FIBONACCI");
@@ -2111,14 +2114,14 @@ public class MainActivity extends Activity {
                 && selectedTf.equalsIgnoreCase(excellentMachineDataTimeframe)
                 && excellentMachineData!=null&&excellentMachineData.length>=180;
         if(!chartMatches){
-            if(!selectedMarket.toUpperCase(Locale.US).startsWith("XAUUSD")){
+            if(!MarketSupport.isSupportedMarket(selectedMarket)){
                 if(isExcellentMachineStrategySelected())showMachineRestrictedDialog();
-                else Toast.makeText(this,"Excellent Machine hanya untuk XAUUSD.",Toast.LENGTH_LONG).show();
+                else Toast.makeText(this,"Market tidak didukung. Pilih XAUUSD, BTCUSD, atau ETHUSD.",Toast.LENGTH_LONG).show();
                 return;
             }
             synchronized(excellentMachineFetchLock){reopenExcellentMachinePanelAfterFetch=true;}
             requestExcellentMachineHistory();
-            Toast.makeText(this,"Memuat riwayat Excellent Machine XAUUSD • panel akan dibuka setelah data siap.",Toast.LENGTH_LONG).show();
+            Toast.makeText(this,"Memuat riwayat Excellent Machine "+selectedMarket+" • panel akan dibuka setelah data siap.",Toast.LENGTH_LONG).show();
             return;
         }
         machinePanelValues.clear();
@@ -2579,7 +2582,7 @@ public class MainActivity extends Activity {
     }
 
     void showMarketDialog(){
-        final String[] markets={"XAUUSD","BTCUSD","ETHUSD"};
+        final String[] markets=MarketSupport.SUPPORTED_MARKETS.clone();
         final String[] icons={"◈","₿","◆"};
         final String[] details={"Gold Spot / US Dollar","Bitcoin / US Dollar","Ethereum / US Dollar"};
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(22,16,22,14);box.setBackground(roundBg(Color.rgb(3,18,30),16));
@@ -2592,7 +2595,7 @@ public class MainActivity extends Activity {
             TextView icon=tv(icons[i],22);icon.setTextColor(Color.rgb(0,225,180));icon.setGravity(Gravity.CENTER);row.addView(icon,new LinearLayout.LayoutParams(42,-1));
             LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setGravity(Gravity.CENTER_VERTICAL);TextView name=tv(market,16);name.setTextColor(Color.WHITE);name.setTypeface(null,Typeface.BOLD);labels.addView(name);TextView sub=tv(details[i],12);sub.setTextColor(Color.LTGRAY);labels.addView(sub);row.addView(labels,new LinearLayout.LayoutParams(0,-1,1));
             TextView mark=tv(selected?"✓ ACTIVE":"SELECT  ›",10);mark.setTextColor(selected?Color.rgb(0,235,160):Color.CYAN);row.addView(mark);
-            row.setOnClickListener(v->{if(market.equals(selectedMarket)){d.dismiss();return;}selectedMarket=market;lastHeaderPrice=Double.NaN;lastSpreadLabel="";lastFeedQuoteAt=0L;m1Data=new Candle[0];m5Data=new Candle[0];excellentMachineData=new Candle[0];excellentMachineDataMarket="";excellentMachineDataTimeframe="";excellentMachineDataReceivedAt=0L;if(priceView!=null){priceView.setText("--");priceView.setTextColor(Color.CYAN);}if(spreadView!=null)spreadView.setText("SPREAD --");prefs.edit().putString("market",selectedMarket).apply();queueNativeIndicatorState();if(marketTitle!=null)marketTitle.setText(selectedMarket);if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));if(chart!=null){chart.setMarket(selectedMarket);chart.setData(new Candle[0]);chart.clearQuote();chart.setPositionEntryLevel(0);}if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);lastSignal=null;resetEntryReadyUi("menunggu data market");d.dismiss();load(interval(selectedTf),selectedTf);if(isExcellentMachineStrategySelected())requestExcellentMachineHistory();AppLog.add(this,"MARKET","selected "+selectedMarket+" • broker/chart quotes separated");});
+            row.setOnClickListener(v->{if(market.equals(selectedMarket)){d.dismiss();return;}selectedMarket=market;if(quickLotInput!=null)quickLotInput.setText(lotText(lotForMarket()));lastHeaderPrice=Double.NaN;lastSpreadLabel="";lastFeedQuoteAt=0L;m1Data=new Candle[0];m5Data=new Candle[0];excellentMachineData=new Candle[0];excellentMachineDataMarket="";excellentMachineDataTimeframe="";excellentMachineDataReceivedAt=0L;if(priceView!=null){priceView.setText("--");priceView.setTextColor(Color.CYAN);}if(spreadView!=null)spreadView.setText("SPREAD --");prefs.edit().putString("market",selectedMarket).apply();queueNativeIndicatorState();if(marketTitle!=null)marketTitle.setText(selectedMarket);if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));if(chart!=null){chart.setMarket(selectedMarket);chart.setData(new Candle[0]);chart.clearQuote();chart.setPositionEntryLevel(0);}if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);lastSignal=null;resetEntryReadyUi("menunggu data market");d.dismiss();load(interval(selectedTf),selectedTf);if(isExcellentMachineStrategySelected())requestExcellentMachineHistory();AppLog.add(this,"MARKET","selected "+selectedMarket+" • broker/chart quotes separated");});
         }
         d.show();if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-36,430),-2);}
     }
@@ -2880,9 +2883,7 @@ public class MainActivity extends Activity {
     }
 
     String mt5SymbolForMarket(String market){
-        if("BTCUSD".equalsIgnoreCase(market))return "BTCUSDm";
-        if("ETHUSD".equalsIgnoreCase(market))return "ETHUSDm";
-        return "XAUUSDm";
+        return MarketSupport.mt5Symbol(market);
     }
 
     double minLotForSymbol(String symbol){
@@ -2894,7 +2895,7 @@ public class MainActivity extends Activity {
     double lotForMarket(){
         SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         String symbol=mt5SymbolForMarket(selectedMarket);
-        return p.getFloat("lot_"+symbol,0.01f);
+        return p.getFloat("lot_"+symbol,(float)minLotForSymbol(symbol));
     }
 
     /**
