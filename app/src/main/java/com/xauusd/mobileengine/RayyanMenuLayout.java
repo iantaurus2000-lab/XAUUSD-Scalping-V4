@@ -79,7 +79,7 @@ public final class RayyanMenuLayout {
         addItems(host, content, Arrays.asList(
             new Item("⇄", "Gateway / Queue / ACK", "Status EA, antrean, dan konfirmasi MT5", "gateway"),
             new Item("▤", "Orders / History", "Log dan riwayat aktivitas aplikasi", "orders"),
-            new Item("✦", "Smart Auto Entry", "Pengaturan Auto Entry dan LIMIT demo", "mt5")
+            new Item("✦", "Smart Auto", "Pilih analisa entry atau pengaturan otomatis", "smart_auto")
         ), actions);
 
         addSection(host, content, "ALAT & PENGATURAN");
@@ -123,6 +123,32 @@ public final class RayyanMenuLayout {
         showDialog(host, root, "rayyan_settings");
     }
 
+    public static void showSmartAuto(Activity host, String market, String timeframe, ActionHandler actions) {
+        LinearLayout root = base(host);
+        addHero(host, root, "SMART AUTO", market + "   /   TIMEFRAME " + timeframe,
+                "Pilih analisa entry atau pengaturan Smart Auto");
+        ScrollView scroll = new ScrollView(host);
+        scroll.setFillViewport(false);
+        LinearLayout content = new LinearLayout(host);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(host, 12), dp(host, 4), dp(host, 12), dp(host, 12));
+        scroll.addView(content);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        addSection(host, content, "PILIH MODEL ANALISA");
+        addItems(host, content, Arrays.asList(
+            new Item("◉", "Smart Standar Wick + Fibonacci", "Analisa wick rejection, level Fibonacci, EMA M5, dan entry LIMIT", "standard_wick_fibo"),
+            new Item("✧", "Excellent Analisa Machine", "Model analisa berikutnya • belum diaktifkan", "excellent_machine")
+        ), actions);
+
+        addSection(host, content, "PENGATURAN EKSEKUSI");
+        addItems(host, content, Arrays.asList(
+            new Item("⚙", "Pengaturan Smart Auto Entry", "Mode trading, lot, risiko, dan status auto", "mt5")
+        ), actions);
+        addFooter(host, root, "Model analisa dipisahkan dari koneksi dan eksekusi order.");
+        showDialog(host, root, "rayyan_smart_auto");
+    }
+
     private static LinearLayout base(Activity host) {
         LinearLayout root = new LinearLayout(host);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -146,7 +172,7 @@ public final class RayyanMenuLayout {
         subtitleView.setSingleLine(true);
         subtitleView.setEllipsize(android.text.TextUtils.TruncateAt.END);
         hero.addView(subtitleView, new LinearLayout.LayoutParams(-1, dp(host, 24)));
-        TextView noteView = text(host, note, 11, MUTED);
+        TextView noteView = text(host, note, 12, MUTED);
         hero.addView(noteView, new LinearLayout.LayoutParams(-1, dp(host, 20)));
         root.addView(hero, new LinearLayout.LayoutParams(-1, -2));
     }
@@ -177,12 +203,12 @@ public final class RayyanMenuLayout {
             labels.setOrientation(LinearLayout.VERTICAL);
             labels.setGravity(Gravity.CENTER_VERTICAL);
             labels.setPadding(dp(host, 12), 0, dp(host, 6), 0);
-            TextView title = text(host, item.title, 15, WHITE);
+            TextView title = text(host, item.title, 16, WHITE);
             title.setTypeface(null, Typeface.BOLD);
             title.setSingleLine(true);
             title.setEllipsize(android.text.TextUtils.TruncateAt.END);
             labels.addView(title, new LinearLayout.LayoutParams(-1, dp(host, 26)));
-            TextView subtitle = text(host, item.subtitle, 11, MUTED);
+            TextView subtitle = text(host, item.subtitle, 12, MUTED);
             subtitle.setSingleLine(true);
             subtitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
             labels.addView(subtitle, new LinearLayout.LayoutParams(-1, dp(host, 21)));
