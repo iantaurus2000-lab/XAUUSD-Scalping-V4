@@ -488,8 +488,14 @@ public class MainActivity extends Activity {
                 ?String.format(Locale.US,"SPREAD %.2f • %.0f MT5 points",spread,spread/point)
                 :String.format(Locale.US,"SPREAD %.2f • MT5",spread);
             if(spreadView!=null)spreadView.setText(feedFresh?lastSpreadLabel:lastSpreadLabel+" • CHART FEED STALE");
-        }else if(spreadView!=null){
-            spreadView.setText(lastSpreadLabel.isEmpty()?"SPREAD -- • MT5 STALE":lastSpreadLabel+" • MT5 STALE");
+        }else{
+            // Do not leave an old BID/ASK line looking live after broker quote expires.
+            // This is display-only and does not stop, restart, or reconfigure Gateway/EA.
+            if(chart!=null)chart.clearQuote();
+            if(standardStrategyChartView!=null)standardStrategyChartView.clearQuote();
+            if(machineStrategyChartView!=null)machineStrategyChartView.clearQuote();
+            if(spreadView!=null)
+                spreadView.setText(lastSpreadLabel.isEmpty()?"SPREAD -- • MT5 STALE":lastSpreadLabel+" • MT5 STALE");
         }
         if(!feedFresh||broker==null){
             status.setText(!feedFresh?"● CHART FEED STALE • ENTRY LOCKED • "+selectedTf
