@@ -73,9 +73,9 @@ public final class ExcellentMachineBacktest {
 
     public static Report run(String market,String timeframe,Candle[] bars) {
         TargetStats empty1=new TargetStats(1),empty2=new TargetStats(2),empty3=new TargetStats(3);
-        String symbol=market==null?"":market.trim().toUpperCase(Locale.US);
-        if(!symbol.startsWith("XAUUSD"))
-            return report(false,"BACKTEST TAHAP 2 KHUSUS XAUUSD",market,timeframe,bars,0,0,0,empty1,empty2,empty3);
+        String symbol=MarketSupport.baseSymbol(market);
+        if(!MarketSupport.isSupportedMarket(symbol))
+            return report(false,"MARKET TIDAK DIDUKUNG • XAUUSD / BTCUSD / ETHUSD",market,timeframe,bars,0,0,0,empty1,empty2,empty3);
         if(bars==null || bars.length<MIN_INPUT_BARS)
             return report(false,"RIWAYAT KURANG • PERLU MINIMAL "+MIN_INPUT_BARS+" CANDLE",market,timeframe,bars,0,0,0,empty1,empty2,empty3);
 
