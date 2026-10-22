@@ -317,36 +317,89 @@ public final class GatewayService extends Service {
         if(now<nextBgAttemptAt)return;
         nextBgAttemptAt=now+30000L;
         try{
-            Candle[] m1=BiquoteClient.candles("1m");
-            Candle[] m5=BiquoteClient.candles("5m");
-            double[] t=BiquoteClient.tick();
-            bgFailureCount=0;
-            nextBgAttemptAt=System.currentTimeMillis()+30000L;
-            if(m1==null||m5==null||m1.length<30||m5.length<30){
-                logBgStatus("DATA_INSUFFICIENT M1="+(m1==null?0:m1.length)+" M5="+(m5==null?0:m5.length));
+            SharedPreferences marketPrefs=getSharedPreferences("rayyan4_indicators",MODE_PRIVATE);
+            String savedMarket=marketPrefs.getString("market","XAUUSD");
+            if(!MarketSupport.isSupportedMarket(savedMarket)){
+                logBgStatus("UNSUPPORTED_MARKET notifications paused • "+savedMarket);
                 return;
             }
-            logBgStatus("FEED_OK M1="+m1.length+" M5="+m5.length);
-            SignalResult s=SignalEngine.evaluate(m1,m5,t[0],t[1],t[0],t[1]);
-            if(s==null){logBgStatus("SIGNAL_RESULT_NULL");return;}
+            String market=MarketSupport.baseSymbol(savedMarket);
+            SharedPreferences enginePrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+            boolean machineSelected="EXCELLENT_MACHINE".equals(
+                    enginePrefs.getString("smart_analysis_engine","STANDARD_WICK_FIBO"));
+            SignalResult s;
+
+            if(machineSelected){
+                Candle[] bars=BiquoteClient.analysisCandles(market,"1m");
+                ExcellentMachineEngine.Result raw=ExcellentMachineEngine.evaluate(market,"M1",bars);
+                String symbol=MarketSupport.mt5Symbol(market);
+                double bid=0.0,ask=0.0;
+                try{
+                    bid=Double.parseDouble(enginePrefs.getString("broker_quote_bid_"+symbol,"0"));
+                    ask=Double.parseDouble(enginePrefs.getString("broker_quote_ask_"+symbol,"0"));
+                }catch(Exception ignored){}
+                long received=enginePrefs.getLong("broker_quote_received_ms_"+symbol,0L);
+                long tickAt=enginePrefs.getLong("broker_quote_tick_ms_"+symbol,0L);
+                long gateNow=System.currentTimeMillis();
+                boolean quoteFresh=QuoteSafety.isFresh(received,tickAt,gateNow);
+                ExcellentMachineLiveGate.Decision gate=ExcellentMachineLiveGate.evaluate(
+                        market,"M1",bars,raw,bid,ask,received,tickAt,gateNow,quoteFresh);
+                if(raw==null||!raw.ready||!gate.allowed){
+                    logBgStatus("MACHINE_WAIT market="+market+" reason="+
+                            (raw==null?"SIGNAL NULL":(!raw.ready?raw.reason:gate.reason)));
+                    bgFailureCount=0;
+                    nextBgAttemptAt=System.currentTimeMillis()+30000L;
+                    return;
+                }
+                double risk=Math.max(Math.abs(raw.entry-raw.sl),1e-8);
+                int confidence=raw.confidence>=90?5:(raw.confidence>=80?4:(raw.confidence>=60?3:2));
+                s=new SignalResult(raw.side,raw.emaSide,raw.entry,raw.sl,raw.tp1,raw.tp2,
+                        Math.abs(raw.tp1-raw.entry)/risk,raw.confidence,confidence,
+                        "DONCHIAN64 + EMA150 + ML 5NN • vote "+raw.confidence+"%",
+                        false,false,true,true,false,false,gate.atrValid,gate.spreadValid);
+                logBgStatus("MACHINE_READY market="+market+" "+raw.side+" vote="+raw.confidence+"%");
+            }else{
+                Candle[] m1=BiquoteClient.candles(market,"1m");
+                Candle[] m5=BiquoteClient.candles(market,"5m");
+                double[] tick=BiquoteClient.tick(market);
+                if(m1==null||m5==null||m1.length<30||m5.length<30){
+                    logBgStatus("DATA_INSUFFICIENT market="+market+" M1="+
+                            (m1==null?0:m1.length)+" M5="+(m5==null?0:m5.length));
+                    return;
+                }
+                s=SignalEngine.evaluate(m1,m5,tick[0],tick[1],tick[0],tick[1],
+                        backgroundFibonacciLevels(marketPrefs.getString("fibo_levels_percent",
+                                "-27,0,23.6,38.2,50,61.8,78.6,100")));
+                logBgStatus("FEED_OK market="+market+" M1="+m1.length+" M5="+m5.length);
+            }
+            bgFailureCount=0;
+            nextBgAttemptAt=System.currentTimeMillis()+30000L;
+            if(s==null){logBgStatus("SIGNAL_RESULT_NULL market="+market);return;}
             String side=s.side;
-            if(!"BUY".equals(side)&&!"SELL".equals(side))logBgStatus("SIGNAL_WAIT side="+side+" confidence="+s.confidence);
-            SharedPreferences p=getSharedPreferences("rayyan4_bg_signal",MODE_PRIVATE);
-            String last=p.getString("side","");
-            long lastAlertAt=p.getLong("last_alert_at",0L);
+            if(!"BUY".equals(side)&&!"SELL".equals(side))
+                logBgStatus("SIGNAL_WAIT market="+market+" side="+side+" confidence="+s.confidence);
+            SharedPreferences alertPrefs=getSharedPreferences("rayyan4_bg_signal",MODE_PRIVATE);
+            String modeKey=market+"_"+(machineSelected?"MACHINE":"STANDARD");
+            String last=alertPrefs.getString("side_"+modeKey,"");
+            long lastAlertAt=alertPrefs.getLong("last_alert_at_"+modeKey,0L);
             long alertNow=System.currentTimeMillis();
-            if(("BUY".equals(side)||"SELL".equals(side))&&!side.equals(last)&&alertNow-lastAlertAt>=180000L){
-                p.edit().putString("side",side).putLong("last_alert_at",alertNow).apply();
-                String msg="XAUUSD SCALPING\n\n"+side+
+            if(("BUY".equals(side)||"SELL".equals(side))&&!side.equals(last)
+                    &&alertNow-lastAlertAt>=180000L){
+                alertPrefs.edit().putString("side_"+modeKey,side)
+                        .putLong("last_alert_at_"+modeKey,alertNow).apply();
+                String modeLabel=machineSelected?"EXCELLENT MACHINE":"SMART STANDARD WICK + FIBONACCI";
+                String biasLabel=machineSelected?"EMA150 ":"M5 ";
+                String confidenceLabel=machineSelected?s.score+"%":s.confidence+"/5";
+                String msg=market+" "+modeLabel+"\n\n"+side+
                     "\nEntry: "+f(s.entry)+"\nSL: "+f(s.sl)+"\nTP1: "+f(s.tp1)+"\nTP2: "+f(s.tp2)+
-                    "\nTF: M1\nBias: M5 "+s.m5Bias+"\nSetup: "+s.setup+"\nConfidence: "+s.confidence+"/5";
-                AppLog.add(this,"BACKGROUND SIGNAL",side+" "+f(s.entry)+" score="+s.score);
+                    "\nTF: M1\nBias: "+biasLabel+s.m5Bias+"\nSetup: "+s.setup+"\nConfidence: "+confidenceLabel;
+                AppLog.add(this,"BACKGROUND SIGNAL",market+" "+modeLabel+" "+side+" "+f(s.entry)+" score="+s.score);
                 HistoryStore.add(this,"SIGNAL",side,s.entry,s.sl,s.tp1,s.tp2,s.confidence);
                 String token=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE).getString("token","");
                 String chat=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE).getString("chat","");
                 boolean tg=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE).getBoolean("enabled",false);
                 if(tg)TelegramClient.send(token,chat,msg,(ok,detail)->AppLog.add(this,"TELEGRAM",ok?"background sent":"background error"));
-                notifyAlert("XAUUSD "+side,"Entry "+f(s.entry)+" | SL "+f(s.sl)+" | TP1 "+f(s.tp1));
+                notifyAlert(market+" "+side,"Entry "+f(s.entry)+" | SL "+f(s.sl)+" | TP1 "+f(s.tp1));
             }
         }catch(Exception e){
             bgFailureCount=Math.min(bgFailureCount+1,5);
@@ -354,6 +407,23 @@ public final class GatewayService extends Service {
             nextBgAttemptAt=System.currentTimeMillis()+delay;
             logBgStatus("FEED_ERROR retry="+(delay/1000L)+"s "+e.getClass().getSimpleName()+": "+e.getMessage());
         }
+    }
+
+    private double[] backgroundFibonacciLevels(String raw){
+        ArrayList<Double> levels=new ArrayList<>();
+        if(raw!=null){
+            for(String part:raw.split(",")){
+                try{
+                    double percent=Double.parseDouble(part.trim());
+                    if(Double.isFinite(percent)&&percent>=-500.0&&percent<=500.0)
+                        levels.add(percent/100.0);
+                }catch(Exception ignored){}
+            }
+        }
+        if(levels.isEmpty())return new double[]{-0.27,0.0,0.236,0.382,0.5,0.618,0.786,1.0};
+        double[] out=new double[levels.size()];
+        for(int i=0;i<levels.size();i++)out[i]=levels.get(i);
+        return out;
     }
 
     private synchronized void logBgStatus(String status){
