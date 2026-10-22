@@ -22,6 +22,21 @@ public class MainActivity extends Activity {
     private CandleChartView chart;
     private CandleChartView standardStrategyChartView;
     private CandleChartView machineStrategyChartView;
+    private final Handler machinePanelHandler=new Handler(Looper.getMainLooper());
+    private final Map<String,TextView> machinePanelValues=new HashMap<>();
+    private AlertDialog machinePanelDialog;
+    private final Runnable machinePanelRefreshRunnable=new Runnable(){
+        @Override public void run(){
+            if(machinePanelDialog==null||!machinePanelDialog.isShowing()){
+                machinePanelHandler.removeCallbacks(this);
+                machinePanelValues.clear();
+                machinePanelDialog=null;
+                return;
+            }
+            refreshExcellentMachinePanel();
+            machinePanelHandler.postDelayed(this,3000L);
+        }
+    };
     private final Map<String,TextView> standardPanelValues=new HashMap<>();
     private ImageView chartMirror;
     private TextView chartMirrorStatus;
@@ -2008,6 +2023,11 @@ public class MainActivity extends Activity {
                     excellentMachineDataMarket=market;
                     excellentMachineDataTimeframe=tf;
                     excellentMachineDataReceivedAt=System.currentTimeMillis();
+                    if(machineStrategyChartView!=null){
+                        machineStrategyChartView.setData(pulled);
+                        double[] chartQuote=freshBrokerQuote(market);
+                        if(chartQuote!=null)machineStrategyChartView.setQuote(chartQuote[0],chartQuote[1],tf);
+                    }
                     AppLog.add(this,"EM_HISTORY","loaded "+market+" "+tf+" bars="+pulled.length);
                     if(isExcellentMachineStrategySelected()&&m1Data!=null&&m1Data.length>=30
                             &&m5Data!=null&&m5Data.length>=20)updateSignal(m1Data,m5Data);
@@ -2125,39 +2145,41 @@ public class MainActivity extends Activity {
         note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
         box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(42)));
         CandleChartView machineChart=buildStrategyChart(analysisCandles,selectedTf,true,false,
-                r.ready?r.side:"WAIT",r.ready?r.entry:0,r.ready?r.sl:0,r.ready?r.tp1:0,r.ready?r.tp2:0);
+                r.ready&&liveGate.allowed?r.side:"WAIT",
+                r.ready&&liveGate.allowed?r.entry:0,r.ready&&liveGate.allowed?r.sl:0,
+                r.ready&&liveGate.allowed?r.tp1:0,r.ready&&liveGate.allowed?r.tp2:0);
         box.addView(machineChart,new LinearLayout.LayoutParams(-1,uiDp(220)));
 
         LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
         int statusColor=r.ready&&liveGate.allowed?("BUY".equals(r.side)?green:red):Color.rgb(255,205,95);
-        addLargeAnalysisRow(rows,"STATUS ANALISA",r.ready
+        machinePanelValues.put("STATUS",addLargeAnalysisRow(rows,"STATUS ANALISA",r.ready
                 ?"ANALISA SEARAH • "+r.side+(liveGate.allowed?" • GATE LIVE LOLOS":" • ENTRY DITAHAN")
-                :"WAIT • "+waitReason,statusColor);
-        addLargeAnalysisRow(rows,"MODE SMART AUTO",machineSelected?"EXCELLENT MACHINE DIPILIH":"SMART STANDAR WICK + FIBONACCI",machineSelected?Color.CYAN:Color.WHITE);
-        addLargeAnalysisRow(rows,"GATE LIVE",liveGate.allowed
+                :"WAIT • "+waitReason,statusColor));
+        machinePanelValues.put("MODE",addLargeAnalysisRow(rows,"MODE SMART AUTO",machineSelected?"EXCELLENT MACHINE DIPILIH":"SMART STANDAR WICK + FIBONACCI",machineSelected?Color.CYAN:Color.WHITE));
+        machinePanelValues.put("GATE",addLargeAnalysisRow(rows,"GATE LIVE",liveGate.allowed
                 ?"READY • CANDLE / QUOTE / SPREAD / SL / TP VALID"
-                :liveGate.reason,liveGate.allowed?green:Color.rgb(255,205,95));
-        addLargeAnalysisRow(rows,"DATA OHLC AKTIF",excellentMachineDataMarket+" / "+excellentMachineDataTimeframe+" • "+excellentMachineData.length+" candle",Color.WHITE);
-        addLargeAnalysisRow(rows,"QUOTE MT5",liveBroker==null?"STALE / TIDAK TERSEDIA":price(liveBid)+" / "+price(liveAsk)
-                +" • spread "+price(liveGate.spread)+" • max "+price(liveGate.maxSpread),liveGate.quoteFresh?Color.WHITE:Color.rgb(255,205,95));
-        addLargeAnalysisRow(rows,"TREND DONCHIAN 64",r.donchianSide,Color.CYAN);
-        addLargeAnalysisRow(rows,"FILTER EMA 150",r.emaSide+(r.ema150>0?" • EMA "+price(r.ema150):""),Color.CYAN);
-        addLargeAnalysisRow(rows,"ML LORENTZIAN-STYLE 5NN",
-                r.mlSide+" • BUY "+r.buyVotes+"/5 • SELL "+r.sellVotes+"/5 • vote "+r.confidence+"%",Color.WHITE);
-        addLargeAnalysisRow(rows,"FITUR ML",String.format(Locale.US,"RSI(6) %.1f • CCI(15) %.1f • RSI(14) %.1f",r.rsi6,r.cci15,r.rsi14),Color.WHITE);
-        addLargeAnalysisRow(rows,"DONCHIAN RANGE",r.donchianHigh>0?price(r.donchianLow)+" — "+price(r.donchianHigh):"—",Color.WHITE);
-        addLargeAnalysisRow(rows,"ATR CANDLE",r.atr>0?price(r.atr):"—",Color.WHITE);
+                :liveGate.reason,liveGate.allowed?green:Color.rgb(255,205,95)));
+        machinePanelValues.put("DATA",addLargeAnalysisRow(rows,"DATA OHLC AKTIF",excellentMachineDataMarket+" / "+excellentMachineDataTimeframe+" • "+excellentMachineData.length+" candle",Color.WHITE));
+        machinePanelValues.put("QUOTE",addLargeAnalysisRow(rows,"QUOTE MT5",liveBroker==null?"STALE / TIDAK TERSEDIA":price(liveBid)+" / "+price(liveAsk)
+                +" • spread "+price(liveGate.spread)+" • max "+price(liveGate.maxSpread),liveGate.quoteFresh?Color.WHITE:Color.rgb(255,205,95)));
+        machinePanelValues.put("DONCHIAN",addLargeAnalysisRow(rows,"TREND DONCHIAN 64",r.donchianSide,Color.CYAN));
+        machinePanelValues.put("EMA",addLargeAnalysisRow(rows,"FILTER EMA 150",r.emaSide+(r.ema150>0?" • EMA "+price(r.ema150):""),Color.CYAN));
+        machinePanelValues.put("ML",addLargeAnalysisRow(rows,"ML LORENTZIAN-STYLE 5NN",
+                r.mlSide+" • BUY "+r.buyVotes+"/5 • SELL "+r.sellVotes+"/5 • vote "+r.confidence+"%",Color.WHITE));
+        machinePanelValues.put("FEATURES",addLargeAnalysisRow(rows,"FITUR ML",String.format(Locale.US,"RSI(6) %.1f • CCI(15) %.1f • RSI(14) %.1f",r.rsi6,r.cci15,r.rsi14),Color.WHITE));
+        machinePanelValues.put("RANGE",addLargeAnalysisRow(rows,"DONCHIAN RANGE",r.donchianHigh>0?price(r.donchianLow)+" — "+price(r.donchianHigh):"—",Color.WHITE));
+        machinePanelValues.put("ATR",addLargeAnalysisRow(rows,"ATR CANDLE",r.atr>0?price(r.atr):"—",Color.WHITE));
         if(r.candleTime>0){
             String candleAt=new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm",Locale.US).format(new java.util.Date(r.candleTime));
-            addLargeAnalysisRow(rows,"CANDLE SUDAH TUTUP",candleAt+" • close "+price(r.signalClose),Color.WHITE);
+            machinePanelValues.put("CANDLE",addLargeAnalysisRow(rows,"CANDLE SUDAH TUTUP",candleAt+" • close "+price(r.signalClose),Color.WHITE));
         }else{
-            addLargeAnalysisRow(rows,"DATA CANDLE","Menunggu OHLC yang cukup",Color.WHITE);
+            machinePanelValues.put("CANDLE",addLargeAnalysisRow(rows,"DATA CANDLE","Menunggu OHLC yang cukup",Color.WHITE));
         }
-        addLargeAnalysisRow(rows,"ENTRY REFERENSI",r.ready?price(r.entry):"—",Color.WHITE);
-        addLargeAnalysisRow(rows,"STOP LOSS",r.ready?price(r.sl):"—",red);
-        addLargeAnalysisRow(rows,"TAKE PROFIT 1 (1R)",r.ready?price(r.tp1):"—",green);
-        addLargeAnalysisRow(rows,"TAKE PROFIT 2 (2R)",r.ready?price(r.tp2):"—",green);
-        addLargeAnalysisRow(rows,"TAKE PROFIT 3 (3R)",r.ready?price(r.tp3):"—",green);
+        machinePanelValues.put("ENTRY",addLargeAnalysisRow(rows,"ENTRY REFERENSI",r.ready?price(r.entry):"—",Color.WHITE));
+        machinePanelValues.put("SL",addLargeAnalysisRow(rows,"STOP LOSS",r.ready?price(r.sl):"—",red));
+        machinePanelValues.put("TP1",addLargeAnalysisRow(rows,"TAKE PROFIT 1 (1R)",r.ready?price(r.tp1):"—",green));
+        machinePanelValues.put("TP2",addLargeAnalysisRow(rows,"TAKE PROFIT 2 (2R)",r.ready?price(r.tp2):"—",green));
+        machinePanelValues.put("TP3",addLargeAnalysisRow(rows,"TAKE PROFIT 3 (3R)",r.ready?price(r.tp3):"—",green));
         addLargeAnalysisRow(rows,"ATURAN TREND","Donchian 64 dan EMA 150 harus searah; vote ML 5-neighbor juga harus searah. Jika konflik, WAIT.",Color.WHITE);
         addLargeAnalysisRow(rows,"ATURAN DATA","Hanya candle tertutup. Model melihat maksimum 200 bar historis; label tetangga memakai arah close 4 candle berikutnya.",Color.WHITE);
         addLargeAnalysisRow(rows,"BATASAN MODEL","Prototype Lorentzian-style 5NN; bukan salinan persis Pine Script jdehorty. Formula Donchian merupakan proxy untuk uji awal.",Color.rgb(255,205,95));
@@ -2178,7 +2200,12 @@ public class MainActivity extends Activity {
         AlertDialog d=new AlertDialog.Builder(this).setView(box)
                 .setPositiveButton("TUTUP",null).setNegativeButton("BACKTEST",null).setNeutralButton("MUAT ULANG",null).create();
         machinePanelDialogRef[0]=d;
-        d.setOnDismissListener(ignored->{if(machineStrategyChartView==machineChart)machineStrategyChartView=null;});
+        d.setOnDismissListener(ignored->{
+            machinePanelHandler.removeCallbacks(machinePanelRefreshRunnable);
+            if(machineStrategyChartView==machineChart)machineStrategyChartView=null;
+            if(machinePanelDialog==d)machinePanelDialog=null;
+            machinePanelValues.clear();
+        });
         d.setOnShowListener(ignored->{
             resizeDialogButtons(d);
             if(d.getButton(AlertDialog.BUTTON_NEUTRAL)!=null){
@@ -2202,6 +2229,9 @@ public class MainActivity extends Activity {
             }
         });
         d.show();
+        machinePanelDialog=d;
+        machinePanelHandler.removeCallbacks(machinePanelRefreshRunnable);
+        machinePanelHandler.postDelayed(machinePanelRefreshRunnable,3000L);
         if(d.getWindow()!=null){
             RayyanTheme.apply(this,d.getWindow().getDecorView(),appTheme);
             d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
