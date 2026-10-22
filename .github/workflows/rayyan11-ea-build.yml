@@ -43,16 +43,37 @@ jobs:
           if (!$metaeditor -or !(Test-Path $metaeditor)) {
             throw "MetaEditor 64-bit was not found after MT5 installation."
           }
+          $mt5Path = Split-Path -Parent $metaeditor
           "METAEDITOR_PATH=$metaeditor" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "MT5_PATH=$(Split-Path -Parent $metaeditor)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "MT5_PATH=$mt5Path" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+          # Initialize the MetaTrader per-user MQL5 data directory.
+          $terminal = Join-Path $mt5Path "terminal64.exe"
+          if (Test-Path $terminal) {
+            $p = Start-Process -FilePath $terminal -PassThru
+            Start-Sleep -Seconds 12
+            if (!$p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
+          }
+          $dataRoot = Join-Path $env:APPDATA "MetaQuotes\\Terminal"
+          $dataDirs = @(Get-ChildItem $dataRoot -Directory -ErrorAction SilentlyContinue)
+          if ($dataDirs.Count -eq 0) { throw "MetaTrader user data directory was not initialized." }
+          $dataDir = $dataDirs | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          $dataMql5 = Join-Path $dataDir.FullName "MQL5"
+          New-Item -ItemType Directory -Path (Join-Path $dataMql5 "Experts") -Force | Out-Null
+          $installInclude = Join-Path $mt5Path "MQL5\\Include"
+          if (Test-Path (Join-Path $installInclude "Trade\\Trade.mqh")) {
+            Copy-Item $installInclude $dataMql5 -Recurse -Force
+          }
+          "MT5_DATA_MQL5=$dataMql5" | Out-File -FilePath $env:GITHUB_ENV -Append
           Write-Host "MetaEditor: $metaeditor"
+          Write-Host "MT5 data MQL5: $dataMql5"
 
       - name: Compile the single Rayyan Gateway EA
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $source = (Resolve-Path "mt5/Experts/Rayyan4GatewayEA.mq5").Path
-          $terminalExperts = Join-Path $env:MT5_PATH "MQL5\Experts"
+          $terminalExperts = Join-Path $env:MT5_DATA_MQL5 "Experts"
           New-Item -ItemType Directory -Path $terminalExperts -Force | Out-Null
           Copy-Item $source (Join-Path $terminalExperts "Rayyan4GatewayEA.mq5") -Force
           $log = Join-Path $env:RUNNER_TEMP "Rayyan4GatewayEA-compile.log"
