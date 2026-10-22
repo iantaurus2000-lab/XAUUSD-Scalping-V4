@@ -2217,7 +2217,7 @@ public class MainActivity extends Activity {
                     d.dismiss();
                     synchronized(excellentMachineFetchLock){reopenExcellentMachinePanelAfterFetch=true;}
                     requestExcellentMachineHistory();
-                    Toast.makeText(this,"Memperbarui riwayat XAUUSD...",Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this,"Memperbarui riwayat "+selectedMarket+"...",Toast.LENGTH_SHORT).show();
                 });
             }
             if(d.getButton(AlertDialog.BUTTON_NEGATIVE)!=null){
