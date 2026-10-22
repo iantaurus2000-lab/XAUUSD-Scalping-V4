@@ -970,8 +970,22 @@ public class MainActivity extends Activity {
     private boolean queueAutoSignal(SignalResult signal,Candle[] m1,SharedPreferences gp,
                                      double lot,long candleStamp,String signalKey){
         if(signal==null||(!"BUY".equals(signal.side)&&!"SELL".equals(signal.side)))return false;
-        if(!isAutoEntryEligible(signal,chart.getBid(),chart.getAsk(),true)){
-            smartLogOnce(gp,"WICK_LIMIT_LEVELS|"+signalKey,"SMART AUTO ditahan: level wick LIMIT/quote/spread belum valid");return false;
+        double validationBid=chart==null?0.0:chart.getBid();
+        double validationAsk=chart==null?0.0:chart.getAsk();
+        // Machine's strategy gate, READY lamp, and final pre-queue validation must
+        // all use the same live broker quote; the chart may be showing BiQuote.
+        if(isExcellentMachineStrategySelected()){
+            double[] liveBroker=freshBrokerQuote(selectedMarket);
+            if(liveBroker==null||!hasFreshEntryQuotes()||!QuoteSafety.valid(liveBroker[0],liveBroker[1])){
+                smartLogOnce(gp,"MACHINE_BROKER_QUOTE_STALE|"+signalKey,
+                    "Excellent Machine ditahan: quote broker MT5 tidak segar saat validasi antrean");
+                return false;
+            }
+            validationBid=liveBroker[0];
+            validationAsk=liveBroker[1];
+        }
+        if(!isAutoEntryEligible(signal,validationBid,validationAsk,true)){
+            smartLogOnce(gp,"WICK_LIMIT_LEVELS|"+signalKey,"SMART AUTO ditahan: level LIMIT/quote/spread belum valid");return false;
         }
         double target=validAutoTarget(signal);if(target<=0.0)return false;
         queueOrigin="SMART_AUTO";queueOutcomeTarget=signal.tp1;
@@ -1426,6 +1440,10 @@ public class MainActivity extends Activity {
         lastSignal=evaluateSignal(m1,m5,bid,ask,spreadBid,spreadAsk);
         SignalResult standardSignal=lastSignal;
         boolean machineSelected=isExcellentMachineStrategySelected();
+        // Excellent Machine's LiveGate is broker-quote based. Keep every downstream
+        // READY/lifecycle check on the same Bid/Ask instead of mixing chart-feed prices.
+        double executionBid=machineSelected&&brokerForSignal!=null?brokerForSignal[0]:bid;
+        double executionAsk=machineSelected&&brokerForSignal!=null?brokerForSignal[1]:ask;
         SignalResult s=machineSelected?evaluateExcellentMachineExecutionSignal():standardSignal;
         lastExecutionSignal=s;
 
@@ -1443,7 +1461,7 @@ public class MainActivity extends Activity {
         entryView.setText("Entry\n"+price(directional?s.entry:0));slView.setText("SL\n"+price(directional?s.sl:0));
         tp1View.setText("TP1\n"+price(directional?s.tp1:0));tp2View.setText("TP2\n"+price(directional?s.tp2:0));
         // Use the same M1 bar timestamp as Smart Auto Entry and order lifecycle.
-        updateEntryReadyUi(s,bid,ask,m1,m1[m1.length-1].t);
+        updateEntryReadyUi(s,executionBid,executionAsk,m1,m1[m1.length-1].t);
 
         View v=((ViewGroup)scoreView.getParent()).getChildAt(0);
         if(v instanceof Button){
@@ -1478,7 +1496,7 @@ public class MainActivity extends Activity {
         boolean alreadyNotified=noticeKey.equals(noticePrefs.getString(noticePrefKey,""));
         // The lifecycle manager owns one Rayyan LIMIT/position at a time. It
         // queues, cancels, and re-enters only after fresh EA state plus matching ACK.
-        processAutoLimit(s,m1,m5,bid,ask,candleStamp);
+        processAutoLimit(s,m1,m5,executionBid,executionAsk,candleStamp);
         if(changed&&("BUY".equals(s.side)||"SELL".equals(s.side))){
             String msg=selectedMarket+(machineSelected?" EXCELLENT MACHINE":" SCALPING")+"\n\n"+s.side+"\nEntry: "+price(s.entry)+"\nSL: "+price(s.sl)+"\nTP1: "+price(s.tp1)+"\nTP2: "+price(s.tp2)+"\nTF: M1\nBias: "+(machineSelected?"EMA150 ":"M5 ")+s.m5Bias+"\nSetup: "+s.setup+"\nConfidence: "+s.confidence+"/5";
             AppLog.add(this,"SIGNAL",s.side+" "+price(s.entry)+" score="+s.score);
