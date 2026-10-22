@@ -600,7 +600,16 @@ public class MainActivity extends Activity {
         String previousTf=selectedTf;
         selectedTf=tf;
         if(isExcellentMachineStrategySelected())requestExcellentMachineHistory();
-        if(!tf.equals(previousTf))resetEntryReadyUi("memuat timeframe "+tf);
+        if(!tf.equals(previousTf)){
+            resetEntryReadyUi("memuat timeframe "+tf);
+            // Clear the prior Machine timeframe while the requested history is loading.
+            if(machineStrategyChartView!=null){
+                machineStrategyChartView.setMarket(selectedMarket);
+                machineStrategyChartView.setTimeframe(tf);
+                machineStrategyChartView.setData(new Candle[0]);
+                machineStrategyChartView.clearQuote();
+            }
+        }
         for(Map.Entry<String,Button> e:tfButtons.entrySet()){
             boolean active=e.getKey().equals(tf);e.getValue().setTextColor(active?Color.BLACK:Color.WHITE);
             e.getValue().setBackground(roundBg(active?Color.rgb(15,150,235):Color.rgb(7,34,60),12));
@@ -627,6 +636,19 @@ public class MainActivity extends Activity {
                 runOnUiThread(()->{
                     if(!tf.equals(selectedTf)||!market.equals(selectedMarket))return;
                     chart.setData(c);chart.goLive();activeChartData=c;activeChartMarket=market;activeChartTimeframe=tf;m1Data=m1;m5Data=m5;
+                    if(standardStrategyChartView!=null){
+                        standardStrategyChartView.setMarket(market);
+                        standardStrategyChartView.setTimeframe("M1");
+                        standardStrategyChartView.setData(m1Data);
+                    }
+                    if(machineStrategyChartView!=null
+                            &&market.equalsIgnoreCase(excellentMachineDataMarket)
+                            &&tf.equalsIgnoreCase(excellentMachineDataTimeframe)
+                            &&excellentMachineData!=null&&excellentMachineData.length>0){
+                        machineStrategyChartView.setMarket(market);
+                        machineStrategyChartView.setTimeframe(tf);
+                        machineStrategyChartView.setData(excellentMachineData);
+                    }
                     syncBrokerEntryLine();updateSignal(m1Data,m5Data);
                     status.setText("● CHART LOADED • "+market+" • "+tf);
                 });
@@ -2595,7 +2617,7 @@ public class MainActivity extends Activity {
             TextView icon=tv(icons[i],22);icon.setTextColor(Color.rgb(0,225,180));icon.setGravity(Gravity.CENTER);row.addView(icon,new LinearLayout.LayoutParams(42,-1));
             LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setGravity(Gravity.CENTER_VERTICAL);TextView name=tv(market,16);name.setTextColor(Color.WHITE);name.setTypeface(null,Typeface.BOLD);labels.addView(name);TextView sub=tv(details[i],12);sub.setTextColor(Color.LTGRAY);labels.addView(sub);row.addView(labels,new LinearLayout.LayoutParams(0,-1,1));
             TextView mark=tv(selected?"✓ ACTIVE":"SELECT  ›",10);mark.setTextColor(selected?Color.rgb(0,235,160):Color.CYAN);row.addView(mark);
-            row.setOnClickListener(v->{if(market.equals(selectedMarket)){d.dismiss();return;}selectedMarket=market;if(quickLotInput!=null)quickLotInput.setText(lotText(lotForMarket()));lastHeaderPrice=Double.NaN;lastSpreadLabel="";lastFeedQuoteAt=0L;m1Data=new Candle[0];m5Data=new Candle[0];excellentMachineData=new Candle[0];excellentMachineDataMarket="";excellentMachineDataTimeframe="";excellentMachineDataReceivedAt=0L;if(priceView!=null){priceView.setText("--");priceView.setTextColor(Color.CYAN);}if(spreadView!=null)spreadView.setText("SPREAD --");prefs.edit().putString("market",selectedMarket).apply();queueNativeIndicatorState();if(marketTitle!=null)marketTitle.setText(selectedMarket);if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));if(chart!=null){chart.setMarket(selectedMarket);chart.setData(new Candle[0]);chart.clearQuote();chart.setPositionEntryLevel(0);}if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);lastSignal=null;resetEntryReadyUi("menunggu data market");d.dismiss();load(interval(selectedTf),selectedTf);if(isExcellentMachineStrategySelected())requestExcellentMachineHistory();AppLog.add(this,"MARKET","selected "+selectedMarket+" • broker/chart quotes separated");});
+            row.setOnClickListener(v->{if(market.equals(selectedMarket)){d.dismiss();return;}selectedMarket=market;if(quickLotInput!=null)quickLotInput.setText(lotText(lotForMarket()));lastHeaderPrice=Double.NaN;lastSpreadLabel="";lastFeedQuoteAt=0L;m1Data=new Candle[0];m5Data=new Candle[0];excellentMachineData=new Candle[0];excellentMachineDataMarket="";excellentMachineDataTimeframe="";excellentMachineDataReceivedAt=0L;if(priceView!=null){priceView.setText("--");priceView.setTextColor(Color.CYAN);}if(spreadView!=null)spreadView.setText("SPREAD --");prefs.edit().putString("market",selectedMarket).apply();queueNativeIndicatorState();if(marketTitle!=null)marketTitle.setText(selectedMarket);if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));if(chart!=null){chart.setMarket(selectedMarket);chart.setTimeframe(selectedTf);chart.setData(new Candle[0]);chart.clearQuote();chart.setPositionEntryLevel(0);}if(standardStrategyChartView!=null){standardStrategyChartView.setMarket(selectedMarket);standardStrategyChartView.setTimeframe("M1");standardStrategyChartView.setData(new Candle[0]);standardStrategyChartView.clearQuote();}if(machineStrategyChartView!=null){machineStrategyChartView.setMarket(selectedMarket);machineStrategyChartView.setTimeframe(selectedTf);machineStrategyChartView.setData(new Candle[0]);machineStrategyChartView.clearQuote();}if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);lastSignal=null;resetEntryReadyUi("menunggu data market");d.dismiss();load(interval(selectedTf),selectedTf);if(isExcellentMachineStrategySelected())requestExcellentMachineHistory();AppLog.add(this,"MARKET","selected "+selectedMarket+" • broker/chart quotes separated");});
         }
         d.show();if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-36,430),-2);}
     }
