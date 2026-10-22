@@ -117,7 +117,16 @@ public class MainActivity extends Activity {
     private Candle[] activeChartData=new Candle[0];
     private String activeChartMarket="";
     private String activeChartTimeframe="";
-    private SignalResult lastSignal;
+    private SignalResult lastSignal; // Standard Wick + Fibonacci analysis remains independent.
+    private SignalResult lastExecutionSignal;
+    private volatile Candle[] excellentMachineData=new Candle[0];
+    private volatile String excellentMachineDataMarket="";
+    private volatile String excellentMachineDataTimeframe="";
+    private volatile long excellentMachineDataReceivedAt=0L;
+    private final Object excellentMachineFetchLock=new Object();
+    private boolean excellentMachineHistoryFetchInFlight=false;
+    private boolean reopenExcellentMachinePanelAfterFetch=false;
+    private ScheduledExecutorService excellentMachineHistoryLoop;
     private final Map<String,Button> tfButtons=new HashMap<>();
     private final int bg=Color.rgb(3,10,18);
     private final int green=Color.rgb(0,225,135);
@@ -445,6 +454,12 @@ public class MainActivity extends Activity {
             // This removes the old 15-second OHLC lag from wick detection and LIMIT pricing.
             m1Data=LiveCandleUpdater.update(m1Data,60_000L,feedMid,now);
             m5Data=LiveCandleUpdater.update(m5Data,300_000L,feedMid,now);
+            if(selectedMarket.equalsIgnoreCase(excellentMachineDataMarket)
+                    &&selectedTf.equalsIgnoreCase(excellentMachineDataTimeframe)
+                    &&excellentMachineData!=null&&excellentMachineData.length>0){
+                excellentMachineData=LiveCandleUpdater.update(excellentMachineData,
+                        LiveCandleUpdater.periodMillis(selectedTf),feedMid,now);
+            }
             if(chart!=null)chart.updateLiveBar(feedTick[0],feedTick[1],now,selectedTf);
             updateHeaderPrice(feedTick[0],feedTick[1]);
         }
@@ -552,6 +567,7 @@ public class MainActivity extends Activity {
     void selectTimeframe(String tf,boolean reload){
         String previousTf=selectedTf;
         selectedTf=tf;
+        if(isExcellentMachineStrategySelected())requestExcellentMachineHistory();
         if(!tf.equals(previousTf))resetEntryReadyUi("memuat timeframe "+tf);
         for(Map.Entry<String,Button> e:tfButtons.entrySet()){
             boolean active=e.getKey().equals(tf);e.getValue().setTextColor(active?Color.BLACK:Color.WHITE);
@@ -1406,9 +1422,12 @@ public class MainActivity extends Activity {
         double[] brokerForSignal=freshBrokerQuote(selectedMarket);
         double spreadBid=brokerForSignal==null?0.0:brokerForSignal[0];
         double spreadAsk=brokerForSignal==null?0.0:brokerForSignal[1];
-        SignalResult previous=lastSignal;
+        SignalResult previous=lastExecutionSignal;
         lastSignal=evaluateSignal(m1,m5,bid,ask,spreadBid,spreadAsk);
-        SignalResult s=lastSignal;
+        SignalResult standardSignal=lastSignal;
+        boolean machineSelected=isExcellentMachineStrategySelected();
+        SignalResult s=machineSelected?evaluateExcellentMachineExecutionSignal():standardSignal;
+        lastExecutionSignal=s;
 
         int displayScore=Math.max(0,Math.min(100,s.score));
         scoreView.setText("SCORE "+displayScore+"%");
@@ -1439,18 +1458,21 @@ public class MainActivity extends Activity {
         long candleStamp=m1[m1.length-1].t;
         WinRateTracker.evaluate(this,selectedMarket,m1);
         if(entryReady && ("BUY".equals(s.side)||"SELL".equals(s.side))){
-            String readyTrackKey=selectedMarket+"|"+readyCandleKey+"|"+readyCandleSide;
+            String readyCohort=machineSelected?"READY_EXCELLENT_MACHINE":"READY";
+            String readyTrackKey=readyCohort+"|"+selectedMarket+"|"+readyCandleKey+"|"+readyCandleSide;
             SharedPreferences trackPrefs=getSharedPreferences("rayyan4_winrate",MODE_PRIVATE);
-            if(!readyTrackKey.equals(trackPrefs.getString("last_ready_key",""))){
-                WinRateTracker.record(this,"READY",selectedMarket,s.side,s.entry,s.sl,s.tp1,candleStamp);
-                trackPrefs.edit().putString("last_ready_key",readyTrackKey).apply();
+            String readyPrefKey=machineSelected?"last_ready_key_machine":"last_ready_key";
+            if(!readyTrackKey.equals(trackPrefs.getString(readyPrefKey,""))){
+                WinRateTracker.record(this,readyCohort,selectedMarket,s.side,s.entry,s.sl,s.tp1,candleStamp);
+                trackPrefs.edit().putString(readyPrefKey,readyTrackKey).apply();
             }
         }
 
         boolean changed=previous==null||!s.side.equals(previous.side);
         String candleKey=selectedMarket+"|"+selectedTf+"|"+candleStamp;
-        String noticeKey=candleKey+"|"+s.side;
-        String noticePrefKey="signal_notified_candle_"+s.side.toLowerCase(Locale.US);
+        String strategyNoticeTag=machineSelected?"MACHINE":"STANDARD";
+        String noticeKey=candleKey+"|"+s.side+"|"+strategyNoticeTag;
+        String noticePrefKey="signal_notified_candle_"+strategyNoticeTag.toLowerCase(Locale.US)+"_"+s.side.toLowerCase(Locale.US);
         SharedPreferences noticePrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         boolean alreadyNotified=noticeKey.equals(noticePrefs.getString(noticePrefKey,""));
         // The lifecycle manager owns one Rayyan LIMIT/position at a time. It
@@ -1479,7 +1501,10 @@ public class MainActivity extends Activity {
             requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},1001);
     }
 
-    @Override protected void onResume(){ super.onResume(); visible=true; }
+    @Override protected void onResume(){
+        super.onResume(); visible=true;
+        if(isExcellentMachineStrategySelected())startExcellentMachineHistoryLoop();
+    }
     @Override protected void onPause(){ visible=false; super.onPause(); }
 
     void showMenu(View anchor){
@@ -1721,12 +1746,209 @@ public class MainActivity extends Activity {
      * Independent analysis panel. This model does not call processAutoLimit,
      * queueLimit, submitWickLimitEntry, or modify the Standard Wick+Fibonacci signal.
      */
+
+    private boolean isExcellentMachineStrategySelected(){
+        return "EXCELLENT_MACHINE".equals(getSharedPreferences("rayyan4_gateway",MODE_PRIVATE)
+                .getString("smart_analysis_engine","STANDARD_WICK_FIBO"));
+    }
+
+    /** Strategy can change only when the EA confirms a fresh flat state and no command is queued. */
+    private boolean machineSwitchSafe(StringBuilder why){
+        SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        long now=System.currentTimeMillis();
+        long stateAt=gp.getLong("ea_order_state_at",0L);
+        boolean eaOnline=GatewayService.isEaRecentlyOnline(this);
+        boolean stateFresh=stateAt>0L&&now>=stateAt&&now-stateAt<=ORDER_STATE_MAX_AGE_MS&&eaOnline;
+        String state=gp.getString("ea_order_state","UNKNOWN");
+        if(!eaOnline){why.append("EA MT5 belum online");return false;}
+        if(!stateFresh){why.append("status order EA belum segar");return false;}
+        if(!"NONE".equals(state)){why.append("MT5 masih ").append(state);return false;}
+        if(!queueIsFree(gp)){why.append("antrean Gateway masih terisi");return false;}
+        if(!"IDLE".equals(gp.getString("smart_phase","IDLE"))
+                ||!gp.getString("smart_active_id","").isEmpty()){
+            why.append("siklus LIMIT lama belum selesai / belum terkonfirmasi");return false;
+        }
+        return true;
+    }
+
+    private void requestExcellentMachineStrategyChange(){
+        final boolean enable=!isExcellentMachineStrategySelected();
+        if(enable&&!selectedMarket.toUpperCase(Locale.US).startsWith("XAUUSD")){
+            new AlertDialog.Builder(this).setTitle("KHUSUS XAUUSD")
+                    .setMessage("Excellent Machine hanya boleh dipakai untuk market XAUUSD.")
+                    .setPositiveButton("TUTUP",null).show();
+            return;
+        }
+        StringBuilder why=new StringBuilder();
+        if(!machineSwitchSafe(why)){
+            new AlertDialog.Builder(this).setTitle("MODE BELUM AMAN DIGANTI")
+                    .setMessage("Sebelum mengganti model, pastikan EA online, status MT5 segar dan NONE, antrean kosong, serta siklus LIMIT berstatus IDLE.\n\nAlasan: "+why)
+                    .setPositiveButton("TUTUP",null).show();
+            AppLog.add(this,"EM_MODE","change blocked • "+why);
+            return;
+        }
+        String msg=enable
+                ?"Excellent Machine akan menjadi sinyal yang dipakai oleh jalur Smart Auto LIMIT untuk XAUUSD M1. Order hanya dapat dikirim jika switch Smart Auto dan MODE SIAP TRADING aktif serta seluruh gate lolos. Pastikan input DemoOnly=true di EA MT5 dan akun demo. Mesin hanya mengirim LIMIT, bukan MARKET. Aktifkan?"
+                :"Kembali ke Smart Standar Wick + Fibonacci. Mode tidak boleh diganti saat ada order/posisi atau ACK yang belum jelas. Matikan Machine?";
+        new AlertDialog.Builder(this)
+                .setTitle(enable?"AKTIFKAN MACHINE UNTUK SMART AUTO?":"NONAKTIFKAN MACHINE?")
+                .setMessage(msg)
+                .setNegativeButton("BATAL",null)
+                .setPositiveButton(enable?"AKTIFKAN":"KEMBALI KE STANDAR",(d,w)->{
+                    StringBuilder recheck=new StringBuilder();
+                    if(!machineSwitchSafe(recheck)){
+                        Toast.makeText(this,"Mode tidak berubah • "+recheck,Toast.LENGTH_LONG).show();
+                        AppLog.add(this,"EM_MODE","change aborted on recheck • "+recheck);
+                        return;
+                    }
+                    SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+                    gp.edit().putString("smart_analysis_engine",
+                            enable?"EXCELLENT_MACHINE":"STANDARD_WICK_FIBO").apply();
+                    if(enable){
+                        startExcellentMachineHistoryLoop();
+                        requestExcellentMachineHistory();
+                    }else{
+                        stopExcellentMachineHistoryLoop();
+                    }
+                    resetEntryReadyUi(enable?"switch ke Excellent Machine":"kembali ke Wick + Fibonacci");
+                    AppLog.add(this,"EM_MODE",enable?"Excellent Machine selected for Smart Auto LIMIT":"Standard Wick + Fibonacci restored");
+                    Toast.makeText(this,enable
+                            ?"Excellent Machine dipilih • auto hanya XAUUSD M1 dan gate wajib lolos"
+                            :"Smart Standar Wick + Fibonacci aktif kembali",Toast.LENGTH_LONG).show();
+                    if(m1Data!=null&&m1Data.length>=30&&m5Data!=null&&m5Data.length>=20)
+                        updateSignal(m1Data,m5Data);
+                    showExcellentMachineDialog();
+                }).show();
+    }
+
+    private void startExcellentMachineHistoryLoop(){
+        synchronized(excellentMachineFetchLock){
+            if(excellentMachineHistoryLoop!=null&&!excellentMachineHistoryLoop.isShutdown())return;
+            excellentMachineHistoryLoop=Executors.newSingleThreadScheduledExecutor();
+            excellentMachineHistoryLoop.scheduleWithFixedDelay(
+                    this::requestExcellentMachineHistory,0L,60L,TimeUnit.SECONDS);
+        }
+    }
+
+    private void stopExcellentMachineHistoryLoop(){
+        synchronized(excellentMachineFetchLock){
+            if(excellentMachineHistoryLoop!=null){
+                excellentMachineHistoryLoop.shutdownNow();
+                excellentMachineHistoryLoop=null;
+            }
+        }
+    }
+
+    private void requestExcellentMachineHistory(){
+        final String market=selectedMarket;
+        final String tf=selectedTf;
+        if(market==null||!market.toUpperCase(Locale.US).startsWith("XAUUSD")){
+            AppLog.add(this,"EM_HISTORY","blocked non-XAU market="+market);
+            return;
+        }
+        synchronized(excellentMachineFetchLock){
+            if(excellentMachineHistoryFetchInFlight)return;
+            excellentMachineHistoryFetchInFlight=true;
+        }
+        new Thread(()->{
+            try{
+                Candle[] pulled=BiquoteClient.analysisCandles(market,interval(tf));
+                if(pulled==null||pulled.length<180)throw new IllegalStateException("History < 180 candles");
+                runOnUiThread(()->{
+                    boolean changedContext=!market.equals(selectedMarket)||!tf.equals(selectedTf);
+                    try{
+                        if(!changedContext){
+                            excellentMachineData=pulled;
+                            excellentMachineDataMarket=market;
+                            excellentMachineDataTimeframe=tf;
+                            excellentMachineDataReceivedAt=System.currentTimeMillis();
+                            AppLog.add(this,"EM_HISTORY","loaded "+market+" "+tf+" bars="+pulled.length);
+                            if(isExcellentMachineStrategySelected()&&m1Data!=null&&m1Data.length>=30
+                                    &&m5Data!=null&&m5Data.length>=20)updateSignal(m1Data,m5Data);
+                        }
+                    }finally{
+                        synchronized(excellentMachineFetchLock){excellentMachineHistoryFetchInFlight=false;}
+                    }
+                    boolean reopen;
+                    synchronized(excellentMachineFetchLock){
+                        reopen=reopenExcellentMachinePanelAfterFetch;
+                        reopenExcellentMachinePanelAfterFetch=false;
+                    }
+                    if(reopen){
+                        if(changedContext)Toast.makeText(this,"Market/timeframe berubah saat data dimuat; buka ulang analisa.",Toast.LENGTH_LONG).show();
+                        else showExcellentMachineDialog();
+                    }
+                });
+            }catch(Exception error){
+                runOnUiThread(()->{
+                    synchronized(excellentMachineFetchLock){excellentMachineHistoryFetchInFlight=false;}
+                    AppLog.add(this,"EM_HISTORY_ERROR",market+" "+tf+" • "+error.getClass().getSimpleName()+" "+String.valueOf(error.getMessage()));
+                    boolean reopen;
+                    synchronized(excellentMachineFetchLock){
+                        reopen=reopenExcellentMachinePanelAfterFetch;
+                        reopenExcellentMachinePanelAfterFetch=false;
+                    }
+                    if(reopen)Toast.makeText(this,"Riwayat Excellent Machine gagal dimuat • periksa internet / Log.",Toast.LENGTH_LONG).show();
+                });
+            }
+        },"excellent-machine-history").start();
+    }
+
+    private SignalResult evaluateExcellentMachineExecutionSignal(){
+        SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        boolean contextMatches=selectedMarket.equalsIgnoreCase(excellentMachineDataMarket)
+                &&selectedTf.equalsIgnoreCase(excellentMachineDataTimeframe);
+        Candle[] bars=contextMatches?excellentMachineData:new Candle[0];
+        ExcellentMachineEngine.Result raw=ExcellentMachineEngine.evaluate(selectedMarket,selectedTf,bars);
+        double[] broker=freshBrokerQuote(selectedMarket);
+        double bid=broker==null?0.0:broker[0],ask=broker==null?0.0:broker[1];
+        String symbol=mt5SymbolForMarket(selectedMarket);
+        long received=gp.getLong("broker_quote_received_ms_"+symbol,0L);
+        long tickAt=gp.getLong("broker_quote_tick_ms_"+symbol,0L);
+        ExcellentMachineLiveGate.Decision d=ExcellentMachineLiveGate.evaluate(
+                selectedMarket,selectedTf,bars,raw,bid,ask,received,tickAt,System.currentTimeMillis(),
+                hasFreshEntryQuotes()&&contextMatches);
+        boolean aligned=raw!=null&&raw.ready;
+        boolean use=d.allowed;
+        String setup="EXCELLENT MACHINE • "+(use
+                ?"DONCHIAN64 + EMA150 + ML 5NN • VOTE "+raw.confidence+"%"
+                :d.reason);
+        if(!contextMatches)setup="EXCELLENT MACHINE • MENUNGGU RIWAYAT "+selectedMarket+" "+selectedTf;
+        int voteCount=raw==null?1:Math.max(1,Math.max(raw.buyVotes,raw.sellVotes));
+        return new SignalResult(use?raw.side:"WAIT",
+                raw==null?"NEUTRAL":raw.emaSide,
+                use?raw.entry:0.0,use?raw.sl:0.0,use?raw.tp1:0.0,use?raw.tp2:0.0,
+                use?1.0:0.0,use?raw.confidence:0,voteCount,setup,
+                false,false,use,aligned,false,false,d.atrValid,d.spreadValid);
+    }
+
     private void showExcellentMachineDialog(){
-        boolean chartMatches=selectedMarket.equalsIgnoreCase(activeChartMarket)
-                && selectedTf.equalsIgnoreCase(activeChartTimeframe);
-        Candle[] analysisCandles=chartMatches?activeChartData:new Candle[0];
+        boolean chartMatches=selectedMarket.equalsIgnoreCase(excellentMachineDataMarket)
+                && selectedTf.equalsIgnoreCase(excellentMachineDataTimeframe)
+                && excellentMachineData!=null&&excellentMachineData.length>=180;
+        if(!chartMatches){
+            if(!selectedMarket.toUpperCase(Locale.US).startsWith("XAUUSD")){
+                Toast.makeText(this,"Excellent Machine hanya untuk XAUUSD.",Toast.LENGTH_LONG).show();
+                return;
+            }
+            synchronized(excellentMachineFetchLock){reopenExcellentMachinePanelAfterFetch=true;}
+            requestExcellentMachineHistory();
+            Toast.makeText(this,"Memuat riwayat Excellent Machine XAUUSD • panel akan dibuka setelah data siap.",Toast.LENGTH_LONG).show();
+            return;
+        }
+        Candle[] analysisCandles=excellentMachineData;
         ExcellentMachineEngine.Result r=ExcellentMachineEngine.evaluate(selectedMarket,selectedTf,analysisCandles);
-        String waitReason=chartMatches?r.reason:"MEMUAT OHLC SESUAI MARKET / TIMEFRAME";
+        SharedPreferences machinePrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        double[] liveBroker=freshBrokerQuote(selectedMarket);
+        double liveBid=liveBroker==null?0.0:liveBroker[0],liveAsk=liveBroker==null?0.0:liveBroker[1];
+        String liveSymbol=mt5SymbolForMarket(selectedMarket);
+        ExcellentMachineLiveGate.Decision liveGate=ExcellentMachineLiveGate.evaluate(
+                selectedMarket,selectedTf,analysisCandles,r,liveBid,liveAsk,
+                machinePrefs.getLong("broker_quote_received_ms_"+liveSymbol,0L),
+                machinePrefs.getLong("broker_quote_tick_ms_"+liveSymbol,0L),
+                System.currentTimeMillis(),hasFreshEntryQuotes());
+        boolean machineSelected=isExcellentMachineStrategySelected();
+        String waitReason=r.ready?liveGate.reason:r.reason;
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(12));
         box.setBackground(roundBg(Color.rgb(3,18,30),16));
@@ -1734,17 +1956,22 @@ public class MainActivity extends Activity {
         title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
         title.setMaxLines(2);title.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);
         box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(58)));
-        TextView note=tv("MODEL TERPISAH • "+selectedMarket+" • TF "+selectedTf+" • TAHAP 1",14);
+        TextView note=tv("MODEL TERPISAH • "+selectedMarket+" • TF "+selectedTf+" • TAHAP 3",14);
         note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
         box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(42)));
 
         LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
         int statusColor=r.ready?("BUY".equals(r.side)?green:red):Color.rgb(255,205,95);
         addLargeAnalysisRow(rows,"STATUS ANALISA",r.ready
-                ?"ANALISA SEARAH • "+r.side+" • BELUM ADA ORDER"
+                ?"ANALISA SEARAH • "+r.side+(liveGate.allowed?" • GATE LIVE LOLOS":" • ENTRY DITAHAN")
                 :"WAIT • "+waitReason,statusColor);
-        addLargeAnalysisRow(rows,"MARKET / TIMEFRAME",selectedMarket+" / "+selectedTf,Color.WHITE);
-        addLargeAnalysisRow(rows,"DATA OHLC AKTIF",chartMatches?activeChartMarket+" / "+activeChartTimeframe+" • "+activeChartData.length+" candle":"MENUNGGU DATA "+selectedMarket+" / "+selectedTf,chartMatches?Color.WHITE:Color.rgb(255,205,95));
+        addLargeAnalysisRow(rows,"MODE SMART AUTO",machineSelected?"EXCELLENT MACHINE DIPILIH":"SMART STANDAR WICK + FIBONACCI",machineSelected?Color.CYAN:Color.WHITE);
+        addLargeAnalysisRow(rows,"GATE LIVE",liveGate.allowed
+                ?"READY • CANDLE / QUOTE / SPREAD / SL / TP VALID"
+                :liveGate.reason,liveGate.allowed?green:Color.rgb(255,205,95));
+        addLargeAnalysisRow(rows,"DATA OHLC AKTIF",excellentMachineDataMarket+" / "+excellentMachineDataTimeframe+" • "+excellentMachineData.length+" candle",Color.WHITE);
+        addLargeAnalysisRow(rows,"QUOTE MT5",liveBroker==null?"STALE / TIDAK TERSEDIA":price(liveBid)+" / "+price(liveAsk)
+                +" • spread "+price(liveGate.spread)+" • max "+price(liveGate.maxSpread),liveGate.quoteFresh?Color.WHITE:Color.rgb(255,205,95));
         addLargeAnalysisRow(rows,"TREND DONCHIAN 64",r.donchianSide,Color.CYAN);
         addLargeAnalysisRow(rows,"FILTER EMA 150",r.emaSide+(r.ema150>0?" • EMA "+price(r.ema150):""),Color.CYAN);
         addLargeAnalysisRow(rows,"ML LORENTZIAN-STYLE 5NN",
@@ -1766,7 +1993,14 @@ public class MainActivity extends Activity {
         addLargeAnalysisRow(rows,"ATURAN TREND","Donchian 64 dan EMA 150 harus searah; vote ML 5-neighbor juga harus searah. Jika konflik, WAIT.",Color.WHITE);
         addLargeAnalysisRow(rows,"ATURAN DATA","Hanya candle tertutup. Model melihat maksimum 200 bar historis; label tetangga memakai arah close 4 candle berikutnya.",Color.WHITE);
         addLargeAnalysisRow(rows,"BATASAN MODEL","Prototype Lorentzian-style 5NN; bukan salinan persis Pine Script jdehorty. Formula Donchian merupakan proxy untuk uji awal.",Color.rgb(255,205,95));
-        addLargeAnalysisRow(rows,"EKSEKUSI MT5","TAHAP 1 ANALISA SAJA • tidak mengirim atau mengubah order • Smart Standar Wick + Fibonacci tetap terpisah.",Color.CYAN);
+        addLargeAnalysisRow(rows,"EKSEKUSI MT5","LIMIT SAJA • mode Machine harus dipilih secara eksplisit, Smart Auto + MODE SIAP TRADING aktif, EA online, status NONE, antrean kosong, dan DemoOnly=true pada EA.",Color.CYAN);
+        Button chooseEngine=btn(machineSelected?"KEMBALI KE WICK + FIBO":"PAKAI MACHINE UNTUK SMART AUTO");
+        chooseEngine.setTextSize(13);chooseEngine.setTypeface(null,Typeface.BOLD);
+        chooseEngine.setBackground(roundBg(machineSelected?Color.rgb(90,65,22):Color.rgb(0,105,83),12));
+        LinearLayout.LayoutParams engineButtonParams=new LinearLayout.LayoutParams(-1,uiDp(48));
+        engineButtonParams.setMargins(0,uiDp(5),0,uiDp(7));
+        box.addView(chooseEngine,engineButtonParams);
+        chooseEngine.setOnClickListener(v->requestExcellentMachineStrategyChange());
         ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
         box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
         AlertDialog d=new AlertDialog.Builder(this).setView(box)
@@ -1774,7 +2008,12 @@ public class MainActivity extends Activity {
         d.setOnShowListener(ignored->{
             resizeDialogButtons(d);
             if(d.getButton(AlertDialog.BUTTON_NEUTRAL)!=null){
-                d.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v->{d.dismiss();showExcellentMachineDialog();});
+                d.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v->{
+                    d.dismiss();
+                    synchronized(excellentMachineFetchLock){reopenExcellentMachinePanelAfterFetch=true;}
+                    requestExcellentMachineHistory();
+                    Toast.makeText(this,"Memperbarui riwayat XAUUSD...",Toast.LENGTH_SHORT).show();
+                });
             }
             if(d.getButton(AlertDialog.BUTTON_NEGATIVE)!=null){
                 d.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v->{d.dismiss();runExcellentMachineBacktest();});
@@ -2075,7 +2314,7 @@ public class MainActivity extends Activity {
             TextView icon=tv(icons[i],22);icon.setTextColor(Color.rgb(0,225,180));icon.setGravity(Gravity.CENTER);row.addView(icon,new LinearLayout.LayoutParams(42,-1));
             LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setGravity(Gravity.CENTER_VERTICAL);TextView name=tv(market,16);name.setTextColor(Color.WHITE);name.setTypeface(null,Typeface.BOLD);labels.addView(name);TextView sub=tv(details[i],12);sub.setTextColor(Color.LTGRAY);labels.addView(sub);row.addView(labels,new LinearLayout.LayoutParams(0,-1,1));
             TextView mark=tv(selected?"✓ ACTIVE":"SELECT  ›",10);mark.setTextColor(selected?Color.rgb(0,235,160):Color.CYAN);row.addView(mark);
-            row.setOnClickListener(v->{if(market.equals(selectedMarket)){d.dismiss();return;}selectedMarket=market;lastHeaderPrice=Double.NaN;lastSpreadLabel="";lastFeedQuoteAt=0L;m1Data=new Candle[0];m5Data=new Candle[0];if(priceView!=null){priceView.setText("--");priceView.setTextColor(Color.CYAN);}if(spreadView!=null)spreadView.setText("SPREAD --");prefs.edit().putString("market",selectedMarket).apply();queueNativeIndicatorState();if(marketTitle!=null)marketTitle.setText(selectedMarket);if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));if(chart!=null){chart.setMarket(selectedMarket);chart.setData(new Candle[0]);chart.clearQuote();chart.setPositionEntryLevel(0);}if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);lastSignal=null;resetEntryReadyUi("menunggu data market");d.dismiss();load(interval(selectedTf),selectedTf);AppLog.add(this,"MARKET","selected "+selectedMarket+" • broker/chart quotes separated");});
+            row.setOnClickListener(v->{if(market.equals(selectedMarket)){d.dismiss();return;}selectedMarket=market;lastHeaderPrice=Double.NaN;lastSpreadLabel="";lastFeedQuoteAt=0L;m1Data=new Candle[0];m5Data=new Candle[0];excellentMachineData=new Candle[0];excellentMachineDataMarket="";excellentMachineDataTimeframe="";excellentMachineDataReceivedAt=0L;if(priceView!=null){priceView.setText("--");priceView.setTextColor(Color.CYAN);}if(spreadView!=null)spreadView.setText("SPREAD --");prefs.edit().putString("market",selectedMarket).apply();queueNativeIndicatorState();if(marketTitle!=null)marketTitle.setText(selectedMarket);if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));if(chart!=null){chart.setMarket(selectedMarket);chart.setData(new Candle[0]);chart.clearQuote();chart.setPositionEntryLevel(0);}if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);lastSignal=null;resetEntryReadyUi("menunggu data market");d.dismiss();load(interval(selectedTf),selectedTf);if(isExcellentMachineStrategySelected())requestExcellentMachineHistory();AppLog.add(this,"MARKET","selected "+selectedMarket+" • broker/chart quotes separated");});
         }
         d.show();if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-36,430),-2);}
     }
