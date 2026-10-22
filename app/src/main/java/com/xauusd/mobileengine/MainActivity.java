@@ -1716,6 +1716,40 @@ public class MainActivity extends Activity {
         showSizedDialog(d,0.80f,450);
     }
 
+    /** Builds a strategy-owned chart snapshot; it never replaces the main chart or feed. */
+    private CandleChartView buildStrategyChart(Candle[] bars,String timeframe,boolean machine,
+                                                String side,double entry,double sl,double tp1,double tp2){
+        CandleChartView view=new CandleChartView(this);
+        view.setMarket(selectedMarket);
+        view.setTimeframe(timeframe);
+        view.setVisualTheme(appTheme);
+        view.setShowRSI(false);
+        view.setShowMACD(false);
+        view.setShowATR(false);
+        view.setShowSignals(false);
+        view.setShowWickBos(false);
+        view.setShowPosition(false);
+        if(machine){
+            view.setExcellentMachineOverlay(true);
+        }else{
+            // Standard's dedicated view emphasizes its own Fibonacci and LIMIT levels.
+            view.setShowEMA50(false);
+            view.setShowEMA200(false);
+            view.setShowSR(false);
+            view.setShowFibo(true);
+        }
+        view.setData(bars);
+        double[] broker=freshBrokerQuote(selectedMarket);
+        if(broker!=null)view.setQuote(broker[0],broker[1],timeframe);
+        boolean levels=("BUY".equals(side)||"SELL".equals(side))
+                &&entry>0&&sl>0&&tp1>0&&tp2>0;
+        if(levels)view.setSignalLevels(side,entry,sl,tp1,tp2,true);
+        view.setContentDescription(machine
+                ?"Chart khusus Excellent Machine: Donchian 64, EMA 150, level entry dan risiko"
+                :"Chart khusus Standar Wick Fibonacci M1: Fibonacci, entry LIMIT, SL, TP1, TP2");
+        return view;
+    }
+
     private void showStandardWickFiboDialog(){
         SignalResult s=lastSignal;
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
@@ -1728,6 +1762,10 @@ public class MainActivity extends Activity {
         TextView note=tv("Smart Auto • analisa entry LIMIT • "+selectedMarket+" • "+selectedTf,14);
         note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
         box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(42)));
+        String chartSide=s==null?"WAIT":s.side;
+        CandleChartView standardChart=buildStrategyChart(m1Data,"M1",false,chartSide,
+                s==null?0:s.entry,s==null?0:s.sl,s==null?0:s.tp1,s==null?0:s.tp2);
+        box.addView(standardChart,new LinearLayout.LayoutParams(-1,uiDp(220)));
 
         LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
         if(s==null){
@@ -2012,6 +2050,9 @@ public class MainActivity extends Activity {
         TextView note=tv("MODEL TERPISAH • "+selectedMarket+" • TF "+selectedTf+" • TAHAP 3",14);
         note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
         box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(42)));
+        CandleChartView machineChart=buildStrategyChart(analysisCandles,selectedTf,true,
+                r.ready?r.side:"WAIT",r.ready?r.entry:0,r.ready?r.sl:0,r.ready?r.tp1:0,r.ready?r.tp2:0);
+        box.addView(machineChart,new LinearLayout.LayoutParams(-1,uiDp(220)));
 
         LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
         int statusColor=r.ready&&liveGate.allowed?("BUY".equals(r.side)?green:red):Color.rgb(255,205,95);
