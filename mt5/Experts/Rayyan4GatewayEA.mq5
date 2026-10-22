@@ -532,6 +532,18 @@ void updateChartCountdown(){
    ObjectSetString(0,name,OBJPROP_TEXT,label);
 }
 
+string chartTimeframeLabel(){
+   switch(_Period){
+      case PERIOD_M1: return "M1";
+      case PERIOD_M5: return "M5";
+      case PERIOD_M15: return "M15";
+      case PERIOD_H1: return "H1";
+      case PERIOD_H4: return "H4";
+      case PERIOD_D1: return "D1";
+   }
+   return EnumToString(_Period);
+}
+
 void uploadChartSnapshot(){
    // Full chart screenshots are expensive under Winlator; trade polling stays at 1s,
    // while the visual mirror refreshes at a lighter cadence.
@@ -552,7 +564,7 @@ void uploadChartSnapshot(){
    FileClose(fh);
    if(read!=size){Print("RAYYAN CHART READ MISMATCH ",read,"/",size);return;}
    char result[]; string responseHeaders="";
-   string headers="Content-Type: image/png\r\n";
+   string headers="Content-Type: image/png\r\nX-Rayyan-Symbol: "+_Symbol+"\r\nX-Rayyan-Timeframe: "+chartTimeframeLabel()+"\r\n";
    ResetLastError();
    int code=WebRequest("POST",GatewayUrl+"/chart/upload",headers,2500,data,result,responseHeaders);
    if(code!=200){
