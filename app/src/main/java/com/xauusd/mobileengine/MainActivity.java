@@ -115,6 +115,8 @@ public class MainActivity extends Activity {
     private Candle[] m5Data=new Candle[0];
     // Active selected-timeframe OHLC is kept separately for Excellent Machine analysis only.
     private Candle[] activeChartData=new Candle[0];
+    private String activeChartMarket="";
+    private String activeChartTimeframe="";
     private SignalResult lastSignal;
     private final Map<String,Button> tfButtons=new HashMap<>();
     private final int bg=Color.rgb(3,10,18);
@@ -576,7 +578,7 @@ public class MainActivity extends Activity {
                 Candle[] m5="M5".equals(tf)?c:BiquoteClient.candles(market,"5m");
                 runOnUiThread(()->{
                     if(!tf.equals(selectedTf)||!market.equals(selectedMarket))return;
-                    chart.setData(c);chart.goLive();activeChartData=c;m1Data=m1;m5Data=m5;
+                    chart.setData(c);chart.goLive();activeChartData=c;activeChartMarket=market;activeChartTimeframe=tf;m1Data=m1;m5Data=m5;
                     syncBrokerEntryLine();updateSignal(m1Data,m5Data);
                     status.setText("● CHART LOADED • "+market+" • "+tf);
                 });
@@ -613,7 +615,7 @@ public class MainActivity extends Activity {
                     runOnUiThread(()->{
                         if(!market.equals(selectedMarket)||!tfNow.equals(selectedTf))return;
                         boolean wasFollowing=chart.isFollow();
-                        chart.setData(fresh);activeChartData=fresh;
+                        chart.setData(fresh);activeChartData=fresh;activeChartMarket=market;activeChartTimeframe=tfNow;
                         if(wasFollowing)chart.goLive();
                         m1Data=freshM1;m5Data=freshM5;
                         syncBrokerEntryLine();updateSignal(m1Data,m5Data);
@@ -1720,7 +1722,11 @@ public class MainActivity extends Activity {
      * queueLimit, submitWickLimitEntry, or modify the Standard Wick+Fibonacci signal.
      */
     private void showExcellentMachineDialog(){
-        ExcellentMachineEngine.Result r=ExcellentMachineEngine.evaluate(selectedMarket,selectedTf,activeChartData);
+        boolean chartMatches=selectedMarket.equalsIgnoreCase(activeChartMarket)
+                && selectedTf.equalsIgnoreCase(activeChartTimeframe);
+        Candle[] analysisCandles=chartMatches?activeChartData:new Candle[0];
+        ExcellentMachineEngine.Result r=ExcellentMachineEngine.evaluate(selectedMarket,selectedTf,analysisCandles);
+        String waitReason=chartMatches?r.reason:"MEMUAT OHLC SESUAI MARKET / TIMEFRAME";
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(12));
         box.setBackground(roundBg(Color.rgb(3,18,30),16));
@@ -1736,8 +1742,9 @@ public class MainActivity extends Activity {
         int statusColor=r.ready?("BUY".equals(r.side)?green:red):Color.rgb(255,205,95);
         addLargeAnalysisRow(rows,"STATUS ANALISA",r.ready
                 ?"ANALISA SEARAH • "+r.side+" • BELUM ADA ORDER"
-                :"WAIT • "+r.reason,statusColor);
+                :"WAIT • "+waitReason,statusColor);
         addLargeAnalysisRow(rows,"MARKET / TIMEFRAME",selectedMarket+" / "+selectedTf,Color.WHITE);
+        addLargeAnalysisRow(rows,"DATA OHLC AKTIF",chartMatches?activeChartMarket+" / "+activeChartTimeframe+" • "+activeChartData.length+" candle":"MENUNGGU DATA "+selectedMarket+" / "+selectedTf,chartMatches?Color.WHITE:Color.rgb(255,205,95));
         addLargeAnalysisRow(rows,"TREND DONCHIAN 64",r.donchianSide,Color.CYAN);
         addLargeAnalysisRow(rows,"FILTER EMA 150",r.emaSide+(r.ema150>0?" • EMA "+price(r.ema150):""),Color.CYAN);
         addLargeAnalysisRow(rows,"ML LORENTZIAN-STYLE 5NN",
