@@ -277,7 +277,7 @@ public class CandleChartView extends View {
         if(showEMA50)ema(c,50,Color.rgb(255,176,0),L,R,T,B,lo,hi,step);
         if(showEMA200)ema(c,200,Color.rgb(186,85,211),L,R,T,B,lo,hi,step);
         if(excellentMachineOverlay){
-            ema(c,150,Color.rgb(255,176,0),L,R,T,B,lo,hi,step);
+            emaClosed(c,150,Color.rgb(255,176,0),L,R,T,B,lo,hi,step);
             donchian(c,64,true,Color.rgb(0,210,255),L,R,T,B,lo,hi,step);
             donchian(c,64,false,Color.rgb(0,170,220),L,R,T,B,lo,hi,step);
         }
@@ -502,8 +502,22 @@ public class CandleChartView extends View {
         if(l<1e-9)return 100;double rs=(g/n)/(l/n);return 100-(100/(1+rs));
     }
 
+    private void emaClosed(Canvas c,int period,int color,float L,float R,float T,float B,double lo,double hi,float step){
+        int end=cs.size()-2;
+        if(end+1<period||end<0)return;
+        double k=2.0/(period+1),value=cs.get(0).c;
+        float prevX=0,prevY=0;boolean started=false;
+        for(int i=0;i<=end;i++){
+            value=cs.get(i).c*k+value*(1-k);
+            float x=L+i*step+ox+step/2,y=py(value,lo,hi,T,B);
+            if(x<L-2||x>R+2){prevX=x;prevY=y;continue;}
+            if(started)ln(c,prevX,prevY,x,y,color,2);
+            prevX=x;prevY=y;started=true;
+        }
+    }
+
     private void donchian(Canvas c,int period,boolean upper,int color,float L,float R,float T,float B,double lo,double hi,float step){
-        int n=cs.size();
+        int n=cs.size()-1; // exclude the forming candle, matching ExcellentMachineEngine
         if(n<period)return;
         float prevX=0,prevY=0;boolean started=false;
         for(int i=period-1;i<n;i++){
