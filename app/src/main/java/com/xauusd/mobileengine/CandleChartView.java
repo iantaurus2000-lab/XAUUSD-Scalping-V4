@@ -286,6 +286,7 @@ public class CandleChartView extends View {
             emaClosed(c,150,Color.rgb(255,176,0),L,R,T,B,lo,hi,step);
             donchian(c,64,true,Color.rgb(0,210,255),L,R,T,B,lo,hi,step);
             donchian(c,64,false,Color.rgb(0,170,220),L,R,T,B,lo,hi,step);
+            donchianMid(c,64,Color.rgb(90,180,220),L,R,T,B,lo,hi,step);
         }
 
         if(showSR){
@@ -508,6 +509,26 @@ public class CandleChartView extends View {
         int n=Math.min(14,cs.size()-1);if(n<=0)return 50;double g=0,l=0;
         for(int i=cs.size()-n;i<cs.size();i++){double d=cs.get(i).c-cs.get(i-1).c;if(d>0)g+=d;else l-=d;}
         if(l<1e-9)return 100;double rs=(g/n)/(l/n);return 100-(100/(1+rs));
+    }
+
+    /** Draw the midpoint used by ExcellentMachineEngine's Donchian trend vote. */
+    private void donchianMid(Canvas c,int period,int color,float L,float R,float T,float B,double lo,double hi,float step){
+        int n=cs.size()-1; // use closed candles only
+        if(n<period)return;
+        float prevX=0,prevY=0;boolean started=false;
+        for(int i=period-1;i<n;i++){
+            double upper=-Double.MAX_VALUE,lower=Double.MAX_VALUE;
+            for(int j=i-period+1;j<=i;j++){
+                Candle bar=cs.get(j);
+                upper=Math.max(upper,bar.h);
+                lower=Math.min(lower,bar.l);
+            }
+            double value=(upper+lower)*0.5;
+            float x=L+i*step+ox+step/2,y=py(value,lo,hi,T,B);
+            if(x<L-2||x>R+2){prevX=x;prevY=y;continue;}
+            if(started)ln(c,prevX,prevY,x,y,color,1.6f);
+            prevX=x;prevY=y;started=true;
+        }
     }
 
     private void emaClosed(Canvas c,int period,int color,float L,float R,float T,float B,double lo,double hi,float step){
