@@ -92,7 +92,10 @@ public class CandleChartView extends View {
                     last.l=Math.min(last.l,price);
                     last.c=price;
                 }else if(barTime-last.t==period){
-                    if(cs.size()>=120)cs.remove(0);
+                    // Excellent Machine needs its dedicated 360-bar history to retain EMA150
+                    // warm-up and Donchian/ML context; keep the lightweight main chart capped at 120.
+                    int maxBars=excellentMachineOverlay?360:120;
+                    if(cs.size()>=maxBars)cs.remove(0);
                     cs.add(new Candle(barTime,last.c,Math.max(last.c,price),Math.min(last.c,price),price));
                     if(follow)positionLatestCandle();
                 }
