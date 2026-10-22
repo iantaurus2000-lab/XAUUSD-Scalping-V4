@@ -60,7 +60,7 @@ public class MainActivity extends Activity {
                         String state;
                         if(chartMirror==null||chartMirror.getDrawable()==null){
                             state="MENUNGGU SNAPSHOT MT5 • periksa EA / WebRequest";
-                        }else if(receivedAt<=0L){
+                        }else if(receivedAt<=0L||imageSymbol.isEmpty()||imageTf.isEmpty()){
                             state="MT5 CHART • METADATA BELUM TERSEDIA";
                         }else if(age>8000L){
                             state="MT5 CHART STALE • "+(age/1000L)+"s";
