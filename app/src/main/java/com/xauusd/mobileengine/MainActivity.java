@@ -1770,11 +1770,14 @@ public class MainActivity extends Activity {
         ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
         box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
         AlertDialog d=new AlertDialog.Builder(this).setView(box)
-                .setPositiveButton("TUTUP",null).setNeutralButton("PERBARUI",null).create();
+                .setPositiveButton("TUTUP",null).setNegativeButton("BACKTEST",null).setNeutralButton("MUAT ULANG",null).create();
         d.setOnShowListener(ignored->{
             resizeDialogButtons(d);
             if(d.getButton(AlertDialog.BUTTON_NEUTRAL)!=null){
                 d.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v->{d.dismiss();showExcellentMachineDialog();});
+            }
+            if(d.getButton(AlertDialog.BUTTON_NEGATIVE)!=null){
+                d.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v->{d.dismiss();runExcellentMachineBacktest();});
             }
             if(d.getWindow()!=null){
                 RayyanTheme.apply(this,d.getWindow().getDecorView(),appTheme);
@@ -1796,6 +1799,95 @@ public class MainActivity extends Activity {
         }
         AppLog.add(this,"ANALISA","opened Excellent Machine Stage 1 • "+selectedMarket+" • "+selectedTf
                 +" • "+(r.ready?r.side:"WAIT")+" • "+r.reason);
+    }
+
+    /** Stage 2 is OHLC-only historical validation; it cannot send or queue any order. */
+    private void runExcellentMachineBacktest(){
+        final String market=selectedMarket;
+        final String tf=selectedTf;
+        final String tfInterval=interval(tf);
+        final AlertDialog progress=new AlertDialog.Builder(this)
+                .setTitle("UJI HISTORIS EXCELLENT MACHINE")
+                .setMessage("Mengambil riwayat OHLC "+market+" "+tf+" dan menguji TP 1R / 2R / 3R…")
+                .setCancelable(false).create();
+        progress.show();
+        if(progress.getWindow()!=null)RayyanTheme.apply(this,progress.getWindow().getDecorView(),appTheme);
+        new Thread(()->{
+            try{
+                Candle[] history=BiquoteClient.analysisCandles(market,tfInterval);
+                ExcellentMachineBacktest.Report report=ExcellentMachineBacktest.run(market,tf,history);
+                ExcellentMachineEngine.Result latest=ExcellentMachineEngine.evaluate(market,tf,history);
+                runOnUiThread(()->{
+                    try{progress.dismiss();}catch(Exception ignored){}
+                    showExcellentMachineBacktestDialog(market,tf,history,report,latest);
+                });
+            }catch(Exception ex){
+                String error=ex.getClass().getSimpleName()+": "+String.valueOf(ex.getMessage());
+                AppLog.add(this,"EM_BACKTEST_ERROR",market+" "+tf+" • "+error);
+                runOnUiThread(()->{
+                    try{progress.dismiss();}catch(Exception ignored){}
+                    new AlertDialog.Builder(this).setTitle("BACKTEST GAGAL")
+                            .setMessage("Data historis tidak bisa dipakai. Periksa koneksi internet dan Log.
+
+"+error)
+                            .setPositiveButton("TUTUP",null).show();
+                });
+            }
+        },"excellent-machine-backtest").start();
+        AppLog.add(this,"EM_BACKTEST","start • "+market+" "+tf+" • 360 OHLC bars requested");
+    }
+
+    private void showExcellentMachineBacktestDialog(String market,String tf,Candle[] history,
+            ExcellentMachineBacktest.Report report,ExcellentMachineEngine.Result latest){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(12));
+        box.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("EXCELLENT MACHINE • TAHAP 2",19);
+        title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(38)));
+        TextView note=tv(market+" • "+tf+" • BACKTEST OHLC",14);
+        note.setTextColor(Color.LTGRAY);box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(30)));
+        LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
+
+        int resultColor=report.valid?Color.CYAN:Color.rgb(255,205,95);
+        addLargeAnalysisRow(rows,"STATUS UJI",report.valid?report.reason:"UJI BELUM VALID • "+report.reason,resultColor);
+        addLargeAnalysisRow(rows,"SUMBER DATA","BiQuote OHLC • "+report.barsReceived+" candle diterima • "+report.closedBars+" candle tertutup",Color.WHITE);
+        if(report.firstTime>0&&report.lastTime>0){
+            java.text.SimpleDateFormat df=new java.text.SimpleDateFormat("dd MMM HH:mm",Locale.US);
+            addLargeAnalysisRow(rows,"RENTANG DATA",df.format(new java.util.Date(report.firstTime))+" — "+df.format(new java.util.Date(report.lastTime)),Color.WHITE);
+        }
+        addLargeAnalysisRow(rows,"CANDLE DIUJI",String.valueOf(report.evaluatedCandles),Color.WHITE);
+        addLargeAnalysisRow(rows,"SETUP READY TERDETEKSI",String.valueOf(report.readySetups),Color.WHITE);
+        addBacktestTargetRow(rows,"TP1 • 1:1",report.oneR);
+        addBacktestTargetRow(rows,"TP2 • 1:2",report.twoR);
+        addBacktestTargetRow(rows,"TP3 • 1:3",report.threeR);
+        addLargeAnalysisRow(rows,"ANALISA TERAKHIR",latest.ready
+                ?latest.side+" • vote "+latest.confidence+"% • Entry ref "+price(latest.entry)
+                :"WAIT • "+latest.reason,latest.ready?("BUY".equals(latest.side)?green:red):Color.rgb(255,205,95));
+        addLargeAnalysisRow(rows,"CARA UJI","Sinyal dihitung setelah candle tertutup; simulasi masuk pada OPEN candle berikutnya. Satu posisi tiap simulasi TP.",Color.WHITE);
+        addLargeAnalysisRow(rows,"AMBIGUOUS","Jika high dan low candle menyentuh SL serta TP sekaligus, transaksi ditandai ambiguous dan dihitung konservatif sebagai -1R.",Color.WHITE);
+        addLargeAnalysisRow(rows,"BATAS DATA","Belum memasukkan spread historis MT5, komisi, slippage, swap atau latency. Ini hasil gross OHLC BiQuote, bukan hasil broker Exness.",Color.rgb(255,205,95));
+        addLargeAnalysisRow(rows,"EKSEKUSI","BACKTEST SAJA • tidak mengirim order • tidak mengubah Smart Standar Wick + Fibonacci.",Color.CYAN);
+        ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
+        box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
+        AlertDialog d=new AlertDialog.Builder(this).setView(box).setPositiveButton("TUTUP",null).create();
+        showSizedDialog(d,0.86f,460);
+        AppLog.add(this,"EM_BACKTEST_RESULT",market+" "+tf+" valid="+report.valid
+                +" bars="+report.closedBars+" evaluated="+report.evaluatedCandles
+                +" ready="+report.readySetups+" tp1="+backtestLog(report.oneR)
+                +" tp2="+backtestLog(report.twoR)+" tp3="+backtestLog(report.threeR));
+    }
+
+    private void addBacktestTargetRow(LinearLayout rows,String label,ExcellentMachineBacktest.TargetStats s){
+        String value=String.format(Locale.US,
+                "Win rate %.1f%% • menang %d • SL %d • ambiguous %d • open %d\nEntry %d • gap ditolak %d • gross %.1fR",
+                s.winRatePercent(),s.wins,s.losses,s.ambiguous,s.open,s.entries,s.rejectedGap,s.grossNetR());
+        addLargeAnalysisRow(rows,label,value,Color.WHITE);
+    }
+
+    private String backtestLog(ExcellentMachineBacktest.TargetStats s){
+        return String.format(Locale.US,"n=%d win=%d loss=%d amb=%d open=%d netR=%.1f",
+                s.entries,s.wins,s.losses,s.ambiguous,s.open,s.grossNetR());
     }
 
     private void addLargeAnalysisRow(LinearLayout parent,String label,String value,int valueColor){

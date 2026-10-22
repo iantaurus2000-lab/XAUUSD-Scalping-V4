@@ -12,8 +12,28 @@ public class BiquoteClient {
 
     public static Candle[] candles(String market,String interval) throws Exception {
         String symbol=normalizeMarket(market);
-        String tf=(interval==null||interval.isEmpty())?"1m":interval;
-        int limit="5m".equalsIgnoreCase(tf)?240:120; // EMA200 M5 needs a complete history window.
+        String tf=normalizeInterval(interval);
+        int limit="5m".equalsIgnoreCase(tf)?240:120; // Preserve the existing chart window.
+        return fetchCandles(symbol,tf,limit);
+    }
+
+    /**
+     * Dedicated history window for Excellent Machine analysis/backtest.
+     * It intentionally does not change the number of candles drawn on the chart.
+     */
+    public static Candle[] analysisCandles(String market,String interval) throws Exception {
+        String symbol=normalizeMarket(market);
+        String tf=normalizeInterval(interval);
+        return fetchCandles(symbol,tf,360); // EMA150 + 200-bar ML lookback + closed-bar buffer.
+    }
+
+    private static String normalizeInterval(String interval) {
+        String tf=(interval==null||interval.trim().isEmpty())?"1m":interval.trim().toLowerCase(Locale.US);
+        if(!tf.matches("1m|5m|15m|1h|4h|1d")) return "1m";
+        return tf;
+    }
+
+    private static Candle[] fetchCandles(String symbol,String tf,int limit) throws Exception {
         return parse(get("https://biquote.io/api/"+symbol+"/ohlc?interval="+tf+"&limit="+limit));
     }
 
