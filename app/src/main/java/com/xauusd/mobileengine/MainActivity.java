@@ -762,7 +762,7 @@ public class MainActivity extends Activity {
     }
     private SignalResult evaluateSignal(Candle[] m1,Candle[] m5,double bid,double ask,
                                         double spreadBid,double spreadAsk){
-        return SignalEngine.evaluate(m1,m5,bid,ask,spreadBid,spreadAsk);
+        return SignalEngine.evaluate(m1,m5,bid,ask,spreadBid,spreadAsk,readFibonacciLevels());
     }
     private String autoEntryBlockReason(SignalResult signal,double bid,double ask,boolean m1Context){
         if(!m1Context)return "TF/DATA M1-M5 BELUM SIAP";
@@ -1746,6 +1746,7 @@ public class MainActivity extends Activity {
         if(machine){
             view.setExcellentMachineOverlay(true);
         }else{
+            view.setFibonacciLevels(readFibonacciLevels());
             // Standard's dedicated view emphasizes its own Fibonacci and LIMIT levels.
             view.setShowEMA50(false);
             view.setShowEMA200(false);
@@ -1807,7 +1808,7 @@ public class MainActivity extends Activity {
             addLargeAnalysisRow(rows,"SPREAD MT5 / FILTER",onoff(s.spreadFilter),s.spreadFilter?green:red);
         }
         addLargeAnalysisRow(rows,"ATURAN M5","EMA M5 menjadi konteks arah, bukan larangan mutlak saat wick rejection jelas.",Color.WHITE);
-        addLargeAnalysisRow(rows,"ATURAN FIBONACCI","Cari level 38.2%, 50%, 61.8%, atau 78.6%; bila level tidak valid, strategi dapat memakai wick LIMIT fallback.",Color.WHITE);
+        addLargeAnalysisRow(rows,"ATURAN FIBONACCI","Entry memilih level retracement aktif (antara 0% dan 100%) yang valid terhadap harga. Level 0%/100% menjadi jangkar swing; level negatif adalah ekstensi target. Jika tidak ada retracement yang valid, strategi memakai wick LIMIT fallback.",Color.WHITE);
         addLargeAnalysisRow(rows,"PENGAMAN ORDER","Entry tetap memerlukan quote MT5 segar, spread/ATR valid, SL/TP valid, EA online, dan antrean aman.",Color.rgb(255,205,95));
         ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
         box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
@@ -2524,7 +2525,10 @@ public class MainActivity extends Activity {
                 StringBuilder normalized=new StringBuilder();
                 for(Double n:valid){if(normalized.length()>0)normalized.append(", ");normalized.append(String.format(Locale.US,"%.4f",n).replaceAll("0+$","").replaceAll("\\.$",""));}
                 prefs.edit().putString("fibo_levels_percent",normalized.toString()).apply();
-                chart.setFibonacciLevels(readFibonacciLevels());
+                double[] appliedLevels=readFibonacciLevels();
+                chart.setFibonacciLevels(appliedLevels);
+                if(standardStrategyChartView!=null)
+                    standardStrategyChartView.setFibonacciLevels(appliedLevels);
                 setInd("fibo",true);
                 AppLog.add(this,"FIBONACCI","levels updated: "+normalized);
                 Toast.makeText(this,"Level Fibonacci disimpan",Toast.LENGTH_SHORT).show();
