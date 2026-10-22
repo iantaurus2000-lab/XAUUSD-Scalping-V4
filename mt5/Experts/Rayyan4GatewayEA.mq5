@@ -130,6 +130,82 @@ bool hasExistingRayyanTrade(const string expectedComment,const string symbol,str
    return false;
 }
 
+void auditWickFiboSignal(const string symbol,const string side,const double entry,const string id){
+   // Advisory audit only: APK remains the single signal owner. Do not veto an
+   // otherwise valid order because broker M1 OHLC can differ from Biquote OHLC.
+   bool buy=(side=="BUY_LIMIT" || side=="BUY");
+   bool isLimit=(side=="BUY_LIMIT" || side=="SELL_LIMIT");
+   if(!isLimit)return;
+
+   MqlRates rates[];
+   ArraySetAsSeries(rates,true);
+   int bars=CopyRates(symbol,PERIOD_M1,0,40,rates);
+   if(bars<20){
+      Print("RAYYAN4 WICK_FIBO AUDIT id=",id," symbol=",symbol,
+            " status=DATA_SHORT bars=",bars," required=20; advisory only");
+      return;
+   }
+
+   double body=MathAbs(rates[0].close-rates[0].open);
+   double candleRange=MathMax(rates[0].high-rates[0].low,1e-9);
+   double lowerWick=MathMax(0.0,MathMin(rates[0].open,rates[0].close)-rates[0].low);
+   double upperWick=MathMax(0.0,rates[0].high-MathMax(rates[0].open,rates[0].close));
+   double atr=0.0;
+   for(int i=1;i<=14;i++){
+      double tr=MathMax(rates[i].high-rates[i].low,
+         MathMax(MathAbs(rates[i].high-rates[i+1].close),
+                 MathAbs(rates[i].low-rates[i+1].close)));
+      atr+=tr;
+   }
+   atr/=14.0;
+   double wickFloor=MathMax(body*0.45,atr*0.03);
+   bool bullishWick=lowerWick>=wickFloor
+      && rates[0].close>=rates[0].low+candleRange*0.50;
+   bool bearishWick=upperWick>=wickFloor
+      && rates[0].close<=rates[0].high-candleRange*0.50;
+   bool matchingWick=buy?bullishWick:bearishWick;
+
+   // Match APK swing logic: a pivot from recent closed M1 bars and its older
+   // opposite extreme over the 40-bar window.
+   int recentBars=MathMin(18,bars-1);
+   int pivot=1;
+   for(int i=2;i<=recentBars;i++){
+      if((buy && rates[i].high>=rates[pivot].high)
+         || (!buy && rates[i].low<=rates[pivot].low)) pivot=i;
+   }
+   double swingHigh=rates[pivot].high;
+   double swingLow=rates[pivot].low;
+   for(int i=pivot+1;i<bars;i++){
+      if(buy) swingLow=MathMin(swingLow,rates[i].low);
+      else swingHigh=MathMax(swingHigh,rates[i].high);
+   }
+   bool fibNear=false;
+   double bestRatio=0.0,bestDistance=1.0e100;
+   double swingRange=swingHigh-swingLow;
+   if(swingRange>MathMax(atr*0.60,0.0)){
+      double ratios[]={0.618,0.500,0.382,0.786};
+      for(int j=0;j<4;j++){
+         double level=buy?swingHigh-swingRange*ratios[j]
+                         :swingLow+swingRange*ratios[j];
+         double distance=MathAbs(entry-level);
+         if(distance<bestDistance && distance<=MathMax(atr*1.25,swingRange*0.28)){
+            bestDistance=distance;
+            bestRatio=ratios[j];
+            fibNear=true;
+         }
+      }
+   }
+   string fibStatus=fibNear?DoubleToString(bestRatio*100.0,1)+"%":"NO_NEAR_LEVEL";
+   string model=(fibNear && matchingWick)?"FIBO+WICK"
+      :(fibNear?"FIBO / WICK NOT CONFIRMED"
+      :(matchingWick?"WICK LIMIT FALLBACK":"NO MATCH IN MT5 OHLC"));
+   Print("RAYYAN4 WICK_FIBO AUDIT id=",id," symbol=",symbol,
+      " side=",side," formingWick=",matchingWick,
+      " bullishWick=",bullishWick," bearishWick=",bearishWick,
+      " fib=",fibStatus," entry=",DoubleToString(entry,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+      " model=",model," advisoryOnly=true");
+}
+
 void processTradeQueue(){
    int code=-1;
    string cmd="",transportDetail="";
@@ -367,6 +443,8 @@ void processTradeQueue(){
                " server=",brokerServer," login=",accountLogin,
                " symbol=",sym," side=",side);
 
+         if(side=="BUY_LIMIT" || side=="SELL_LIMIT")
+            auditWickFiboSignal(sym,side,entry,id);
          trade.SetAsyncMode(false);
          trade.SetExpertMagicNumber(RAYYAN_MAGIC);
          trade.SetTypeFillingBySymbol(sym);
