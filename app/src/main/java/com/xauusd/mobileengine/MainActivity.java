@@ -22,6 +22,7 @@ public class MainActivity extends Activity {
     private CandleChartView chart;
     private CandleChartView standardStrategyChartView;
     private CandleChartView machineStrategyChartView;
+    private final Map<String,TextView> standardPanelValues=new HashMap<>();
     private ImageView chartMirror;
     private TextView chartMirrorStatus;
     private View mainRoot;
@@ -1770,6 +1771,7 @@ public class MainActivity extends Activity {
     }
 
     private void showStandardWickFiboDialog(){
+        standardPanelValues.clear();
         SignalResult s=lastSignal;
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(12));
@@ -1778,44 +1780,84 @@ public class MainActivity extends Activity {
         title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
         title.setMaxLines(2);title.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);
         box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(58)));
-        TextView note=tv("Smart Auto • analisa entry LIMIT • "+selectedMarket+" • "+selectedTf,14);
+        TextView note=tv("Smart Auto • analisa entry LIMIT • "+selectedMarket+" • M1",14);
         note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
         box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(42)));
-        String chartSide=s==null?"WAIT":s.side;
-        CandleChartView standardChart=buildStrategyChart(m1Data,"M1",false,s!=null&&s.setup!=null&&s.setup.contains("FIBO"),chartSide,
-                s==null?0:s.entry,s==null?0:s.sl,s==null?0:s.tp1,s==null?0:s.tp2);
+        CandleChartView standardChart=buildStrategyChart(m1Data,"M1",false,
+                s!=null&&s.setup!=null&&s.setup.contains("FIBO"),
+                s==null?"WAIT":s.side,s==null?0:s.entry,s==null?0:s.sl,s==null?0:s.tp1,s==null?0:s.tp2);
         box.addView(standardChart,new LinearLayout.LayoutParams(-1,uiDp(220)));
 
         LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
-        if(s==null){
-            addLargeAnalysisRow(rows,"STATUS ANALISA","MENUNGGU DATA OHLC M1/M5",Color.rgb(255,205,95));
-        }else{
-            boolean directional="BUY".equals(s.side)||"SELL".equals(s.side);
-            int sideColor="BUY".equals(s.side)?green:"SELL".equals(s.side)?red:Color.rgb(255,205,95);
-            addLargeAnalysisRow(rows,"STATUS ANALISA",entryReady?"ENTRY READY • "+s.side+" LIMIT":(directional?"SETUP TERBACA • VALIDASI ENTRY":"WAIT • "+s.setup),sideColor);
-            addLargeAnalysisRow(rows,"ARAH ENTRY",s.side,sideColor);
-            addLargeAnalysisRow(rows,"BIAS EMA M5",String.valueOf(s.m5Bias),Color.CYAN);
-            addLargeAnalysisRow(rows,"MODEL ENTRY",s.setup,Color.WHITE);
-            addLargeAnalysisRow(rows,"WICK REJECTION",onoff(s.wickRejection),s.wickRejection?green:Color.LTGRAY);
-            String fibo=s.setup!=null&&s.setup.contains("FIBO")?s.setup.substring(s.setup.indexOf("FIBO")):"LEVEL FIBONACCI TIDAK DIPILIH • WICK LIMIT FALLBACK";
-            addLargeAnalysisRow(rows,"LEVEL FIBONACCI",fibo,Color.CYAN);
-            addLargeAnalysisRow(rows,"ENTRY LIMIT",directional?price(s.entry):"—",Color.WHITE);
-            addLargeAnalysisRow(rows,"STOP LOSS (SL)",directional?price(s.sl):"—",red);
-            addLargeAnalysisRow(rows,"TAKE PROFIT 1 (TP1)",directional?price(s.tp1):"—",green);
-            addLargeAnalysisRow(rows,"TAKE PROFIT 2 (TP2)",directional?price(s.tp2):"—",green);
-            addLargeAnalysisRow(rows,"CONFIDENCE",s.confidence+"/5 • "+s.score+"%",Color.CYAN);
-            addLargeAnalysisRow(rows,"ATR M1 / FILTER",onoff(s.atrFilter),s.atrFilter?green:red);
-            addLargeAnalysisRow(rows,"SPREAD MT5 / FILTER",onoff(s.spreadFilter),s.spreadFilter?green:red);
-        }
-        addLargeAnalysisRow(rows,"ATURAN M5","EMA M5 menjadi konteks arah, bukan larangan mutlak saat wick rejection jelas.",Color.WHITE);
-        addLargeAnalysisRow(rows,"ATURAN FIBONACCI","Entry memilih level retracement aktif (antara 0% dan 100%) yang valid terhadap harga. Level 0%/100% menjadi jangkar swing; level negatif adalah ekstensi target. Jika tidak ada retracement yang valid, strategi memakai wick LIMIT fallback.",Color.WHITE);
-        addLargeAnalysisRow(rows,"PENGAMAN ORDER","Entry tetap memerlukan quote MT5 segar, spread/ATR valid, SL/TP valid, EA online, dan antrean aman.",Color.rgb(255,205,95));
+        // Keep references so chart levels and numerical analysis refresh together.
+        standardPanelValues.put("STATUS",addLargeAnalysisRow(rows,"STATUS ANALISA","MENUNGGU DATA OHLC M1/M5",Color.rgb(255,205,95)));
+        standardPanelValues.put("SIDE",addLargeAnalysisRow(rows,"ARAH ENTRY","WAIT",Color.rgb(255,205,95)));
+        standardPanelValues.put("BIAS",addLargeAnalysisRow(rows,"BIAS EMA M5","—",Color.CYAN));
+        standardPanelValues.put("MODEL",addLargeAnalysisRow(rows,"MODEL ENTRY","Menunggu analisis",Color.WHITE));
+        standardPanelValues.put("WICK",addLargeAnalysisRow(rows,"WICK REJECTION","—",Color.LTGRAY));
+        standardPanelValues.put("FIBO",addLargeAnalysisRow(rows,"LEVEL FIBONACCI","Menunggu setup Fibonacci",Color.CYAN));
+        standardPanelValues.put("ENTRY",addLargeAnalysisRow(rows,"ENTRY LIMIT","—",Color.WHITE));
+        standardPanelValues.put("SL",addLargeAnalysisRow(rows,"STOP LOSS (SL)","—",red));
+        standardPanelValues.put("TP1",addLargeAnalysisRow(rows,"TAKE PROFIT 1 (TP1)","—",green));
+        standardPanelValues.put("TP2",addLargeAnalysisRow(rows,"TAKE PROFIT 2 (TP2)","—",green));
+        standardPanelValues.put("CONF",addLargeAnalysisRow(rows,"CONFIDENCE","—",Color.CYAN));
+        standardPanelValues.put("ATR",addLargeAnalysisRow(rows,"ATR M1 / FILTER","—",Color.LTGRAY));
+        standardPanelValues.put("SPREAD",addLargeAnalysisRow(rows,"SPREAD MT5 / FILTER","—",Color.LTGRAY));
+        addLargeAnalysisRow(rows,"ATURAN M5","EMA M5 menjadi konteks arah; wick rejection yang dominan dapat mengonfirmasi reversal sesuai aturan strategi Standar.",Color.WHITE);
+        addLargeAnalysisRow(rows,"LEVEL ENTRY FIBONACCI","Mesin hanya memilih level retracement aktif yang berada di antara 0% dan 100% dan masih valid sebagai LIMIT. Level 0%/100% menjadi jangkar swing; level negatif dipakai untuk ekstensi target.",Color.WHITE);
+        addLargeAnalysisRow(rows,"FALLBACK","Jika swing atau level retracement aktif tidak valid, strategi memakai wick LIMIT fallback; status model akan menyebutkannya secara eksplisit.",Color.WHITE);
+        addLargeAnalysisRow(rows,"PENGAMAN ORDER","Pengiriman tetap memerlukan quote broker segar, spread/ATR valid, SL/TP valid, EA online, antrean kosong, dan siklus order yang aman.",Color.rgb(255,205,95));
         ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
         box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
         AlertDialog d=new AlertDialog.Builder(this).setView(box).setPositiveButton("TUTUP",null).create();
-        d.setOnDismissListener(ignored->{if(standardStrategyChartView==standardChart)standardStrategyChartView=null;});
+        d.setOnDismissListener(ignored->{
+            if(standardStrategyChartView==standardChart)standardStrategyChartView=null;
+            standardPanelValues.clear();
+        });
         showSizedDialog(d,0.84f,460);
-        AppLog.add(this,"ANALISA","opened Standar Wick + Fibonacci panel • "+selectedMarket+" • "+selectedTf);
+        double[] q=freshBrokerQuote(selectedMarket);
+        syncStandardStrategyPanel(lastSignal,q==null?0:q[0],q==null?0:q[1],m1Data,m5Data);
+        AppLog.add(this,"ANALISA","opened Standar Wick + Fibonacci panel • "+selectedMarket+" • M1 • configured Fibonacci levels");
+    }
+
+    private void syncStandardStrategyPanel(SignalResult s,double bid,double ask,Candle[] m1,Candle[] m5){
+        boolean directional=s!=null&&("BUY".equals(s.side)||"SELL".equals(s.side))
+                &&s.entry>0&&s.sl>0&&s.tp1>0&&s.tp2>0;
+        boolean fibo=directional&&s.setup!=null&&s.setup.contains("FIBO");
+        if(standardStrategyChartView!=null){
+            standardStrategyChartView.setShowTradeFiboLadder(fibo);
+            if(directional)standardStrategyChartView.setSignalLevels(s.side,s.entry,s.sl,s.tp1,s.tp2,true);
+            else standardStrategyChartView.setSignalLevels("BUY",0,0,0,0,false);
+        }
+        if(standardPanelValues.isEmpty())return;
+        boolean m1Context="M1".equals(selectedTf)&&m1!=null&&m1.length>=30&&m5!=null&&m5.length>=20;
+        boolean entryEligible=isAutoEntryEligible(s,bid,ask,m1Context);
+        boolean isBuy=s!=null&&"BUY".equals(s.side);
+        int sideColor=isBuy?green:(s!=null&&"SELL".equals(s.side)?red:Color.rgb(255,205,95));
+        boolean hasSignal=s!=null&&! "WAIT".equals(s.side)&&directional;
+        String statusText=entryEligible?"SIGNAL ENTRY READY • "+s.side+" LIMIT"
+                :(hasSignal?"SETUP TERBACA • "+autoEntryBlockReason(s,bid,ask,m1Context)
+                :"WAIT • "+(s==null?"MENUNGGU DATA OHLC M1/M5":s.setup));
+        setStandardPanelValue("STATUS",statusText,entryEligible?sideColor:Color.rgb(255,205,95));
+        setStandardPanelValue("SIDE",s==null?"WAIT":s.side,sideColor);
+        setStandardPanelValue("BIAS",s==null?"—":String.valueOf(s.m5Bias),Color.CYAN);
+        setStandardPanelValue("MODEL",s==null?"Menunggu analisis":s.setup,Color.WHITE);
+        setStandardPanelValue("WICK",s==null?"—":onoff(s.wickRejection),s!=null&&s.wickRejection?green:Color.LTGRAY);
+        String fiboText=fibo?s.setup.substring(s.setup.indexOf("FIBO"))
+                :(directional?"WICK LIMIT FALLBACK • level Fibonacci tidak terpilih":"Belum ada level yang valid");
+        setStandardPanelValue("FIBO",fiboText,Color.CYAN);
+        setStandardPanelValue("ENTRY",directional?price(s.entry):"—",Color.WHITE);
+        setStandardPanelValue("SL",directional?price(s.sl):"—",red);
+        setStandardPanelValue("TP1",directional?price(s.tp1):"—",green);
+        setStandardPanelValue("TP2",directional?price(s.tp2):"—",green);
+        setStandardPanelValue("CONF",s==null?"—":s.confidence+"/5 • "+s.score+"%",Color.CYAN);
+        setStandardPanelValue("ATR",s==null?"—":onoff(s.atrFilter),s!=null&&s.atrFilter?green:red);
+        setStandardPanelValue("SPREAD",s==null?"—":onoff(s.spreadFilter),s!=null&&s.spreadFilter?green:red);
+    }
+
+    private void setStandardPanelValue(String key,String value,int color){
+        TextView view=standardPanelValues.get(key);
+        if(view!=null){view.setText(value==null||value.trim().isEmpty()?"—":value);view.setTextColor(color);}
     }
 
 
@@ -2247,7 +2289,7 @@ public class MainActivity extends Activity {
                 s.entries,s.wins,s.losses,s.ambiguous,s.open,s.grossNetR());
     }
 
-    private void addLargeAnalysisRow(LinearLayout parent,String label,String value,int valueColor){
+    private TextView addLargeAnalysisRow(LinearLayout parent,String label,String value,int valueColor){
         LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(uiDp(14),uiDp(10),uiDp(14),uiDp(10));
         card.setBackground(roundBg(Color.rgb(7,30,47),12));
@@ -2259,6 +2301,7 @@ public class MainActivity extends Activity {
         card.addView(val,new LinearLayout.LayoutParams(-1,-2));
         LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);
         params.setMargins(0,0,0,uiDp(8));parent.addView(card,params);
+        return val;
     }
 
     private void showRiskManagementDialog(){
