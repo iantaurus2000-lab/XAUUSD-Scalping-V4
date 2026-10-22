@@ -2,7 +2,7 @@ name: Rayyan4 Emulator Check
 on:
   workflow_dispatch:
   push:
-    branches: [ main, rayyan-entry-ready-menu-fix, rayyan9-open-action1-complete, rayyan10-simple-m1-wick-entry, rayyan10-synced-entry-atr-chart-fix, rayyan10-wick-fibo-sync-prebuild ]
+    branches: [ main, rayyan-entry-ready-menu-fix, rayyan9-open-action1-complete, rayyan10-simple-m1-wick-entry, rayyan10-synced-entry-atr-chart-fix, rayyan10-wick-fibo-sync-prebuild, rayyan10-machine-quote-sync-audit ]
 
 jobs:
   emulator:
