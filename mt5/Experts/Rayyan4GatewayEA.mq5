@@ -570,7 +570,7 @@ void uploadChartSnapshot(){
    uint read=FileReadArray(fh,data,0,(uint)size);
    FileClose(fh);
    if(read!=size){Print("RAYYAN CHART READ MISMATCH ",read,"/",size);return;}
-   string headers="Content-Type: image/png\\r\\nX-Rayyan-Symbol: "+_Symbol+"\\r\\nX-Rayyan-Timeframe: "+chartTimeframeLabel()+"\\r\\n";
+   string headers="Content-Type: image/png\r\nX-Rayyan-Symbol: "+_Symbol+"\r\nX-Rayyan-Timeframe: "+chartTimeframeLabel()+"\r\n";
    int code=gatewayPostImage("/chart/upload",headers,data,2500);
    if(code!=200){
       if(TimeCurrent()-lastDiag>=10){
