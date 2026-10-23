@@ -840,8 +840,15 @@ string normalizedGatewayBase(string value){
 bool gatewayGet(string path,int &httpCode,string &body,string &diagnostic){
    httpCode=-1; body=""; diagnostic="";
    string bases[2];
-   bases[0]=GatewayUrl;
-   bases[1]=GatewayFallbackUrl;
+   if(activeGatewayUrl!=""){
+      // Reuse the last successful route first, avoiding a timeout on every poll.
+      bases[0]=activeGatewayUrl;
+      bases[1]=(normalizedGatewayBase(activeGatewayUrl)==normalizedGatewayBase(GatewayUrl))
+         ?GatewayFallbackUrl:GatewayUrl;
+   }else{
+      bases[0]=GatewayUrl;
+      bases[1]=GatewayFallbackUrl;
+   }
    int lastStatus=-1;
    string lastBody="",lastDiagnostic="";
    for(int i=0;i<2;i++){
@@ -890,8 +897,15 @@ bool gatewayGet(string path,int &httpCode,string &body,string &diagnostic){
 
 int gatewayPostImage(string path,string headers,char &payload[],int timeoutMs){
    string bases[2];
-   bases[0]=GatewayUrl;
-   bases[1]=GatewayFallbackUrl;
+   if(activeGatewayUrl!=""){
+      // Reuse the last successful route first, avoiding a timeout on every poll.
+      bases[0]=activeGatewayUrl;
+      bases[1]=(normalizedGatewayBase(activeGatewayUrl)==normalizedGatewayBase(GatewayUrl))
+         ?GatewayFallbackUrl:GatewayUrl;
+   }else{
+      bases[0]=GatewayUrl;
+      bases[1]=GatewayFallbackUrl;
+   }
    int lastStatus=-1;
    string lastDiagnostic="";
    for(int i=0;i<2;i++){
