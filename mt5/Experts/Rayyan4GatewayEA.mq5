@@ -3,7 +3,10 @@
 CTrade trade;
 #define RAYYAN_MAGIC 4104407
 
-input string GatewayUrl="http://192.168.0.112:8787";
+// Tailscale is the preferred route so the same EA works across different networks.
+// Keep the original home-LAN IP as fallback; allow both URLs in MT5 WebRequest.
+input string GatewayUrl="http://100.95.130.43:8787";
+input string GatewayFallbackUrl="http://192.168.0.112:8787";
 input string AllowedSymbol="XAUUSDm";
 input bool DemoOnly=true;
 input int PollSeconds=1;
@@ -12,6 +15,7 @@ input bool EnableTP2RetraceProtection=true;
 input double TP1FallbackRiskMultiple=2.0;
 
 
+string activeGatewayUrl="";
 string lastId="";
 string trackedOrderId="";
 string pendingAckId="";
@@ -50,8 +54,8 @@ int OnInit(){
    resetFiboLevels();
    applyAll();
    EventSetTimer(MathMax(1,PollSeconds));
-   Print("RAYYAN4 START Gateway=",GatewayUrl," Symbol=",AllowedSymbol,
-         " trade queue=/next indicator queue=/indicator_next");
+   Print("RAYYAN4 START GatewayPrimary=",GatewayUrl," GatewayFallback=",GatewayFallbackUrl,
+         " Symbol=",AllowedSymbol," trade queue=/next indicator queue=/indicator_next");
    return(INIT_SUCCEEDED);
 }
 void OnDeinit(const int r){
@@ -566,10 +570,8 @@ void uploadChartSnapshot(){
    uint read=FileReadArray(fh,data,0,(uint)size);
    FileClose(fh);
    if(read!=size){Print("RAYYAN CHART READ MISMATCH ",read,"/",size);return;}
-   char result[]; string responseHeaders="";
-   string headers="Content-Type: image/png\r\nX-Rayyan-Symbol: "+_Symbol+"\r\nX-Rayyan-Timeframe: "+chartTimeframeLabel()+"\r\n";
-   ResetLastError();
-   int code=WebRequest("POST",GatewayUrl+"/chart/upload",headers,2500,data,result,responseHeaders);
+   string headers="Content-Type: image/png\\r\\nX-Rayyan-Symbol: "+_Symbol+"\\r\\nX-Rayyan-Timeframe: "+chartTimeframeLabel()+"\\r\\n";
+   int code=gatewayPostImage("/chart/upload",headers,data,2500);
    if(code!=200){
       if(TimeCurrent()-lastDiag>=10){
          lastDiag=TimeCurrent();
@@ -824,40 +826,105 @@ void publishMarketQuotes(){
    }
 }
 
-// Local LAN bridge uses WebRequest (not MQL5 TCP sockets).
-// Add the exact GatewayUrl base to MT5 Tools > Options > Expert Advisors > Allow WebRequest.
-bool gatewayGet(string path,int &httpCode,string &body,string &diagnostic){
-   httpCode=-1; body=""; diagnostic="";
-   string base=GatewayUrl;
+// Gateway transport prefers Tailscale and falls back to the original home LAN IP.
+// Add BOTH exact base URLs to MT5 Tools > Options > Expert Advisors > Allow WebRequest.
+string normalizedGatewayBase(string value){
+   string base=value;
+   StringTrimLeft(base);
+   StringTrimRight(base);
    while(StringLen(base)>0 && StringSubstr(base,StringLen(base)-1,1)=="/")
       base=StringSubstr(base,0,StringLen(base)-1);
-   if(StringFind(base,"http://")!=0 && StringFind(base,"https://")!=0){
-      diagnostic="GatewayUrl must start with http:// or https://";
-      return false;
-   }
+   return base;
+}
 
-   // Use WebRequest rather than SocketConnect: MT5 may reject socket calls
-   // with error 4014. The base URL must be added to Tools > Options >
-   // Expert Advisors > Allow WebRequest for listed URL.
-   string url=base+path;
-   string responseHeaders="";
-   char requestData[];
-   char responseData[];
-   // Use WebRequest's cookie/referer overload with an explicit zero-length GET body.
-   // This is more compatible with MetaTrader builds that reject an empty array in
-   // the headers overload with internal error 1001 / runtime error 4006.
-   ResetLastError();
-   int status=WebRequest("GET",url,"","",2500,requestData,0,responseData,responseHeaders);
-   int err=GetLastError();
-   if(status==-1 || status==1001){
-      diagnostic="WebRequest has no HTTP connection status="+IntegerToString(status)+
-                 " err="+IntegerToString(err)+"; allow URL "+base+
-                 " in MT5 Expert Advisors options and check Winlator LAN reachability";
-      return false;
+bool gatewayGet(string path,int &httpCode,string &body,string &diagnostic){
+   httpCode=-1; body=""; diagnostic="";
+   string bases[2];
+   bases[0]=GatewayUrl;
+   bases[1]=GatewayFallbackUrl;
+   int lastStatus=-1;
+   string lastBody="",lastDiagnostic="";
+   for(int i=0;i<2;i++){
+      string base=normalizedGatewayBase(bases[i]);
+      if(base=="") continue;
+      if(StringFind(base,"http://")!=0 && StringFind(base,"https://")!=0){
+         lastDiagnostic="Gateway URL must start with http:// or https://: "+base;
+         continue;
+      }
+      if(i==1 && base==normalizedGatewayBase(bases[0])) continue;
+      string url=base+path;
+      string responseHeaders="";
+      char requestData[];
+      char responseData[];
+      // Explicit cookie/referer overload is retained for MT5 builds that reject
+      // an empty-body headers-only GET with internal error 1001/4006.
+      ResetLastError();
+      int status=WebRequest("GET",url,"","",2500,requestData,0,responseData,responseHeaders);
+      int err=GetLastError();
+      if(status==-1 || status==1001){
+         lastDiagnostic="WebRequest failed status="+IntegerToString(status)+
+            " err="+IntegerToString(err)+" url="+base+
+            "; allow this base URL in MT5 WebRequest options and verify Tailscale/LAN";
+         continue;
+      }
+      lastStatus=status;
+      lastBody=CharArrayToString(responseData,0,ArraySize(responseData),CP_UTF8);
+      if(status==200){
+         httpCode=status;
+         body=lastBody;
+         diagnostic="";
+         if(activeGatewayUrl!=base){
+            activeGatewayUrl=base;
+            Print("RAYYAN4 GATEWAY ROUTE ACTIVE=",activeGatewayUrl);
+         }
+         return true;
+      }
+      lastDiagnostic="HTTP="+IntegerToString(status)+" url="+base+" response="+lastBody;
+      // Retry the alternate route on non-200, without repeating trade POSTs.
    }
-   httpCode=status;
-   body=CharArrayToString(responseData,0,ArraySize(responseData),CP_UTF8);
-   return (status>=100 && status<=599);
+   httpCode=lastStatus;
+   body=lastBody;
+   diagnostic=lastDiagnostic;
+   return (lastStatus>=100 && lastStatus<=599);
+}
+
+int gatewayPostImage(string path,string headers,char &payload[],int timeoutMs){
+   string bases[2];
+   bases[0]=GatewayUrl;
+   bases[1]=GatewayFallbackUrl;
+   int lastStatus=-1;
+   string lastDiagnostic="";
+   for(int i=0;i<2;i++){
+      string base=normalizedGatewayBase(bases[i]);
+      if(base=="") continue;
+      if(StringFind(base,"http://")!=0 && StringFind(base,"https://")!=0){
+         lastDiagnostic="Gateway URL must start with http:// or https://: "+base;
+         continue;
+      }
+      if(i==1 && base==normalizedGatewayBase(bases[0])) continue;
+      string resultHeaders="";
+      char resultData[];
+      ResetLastError();
+      int status=WebRequest("POST",base+path,headers,timeoutMs,payload,resultData,resultHeaders);
+      int err=GetLastError();
+      if(status==200){
+         if(activeGatewayUrl!=base){
+            activeGatewayUrl=base;
+            Print("RAYYAN4 GATEWAY ROUTE ACTIVE=",activeGatewayUrl);
+         }
+         return status;
+      }
+      if(status>=100 && status<=599){
+         lastStatus=status;
+         lastDiagnostic="HTTP="+IntegerToString(status)+" url="+base;
+      }else{
+         lastDiagnostic="WebRequest upload failed status="+IntegerToString(status)+
+            " err="+IntegerToString(err)+" url="+base+
+            "; allow this base URL in MT5 WebRequest options";
+      }
+   }
+   if(lastDiagnostic!="") Print("RAYYAN4 GATEWAY UPLOAD ROUTE ERROR ",lastDiagnostic);
+   return lastStatus;
 }
 
 int headerContentLength(string headers){
