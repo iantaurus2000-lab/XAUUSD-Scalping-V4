@@ -332,7 +332,7 @@ public class MainActivity extends Activity {
 
     LinearLayout priceBox(){
         LinearLayout b=new LinearLayout(this);b.setOrientation(LinearLayout.VERTICAL);b.setPadding(2,2,2,2);
-        TextView n=tv("PRICE",9);n.setTextColor(Color.rgb(0,210,220));
+        TextView n=tv("MT5 BID",9);n.setTextColor(Color.rgb(0,210,220));
         priceView=tv("--",20);priceView.setTypeface(null,Typeface.BOLD);priceView.setTextColor(Color.CYAN);priceView.setPadding(1,0,1,0);priceView.setGravity(Gravity.CENTER);priceView.setSingleLine(true);priceView.setIncludeFontPadding(false);priceView.setAutoSizeTextTypeUniformWithConfiguration(14,20,1,android.util.TypedValue.COMPLEX_UNIT_SP);
         b.addView(n,new LinearLayout.LayoutParams(-1,18));
         b.addView(priceView,new LinearLayout.LayoutParams(-1,36));
@@ -341,7 +341,7 @@ public class MainActivity extends Activity {
 
     void updateHeaderPrice(double bid,double ask){
         if(priceView==null||!QuoteSafety.valid(bid,ask))return;
-        double current=(bid+ask)/2.0;
+        double current=bid; // Match MT5 chart OHLC price scale (Bid), not a synthetic midpoint.
         int color=Color.CYAN;
         if(!Double.isNaN(lastHeaderPrice)){
             if(current>lastHeaderPrice)color=green;
