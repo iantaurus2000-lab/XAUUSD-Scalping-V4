@@ -11,6 +11,8 @@ import java.util.*;
 public class CandleChartView extends View {
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final ArrayList<Candle> cs = new ArrayList<>();
+    private final ArrayList<Candle> indicatorCs = new ArrayList<>();
+    private float chartZoom = 1.0f;
     private double bid, ask;
     private float cw = 3.2f, ox = 0, oy = 0, lx, ly, ld, cx, cy;
     private final float leftPad = 18, rightAxis = 82, topPad = 8, bottomPad = 26, lastCandlePad = 12;
@@ -64,13 +66,19 @@ public class CandleChartView extends View {
     }
     public void setData(Candle[] a){
         cs.clear();
+        indicatorCs.clear();
         if(a!=null){
-            int start=Math.max(0,a.length-50);
-            for(int i=start;i<a.length;i++){
-                Candle z=a[i];
+            for(Candle z:a){
                 if(z!=null&&z.t>0L&&z.o>0&&z.h>=Math.max(z.o,z.c)&&z.l<=Math.min(z.o,z.c)&&z.l>0&&z.h>=z.l)
-                    cs.add(new Candle(z.t,z.o,z.h,z.l,z.c));
+                    indicatorCs.add(new Candle(z.t,z.o,z.h,z.l,z.c));
             }
+        }
+        // Keep indicator history for EMA200; render only the newest 50 candles.
+        if(indicatorCs.size()>250)indicatorCs.subList(0,indicatorCs.size()-250).clear();
+        int start=Math.max(0,indicatorCs.size()-50);
+        for(int i=start;i<indicatorCs.size();i++){
+            Candle z=indicatorCs.get(i);
+            cs.add(new Candle(z.t,z.o,z.h,z.l,z.c));
         }
         if(follow)positionLatestCandle();
         invalidate();
@@ -155,7 +163,7 @@ public class CandleChartView extends View {
 
     private float chartStep(){
         float available=Math.max(150f,getWidth()-leftPad-rightAxis-lastCandlePad);
-        float step=Math.max(4.0f,Math.min(9.0f,available/48.0f));
+        float step=Math.max(4.0f,Math.min(9.0f,available/48.0f))*chartZoom;
         cw=Math.max(2.6f,step*0.68f);
         return step;
     }
@@ -199,11 +207,15 @@ public class CandleChartView extends View {
     }
 
     private void ema(Canvas c,int n,int col,float L,float R,float T,float B,double lo,double hi,float step){
-        if(cs.size()<n)return;
-        double k=2.0/(n+1),e=cs.get(0).c;float px=0,py0=0;boolean first=true;
-        for(int i=0;i<cs.size();i++){
-            e=cs.get(i).c*k+e*(1-k);
-            float x=L+i*step+ox+step/2,y=py(e,lo,hi,T,B);
+        if(indicatorCs.size()<n||cs.isEmpty())return;
+        double k=2.0/(n+1),e=indicatorCs.get(0).c;
+        long firstVisible=cs.get(0).t;
+        float px=0,py0=0;boolean first=true;int visibleIndex=0;
+        for(Candle bar:indicatorCs){
+            e=bar.c*k+e*(1-k);
+            if(bar.t<firstVisible)continue;
+            float x=L+visibleIndex*step+ox+step/2,y=py(e,lo,hi,T,B);
+            visibleIndex++;
             if(x<L-2||x>R+2){px=x;py0=y;continue;}
             if(!first)ln(c,px,py0,x,y,col,2);
             px=x;py0=y;first=false;
@@ -228,7 +240,7 @@ public class CandleChartView extends View {
         if(follow)positionLatestCandle();
         if(cs.isEmpty()){
             text(c,marketName+" • "+timeframe,L+7,22,12,Color.rgb(0,235,150));
-            text(c,"Menunggu candle XAUUSD...",L+15,H/2,17,chartMutedTextColor());
+            text(c,"Menunggu candle MT5...",L+15,H/2,17,chartMutedTextColor());
             // Render after the empty-state background/text so the countdown cannot be covered.
             drawCandleCountdown(c, L + 34f, 86f, 28f, null);
             return;
@@ -499,8 +511,8 @@ public class CandleChartView extends View {
     }
 
     private double emaValue(int n){
-        if(cs.isEmpty())return 0;double k=2.0/(n+1),e=cs.get(0).c;
-        for(int i=1;i<cs.size();i++)e=cs.get(i).c*k+e*(1-k);return e;
+        if(indicatorCs.isEmpty())return 0;double k=2.0/(n+1),e=indicatorCs.get(0).c;
+        for(int i=1;i<indicatorCs.size();i++)e=indicatorCs.get(i).c*k+e*(1-k);return e;
     }
     private double emaAt(int idx,int n){
         if(cs.isEmpty())return 0;idx=Math.min(idx,cs.size()-1);double k=2.0/(n+1),e=cs.get(0).c;
@@ -515,7 +527,7 @@ public class CandleChartView extends View {
             case MotionEvent.ACTION_DOWN:lx=e.getX();ly=e.getY();cx=lx;cy=ly;return true;
             case MotionEvent.ACTION_POINTER_DOWN:if(e.getPointerCount()>1)ld=dist(e);return true;
             case MotionEvent.ACTION_MOVE:
-                if(e.getPointerCount()>1){float d=dist(e);if(ld>0)cw=Math.max(7,Math.min(40,cw+(d-ld)*.06f));ld=d;invalidate();return true;}
+                if(e.getPointerCount()>1){float d=dist(e);if(ld>0)chartZoom=Math.max(.70f,Math.min(1.8f,chartZoom+(d-ld)*.003f));ld=d;invalidate();return true;}
                 float dx=e.getX()-lx,dy=e.getY()-ly;ox+=dx;oy+=dy;oy=Math.max(-120,Math.min(120,oy));
                 if(Math.abs(dx)>1)follow=false;lx=e.getX();ly=e.getY();cx=lx;cy=ly;invalidate();return true;
             case MotionEvent.ACTION_UP:invalidate();return true;
