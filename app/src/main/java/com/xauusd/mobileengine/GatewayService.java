@@ -376,17 +376,20 @@ public final class GatewayService extends Service {
         if(now<nextBgAttemptAt)return;
         nextBgAttemptAt=now+30000L;
         try{
-            Candle[] m1=readStoredMt5Bars("XAUUSDm","M1",200);
-            Candle[] m5=readStoredMt5Bars("XAUUSDm","M5",200);
-            double[] t=readFreshMt5Quote("XAUUSDm");
+            String market=getSharedPreferences("rayyan4_indicators",MODE_PRIVATE)
+                .getString("market","XAUUSD");
+            String symbol=backgroundMt5Symbol(market);
+            Candle[] m1=readStoredMt5Bars(symbol,"M1",200);
+            Candle[] m5=readStoredMt5Bars(symbol,"M5",200);
+            double[] t=readFreshMt5Quote(symbol);
             bgFailureCount=0;
             nextBgAttemptAt=System.currentTimeMillis()+30000L;
             if(m1==null||m5==null||t==null||m1.length<30||m5.length<60){
-                logBgStatus("MT5_DATA_STALE_OR_INSUFFICIENT M1="+(m1==null?0:m1.length)+
-                    " M5="+(m5==null?0:m5.length)+" quote="+(t!=null));
+                logBgStatus("MT5_DATA_STALE_OR_INSUFFICIENT market="+market+" symbol="+symbol+
+                    " M1="+(m1==null?0:m1.length)+" M5="+(m5==null?0:m5.length)+" quote="+(t!=null));
                 return;
             }
-            logBgStatus("MT5_FEED_OK M1="+m1.length+" M5="+m5.length);
+            logBgStatus("MT5_FEED_OK market="+market+" symbol="+symbol+" M1="+m1.length+" M5="+m5.length);
             SignalResult s=SignalEngine.evaluate(m1,m5,t[0],t[1],t[0],t[1]);
             if(s==null){logBgStatus("SIGNAL_RESULT_NULL");return;}
             String side=s.side;
@@ -397,7 +400,7 @@ public final class GatewayService extends Service {
             long alertNow=System.currentTimeMillis();
             if(("BUY".equals(side)||"SELL".equals(side))&&!side.equals(last)&&alertNow-lastAlertAt>=180000L){
                 p.edit().putString("side",side).putLong("last_alert_at",alertNow).apply();
-                String msg="XAUUSD SCALPING\n\n"+side+
+                String msg=market+" SCALPING\n\n"+side+
                     "\nEntry: "+f(s.entry)+"\nSL: "+f(s.sl)+"\nTP1: "+f(s.tp1)+"\nTP2: "+f(s.tp2)+
                     "\nTF: M1\nBias: M5 "+s.m5Bias+"\nSetup: "+s.setup+"\nConfidence: "+s.confidence+"/5";
                 AppLog.add(this,"BACKGROUND SIGNAL",side+" "+f(s.entry)+" score="+s.score);
@@ -406,7 +409,7 @@ public final class GatewayService extends Service {
                 String chat=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE).getString("chat","");
                 boolean tg=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE).getBoolean("enabled",false);
                 if(tg)TelegramClient.send(token,chat,msg,(ok,detail)->AppLog.add(this,"TELEGRAM",ok?"background sent":"background error"));
-                notifyAlert("XAUUSD "+side,"Entry "+f(s.entry)+" | SL "+f(s.sl)+" | TP1 "+f(s.tp1));
+                notifyAlert(market+" "+side,"Entry "+f(s.entry)+" | SL "+f(s.sl)+" | TP1 "+f(s.tp1));
             }
         }catch(Exception e){
             bgFailureCount=Math.min(bgFailureCount+1,5);
@@ -414,6 +417,12 @@ public final class GatewayService extends Service {
             nextBgAttemptAt=System.currentTimeMillis()+delay;
             logBgStatus("FEED_ERROR retry="+(delay/1000L)+"s "+e.getClass().getSimpleName()+": "+e.getMessage());
         }
+    }
+
+    private String backgroundMt5Symbol(String market){
+        if("BTCUSD".equalsIgnoreCase(market))return "BTCUSDm";
+        if("ETHUSD".equalsIgnoreCase(market))return "ETHUSDm";
+        return "XAUUSDm";
     }
 
     private Candle[] readStoredMt5Bars(String symbol,String tf,int limit){
