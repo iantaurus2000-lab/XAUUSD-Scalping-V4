@@ -66,6 +66,17 @@ public final class GatewayService extends Service {
                     try{contentLength=Integer.parseInt(line.substring(colon+1).trim());}catch(Exception ignored){}
                 }
             }
+            if(path.startsWith("/bars/upload")&&"POST".equalsIgnoreCase(method)){
+                if(contentLength<20||contentLength>250000){
+                    writeResponse(socket,400,"text/plain; charset=utf-8","BARS ERROR SIZE".getBytes(StandardCharsets.UTF_8));return;
+                }
+                byte[] raw=readExact(in,contentLength);
+                if(raw==null){writeResponse(socket,400,"text/plain; charset=utf-8","BARS ERROR BODY".getBytes(StandardCharsets.UTF_8));return;}
+                String payload=new String(raw,StandardCharsets.UTF_8);
+                String result=receiveBarsUpload(payload);
+                int code=result.startsWith("BARS OK")?200:400;
+                writeResponse(socket,code,"text/plain; charset=utf-8",result.getBytes(StandardCharsets.UTF_8));return;
+            }
             if(path.startsWith("/chart/upload")&&"POST".equalsIgnoreCase(method)){
                 if(contentLength<8||contentLength>2000000){
                     writeResponse(socket,400,"text/plain; charset=utf-8","CHART ERROR SIZE".getBytes(StandardCharsets.UTF_8));return;
@@ -153,6 +164,53 @@ public final class GatewayService extends Service {
         String reason=status==200?"OK":status==404?"Not Found":"Bad Request";
         String h="HTTP/1.1 "+status+" "+reason+"\r\nContent-Type: "+contentType+"\r\nContent-Length: "+body.length+"\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n";
         OutputStream o=socket.getOutputStream();o.write(h.getBytes(StandardCharsets.US_ASCII));o.write(body);o.flush();
+    }
+
+    /**
+     * Accept compact OHLC bars produced by CopyRates() in the connected MT5 terminal.
+     * Payload: symbol=XAUUSDm;tf=M1;bars=epochMs,o,h,l,c|epochMs,o,h,l,c...
+     */
+    private synchronized String receiveBarsUpload(String payload){
+        try{
+            String symbol="",tf="",bars="";
+            for(String part:payload.split(";")){
+                int eq=part.indexOf('=');
+                if(eq<=0)continue;
+                String key=part.substring(0,eq).trim();
+                String value=part.substring(eq+1).trim();
+                if("symbol".equals(key))symbol=value;
+                else if("tf".equals(key))tf=value;
+                else if("bars".equals(key))bars=value;
+            }
+            if(!("XAUUSDm".equals(symbol)||"BTCUSDm".equals(symbol)||"ETHUSDm".equals(symbol)))
+                return "BARS ERROR SYMBOL";
+            if(!("M1".equals(tf)||"M5".equals(tf)||"M15".equals(tf)||"H1".equals(tf)||"H4".equals(tf)||"D1".equals(tf)))
+                return "BARS ERROR TIMEFRAME";
+            String[] rows=bars.split("\\|");
+            if(rows.length<2||rows.length>250)return "BARS ERROR COUNT";
+            long previous=0L;
+            int valid=0;
+            for(String row:rows){
+                String[] v=row.split(",");
+                if(v.length!=5)return "BARS ERROR FORMAT";
+                long t=Long.parseLong(v[0]);
+                double o=Double.parseDouble(v[1]),h=Double.parseDouble(v[2]);
+                double l=Double.parseDouble(v[3]),c=Double.parseDouble(v[4]);
+                if(t<=previous||!finitePositive(o)||!finitePositive(h)||!finitePositive(l)||!finitePositive(c)
+                    ||h<Math.max(o,c)||l>Math.min(o,c)||h<l)return "BARS ERROR VALUES";
+                previous=t;valid++;
+            }
+            long now=System.currentTimeMillis();
+            getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit()
+                .putString("mt5_bars_"+symbol+"_"+tf,bars)
+                .putLong("mt5_bars_at_"+symbol+"_"+tf,now)
+                .putInt("mt5_bars_count_"+symbol+"_"+tf,valid)
+                .apply();
+            return "BARS OK "+valid;
+        }catch(Exception e){return "BARS ERROR "+e.getClass().getSimpleName();}
+    }
+    private boolean finitePositive(double v){
+        return v>0.0&&!Double.isNaN(v)&&!Double.isInfinite(v);
     }
 
     /**
