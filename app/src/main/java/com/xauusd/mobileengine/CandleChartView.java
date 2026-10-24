@@ -267,8 +267,8 @@ public class CandleChartView extends View {
         text(c,"O "+f(last.o)+"   H "+f(last.h)+"   L "+f(last.l)+"   C "+f(last.c),L+7,34,10,chartTextColor());
         double e50=emaValue(50),e200=emaValue(200);
         float lx0=L+7;
-        if(showEMA50){text(c,"■ EMA 50",lx0,49,9,Color.rgb(255,176,0));text(c,f(e50),lx0+53,49,9,Color.rgb(255,176,0));lx0+=96;}
-        if(showEMA200){text(c,"■ EMA 200",lx0,49,9,Color.rgb(186,85,211));text(c,f(e200),lx0+60,49,9,Color.rgb(186,85,211));}
+        if(showEMA50){text(c,"■ EMA 50",lx0,49,9,Color.rgb(255,176,0));text(c,indicatorCs.size()>=50?f(e50):"--",lx0+53,49,9,Color.rgb(255,176,0));lx0+=96;}
+        if(showEMA200){text(c,"■ EMA 200",lx0,49,9,Color.rgb(186,85,211));text(c,indicatorCs.size()>=200?f(e200):"--",lx0+60,49,9,Color.rgb(186,85,211));}
 
         float T=55,B=mainBottom-22;
         // Main grid.
