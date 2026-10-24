@@ -53,12 +53,32 @@ jobs:
         shell: pwsh
         run: |
           $source = (Resolve-Path 'mt5/Experts/Rayyan4GatewayEA.mq5').Path
+          $sourceDir = Split-Path $source
           $log = Join-Path $env:RUNNER_TEMP 'Rayyan4GatewayEA-compile.log'
-          & $env:METAEDITOR "/compile:$source" "/log:$log"
-          if (Test-Path $log) { Get-Content $log }
-          $binary = Join-Path (Split-Path $source) 'Rayyan4GatewayEA.ex5'
-          if (-not (Test-Path $binary)) { throw "EA compile did not produce $binary" }
-          if ((Get-Content $log -Raw) -match '(?im)\b[1-9]\d* errors?\b') { throw 'MetaEditor reported compile errors.' }
+          Remove-Item $log -Force -ErrorAction SilentlyContinue
+          $args = "/compile:`"$source`" /log:`"$log`""
+          $process = Start-Process -FilePath $env:METAEDITOR -ArgumentList $args -PassThru -Wait
+          Start-Sleep -Seconds 2
+          if (Test-Path $log) {
+            Get-Content $log
+          } else {
+            Write-Host "MetaEditor exited with code $($process.ExitCode) but did not create the requested compile log."
+            Write-Host "MetaEditor path: $env:METAEDITOR"
+            Write-Host "Source exists: $(Test-Path $source)"
+            Get-ChildItem $sourceDir -Force | Select-Object Name, Length, LastWriteTime
+            throw "MetaEditor did not create compile log $log; compilation cannot be verified."
+          }
+          $binary = Join-Path $sourceDir 'Rayyan4GatewayEA.ex5'
+          if (-not (Test-Path $binary)) {
+            $found = Get-ChildItem "$env:APPDATA\MetaQuotes\Terminal" -Filter 'Rayyan4GatewayEA.ex5' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { Copy-Item $found.FullName $binary -Force }
+          }
+          if (-not (Test-Path $binary)) {
+            Get-Content $log -Raw
+            throw "EA compile did not produce $binary. See compiler output above."
+          }
+          $compileLog = Get-Content $log -Raw
+          if ($compileLog -match '(?im)\b[1-9]\d* errors?\b') { throw 'MetaEditor reported compile errors.' }
       - uses: actions/upload-artifact@v4
         with:
           name: Rayyan11-MT5-EA
