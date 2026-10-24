@@ -363,16 +363,17 @@ public final class GatewayService extends Service {
         if(now<nextBgAttemptAt)return;
         nextBgAttemptAt=now+30000L;
         try{
-            Candle[] m1=BiquoteClient.candles("1m");
-            Candle[] m5=BiquoteClient.candles("5m");
-            double[] t=BiquoteClient.tick();
+            Candle[] m1=readStoredMt5Bars("XAUUSDm","M1",200);
+            Candle[] m5=readStoredMt5Bars("XAUUSDm","M5",200);
+            double[] t=readFreshMt5Quote("XAUUSDm");
             bgFailureCount=0;
             nextBgAttemptAt=System.currentTimeMillis()+30000L;
-            if(m1==null||m5==null||m1.length<30||m5.length<30){
-                logBgStatus("DATA_INSUFFICIENT M1="+(m1==null?0:m1.length)+" M5="+(m5==null?0:m5.length));
+            if(m1==null||m5==null||t==null||m1.length<30||m5.length<60){
+                logBgStatus("MT5_DATA_STALE_OR_INSUFFICIENT M1="+(m1==null?0:m1.length)+
+                    " M5="+(m5==null?0:m5.length)+" quote="+(t!=null));
                 return;
             }
-            logBgStatus("FEED_OK M1="+m1.length+" M5="+m5.length);
+            logBgStatus("MT5_FEED_OK M1="+m1.length+" M5="+m5.length);
             SignalResult s=SignalEngine.evaluate(m1,m5,t[0],t[1],t[0],t[1]);
             if(s==null){logBgStatus("SIGNAL_RESULT_NULL");return;}
             String side=s.side;
@@ -400,6 +401,42 @@ public final class GatewayService extends Service {
             nextBgAttemptAt=System.currentTimeMillis()+delay;
             logBgStatus("FEED_ERROR retry="+(delay/1000L)+"s "+e.getClass().getSimpleName()+": "+e.getMessage());
         }
+    }
+
+    private Candle[] readStoredMt5Bars(String symbol,String tf,int limit){
+        SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        long received=p.getLong("mt5_bars_at_"+symbol+"_"+tf,0L);
+        long age=System.currentTimeMillis()-received;
+        if(received<=0L||age<0L||age>10000L)return null;
+        String raw=p.getString("mt5_bars_"+symbol+"_"+tf,"");
+        if(raw.isEmpty())return null;
+        ArrayList<Candle> all=new ArrayList<>();
+        try{
+            for(String row:raw.split("\\|")){
+                String[] v=row.split(",");
+                if(v.length!=5)continue;
+                long t=Long.parseLong(v[0]);
+                double o=Double.parseDouble(v[1]),h=Double.parseDouble(v[2]);
+                double l=Double.parseDouble(v[3]),c=Double.parseDouble(v[4]);
+                if(t>0L&&o>0&&h>=Math.max(o,c)&&l<=Math.min(o,c)&&l>0&&h>=l)
+                    all.add(new Candle(t,o,h,l,c));
+            }
+        }catch(Exception ignored){return null;}
+        if(all.size()<2)return null;
+        int start=Math.max(0,all.size()-Math.max(2,limit));
+        return all.subList(start,all.size()).toArray(new Candle[0]);
+    }
+
+    private double[] readFreshMt5Quote(String symbol){
+        SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        long received=p.getLong("broker_quote_received_ms_"+symbol,0L);
+        long tickMs=p.getLong("broker_quote_tick_ms_"+symbol,0L);
+        if(!QuoteSafety.isFresh(received,tickMs,System.currentTimeMillis()))return null;
+        try{
+            double bid=Double.parseDouble(p.getString("broker_quote_bid_"+symbol,"0"));
+            double ask=Double.parseDouble(p.getString("broker_quote_ask_"+symbol,"0"));
+            return QuoteSafety.valid(bid,ask)?new double[]{bid,ask}:null;
+        }catch(Exception ignored){return null;}
     }
 
     private synchronized void logBgStatus(String status){
