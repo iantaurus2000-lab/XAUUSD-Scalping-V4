@@ -395,15 +395,15 @@ public final class GatewayService extends Service {
             String side=s.side;
             if(!"BUY".equals(side)&&!"SELL".equals(side))logBgStatus("SIGNAL_WAIT side="+side+" confidence="+s.confidence);
             SharedPreferences p=getSharedPreferences("rayyan4_bg_signal",MODE_PRIVATE);
-            String last=p.getString("side","");
-            long lastAlertAt=p.getLong("last_alert_at",0L);
+            String last=p.getString("side_"+symbol,"");
+            long lastAlertAt=p.getLong("last_alert_at_"+symbol,0L);
             long alertNow=System.currentTimeMillis();
             if(("BUY".equals(side)||"SELL".equals(side))&&!side.equals(last)&&alertNow-lastAlertAt>=180000L){
-                p.edit().putString("side",side).putLong("last_alert_at",alertNow).apply();
+                p.edit().putString("side_"+symbol,side).putLong("last_alert_at_"+symbol,alertNow).apply();
                 String msg=market+" SCALPING\n\n"+side+
                     "\nEntry: "+f(s.entry)+"\nSL: "+f(s.sl)+"\nTP1: "+f(s.tp1)+"\nTP2: "+f(s.tp2)+
                     "\nTF: M1\nBias: M5 "+s.m5Bias+"\nSetup: "+s.setup+"\nConfidence: "+s.confidence+"/5";
-                AppLog.add(this,"BACKGROUND SIGNAL",side+" "+f(s.entry)+" score="+s.score);
+                AppLog.add(this,"BACKGROUND SIGNAL",market+" "+side+" "+f(s.entry)+" score="+s.score);
                 HistoryStore.add(this,"SIGNAL",side,s.entry,s.sl,s.tp1,s.tp2,s.confidence);
                 String token=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE).getString("token","");
                 String chat=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE).getString("chat","");
