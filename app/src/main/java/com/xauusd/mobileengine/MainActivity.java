@@ -527,65 +527,82 @@ public class MainActivity extends Activity {
         if("H4".equals(tf))return "4h";if("D1".equals(tf))return "1d";return "1m";
     }
 
+    private Candle[] readNativeMt5Bars(String market,String tf,int limit){
+        SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        String symbol=mt5SymbolForMarket(market);
+        long received=gp.getLong("mt5_bars_at_"+symbol+"_"+tf,0L);
+        long age=System.currentTimeMillis()-received;
+        if(received<=0L||age<0L||age>10000L)return null;
+        String raw=gp.getString("mt5_bars_"+symbol+"_"+tf,"");
+        if(raw.isEmpty())return null;
+        ArrayList<Candle> parsed=new ArrayList<>();
+        try{
+            for(String row:raw.split("\\|")){
+                String[] v=row.split(",");
+                if(v.length!=5)continue;
+                long t=Long.parseLong(v[0]);
+                double o=Double.parseDouble(v[1]),h=Double.parseDouble(v[2]);
+                double l=Double.parseDouble(v[3]),c=Double.parseDouble(v[4]);
+                if(t<=0L||o<=0||h<Math.max(o,c)||l>Math.min(o,c)||l<=0||h<l)continue;
+                parsed.add(new Candle(t,o,h,l,c));
+            }
+        }catch(Exception ignored){return null;}
+        if(parsed.size()<2)return null;
+        int start=Math.max(0,parsed.size()-Math.max(2,limit));
+        return parsed.subList(start,parsed.size()).toArray(new Candle[0]);
+    }
+
     void load(String interval,String tf){
-        new Thread(()->{
-            try{
-                String market=selectedMarket;
-                Candle[] c=BiquoteClient.candles(market,interval);
-                Candle[] m1="M1".equals(tf)?c:BiquoteClient.candles(market,"1m");
-                Candle[] m5="M5".equals(tf)?c:BiquoteClient.candles(market,"5m");
-                runOnUiThread(()->{
-                    if(!tf.equals(selectedTf)||!market.equals(selectedMarket))return;
-                    chart.setData(c);chart.goLive();m1Data=m1;m5Data=m5;
-                    syncBrokerEntryLine();updateSignal(m1Data,m5Data);
-                    status.setText("● CHART LOADED • "+market+" • "+tf);
-                });
-            }catch(Exception e){runOnUiThread(()->{status.setText("● OFFLINE • "+tf+" • RETRYING");resetEntryReadyUi("feed offline • menunggu data");});}
-        }).start();
+        String market=selectedMarket;
+        Candle[] visible=readNativeMt5Bars(market,tf,50);
+        Candle[] m1=readNativeMt5Bars(market,"M1",200);
+        Candle[] m5=readNativeMt5Bars(market,"M5",200);
+        if(visible!=null&&m1!=null&&m5!=null){
+            chart.setData(visible);chart.goLive();m1Data=m1;m5Data=m5;
+            syncBrokerEntryLine();updateSignal(m1Data,m5Data);
+            status.setText("● MT5 OHLC LIVE • "+market+" • "+tf);
+        }else{
+            status.setText("● MENUNGGU OHLC MT5 • "+tf);
+            resetEntryReadyUi("menunggu data candle langsung dari MT5");
+        }
 
         if(ex==null){
             ex=Executors.newSingleThreadScheduledExecutor();
             ex.scheduleAtFixedRate(()->{
-                String market=selectedMarket;
-                double[] feedTick=null;
-                try{feedTick=BiquoteClient.tick(market);}catch(Exception ignored){}
-                final double[] fallbackTick=feedTick;
+                String activeMarket=selectedMarket;
+                double[] broker=freshBrokerQuote(activeMarket);
                 runOnUiThread(()->{
-                    if(!market.equals(selectedMarket))return;
-                    applyQuoteSnapshot(market,fallbackTick);
+                    if(!activeMarket.equals(selectedMarket))return;
+                    applyQuoteSnapshot(activeMarket,broker);
                 });
             },1,1,TimeUnit.SECONDS);
         }
 
-        // Tick polling updates the quote every second, but that alone cannot create
-        // new timestamped OHLC bars or refresh the M5 bias. Refresh both candle feeds
-        // separately, without blocking the live quote loop or resetting the chart
-        // while the user is looking at another market/timeframe.
+        // Read the validated MT5 CopyRates snapshots from the existing Gateway every second.
+        // Chart display is capped at 50 bars; signal analysis keeps its own longer M1/M5 history.
         if(candleRefresh==null){
             candleRefresh=Executors.newSingleThreadScheduledExecutor();
             candleRefresh.scheduleWithFixedDelay(()->{
-                final String market=selectedMarket;
+                final String activeMarket=selectedMarket;
                 final String tfNow=selectedTf;
-                try{
-                    Candle[] fresh=BiquoteClient.candles(market,interval(tfNow));
-                    Candle[] freshM1="M1".equals(tfNow)?fresh:BiquoteClient.candles(market,"1m");
-                    Candle[] freshM5="M5".equals(tfNow)?fresh:BiquoteClient.candles(market,"5m");
-                    runOnUiThread(()->{
-                        if(!market.equals(selectedMarket)||!tfNow.equals(selectedTf))return;
-                        boolean wasFollowing=chart.isFollow();
-                        chart.setData(fresh);
-                        if(wasFollowing)chart.goLive();
-                        m1Data=freshM1;m5Data=freshM5;
-                        syncBrokerEntryLine();updateSignal(m1Data,m5Data);
-                        status.setText("● OHLC REFRESHED • "+market+" • "+tfNow);
-                    });
-                }catch(Exception e){
-                    runOnUiThread(()->{
-                        if(market.equals(selectedMarket)&&tfNow.equals(selectedTf))
-                            status.setText("● QUOTE LIVE • OHLC RETRY • "+tfNow);
-                    });
-                }
-            },15,15,TimeUnit.SECONDS);
+                Candle[] fresh=readNativeMt5Bars(activeMarket,tfNow,50);
+                Candle[] freshM1=readNativeMt5Bars(activeMarket,"M1",200);
+                Candle[] freshM5=readNativeMt5Bars(activeMarket,"M5",200);
+                runOnUiThread(()->{
+                    if(!activeMarket.equals(selectedMarket)||!tfNow.equals(selectedTf))return;
+                    if(fresh==null||freshM1==null||freshM5==null){
+                        status.setText("● MT5 OHLC STALE • ENTRY LOCKED • "+tfNow);
+                        resetEntryReadyUi("data OHLC MT5 terlambat/tidak lengkap");
+                        return;
+                    }
+                    boolean wasFollowing=chart.isFollow();
+                    chart.setData(fresh);
+                    if(wasFollowing)chart.goLive();
+                    m1Data=freshM1;m5Data=freshM5;
+                    syncBrokerEntryLine();updateSignal(m1Data,m5Data);
+                    status.setText("● MT5 OHLC LIVE • "+activeMarket+" • "+tfNow);
+                });
+            },1,1,TimeUnit.SECONDS);
         }
     }
 
