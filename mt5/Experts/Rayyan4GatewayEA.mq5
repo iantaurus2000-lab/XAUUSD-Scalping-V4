@@ -675,36 +675,61 @@ void publishMarketQuotes(){
 }
 
 // Publish actual MT5 CopyRates OHLC to the APK-native chart; screenshots are not used as chart data.
+// Publish OHLC for every APK market in one Gateway request. Chart selection in the APK
+// must not depend on which symbol/timeframe happens to be open in the MT5 desktop.
 void publishNativeChartBars(){
    uint now=GetTickCount();
    if(now-lastNativeBarsTick<2000) return;
    lastNativeBarsTick=now;
-   string sym=_Symbol;
-   if(!SymbolSelect(sym,true)) return;
-   publishBarsForTimeframe(sym,PERIOD_M1,"M1",200);
-   publishBarsForTimeframe(sym,PERIOD_M5,"M5",200);
-   if(_Period!=PERIOD_M1 && _Period!=PERIOD_M5)
-      publishBarsForTimeframe(sym,_Period,chartTimeframeName(_Period),50);
-}
-string chartTimeframeName(ENUM_TIMEFRAMES tf){
-   switch(tf){
-      case PERIOD_M1:return "M1";
-      case PERIOD_M5:return "M5";
-      case PERIOD_M15:return "M15";
-      case PERIOD_H1:return "H1";
-      case PERIOD_H4:return "H4";
-      case PERIOD_D1:return "D1";
-      default:return "";
+   string symbols[3]={"XAUUSDm","BTCUSDm","ETHUSDm"};
+   ENUM_TIMEFRAMES frames[6]={PERIOD_M1,PERIOD_M5,PERIOD_M15,PERIOD_H1,PERIOD_H4,PERIOD_D1};
+   string names[6]={"M1","M5","M15","H1","H4","D1"};
+   string batch="";
+   int series=0;
+   for(int i=0;i<ArraySize(symbols);i++){
+      string sym=symbols[i];
+      if(!SymbolSelect(sym,true)){
+         quoteDiagnostic(i,sym,"BARS_SYMBOL_SELECT_FAILED","cannot publish native OHLC; check exact broker symbol");
+         continue;
+      }
+      for(int j=0;j<ArraySize(frames);j++){
+         int count=(j<2?200:50);
+         if(appendBarsForTimeframe(sym,frames[j],names[j],count,batch))series++;
+      }
+   }
+   if(series==0 || StringLen(batch)==0) return;
+   string base=GatewayUrl;
+   while(StringLen(base)>0 && StringSubstr(base,StringLen(base)-1,1)=="/")
+      base=StringSubstr(base,0,StringLen(base)-1);
+   if(StringFind(base,"http://")!=0 && StringFind(base,"https://")!=0) return;
+   char requestData[],responseData[];
+   string responseHeaders="";
+   int bytes=StringToCharArray(batch,requestData,0,WHOLE_ARRAY,CP_UTF8);
+   if(bytes<=1) return;
+   ArrayResize(requestData,bytes-1);
+   ResetLastError();
+   int code=WebRequest("POST",base+"/bars/upload",
+      "Content-Type: text/plain; charset=utf-8\\r\\n",1000,
+      requestData,responseData,responseHeaders);
+   string response=CharArrayToString(responseData,0,WHOLE_ARRAY,CP_UTF8);
+   if(code!=200 || StringFind(response,"BARS OK")!=0){
+      if(TimeCurrent()-lastDiag>=10){
+         lastDiag=TimeCurrent();
+         Print("RAYYAN NATIVE BARS FAILED http=",code," err=",GetLastError(),
+               " series=",series," body=",response);
+      }
+   }else if(TimeCurrent()-lastDiag>=30){
+      lastDiag=TimeCurrent();
+      Print("RAYYAN NATIVE BARS OK series=",series," body=",response);
    }
 }
-void publishBarsForTimeframe(string symbol,ENUM_TIMEFRAMES tf,string tfName,int count){
+bool appendBarsForTimeframe(string symbol,ENUM_TIMEFRAMES tf,string tfName,int count,string &batch){
    MqlRates rates[];
    ArraySetAsSeries(rates,true);
    int copied=CopyRates(symbol,tf,0,count,rates);
-   if(copied<2) return;
+   if(copied<2) return false;
    int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
    string bars="";
-   // CopyRates series index 0 is the forming/current bar. Serialize oldest-to-newest.
    for(int i=copied-1;i>=0;i--){
       if(StringLen(bars)>0) bars+="|";
       bars+=IntegerToString((long)rates[i].time*1000)+","+
@@ -713,25 +738,9 @@ void publishBarsForTimeframe(string symbol,ENUM_TIMEFRAMES tf,string tfName,int 
          DoubleToString(rates[i].low,digits)+","+
          DoubleToString(rates[i].close,digits);
    }
-   string payload="symbol="+symbol+";tf="+tfName+";bars="+bars;
-   char requestData[],responseData[];
-   string responseHeaders="";
-   int bytes=StringToCharArray(payload,requestData,0,WHOLE_ARRAY,CP_UTF8);
-   if(bytes<=1) return;
-   ArrayResize(requestData,bytes-1); // Remove the terminating NUL; Content-Length is exact.
-   string base=GatewayUrl;
-   while(StringLen(base)>0 && StringSubstr(base,StringLen(base)-1,1)=="/")
-      base=StringSubstr(base,0,StringLen(base)-1);
-   if(StringFind(base,"http://")!=0 && StringFind(base,"https://")!=0) return;
-   ResetLastError();
-   int code=WebRequest("POST",base+"/bars/upload",
-      "Content-Type: text/plain; charset=utf-8\r\n",1000,
-      requestData,responseData,responseHeaders);
-   if(code!=200 && TimeCurrent()-lastDiag>=10){
-      lastDiag=TimeCurrent();
-      Print("RAYYAN NATIVE BARS FAILED tf=",tfName," http=",code,
-            " err=",GetLastError()," bars=",copied);
-   }
+   if(StringLen(batch)>0) batch+="\\n";
+   batch+="symbol="+symbol+";tf="+tfName+";bars="+bars;
+   return true;
 }
 
 // Local LAN bridge uses WebRequest (not MQL5 TCP sockets).
