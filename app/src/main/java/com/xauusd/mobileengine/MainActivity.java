@@ -54,7 +54,6 @@ public class MainActivity extends Activity {
     private TextView priceView, spreadView, status, signalSummary, scoreView, entryView, slView, tp1View, tp2View, marketTitle, marketSubtitle;
     private double lastHeaderPrice=Double.NaN;
     private String lastSpreadLabel="";
-    private long lastFeedQuoteAt=0L;
     private static final long ORDER_STATE_MAX_AGE_MS=8000L;
     private static final long M1_BAR_MAX_AGE_MS=120000L;
     private static final long M5_BAR_MAX_AGE_MS=600000L;
@@ -384,19 +383,13 @@ public class MainActivity extends Activity {
     }
 
     /** Live price and spread use the same connected MT5 broker quote as the native chart. */
-    private void applyQuoteSnapshot(String market,double[] feedTick){
+    private void applyQuoteSnapshot(String market,double[] quoteSnapshot){
         if(!market.equals(selectedMarket))return;
-        long now=System.currentTimeMillis();
-        if(feedTick!=null&&feedTick.length>=2&&QuoteSafety.valid(feedTick[0],feedTick[1])){
-            lastFeedQuoteAt=now;
-            // The MT5 EA publishes authoritative CopyRates OHLC snapshots through Gateway.
-            // A fresh MT5 tick updates only the live price line between OHLC snapshots.
-            if(chart!=null)chart.setQuote(feedTick[0],feedTick[1],selectedTf);
-            updateHeaderPrice(feedTick[0],feedTick[1]);
+        if(quoteSnapshot!=null&&quoteSnapshot.length>=2&&QuoteSafety.valid(quoteSnapshot[0],quoteSnapshot[1])){
+            // The snapshot is already validated against the selected symbol's MT5 tick timestamp.
+            if(chart!=null)chart.setQuote(quoteSnapshot[0],quoteSnapshot[1],selectedTf);
+            updateHeaderPrice(quoteSnapshot[0],quoteSnapshot[1]);
         }
-        boolean feedFresh=lastFeedQuoteAt>0L&&now>=lastFeedQuoteAt
-            &&now-lastFeedQuoteAt<=5000L&&chart!=null
-            &&QuoteSafety.valid(chart.getBid(),chart.getAsk());
         double[] broker=freshBrokerQuote(market);
         if(broker!=null){
             // Keep live price, spread and signal tick aligned to the MT5 broker quote.
@@ -408,7 +401,7 @@ public class MainActivity extends Activity {
             lastSpreadLabel=point>0.0
                 ?String.format(Locale.US,"SPREAD %.2f • %.0f MT5 points",spread,spread/point)
                 :String.format(Locale.US,"SPREAD %.2f • MT5",spread);
-            if(spreadView!=null)spreadView.setText(feedFresh?lastSpreadLabel:lastSpreadLabel+" • MT5 QUOTE STALE");
+            if(spreadView!=null)spreadView.setText(lastSpreadLabel);
         }else if(spreadView!=null){
             spreadView.setText(lastSpreadLabel.isEmpty()?"SPREAD -- • MT5 STALE":lastSpreadLabel+" • MT5 STALE");
         }
@@ -417,9 +410,6 @@ public class MainActivity extends Activity {
             resetEntryReadyUi("harga MT5 belum segar");
         }else{
             updateLiveGatewayStatus(market);
-            if(!feedFresh&&status!=null){
-                status.setText("● MT5 QUOTE LIVE • APK TICK UPDATE TERLAMBAT • "+selectedTf);
-            }
         }
         syncBrokerEntryLine();
         if(m1Data!=null&&m1Data.length>=30&&m5Data!=null&&m5Data.length>=60)
@@ -1846,7 +1836,7 @@ public class MainActivity extends Activity {
             TextView icon=tv(icons[i],22);icon.setTextColor(Color.rgb(0,225,180));icon.setGravity(Gravity.CENTER);row.addView(icon,new LinearLayout.LayoutParams(42,-1));
             LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setGravity(Gravity.CENTER_VERTICAL);TextView name=tv(market,16);name.setTextColor(Color.WHITE);name.setTypeface(null,Typeface.BOLD);labels.addView(name);TextView sub=tv(details[i],12);sub.setTextColor(Color.LTGRAY);labels.addView(sub);row.addView(labels,new LinearLayout.LayoutParams(0,-1,1));
             TextView mark=tv(selected?"✓ ACTIVE":"SELECT  ›",10);mark.setTextColor(selected?Color.rgb(0,235,160):Color.CYAN);row.addView(mark);
-            row.setOnClickListener(v->{if(market.equals(selectedMarket)){d.dismiss();return;}selectedMarket=market;lastHeaderPrice=Double.NaN;lastSpreadLabel="";lastFeedQuoteAt=0L;m1Data=new Candle[0];m5Data=new Candle[0];if(priceView!=null){priceView.setText("--");priceView.setTextColor(Color.CYAN);}if(spreadView!=null)spreadView.setText("SPREAD --");prefs.edit().putString("market",selectedMarket).apply();queueNativeIndicatorState();if(marketTitle!=null)marketTitle.setText(selectedMarket);if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));if(chart!=null){chart.setMarket(selectedMarket);chart.setData(new Candle[0]);chart.clearQuote();chart.setPositionEntryLevel(0);}if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);lastSignal=null;resetEntryReadyUi("menunggu data market");d.dismiss();load(interval(selectedTf),selectedTf);AppLog.add(this,"MARKET","selected "+selectedMarket+" • MT5 OHLC + symbol Bid/Ask synchronized");});
+            row.setOnClickListener(v->{if(market.equals(selectedMarket)){d.dismiss();return;}selectedMarket=market;lastHeaderPrice=Double.NaN;lastSpreadLabel="";m1Data=new Candle[0];m5Data=new Candle[0];if(priceView!=null){priceView.setText("--");priceView.setTextColor(Color.CYAN);}if(spreadView!=null)spreadView.setText("SPREAD --");prefs.edit().putString("market",selectedMarket).apply();queueNativeIndicatorState();if(marketTitle!=null)marketTitle.setText(selectedMarket);if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));if(chart!=null){chart.setMarket(selectedMarket);chart.setData(new Candle[0]);chart.clearQuote();chart.setPositionEntryLevel(0);}if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);lastSignal=null;resetEntryReadyUi("menunggu data market");d.dismiss();load(interval(selectedTf),selectedTf);AppLog.add(this,"MARKET","selected "+selectedMarket+" • MT5 OHLC + symbol Bid/Ask synchronized");});
         }
         d.show();if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-36,430),-2);}
     }
