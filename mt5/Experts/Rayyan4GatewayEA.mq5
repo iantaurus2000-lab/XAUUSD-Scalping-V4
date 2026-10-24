@@ -725,7 +725,7 @@ void publishBarsForTimeframe(string symbol,ENUM_TIMEFRAMES tf,string tfName,int 
    if(StringFind(base,"http://")!=0 && StringFind(base,"https://")!=0) return;
    ResetLastError();
    int code=WebRequest("POST",base+"/bars/upload",
-      "Content-Type: text/plain; charset=utf-8\r\n",2500,
+      "Content-Type: text/plain; charset=utf-8\r\n",1000,
       requestData,responseData,responseHeaders);
    if(code!=200 && TimeCurrent()-lastDiag>=10){
       lastDiag=TimeCurrent();
