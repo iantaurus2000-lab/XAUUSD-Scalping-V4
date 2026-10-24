@@ -543,7 +543,7 @@ public class MainActivity extends Activity {
 
     void load(String interval,String tf){
         String market=selectedMarket;
-        Candle[] visible=readNativeMt5Bars(market,tf,50);
+        Candle[] visible=readNativeMt5Bars(market,tf,200);
         Candle[] m1=readNativeMt5Bars(market,"M1",200);
         Candle[] m5=readNativeMt5Bars(market,"M5",200);
         if(visible!=null&&m1!=null&&m5!=null){
@@ -574,7 +574,7 @@ public class MainActivity extends Activity {
             candleRefresh.scheduleWithFixedDelay(()->{
                 final String activeMarket=selectedMarket;
                 final String tfNow=selectedTf;
-                Candle[] fresh=readNativeMt5Bars(activeMarket,tfNow,50);
+                Candle[] fresh=readNativeMt5Bars(activeMarket,tfNow,200);
                 Candle[] freshM1=readNativeMt5Bars(activeMarket,"M1",200);
                 Candle[] freshM5=readNativeMt5Bars(activeMarket,"M5",200);
                 runOnUiThread(()->{
