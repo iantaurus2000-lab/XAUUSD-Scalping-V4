@@ -28,15 +28,15 @@ public class QuoteSafetyTest {
         assertFalse(QuoteSafety.isFreshBar(0,now,120000));
     }
 
-    @Test public void stageOneLightSpreadGateUsesFiftyPercentOfAtr(){
-        // Below threshold passes; exact 50% ATR boundary passes; above boundary blocks.
+    @Test public void stageOneLightSpreadGateUsesEightyFivePercentOfAtr(){
+        // Below threshold passes; exact 85% ATR boundary passes; above boundary blocks.
         assertTrue(QuoteSafety.spreadAcceptable(2000.00,2000.02,1.0));
-        assertTrue(QuoteSafety.spreadAcceptable(2000.00,2000.50,1.0));
-        assertFalse(QuoteSafety.spreadAcceptable(2000.00,2000.5001,1.0));
+        assertTrue(QuoteSafety.spreadAcceptable(2000.00,2000.85,1.0));
+        assertFalse(QuoteSafety.spreadAcceptable(2000.00,2000.8501,1.0));
 
-        // The reported XAU quote has a 0.24 spread: 0.48 ATR is exactly the 50% boundary.
-        assertTrue(QuoteSafety.spreadAcceptable(4139.01,4139.25,0.48));
-        assertFalse(QuoteSafety.spreadAcceptable(4139.01,4139.25,0.47));
+        // The reported XAU quote has a 0.24 spread: 0.24 / 0.85 = 0.2824 ATR at the gate boundary.
+        assertTrue(QuoteSafety.spreadAcceptable(4139.01,4139.25,0.2824));
+        assertFalse(QuoteSafety.spreadAcceptable(4139.01,4139.25,0.2823));
         assertFalse(QuoteSafety.spreadAcceptable(2000.00,2000.50,0.10));
         assertFalse(QuoteSafety.spreadAcceptable(2000.00,2000.10,0.0));
         assertFalse(QuoteSafety.spreadAcceptable(10.0,9.0,1.0));
