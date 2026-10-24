@@ -306,7 +306,6 @@ public class CandleChartView extends View {
             }
         }
 
-        double mid=(bid+ask)/2;
         if(showBidAsk){
             if(bid>0){float y=py(bid,lo,hi,T,B);ln(c,L,y,R,y,Color.rgb(0,255,145),2);box(c,"BID "+f(bid),y,Color.rgb(0,200,125),Color.BLACK);}
             if(ask>0){float y=py(ask,lo,hi,T,B);ln(c,L,y,R,y,Color.rgb(255,65,85),2);box(c,"ASK "+f(ask),y,Color.rgb(225,45,65),Color.WHITE);}
