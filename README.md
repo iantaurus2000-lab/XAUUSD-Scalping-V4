@@ -26,3 +26,6 @@ The same EA draws EMA 50 (orange), EMA 200 (purple), Support/Resistance, and Fib
 - Fibonacci display levels are 0%, 23.6%, 38.2%, 50%, 61.8%, 78.6%, 100% and 127.2%. The spread guard is loosened to 85% of M1 ATR, not removed.
 - The quote used for Entry Ready, manual LIMIT validation, Smart Auto and gateway reference Bid/Ask is the same MT5 broker quote. Fresh OHLC candles and a current broker quote remain required; a delayed third-party chart tick alone no longer blocks an otherwise valid signal.
 - M5 history can be shorter than 201 candles: the engine keeps the 50/200 EMA when history is sufficient and adapts the slow EMA for 60–200 candles. The gateway URL, /next and /ack protocol are unchanged.
+
+
+Build checkpoint: native MT5 multi-market chart and tick synchronization revisions are queued for validation on this branch. The APK CI build must pass before its artifact is distributed; the EA source must be compiled separately with MetaEditor for an `.ex5` binary.
