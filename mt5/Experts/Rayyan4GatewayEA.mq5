@@ -719,8 +719,12 @@ void publishBarsForTimeframe(string symbol,ENUM_TIMEFRAMES tf,string tfName,int 
    int bytes=StringToCharArray(payload,requestData,0,WHOLE_ARRAY,CP_UTF8);
    if(bytes<=1) return;
    ArrayResize(requestData,bytes-1); // Remove the terminating NUL; Content-Length is exact.
+   string base=GatewayUrl;
+   while(StringLen(base)>0 && StringSubstr(base,StringLen(base)-1,1)=="/")
+      base=StringSubstr(base,0,StringLen(base)-1);
+   if(StringFind(base,"http://")!=0 && StringFind(base,"https://")!=0) return;
    ResetLastError();
-   int code=WebRequest("POST",GatewayUrl+"/bars/upload",
+   int code=WebRequest("POST",base+"/bars/upload",
       "Content-Type: text/plain; charset=utf-8\r\n",2500,
       requestData,responseData,responseHeaders);
    if(code!=200 && TimeCurrent()-lastDiag>=10){
