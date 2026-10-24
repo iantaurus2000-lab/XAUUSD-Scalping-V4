@@ -24,6 +24,7 @@ void manageTP2RetraceProtection();
 void updateChartCountdown();
 void uploadChartSnapshot();
 void publishNativeChartBars();
+bool appendBarsForTimeframe(string symbol,ENUM_TIMEFRAMES tf,string tfName,int count,string &batch);
 void publishBarsForTimeframe(string symbol,ENUM_TIMEFRAMES tf,string tfName,int count);
 string chartTimeframeName(ENUM_TIMEFRAMES tf);
 uint lastNativeBarsTick=0;
