@@ -23,6 +23,9 @@ string quoteDiagState[3];
 void manageTP2RetraceProtection();
 void updateChartCountdown();
 void uploadChartSnapshot();
+void publishNativeChartBars();
+void publishBarsForTimeframe(string symbol,ENUM_TIMEFRAMES tf,string tfName,int count);
+uint lastNativeBarsTick=0;
 uint lastScreenshotTick=0;
 
 // Native chart layers are managed by this same EA; no second EA is needed.
@@ -71,6 +74,7 @@ void OnTimer(){
    processTradeQueue();
    publishOrderState();
    publishMarketQuotes();
+   publishNativeChartBars();
    processIndicatorQueue();
    updateChartCountdown();
    uploadChartSnapshot();
@@ -666,6 +670,51 @@ void publishMarketQuotes(){
             " digits="+IntegerToString(digits)+" point="+DoubleToString(point,10)+
             " tickms="+(string)tick.time_msc);
       }
+   }
+}
+
+// Publish actual MT5 CopyRates OHLC to the APK-native chart; screenshots are not used as chart data.
+void publishNativeChartBars(){
+   uint now=GetTickCount();
+   if(now-lastNativeBarsTick<2000) return;
+   lastNativeBarsTick=now;
+   string sym=AllowedSymbol;
+   if(!SymbolSelect(sym,true)) return;
+   publishBarsForTimeframe(sym,PERIOD_M1,"M1",200);
+   publishBarsForTimeframe(sym,PERIOD_M5,"M5",200);
+   if(_Period!=PERIOD_M1 && _Period!=PERIOD_M5)
+      publishBarsForTimeframe(sym,_Period,EnumToString(_Period),50);
+}
+void publishBarsForTimeframe(string symbol,ENUM_TIMEFRAMES tf,string tfName,int count){
+   MqlRates rates[];
+   ArraySetAsSeries(rates,true);
+   int copied=CopyRates(symbol,tf,0,count,rates);
+   if(copied<2) return;
+   int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+   string bars="";
+   // CopyRates series index 0 is the forming/current bar. Serialize oldest-to-newest.
+   for(int i=copied-1;i>=0;i--){
+      if(StringLen(bars)>0) bars+="|";
+      bars+=LongToString((long)rates[i].time*1000)+","+
+         DoubleToString(rates[i].open,digits)+","+
+         DoubleToString(rates[i].high,digits)+","+
+         DoubleToString(rates[i].low,digits)+","+
+         DoubleToString(rates[i].close,digits);
+   }
+   string payload="symbol="+symbol+";tf="+tfName+";bars="+bars;
+   char requestData[],responseData[];
+   string responseHeaders="";
+   int bytes=StringToCharArray(payload,requestData,0,WHOLE_ARRAY,CP_UTF8);
+   if(bytes<=1) return;
+   ArrayResize(requestData,bytes-1); // Remove the terminating NUL; Content-Length is exact.
+   ResetLastError();
+   int code=WebRequest("POST",GatewayUrl+"/bars/upload",
+      "Content-Type: text/plain; charset=utf-8\r\n",2500,
+      requestData,responseData,responseHeaders);
+   if(code!=200 && TimeCurrent()-lastDiag>=10){
+      lastDiag=TimeCurrent();
+      Print("RAYYAN NATIVE BARS FAILED tf=",tfName," http=",code,
+            " err=",GetLastError()," bars=",copied);
    }
 }
 
