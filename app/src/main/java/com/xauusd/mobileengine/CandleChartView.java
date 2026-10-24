@@ -12,8 +12,8 @@ public class CandleChartView extends View {
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final ArrayList<Candle> cs = new ArrayList<>();
     private double bid, ask;
-    private float cw = 17, ox = 0, oy = 0, lx, ly, ld, cx, cy;
-    private final float leftPad = 54, rightAxis = 108, topPad = 8, bottomPad = 26, lastCandlePad = 32;
+    private float cw = 3.2f, ox = 0, oy = 0, lx, ly, ld, cx, cy;
+    private final float leftPad = 18, rightAxis = 82, topPad = 8, bottomPad = 26, lastCandlePad = 12;
     private boolean showEMA50=true, showEMA200=true;
     private boolean showSR=true, showFibo=true, showRSI=true, showMACD=true, showATR=true;
     private boolean showSignals=true, showWickBos=true, showTradeLevels=true, showPosition=true, showBidAsk=true;
@@ -64,7 +64,15 @@ public class CandleChartView extends View {
     }
     public void setData(Candle[] a){
         cs.clear();
-        if(a!=null) for(Candle z:a) if(z!=null) cs.add(new Candle(z.t,z.o,z.h,z.l,z.c));
+        if(a!=null){
+            int start=Math.max(0,a.length-50);
+            for(int i=start;i<a.length;i++){
+                Candle z=a[i];
+                if(z!=null&&z.t>0L&&z.o>0&&z.h>=Math.max(z.o,z.c)&&z.l<=Math.min(z.o,z.c)&&z.l>0&&z.h>=z.l)
+                    cs.add(new Candle(z.t,z.o,z.h,z.l,z.c));
+            }
+        }
+        if(follow)positionLatestCandle();
         invalidate();
     }
 
@@ -90,7 +98,7 @@ public class CandleChartView extends View {
                     last.l=Math.min(last.l,price);
                     last.c=price;
                 }else if(barTime-last.t==period){
-                    if(cs.size()>=120)cs.remove(0);
+                    if(cs.size()>=50)cs.remove(0);
                     cs.add(new Candle(barTime,last.c,Math.max(last.c,price),Math.min(last.c,price),price));
                     if(follow)positionLatestCandle();
                 }
@@ -145,9 +153,16 @@ public class CandleChartView extends View {
     public void setShowPosition(boolean v){showPosition=v;invalidate();}
     public void setShowBidAsk(boolean v){showBidAsk=v;invalidate();}
 
+    private float chartStep(){
+        float available=Math.max(150f,getWidth()-leftPad-rightAxis-lastCandlePad);
+        float step=Math.max(4.0f,Math.min(9.0f,available/48.0f));
+        cw=Math.max(2.6f,step*0.68f);
+        return step;
+    }
+
     private void positionLatestCandle(){
         if(cs.isEmpty()){ox=0;return;}
-        float L=leftPad,R=getWidth()-rightAxis,step=cw+6;
+        float L=leftPad,R=getWidth()-rightAxis,step=chartStep();
         float latest=L+(cs.size()-1)*step+step/2;
         ox=R-lastCandlePad-latest;
     }
@@ -209,6 +224,7 @@ public class CandleChartView extends View {
         p.setStyle(Paint.Style.FILL);p.setColor(axisBg);c.drawRect(R,0,W,H,p);
         ln(c,R,0,R,H,axisLine,2);
         bold(c,"PRICE",R+8,14,9,chartMutedTextColor());
+        chartStep();
         if(follow)positionLatestCandle();
         if(cs.isEmpty()){
             text(c,marketName+" • "+timeframe,L+7,22,12,Color.rgb(0,235,150));
@@ -247,13 +263,13 @@ public class CandleChartView extends View {
         for(int i=0;i<=6;i++){float y=T+i*(B-T)/6;ln(c,L,y,R,y,horizontalGrid,1);}
         for(int i=0;i<=8;i++){float x=L+i*(R-L)/8;ln(c,x,T,x,B,verticalGrid,1);}
 
-        float step=cw+6;int n=cs.size();
+        float step=chartStep();int n=cs.size();
         int st=Math.max(0,(int)Math.floor((-ox)/step)-3);
         int en=Math.min(n,(int)Math.ceil((R-L-ox)/step)+3);
         for(int i=st;i<en;i++){
             Candle z=cs.get(i);float x=L+i*step+ox+step/2;
             float yh=py(z.h,lo,hi,T,B),yl=py(z.l,lo,hi,T,B),yo=py(z.o,lo,hi,T,B),yc=py(z.c,lo,hi,T,B);
-            int col=z.c>=z.o?Color.rgb(0,220,145):Color.rgb(245,70,88);
+            int col=z.c>=z.o?Color.rgb(34,197,94):Color.rgb(239,68,68);
             ln(c,x,yh,x,yl,col,2);p.setColor(col);p.setStyle(Paint.Style.FILL);
             c.drawRect(x-cw/2,Math.min(yo,yc),x+cw/2,Math.max(yo,yc)+1,p);
             if(i==n-1){p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(3);p.setColor(chartTextColor());c.drawRect(x-cw/2-2,Math.min(yo,yc)-2,x+cw/2+2,Math.max(yo,yc)+2,p);p.setStyle(Paint.Style.FILL);}
@@ -334,7 +350,7 @@ public class CandleChartView extends View {
             boolean buy=last.c>=last.o;
             String s=buy?"▲ BUY":"▼ SELL";
             float y=buy?py(last.l,lo,hi,T,B)+18:py(last.h,lo,hi,T,B)-10;
-            bold(c,s,Math.max(L,mx-20),Math.max(T+12,Math.min(B-4,y)),12,buy?Color.rgb(0,255,145):Color.rgb(255,75,95));
+            bold(c,s,Math.max(L,mx-20),Math.max(T+12,Math.min(B-4,y)),12,buy?Color.rgb(34,197,94):Color.rgb(239,68,68));
         }
         if(showWickBos){
             text(c,"Liquidity Sweep",L+85,B-10,9,Color.YELLOW);
