@@ -709,7 +709,7 @@ void publishNativeChartBars(){
    ArrayResize(requestData,bytes-1);
    ResetLastError();
    int code=WebRequest("POST",base+"/bars/upload",
-      "Content-Type: text/plain; charset=utf-8\\r\\n",1000,
+      "Content-Type: text/plain; charset=utf-8\r\n",1000,
       requestData,responseData,responseHeaders);
    string response=CharArrayToString(responseData,0,WHOLE_ARRAY,CP_UTF8);
    if(code!=200 || StringFind(response,"BARS OK")!=0){
@@ -738,7 +738,7 @@ bool appendBarsForTimeframe(string symbol,ENUM_TIMEFRAMES tf,string tfName,int c
          DoubleToString(rates[i].low,digits)+","+
          DoubleToString(rates[i].close,digits);
    }
-   if(StringLen(batch)>0) batch+="\\n";
+   if(StringLen(batch)>0) batch+="\n";
    batch+="symbol="+symbol+";tf="+tfName+";bars="+bars;
    return true;
 }
