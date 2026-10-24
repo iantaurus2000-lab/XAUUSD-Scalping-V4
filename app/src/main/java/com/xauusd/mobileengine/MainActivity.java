@@ -397,11 +397,9 @@ public class MainActivity extends Activity {
         if(feedTick!=null&&feedTick.length>=2&&QuoteSafety.valid(feedTick[0],feedTick[1])){
             lastFeedQuoteAt=now;
             double feedMid=(feedTick[0]+feedTick[1])*0.5;
-            // Keep the forming M1/M5 bars synchronized with the one-second quote loop.
-            // This removes the old 15-second OHLC lag from wick detection and LIMIT pricing.
-            m1Data=LiveCandleUpdater.update(m1Data,60_000L,feedMid,now);
-            m5Data=LiveCandleUpdater.update(m5Data,300_000L,feedMid,now);
-            if(chart!=null)chart.updateLiveBar(feedTick[0],feedTick[1],now,selectedTf);
+            // The MT5 EA publishes authoritative CopyRates OHLC snapshots through Gateway.
+            // A fresh MT5 tick updates only the live price line between OHLC snapshots.
+            if(chart!=null)chart.setQuote(feedTick[0],feedTick[1],selectedTf);
             updateHeaderPrice(feedTick[0],feedTick[1]);
         }
         boolean feedFresh=lastFeedQuoteAt>0L&&now>=lastFeedQuoteAt
