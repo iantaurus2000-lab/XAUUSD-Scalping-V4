@@ -385,13 +385,12 @@ public class MainActivity extends Activity {
             &&m1Fresh&&m5Fresh;
     }
 
-    /** Chart prices remain in the candle feed's scale; spread uses real broker quotes. */
+    /** Live price and spread use the same connected MT5 broker quote as the native chart. */
     private void applyQuoteSnapshot(String market,double[] feedTick){
         if(!market.equals(selectedMarket))return;
         long now=System.currentTimeMillis();
         if(feedTick!=null&&feedTick.length>=2&&QuoteSafety.valid(feedTick[0],feedTick[1])){
             lastFeedQuoteAt=now;
-            double feedMid=(feedTick[0]+feedTick[1])*0.5;
             // The MT5 EA publishes authoritative CopyRates OHLC snapshots through Gateway.
             // A fresh MT5 tick updates only the live price line between OHLC snapshots.
             if(chart!=null)chart.setQuote(feedTick[0],feedTick[1],selectedTf);
@@ -402,8 +401,7 @@ public class MainActivity extends Activity {
             &&QuoteSafety.valid(chart.getBid(),chart.getAsk());
         double[] broker=freshBrokerQuote(market);
         if(broker!=null){
-            // The MT5 broker quote is the execution reference. Keep the candle history
-            // from the chart feed, but align the live price/header and signal tick to MT5.
+            // Keep live price, spread and signal tick aligned to the MT5 broker quote.
             chart.setQuote(broker[0],broker[1],selectedTf);
             updateHeaderPrice(broker[0],broker[1]);
             SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
@@ -412,7 +410,7 @@ public class MainActivity extends Activity {
             lastSpreadLabel=point>0.0
                 ?String.format(Locale.US,"SPREAD %.2f • %.0f MT5 points",spread,spread/point)
                 :String.format(Locale.US,"SPREAD %.2f • MT5",spread);
-            if(spreadView!=null)spreadView.setText(feedFresh?lastSpreadLabel:lastSpreadLabel+" • CHART FEED STALE");
+            if(spreadView!=null)spreadView.setText(feedFresh?lastSpreadLabel:lastSpreadLabel+" • MT5 QUOTE STALE");
         }else if(spreadView!=null){
             spreadView.setText(lastSpreadLabel.isEmpty()?"SPREAD -- • MT5 STALE":lastSpreadLabel+" • MT5 STALE");
         }
