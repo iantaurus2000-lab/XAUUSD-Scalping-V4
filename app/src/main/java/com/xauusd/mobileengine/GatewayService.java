@@ -77,6 +77,16 @@ public final class GatewayService extends Service {
                 int code=result.startsWith("BARS OK")?200:400;
                 writeResponse(socket,code,"text/plain; charset=utf-8",result.getBytes(StandardCharsets.UTF_8));return;
             }
+            if(path.startsWith("/quote/upload")&&"POST".equalsIgnoreCase(method)){
+                if(contentLength<20||contentLength>4096){
+                    writeResponse(socket,400,"text/plain; charset=utf-8","QUOTE ERROR SIZE".getBytes(StandardCharsets.UTF_8));return;
+                }
+                byte[] raw=readExact(in,contentLength);
+                if(raw==null){writeResponse(socket,400,"text/plain; charset=utf-8","QUOTE ERROR BODY".getBytes(StandardCharsets.UTF_8));return;}
+                String result=receiveQuoteUpload(new String(raw,StandardCharsets.UTF_8));
+                int code=result.startsWith("QUOTE OK")?200:400;
+                writeResponse(socket,code,"text/plain; charset=utf-8",result.getBytes(StandardCharsets.UTF_8));return;
+            }
             if(path.startsWith("/chart/upload")&&"POST".equalsIgnoreCase(method)){
                 if(contentLength<8||contentLength>2000000){
                     writeResponse(socket,400,"text/plain; charset=utf-8","CHART ERROR SIZE".getBytes(StandardCharsets.UTF_8));return;
@@ -284,6 +294,46 @@ public final class GatewayService extends Service {
                 .apply();
             return "QUOTE OK";
         }catch(Exception e){return "QUOTE ERROR FORMAT";}
+    }
+
+    /** Accept one atomic batch of the current MT5 tick for each supported APK market. */
+    private synchronized String receiveQuoteUpload(String payload){
+        try{
+            if(payload==null||payload.isEmpty()||payload.length()>4096)return "QUOTE ERROR SIZE";
+            String[] records=payload.split("\\r?\\n");
+            if(records.length<1||records.length>3)return "QUOTE ERROR BATCH";
+            SharedPreferences.Editor edit=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit();
+            long received=System.currentTimeMillis();
+            java.util.HashSet<String> seen=new java.util.HashSet<>();
+            for(String record:records){
+                if(record==null||record.trim().isEmpty())continue;
+                String symbol="";double bid=0,ask=0,point=0;int digits=-1;long tickMs=0;
+                for(String part:record.split(";")){
+                    int eq=part.indexOf('=');if(eq<=0)continue;
+                    String key=part.substring(0,eq).trim(),value=part.substring(eq+1).trim();
+                    if("symbol".equals(key))symbol=value;
+                    else if("bid".equals(key))bid=Double.parseDouble(value);
+                    else if("ask".equals(key))ask=Double.parseDouble(value);
+                    else if("point".equals(key))point=Double.parseDouble(value);
+                    else if("digits".equals(key))digits=Integer.parseInt(value);
+                    else if("tickms".equals(key))tickMs=Long.parseLong(value);
+                }
+                if(!("XAUUSDm".equals(symbol)||"BTCUSDm".equals(symbol)||"ETHUSDm".equals(symbol)))
+                    return "QUOTE ERROR SYMBOL";
+                if(!seen.add(symbol))return "QUOTE ERROR DUPLICATE";
+                if(!QuoteSafety.valid(bid,ask)||!finitePositive(point)||digits<0||digits>8||tickMs<=0L)
+                    return "QUOTE ERROR VALUES "+symbol;
+                edit.putString("broker_quote_bid_"+symbol,Double.toString(bid))
+                    .putString("broker_quote_ask_"+symbol,Double.toString(ask))
+                    .putString("broker_quote_point_"+symbol,Double.toString(point))
+                    .putInt("broker_quote_digits_"+symbol,digits)
+                    .putLong("broker_quote_tick_ms_"+symbol,tickMs)
+                    .putLong("broker_quote_received_ms_"+symbol,received);
+            }
+            if(seen.isEmpty())return "QUOTE ERROR EMPTY";
+            edit.apply();
+            return "QUOTE OK COUNT="+seen.size();
+        }catch(Exception e){return "QUOTE ERROR "+e.getClass().getSimpleName();}
     }
 
     private String first(String l){
