@@ -79,6 +79,27 @@ jobs:
           $args = "/compile:`"$source`" /log:`"$log`""
           $process = Start-Process -FilePath $env:METAEDITOR -ArgumentList $args -PassThru -Wait
           Start-Sleep -Seconds 2
+          # The first MetaEditor invocation creates its per-installation data folder.
+          # Seed that folder with the official Include tree from the MT5 installation,
+          # then compile again so standard headers such as Trade/Trade.mqh resolve.
+          $includeSource = 'C:\Program Files\MetaTrader 5\MQL5\Include'
+          if (-not (Test-Path $includeSource)) {
+            $includeSource = 'C:\Program Files (x86)\MetaTrader 5\MQL5\Include'
+          }
+          if (Test-Path $includeSource) {
+            $dataRoot = Join-Path $env:APPDATA 'MetaQuotes\Terminal'
+            $dataDirs = Get-ChildItem $dataRoot -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path (Join-Path $_.FullName 'MQL5') }
+            foreach ($dataDir in $dataDirs) {
+              $targetInclude = Join-Path $dataDir.FullName 'MQL5\Include'
+              New-Item -ItemType Directory -Path $targetInclude -Force | Out-Null
+              Copy-Item (Join-Path $includeSource '*') $targetInclude -Recurse -Force
+            }
+            if ($dataDirs.Count -gt 0) {
+              Remove-Item $log -Force -ErrorAction SilentlyContinue
+              $process = Start-Process -FilePath $env:METAEDITOR -ArgumentList $args -PassThru -Wait
+              Start-Sleep -Seconds 2
+            }
+          }
           if (Test-Path $log) {
             Get-Content $log
           } else {
