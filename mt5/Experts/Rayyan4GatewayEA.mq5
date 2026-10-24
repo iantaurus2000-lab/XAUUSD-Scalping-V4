@@ -25,6 +25,7 @@ void updateChartCountdown();
 void uploadChartSnapshot();
 void publishNativeChartBars();
 void publishBarsForTimeframe(string symbol,ENUM_TIMEFRAMES tf,string tfName,int count);
+string chartTimeframeName(ENUM_TIMEFRAMES tf);
 uint lastNativeBarsTick=0;
 uint lastScreenshotTick=0;
 
@@ -68,8 +69,8 @@ void OnDeinit(const int r){
 void OnTick(){ manageTP2RetraceProtection(); }
 
 void OnTimer(){
-   // Always service the trade queue first. Chart screenshots, indicator commands,
-   // and quote publication are auxiliary and must never delay an incoming order.
+   // Always service the trade queue first. Native OHLC publication is auxiliary
+   // and must never delay an incoming order.
    manageTP2RetraceProtection();
    processTradeQueue();
    publishOrderState();
@@ -678,7 +679,7 @@ void publishNativeChartBars(){
    uint now=GetTickCount();
    if(now-lastNativeBarsTick<2000) return;
    lastNativeBarsTick=now;
-   string sym=AllowedSymbol;
+   string sym=_Symbol;
    if(!SymbolSelect(sym,true)) return;
    publishBarsForTimeframe(sym,PERIOD_M1,"M1",200);
    publishBarsForTimeframe(sym,PERIOD_M5,"M5",200);
