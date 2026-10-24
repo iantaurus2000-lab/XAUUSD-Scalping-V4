@@ -48,6 +48,26 @@ jobs:
             $editor = Get-ChildItem "$env:APPDATA\MetaQuotes\Terminal" -Filter 'metaeditor64.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -First 1
           }
           if (-not $editor) { throw 'MetaEditor64.exe was not found after MT5 installation.' }
+          $terminalCandidates = @('C:\Program Files\MetaTrader 5\terminal64.exe', 'C:\Program Files (x86)\MetaTrader 5\terminal64.exe')
+          $terminal = $terminalCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($terminal) {
+            $bootstrap = Start-Process -FilePath $terminal -ArgumentList '/portable' -PassThru
+            Start-Sleep -Seconds 8
+            Stop-Process -Id $bootstrap.Id -Force -ErrorAction SilentlyContinue
+          }
+          $dataRoot = Join-Path $env:APPDATA 'MetaQuotes\Terminal'
+          $tradeInclude = Get-ChildItem @('C:\Program Files\MetaTrader 5', 'C:\Program Files (x86)\MetaTrader 5', $dataRoot) -Filter 'Trade.mqh' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $tradeInclude) {
+            throw 'MT5 standard library Trade.mqh is missing after terminal initialization; cannot compile EA safely.'
+          }
+          $includeSource = $tradeInclude.Directory.Parent.FullName
+          $dataDirs = Get-ChildItem $dataRoot -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path (Join-Path $_.FullName 'MQL5') }
+          foreach ($dataDir in $dataDirs) {
+            $targetInclude = Join-Path $dataDir.FullName 'MQL5\Include'
+            New-Item -ItemType Directory -Path $targetInclude -Force | Out-Null
+            Copy-Item (Join-Path $includeSource '*') $targetInclude -Recurse -Force
+          }
+          Write-Host "Prepared MT5 standard library from $includeSource for $($dataDirs.Count) terminal data folder(s)."
           "METAEDITOR=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Compile Rayyan Gateway EA
         shell: pwsh
