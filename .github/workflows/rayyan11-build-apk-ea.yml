@@ -1,0 +1,70 @@
+name: Rayyan11 APK + EA Build
+on:
+  push:
+    branches: [ rayyan11-fibo-wick-sync ]
+  workflow_dispatch:
+jobs:
+  android-apk:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10'
+      - name: Restore debug signing key
+        run: base64 -d app/rayyan4-debug.keystore.b64 > app/rayyan4-debug.keystore
+      - name: Run unit tests
+        run: gradle :app:testDebugUnitTest --no-daemon
+      - name: Build APK
+        run: gradle :app:assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Rayyan11-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  mt5-ea:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - name: Install MetaTrader 5 / MetaEditor
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'mt5setup.exe'
+          Invoke-WebRequest -Uri 'https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe' -OutFile $installer
+          Start-Process -FilePath $installer -ArgumentList '/auto' -Wait
+          $candidates = @('C:\Program Files\MetaTrader 5\metaeditor64.exe', 'C:\Program Files (x86)\MetaTrader 5\metaeditor64.exe')
+          $editor = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $editor) {
+            $editor = Get-ChildItem "$env:APPDATA\MetaQuotes\Terminal" -Filter 'metaeditor64.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -First 1
+          }
+          if (-not $editor) { throw 'MetaEditor64.exe was not found after MT5 installation.' }
+          "METAEDITOR=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Compile Rayyan Gateway EA
+        shell: pwsh
+        run: |
+          $source = (Resolve-Path 'mt5/Experts/Rayyan4GatewayEA.mq5').Path
+          $log = Join-Path $env:RUNNER_TEMP 'Rayyan4GatewayEA-compile.log'
+          & $env:METAEDITOR "/compile:$source" "/log:$log"
+          if (Test-Path $log) { Get-Content $log }
+          $binary = Join-Path (Split-Path $source) 'Rayyan4GatewayEA.ex5'
+          if (-not (Test-Path $binary)) { throw "EA compile did not produce $binary" }
+          if ((Get-Content $log -Raw) -match '(?im)\b[1-9]\d* errors?\b') { throw 'MetaEditor reported compile errors.' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Rayyan11-MT5-EA
+          path: |
+            mt5/Experts/Rayyan4GatewayEA.ex5
+            mt5/Experts/Rayyan4GatewayEA.mq5
+            ${{ runner.temp }}/Rayyan4GatewayEA-compile.log
+          if-no-files-found: error
+          retention-days: 30
