@@ -86,18 +86,19 @@ jobs:
           if (-not (Test-Path $includeSource)) {
             $includeSource = 'C:\Program Files (x86)\MetaTrader 5\MQL5\Include'
           }
-          if (Test-Path $includeSource) {
-            $dataRoot = Join-Path $env:APPDATA 'MetaQuotes\Terminal'
-            $dataDirs = Get-ChildItem $dataRoot -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path (Join-Path $_.FullName 'MQL5') }
-            foreach ($dataDir in $dataDirs) {
-              $targetInclude = Join-Path $dataDir.FullName 'MQL5\Include'
+          if ((Test-Path $includeSource) -and (Test-Path $log)) {
+            $firstCompileLog = Get-Content $log -Raw
+            $mql5Match = [regex]::Match($firstCompileLog, '(?i)(?<root>[A-Z]:\\Users\\[^\\]+\\AppData\\Roaming\\MetaQuotes\\Terminal\\[^\\]+\\MQL5)\\Include\\Trade\\Trade\.mqh')
+            if ($mql5Match.Success) {
+              $targetInclude = Join-Path $mql5Match.Groups['root'].Value 'Include'
               New-Item -ItemType Directory -Path $targetInclude -Force | Out-Null
               Copy-Item (Join-Path $includeSource '*') $targetInclude -Recurse -Force
-            }
-            if ($dataDirs.Count -gt 0) {
+              Write-Host "Copied standard MQL5 headers into $targetInclude"
               Remove-Item $log -Force -ErrorAction SilentlyContinue
               $process = Start-Process -FilePath $env:METAEDITOR -ArgumentList $args -PassThru -Wait
               Start-Sleep -Seconds 2
+            } else {
+              Write-Host 'Could not derive MetaEditor data folder from first compiler log; retaining original compile log.'
             }
           }
           if (Test-Path $log) {
