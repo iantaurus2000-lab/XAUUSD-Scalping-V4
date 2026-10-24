@@ -683,7 +683,18 @@ void publishNativeChartBars(){
    publishBarsForTimeframe(sym,PERIOD_M1,"M1",200);
    publishBarsForTimeframe(sym,PERIOD_M5,"M5",200);
    if(_Period!=PERIOD_M1 && _Period!=PERIOD_M5)
-      publishBarsForTimeframe(sym,_Period,EnumToString(_Period),50);
+      publishBarsForTimeframe(sym,_Period,chartTimeframeName(_Period),50);
+}
+string chartTimeframeName(ENUM_TIMEFRAMES tf){
+   switch(tf){
+      case PERIOD_M1:return "M1";
+      case PERIOD_M5:return "M5";
+      case PERIOD_M15:return "M15";
+      case PERIOD_H1:return "H1";
+      case PERIOD_H4:return "H4";
+      case PERIOD_D1:return "D1";
+      default:return "";
+   }
 }
 void publishBarsForTimeframe(string symbol,ENUM_TIMEFRAMES tf,string tfName,int count){
    MqlRates rates[];
