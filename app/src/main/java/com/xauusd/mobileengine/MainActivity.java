@@ -199,8 +199,6 @@ public class MainActivity extends Activity {
         chartMirror.setVisibility(View.GONE);
         chartArea.addView(chartMirror,new FrameLayout.LayoutParams(-1,-1));
         root.addView(chartArea,new LinearLayout.LayoutParams(-1,0,1));
-        chartMirrorHandler.removeCallbacks(chartMirrorRefresh);
-        chartMirrorHandler.post(chartMirrorRefresh);
 
         // CHART TOOLS
         LinearLayout layers=new LinearLayout(this);layers.setPadding(4,3,4,3);layers.setBackgroundColor(Color.rgb(3,14,24));
