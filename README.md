@@ -1,6 +1,6 @@
 # XAUUSD Mobile Trading Engine — Rayyan10
 
-Architecture: Android APK → LAN gateway on HP B → Winlator/MT5 → Exness demo account.
+Architecture: Android APK → existing LAN Gateway on HP B (port 8787) → Winlator/MT5 → the currently connected MT5 broker account.
 
 ## MT5 installation (one EA)
 
@@ -9,6 +9,15 @@ Use only **`mt5/Experts/Rayyan4GatewayEA.mq5`** as the attached EA. It handles t
 Compile this EA in MetaEditor, attach it to the MT5 chart, enable Algo Trading, and add the exact gateway base URL under **Tools → Options → Expert Advisors → Allow WebRequest**. The default is `http://192.168.0.112:8787`; update it if HP B's LAN IP changes.
 
 The same EA draws EMA 50 (orange), EMA 200 (purple), Support/Resistance, and Fibonacci levels. The APK payload and MT5 controller use the same EMA 50/200 keys.
+
+## Native live chart synchronization
+
+- The APK chart is rendered natively by `CandleChartView`; MT5 screenshots and Biquote candles are not used as the chart feed.
+- The same single EA publishes `CopyRates()` OHLC snapshots to the existing Gateway endpoint `POST /bars/upload`. M1 and M5 histories are sent for signal/EMA calculations, and the active MT5 chart timeframe supplies its own OHLC series. No new port, Gateway URL, or second EA is introduced.
+- The Gateway validates symbol, timeframe, timestamps and OHLC consistency before storing each snapshot. The APK reads these snapshots from the same Gateway preferences that store the real MT5 Bid/Ask quote.
+- The chart displays the newest **50 candles maximum** (approximately 40–50 fit on screen by default), while retaining up to 200 bars for EMA 50/200 calculations. Bull candles are green; bear candles are red. The current Bid/Ask lines and Entry/SL/TP overlays remain separate from the candle history.
+- OHLC snapshots refresh approximately every 2 seconds; the broker quote continues through the existing quote route. If native OHLC is missing or older than 10 seconds, the chart reports stale data and entry readiness is locked rather than silently falling back to a third-party feed.
+- Screenshot mirroring is disabled to avoid Winlator screenshot overhead. The trading queue and ACK protocol remain unchanged.
 
 ## Rayyan11 unified entry logic
 
