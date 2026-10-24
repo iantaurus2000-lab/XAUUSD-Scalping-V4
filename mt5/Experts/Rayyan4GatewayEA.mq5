@@ -629,6 +629,11 @@ void quoteDiagnostic(int index,string symbol,string state,string detail){
 // /next heartbeat is separate from quote freshness. Log silent symbol/tick failures.
 void publishMarketQuotes(){
    string symbols[3]={"XAUUSDm","BTCUSDm","ETHUSDm"};
+   bool included[3];
+   string details[3];
+   for(int i=0;i<3;i++){included[i]=false;details[i]="";}
+   string batch="";
+   int count=0;
    for(int i=0;i<ArraySize(symbols);i++){
       string sym=symbols[i];
       if(!SymbolSelect(sym,true)){
@@ -652,25 +657,42 @@ void publishMarketQuotes(){
          quoteDiagnostic(i,sym,"INVALID_POINT","SYMBOL_POINT="+DoubleToString(point,10));
          continue;
       }
-      string path="/quote?symbol="+urlEncode(sym)+
-         "&bid="+urlEncode(DoubleToString(tick.bid,digits))+
-         "&ask="+urlEncode(DoubleToString(tick.ask,digits))+
-         "&point="+urlEncode(DoubleToString(point,10))+
-         "&digits="+IntegerToString(digits)+
-         "&tickms="+(string)tick.time_msc;
-      int code=-1;
-      string body="",diagnostic="";
-      bool sent=gatewayGet(path,code,body,diagnostic);
-      if(!sent || code!=200 || body!="QUOTE OK"){
-         quoteDiagnostic(i,sym,"PUBLISH_FAILED",
-            "transport="+(string)sent+" http="+IntegerToString(code)+
-            " body="+body+" err="+IntegerToString(GetLastError())+" detail="+diagnostic);
-      }else{
-         quoteDiagnostic(i,sym,"QUOTE_PUBLISHED",
-            "bid="+DoubleToString(tick.bid,digits)+" ask="+DoubleToString(tick.ask,digits)+
-            " digits="+IntegerToString(digits)+" point="+DoubleToString(point,10)+
-            " tickms="+(string)tick.time_msc);
-      }
+      if(StringLen(batch)>0)batch+="\n";
+      batch+="symbol="+sym+
+         ";bid="+DoubleToString(tick.bid,digits)+
+         ";ask="+DoubleToString(tick.ask,digits)+
+         ";point="+DoubleToString(point,10)+
+         ";digits="+IntegerToString(digits)+
+         ";tickms="+(string)tick.time_msc;
+      included[i]=true;
+      details[i]="bid="+DoubleToString(tick.bid,digits)+" ask="+DoubleToString(tick.ask,digits)+
+         " digits="+IntegerToString(digits)+" point="+DoubleToString(point,10)+
+         " tickms="+(string)tick.time_msc;
+      count++;
+   }
+   if(count==0||StringLen(batch)==0)return;
+   string base=GatewayUrl;
+   while(StringLen(base)>0 && StringSubstr(base,StringLen(base)-1,1)=="/")
+      base=StringSubstr(base,0,StringLen(base)-1);
+   if(StringFind(base,"http://")!=0 && StringFind(base,"https://")!=0)return;
+   char requestData[],responseData[];
+   string responseHeaders="";
+   int bytes=StringToCharArray(batch,requestData,0,WHOLE_ARRAY,CP_UTF8);
+   if(bytes<=1)return;
+   ArrayResize(requestData,bytes-1);
+   ResetLastError();
+   int code=WebRequest("POST",base+"/quote/upload",
+      "Content-Type: text/plain; charset=utf-8\r\n",1000,
+      requestData,responseData,responseHeaders);
+   string response=CharArrayToString(responseData,0,WHOLE_ARRAY,CP_UTF8);
+   if(code!=200||StringFind(response,"QUOTE OK")!=0){
+      for(int i=0;i<3;i++)if(included[i])
+         quoteDiagnostic(i,symbols[i],"PUBLISH_FAILED",
+            "batch transport http="+IntegerToString(code)+" err="+IntegerToString(GetLastError())+
+            " response="+response);
+   }else{
+      for(int i=0;i<3;i++)if(included[i])
+         quoteDiagnostic(i,symbols[i],"QUOTE_PUBLISHED",details[i]);
    }
 }
 
