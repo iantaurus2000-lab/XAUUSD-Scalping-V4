@@ -43,7 +43,7 @@ public class MainActivity extends Activity {
                     }
                 }
                 if(chartMirror!=null){
-                    boolean showMt5 = "MT5".equals(chartDisplayMode) && chartMirror.getDrawable()!=null;
+                    boolean showMt5 = false; // Always render the native MT5 OHLC chart in the APK.
                     chartMirror.setVisibility(showMt5 ? View.VISIBLE : View.GONE);
                     if(chart!=null)chart.setVisibility(showMt5 ? View.GONE : View.VISIBLE);
                 }
@@ -143,7 +143,7 @@ public class MainActivity extends Activity {
         telegramEnabled=tgPrefs.getBoolean("enabled",false);
         selectedMarket=prefs.getString("market","XAUUSD");
         SharedPreferences uiPrefs=getSharedPreferences("rayyan4_ui",MODE_PRIVATE);
-        chartDisplayMode=uiPrefs.getString("chart_display_mode","BIQUOTE");
+        chartDisplayMode="NATIVE_MT5";
         appTheme=RayyanTheme.normalize(uiPrefs.getString("app_theme",RayyanTheme.DEFAULT));
         // Explicit project request: enable SMART AUTO in DEMO-ready mode.
         // Order submission remains guarded by fresh EA polling, signal validity, spread,
@@ -318,23 +318,18 @@ public class MainActivity extends Activity {
     }
 
     private void showChartDisplayDialog(){
-        final String[] choices={"LIVE BIQUOTE • Tampilan profesional","CHART MT5 • Tampilan terminal MT5"};
-        int selected="MT5".equals(chartDisplayMode)?1:0;
-        new AlertDialog.Builder(this).setTitle("PILIH TAMPILAN LIVE")
-            .setSingleChoiceItems(choices,selected,(dialog,which)->{
-                setChartDisplayMode(which==1?"MT5":"BIQUOTE");
-                dialog.dismiss();
-            }).setNegativeButton("BATAL",null).show();
+        new AlertDialog.Builder(this).setTitle("CHART LIVE MT5")
+            .setMessage("Chart native menggunakan OHLC CopyRates dan Bid/Ask dari MT5 melalui Gateway. Screenshot dan feed chart pihak ketiga tidak digunakan.")
+            .setPositiveButton("OK",null).show();
     }
 
     private void setChartDisplayMode(String mode){
-        chartDisplayMode="MT5".equals(mode)?"MT5":"BIQUOTE";
+        chartDisplayMode="NATIVE_MT5";
         getSharedPreferences("rayyan4_ui",MODE_PRIVATE).edit()
             .putString("chart_display_mode",chartDisplayMode).apply();
-        boolean showMt5="MT5".equals(chartDisplayMode)&&chartMirror!=null&&chartMirror.getDrawable()!=null;
-        if(chart!=null)chart.setVisibility(showMt5?View.GONE:View.VISIBLE);
-        if(chartMirror!=null)chartMirror.setVisibility(showMt5?View.VISIBLE:View.GONE);
-        Toast.makeText(this,"Tampilan: "+("MT5".equals(chartDisplayMode)?"Chart MT5":"LIVE BIQUOTE"),Toast.LENGTH_SHORT).show();
+        if(chart!=null)chart.setVisibility(View.VISIBLE);
+        if(chartMirror!=null)chartMirror.setVisibility(View.GONE);
+        Toast.makeText(this,"Chart native MT5 OHLC",Toast.LENGTH_SHORT).show();
     }
 
     LinearLayout priceBox(){
