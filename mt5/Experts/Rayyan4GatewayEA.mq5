@@ -707,7 +707,7 @@ void publishBarsForTimeframe(string symbol,ENUM_TIMEFRAMES tf,string tfName,int 
    // CopyRates series index 0 is the forming/current bar. Serialize oldest-to-newest.
    for(int i=copied-1;i>=0;i--){
       if(StringLen(bars)>0) bars+="|";
-      bars+=LongToString((long)rates[i].time*1000)+","+
+      bars+=IntegerToString((long)rates[i].time*1000)+","+
          DoubleToString(rates[i].open,digits)+","+
          DoubleToString(rates[i].high,digits)+","+
          DoubleToString(rates[i].low,digits)+","+
