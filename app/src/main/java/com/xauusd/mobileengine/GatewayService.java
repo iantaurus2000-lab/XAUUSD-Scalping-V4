@@ -172,41 +172,54 @@ public final class GatewayService extends Service {
      */
     private synchronized String receiveBarsUpload(String payload){
         try{
-            String symbol="",tf="",bars="";
-            for(String part:payload.split(";")){
-                int eq=part.indexOf('=');
-                if(eq<=0)continue;
-                String key=part.substring(0,eq).trim();
-                String value=part.substring(eq+1).trim();
-                if("symbol".equals(key))symbol=value;
-                else if("tf".equals(key))tf=value;
-                else if("bars".equals(key))bars=value;
-            }
-            if(!("XAUUSDm".equals(symbol)||"BTCUSDm".equals(symbol)||"ETHUSDm".equals(symbol)))
-                return "BARS ERROR SYMBOL";
-            if(!("M1".equals(tf)||"M5".equals(tf)||"M15".equals(tf)||"H1".equals(tf)||"H4".equals(tf)||"D1".equals(tf)))
-                return "BARS ERROR TIMEFRAME";
-            String[] rows=bars.split("\\|");
-            if(rows.length<2||rows.length>250)return "BARS ERROR COUNT";
-            long previous=0L;
-            int valid=0;
-            for(String row:rows){
-                String[] v=row.split(",");
-                if(v.length!=5)return "BARS ERROR FORMAT";
-                long t=Long.parseLong(v[0]);
-                double o=Double.parseDouble(v[1]),h=Double.parseDouble(v[2]);
-                double l=Double.parseDouble(v[3]),c=Double.parseDouble(v[4]);
-                if(t<=previous||!finitePositive(o)||!finitePositive(h)||!finitePositive(l)||!finitePositive(c)
-                    ||h<Math.max(o,c)||l>Math.min(o,c)||h<l)return "BARS ERROR VALUES";
-                previous=t;valid++;
-            }
+            if(payload==null||payload.isEmpty()||payload.length()>250000)return "BARS ERROR SIZE";
+            String[] records=payload.split("\\r?\\n");
+            if(records.length<1||records.length>18)return "BARS ERROR BATCH";
+            SharedPreferences prefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+            SharedPreferences.Editor edit=prefs.edit();
             long now=System.currentTimeMillis();
-            getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit()
-                .putString("mt5_bars_"+symbol+"_"+tf,bars)
-                .putLong("mt5_bars_at_"+symbol+"_"+tf,now)
-                .putInt("mt5_bars_count_"+symbol+"_"+tf,valid)
-                .apply();
-            return "BARS OK "+valid;
+            java.util.HashSet<String> seen=new java.util.HashSet<>();
+            int total=0;
+            for(String record:records){
+                if(record==null||record.trim().isEmpty())continue;
+                String symbol="",tf="",bars="";
+                for(String part:record.split(";")){
+                    int eq=part.indexOf('=');
+                    if(eq<=0)continue;
+                    String key=part.substring(0,eq).trim();
+                    String value=part.substring(eq+1).trim();
+                    if("symbol".equals(key))symbol=value;
+                    else if("tf".equals(key))tf=value;
+                    else if("bars".equals(key))bars=value;
+                }
+                if(!("XAUUSDm".equals(symbol)||"BTCUSDm".equals(symbol)||"ETHUSDm".equals(symbol)))
+                    return "BARS ERROR SYMBOL";
+                if(!("M1".equals(tf)||"M5".equals(tf)||"M15".equals(tf)||"H1".equals(tf)||"H4".equals(tf)||"D1".equals(tf)))
+                    return "BARS ERROR TIMEFRAME";
+                String key=symbol+"_"+tf;
+                if(!seen.add(key))return "BARS ERROR DUPLICATE "+key;
+                String[] rows=bars.split("\\|");
+                int max=("M1".equals(tf)||"M5".equals(tf))?250:60;
+                if(rows.length<2||rows.length>max)return "BARS ERROR COUNT "+key;
+                long previous=0L;
+                for(String row:rows){
+                    String[] v=row.split(",");
+                    if(v.length!=5)return "BARS ERROR FORMAT "+key;
+                    long t=Long.parseLong(v[0]);
+                    double o=Double.parseDouble(v[1]),h=Double.parseDouble(v[2]);
+                    double l=Double.parseDouble(v[3]),c=Double.parseDouble(v[4]);
+                    if(t<=previous||!finitePositive(o)||!finitePositive(h)||!finitePositive(l)||!finitePositive(c)
+                        ||h<Math.max(o,c)||l>Math.min(o,c)||h<l)return "BARS ERROR VALUES "+key;
+                    previous=t;
+                }
+                edit.putString("mt5_bars_"+symbol+"_"+tf,bars)
+                    .putLong("mt5_bars_at_"+symbol+"_"+tf,now)
+                    .putInt("mt5_bars_count_"+symbol+"_"+tf,rows.length);
+                total+=rows.length;
+            }
+            if(seen.isEmpty())return "BARS ERROR EMPTY";
+            edit.apply();
+            return "BARS OK SERIES="+seen.size()+" CANDLES="+total;
         }catch(Exception e){return "BARS ERROR "+e.getClass().getSimpleName();}
     }
     private boolean finitePositive(double v){
