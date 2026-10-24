@@ -546,12 +546,21 @@ public class MainActivity extends Activity {
         Candle[] visible=readNativeMt5Bars(market,tf,200);
         Candle[] m1=readNativeMt5Bars(market,"M1",200);
         Candle[] m5=readNativeMt5Bars(market,"M5",200);
-        if(visible!=null&&m1!=null&&m5!=null){
-            chart.setData(visible);chart.goLive();m1Data=m1;m5Data=m5;
-            syncBrokerEntryLine();updateSignal(m1Data,m5Data);
-            status.setText("● MT5 OHLC LIVE • "+market+" • "+tf);
+        if(visible!=null){
+            chart.setData(visible);chart.goLive();
+            m1Data=m1==null?new Candle[0]:m1;
+            m5Data=m5==null?new Candle[0]:m5;
+            if(m1Data.length>=30&&m5Data.length>=60){
+                syncBrokerEntryLine();updateSignal(m1Data,m5Data);
+                status.setText("● MT5 CHART + SIGNAL LIVE • "+market+" • "+tf);
+            }else{
+                status.setText("● MT5 CHART LIVE • RIWAYAT SINYAL MENUNGGU • "+market+" • "+tf);
+                resetEntryReadyUi("riwayat M1/M5 MT5 belum lengkap; entry dikunci");
+            }
         }else{
-            status.setText("● MENUNGGU OHLC MT5 • "+tf);
+            chart.setData(new Candle[0]);
+            m1Data=new Candle[0];m5Data=new Candle[0];
+            status.setText("● MENUNGGU OHLC MT5 • "+market+" • "+tf);
             resetEntryReadyUi("menunggu data candle langsung dari MT5");
         }
 
@@ -579,17 +588,24 @@ public class MainActivity extends Activity {
                 Candle[] freshM5=readNativeMt5Bars(activeMarket,"M5",200);
                 runOnUiThread(()->{
                     if(!activeMarket.equals(selectedMarket)||!tfNow.equals(selectedTf))return;
-                    if(fresh==null||freshM1==null||freshM5==null){
+                    if(fresh==null){
+                        m1Data=new Candle[0];m5Data=new Candle[0];
                         status.setText("● MT5 OHLC STALE • ENTRY LOCKED • "+tfNow);
-                        resetEntryReadyUi("data OHLC MT5 terlambat/tidak lengkap");
+                        resetEntryReadyUi("candle timeframe terpilih MT5 terlambat/tidak tersedia");
                         return;
                     }
                     boolean wasFollowing=chart.isFollow();
                     chart.setData(fresh);
                     if(wasFollowing)chart.goLive();
-                    m1Data=freshM1;m5Data=freshM5;
-                    syncBrokerEntryLine();updateSignal(m1Data,m5Data);
-                    status.setText("● MT5 OHLC LIVE • "+activeMarket+" • "+tfNow);
+                    m1Data=freshM1==null?new Candle[0]:freshM1;
+                    m5Data=freshM5==null?new Candle[0]:freshM5;
+                    if(m1Data.length>=30&&m5Data.length>=60){
+                        syncBrokerEntryLine();updateSignal(m1Data,m5Data);
+                        status.setText("● MT5 CHART + SIGNAL LIVE • "+activeMarket+" • "+tfNow);
+                    }else{
+                        status.setText("● MT5 CHART LIVE • RIWAYAT SINYAL MENUNGGU • "+activeMarket+" • "+tfNow);
+                        resetEntryReadyUi("riwayat M1/M5 MT5 belum lengkap; entry dikunci");
+                    }
                 });
             },1,1,TimeUnit.SECONDS);
         }
