@@ -77,7 +77,7 @@ void OnTimer(){
    publishNativeChartBars();
    processIndicatorQueue();
    updateChartCountdown();
-   uploadChartSnapshot();
+   // Screenshot mirroring disabled: native CopyRates OHLC is the chart source.
 }
 
 void processTradeQueue(){
