@@ -256,6 +256,9 @@ public class CandleChartView extends View {
 
         double lo=1e99,hi=-1e99;
         for(Candle z:cs){lo=Math.min(lo,z.l);hi=Math.max(hi,z.h);}
+        // Keep the real MT5 Bid/Ask inside the visible scale between OHLC uploads.
+        if(bid>0){lo=Math.min(lo,bid);hi=Math.max(hi,bid);}
+        if(ask>0){lo=Math.min(lo,ask);hi=Math.max(hi,ask);}
         double pad=Math.max((hi-lo)*.10,.40);lo-=pad;hi+=pad;
 
         Candle last=cs.get(cs.size()-1);
