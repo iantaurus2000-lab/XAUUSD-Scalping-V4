@@ -1474,6 +1474,16 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
       powerPublishState(index,"BLOCKED_SYMBOL_SPEC","SYMBOL_POINT/TICK_SIZE invalid",barTime);
       return false;
    }
+   long expirationModes=SymbolInfoInteger(symbol,SYMBOL_EXPIRATION_MODE);
+   if((expirationModes&SYMBOL_EXPIRATION_SPECIFIED)==0){
+      powerPublishState(index,"BLOCKED_EXPIRY_MODE","Broker does not support specified expiration; safe 5-minute pending expiry is required",barTime);
+      return false;
+   }
+   datetime expiry=barTime+300;
+   if(TimeCurrent()>=expiry-5){
+      powerPublishState(index,"BLOCKED_LATE_ENTRY","Too little candle time remains to safely create a new pair",barTime);
+      return false;
+   }
    double stopDistance=stopPips*pip;
    if(stopDistance+1e-10<minDistance+tickSize){
       powerPublishState(index,"BLOCKED_SL_TOO_CLOSE","Broker stop level exceeds configured 3-pip loss guard",barTime);
@@ -1520,7 +1530,7 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
    powerTrade.SetTypeFillingBySymbol(symbol);
    powerTrade.SetAsyncMode(false);
    ResetLastError();
-   bool buyOk=powerTrade.BuyLimit(lot,buyEntry,symbol,buySL,0.0,ORDER_TIME_GTC,0,buyComment);
+   bool buyOk=powerTrade.BuyLimit(lot,buyEntry,symbol,buySL,0.0,ORDER_TIME_SPECIFIED,expiry,buyComment);
    uint buyRc=powerTrade.ResultRetcode();
    ulong buyTicket=powerTrade.ResultOrder();
    if(!buyOk||(buyRc!=TRADE_RETCODE_PLACED&&buyRc!=TRADE_RETCODE_DONE)){
@@ -1532,7 +1542,7 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
    }
 
    ResetLastError();
-   bool sellOk=powerTrade.SellLimit(lot,sellEntry,symbol,sellSL,0.0,ORDER_TIME_GTC,0,sellComment);
+   bool sellOk=powerTrade.SellLimit(lot,sellEntry,symbol,sellSL,0.0,ORDER_TIME_SPECIFIED,expiry,sellComment);
    uint sellRc=powerTrade.ResultRetcode();
    ulong sellTicket=powerTrade.ResultOrder();
    if(!sellOk||(sellRc!=TRADE_RETCODE_PLACED&&sellRc!=TRADE_RETCODE_DONE)){
@@ -1591,7 +1601,7 @@ bool powerClosePosition(ulong ticket,string reason){
    uint rc=powerTrade.ResultRetcode();
    if(ok&&(rc==TRADE_RETCODE_DONE||rc==TRADE_RETCODE_DONE_PARTIAL)){
       Print("POWERFULL CLOSE OK symbol=",symbol," ticket=",ticket," reason=",reason," retcode=",rc);
-      string suffix=LongToString((long)ticket);
+      string suffix=IntegerToString((long)ticket);
       string key="PW_HMODE_"+suffix;
       string barKey="PW_HBAR_"+suffix;
       if(GlobalVariableCheck(key))GlobalVariableDel(key);
@@ -1631,7 +1641,7 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
          (side==POSITION_TYPE_BUY
             ?(tick.bid>candleOpen+pip*0.10&&tick.bid>previousBid)
             :(tick.bid<candleOpen-pip*0.10&&tick.bid<previousBid));
-      string suffix=LongToString((long)ticket);
+      string suffix=IntegerToString((long)ticket);
       string holdKey="PW_HMODE_"+suffix;
       string holdBarKey="PW_HBAR_"+suffix;
       double holdMode=GlobalVariableCheck(holdKey)?GlobalVariableGet(holdKey):0.0;
@@ -1685,8 +1695,9 @@ void powerPublishState(int index,string status,string detail,datetime barTime){
       +"&range="+DoubleToString(powerForecastRangePips[index],4)
       +"&low="+DoubleToString(powerProjectedLow[index],(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))
       +"&high="+DoubleToString(powerProjectedHigh[index],(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))
-      +"&bar="+LongToString((long)barTime)
+      +"&bar="+IntegerToString((long)barTime)
       +"&samples="+IntegerToString(powerHistorySamples[index])
+       +"&days="+IntegerToString(powerHistoryDays[index])
       +"&pending="+IntegerToString(powerPendingCount(symbol))
       +"&positions="+IntegerToString(powerPositionCount(symbol))
       +"&detail="+urlEncode(detail);
