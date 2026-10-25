@@ -74,7 +74,6 @@ uint powerLastConfigPollMs=0;
 uint powerLastGatewayRequestMs=0;
 bool powerAllowGatewayCalls=false;
 bool powerFastTickOnly=false;
-uint powerLastLegacyTimerMs=0;
 int powerConfigRoundRobin=0;
 int powerReplans[3];
 bool powerModelGood[3];
@@ -130,7 +129,7 @@ int OnInit(){
    ChartSetInteger(0,CHART_SHIFT,false);
    ChartSetInteger(0,CHART_SCALE,4);
    applyAll();
-   if(!EventSetMillisecondTimer(100)) EventSetTimer(MathMax(1,PollSeconds));
+   EventSetTimer(MathMax(1,PollSeconds));
    Print("RAYYAN4 START Gateway=",GatewayUrl," Symbol=",AllowedSymbol,
          " trade queue=/next indicator queue=/indicator_next");
    return(INIT_SUCCEEDED);
@@ -153,21 +152,16 @@ void OnTick(){
 }
 
 void OnTimer(){
-   // Keep the existing queue/chart work at PollSeconds cadence even though the
-   // event timer is faster for isolated POWERFULL tick-level position management.
-   uint nowMs=GetTickCount();
-   uint legacyInterval=(uint)MathMax(1,PollSeconds)*1000;
-   if(powerLastLegacyTimerMs==0 || (uint)(nowMs-powerLastLegacyTimerMs)>=legacyInterval){
-      powerLastLegacyTimerMs=nowMs;
-      manageTP2RetraceProtection();
-      processTradeQueue();
-      publishOrderState();
-      publishMarketQuotes();
-      publishNativeChartBars();
-      processIndicatorQueue();
-      updateChartCountdown();
-      // Screenshot mirroring disabled: native CopyRates OHLC is the chart source.
-   }
+   // Original legacy poll cadence/order is retained. POWERFULL runs only after the
+   // existing /next + /ack, quote, native-bar and indicator work has been serviced.
+   manageTP2RetraceProtection();
+   processTradeQueue();
+   publishOrderState();
+   publishMarketQuotes();
+   publishNativeChartBars();
+   processIndicatorQueue();
+   updateChartCountdown();
+   // Screenshot mirroring disabled: native CopyRates OHLC is the chart source.
    managePowerfullAllMarkets(true);
 }
 
