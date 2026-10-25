@@ -69,7 +69,7 @@ public final class RayyanMenuLayout {
         addItems(host, content, Arrays.asList(
             new Item("◈", "Market", "Pilih XAUUSD, BTCUSD, atau ETHUSD", "market"),
             new Item("⌖", "Chart", "Kembali ke chart live", "chart"),
-            new Item("◉", "Tampilan Live Chart", "LIVE BIQUOTE atau tampilan terminal MT5", "live_chart"),
+            new Item("◉", "Tampilan Live Chart", "Chart native: OHLC MT5 + Bid/Ask live", "live_chart"),
             new Item("▦", "Indicators / Tampilan", "EMA, S/R, Fibonacci, RSI, MACD", "indicators"),
             new Item("↗", "Signal Engine", "Entry, SL, TP, bias dan filter", "signal"),
             new Item("◉", "Confidence Entry", "Ambang minimum 60%, 70%, 80%, atau 90%", "confidence")
@@ -111,7 +111,9 @@ public final class RayyanMenuLayout {
         addItems(host, content, Arrays.asList(
             new Item("◐", "Tema Aplikasi", "Default Theme, Dark Professional, atau Light Professional", "settings_theme"),
             new Item("▦", "Indicators / Tampilan", "Atur indikator yang terlihat di chart", "settings_indicators"),
-            new Item("◈", "Pilih Market", "XAUUSD, BTCUSD, atau ETHUSD", "settings_market")
+            new Item("◈", "Pilih Market", "XAUUSD, BTCUSD, atau ETHUSD", "settings_market"),
+            new Item("✦", "Strategy Control", "Pilih satu mesin aktif: STANDAR / EXCELLENT / POWERFULL", "strategy_control"),
+            new Item("⚡", "SMART AUTO-POWERFULL", "Konfigurasi model distribusi M5 EA", "powerfull")
         ), actions);
         addSection(host, content, "KONEKSI & NOTIFIKASI");
         addItems(host, content, Arrays.asList(
