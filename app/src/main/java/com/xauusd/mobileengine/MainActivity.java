@@ -712,8 +712,7 @@ public class MainActivity extends Activity {
                                         double spreadBid,double spreadAsk){
         String symbol=mt5SymbolForMarket(selectedMarket);
         SharedPreferences prefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        boolean standardOn=prefs.getBoolean(strategyEnabledKey("STANDAR",symbol),
-            !prefs.contains(strategyEnabledKey("STANDAR",symbol))&&prefs.getBoolean("auto",false));
+        boolean standardOn=prefs.getBoolean(strategyEnabledKey("STANDAR",symbol),false);
         boolean excellentOn=prefs.getBoolean(strategyEnabledKey("EXCELLENT",symbol),false);
         // POWERFULL is an independent EA engine. Android evaluates EXCELLENT first,
         // then STANDAR, and each strategy toggle is stored separately per symbol.
@@ -977,8 +976,7 @@ public class MainActivity extends Activity {
         // Keep the lifecycle manager restricted to M1 for new/replacement entries.
         String strategySymbol=mt5SymbolForMarket(selectedMarket);
         String standardKey=strategyEnabledKey("STANDAR",strategySymbol);
-        boolean standardOn=gp.getBoolean(standardKey,
-                !gp.contains(standardKey)&&gp.getBoolean("auto",false));
+        boolean standardOn=gp.getBoolean(standardKey,false);
         boolean excellentOn=gp.getBoolean(strategyEnabledKey("EXCELLENT",strategySymbol),false);
         boolean androidStrategyAutoOn=standardOn||excellentOn;
         boolean autoEnabled=androidStrategyAutoOn&&"M1".equals(selectedTf);
@@ -1736,16 +1734,25 @@ public class MainActivity extends Activity {
         return "rayyan_strategy_enabled_"+strategy+"_"+symbol;
     }
 
-    /** Independent per-strategy switches. EXCELLENT has priority over STANDAR for the
-     * Android signal slot if both are enabled; POWERFULL remains EA-managed separately. */
+    /** Exactly one strategy may be active per market. Indicators are owned by that strategy. */
     private void showStrategyControlDialog(){
         final String symbol=mt5SymbolForMarket(selectedMarket);
         final SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         final String standardKey=strategyEnabledKey("STANDAR",symbol);
         final String excellentKey=strategyEnabledKey("EXCELLENT",symbol);
         final String powerKey="powerfull_enabled_"+symbol;
-        boolean legacyAuto=gp.getBoolean("auto",false);
-        boolean standardDefault=!gp.contains(standardKey)&&legacyAuto;
+        // Fail closed if old preferences contain multiple active engines.
+        boolean stdOn=gp.getBoolean(standardKey,false);
+        boolean excOn=gp.getBoolean(excellentKey,false);
+        boolean powOn=gp.getBoolean(powerKey,false);
+        int activeCount=(stdOn?1:0)+(excOn?1:0)+(powOn?1:0);
+        if(activeCount>1){
+            gp.edit().putBoolean(standardKey,false).putBoolean(excellentKey,false)
+                .putBoolean(powerKey,false).apply();
+            stdOn=false;excOn=false;powOn=false;
+            AppLog.add(this,"STRATEGY","multiple active strategies found; all switched OFF for safe isolation");
+        }
+        boolean standardDefault=false;
         Switch standard=new Switch(this);standard.setText("STANDAR • Fibo/Wick LIMIT");standard.setTextColor(Color.WHITE);
         Switch excellent=new Switch(this);excellent.setText("EXCELLENT • konfirmasi tambahan");excellent.setTextColor(Color.WHITE);
         Switch powerful=new Switch(this);powerful.setText("POWERFULL • model distribusi M5 di EA");powerful.setTextColor(Color.WHITE);
@@ -1753,21 +1760,30 @@ public class MainActivity extends Activity {
         root.setPadding(uiDp(18),uiDp(14),uiDp(18),uiDp(12));root.setBackground(roundBg(Color.rgb(3,18,30),16));
         TextView title=tv("STRATEGY CONTROL • "+symbol,17);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
         root.addView(title,new LinearLayout.LayoutParams(-1,uiDp(34)));
-        TextView note=tv("Sakelar strategi independen per market. STANDAR/EXCELLENT auto-entry tidak bergantung pada Smart Auto master atau MODE READY; aktifkan salah satu, gunakan chart M1, dan pastikan EA MT5/quote aktif. Keduanya berbagi satu slot sinyal Android: jika dua-duanya ON, EXCELLENT diprioritaskan. POWERFULL tetap berjalan mandiri melalui EA MT5. Uji di akun demo.",11);
+        TextView note=tv("Pilih MAKSIMAL SATU strategi per market. STANDAR: EMA50/EMA200 + Fibo/SR. EXCELLENT: RSI/ATR untuk konfirmasi internal. POWERFULL: model distribusi di EA tanpa indikator klasik. Semua OFF = chart bersih tanpa indikator strategi. Auto-entry Android memerlukan chart M1, quote segar dan EA MT5 online; tidak bergantung pada Smart Auto master/MODE READY.",11);
         note.setTextColor(Color.LTGRAY);note.setPadding(0,0,0,uiDp(8));root.addView(note,new LinearLayout.LayoutParams(-1,-2));
         root.addView(standard,new LinearLayout.LayoutParams(-1,uiDp(48)));
         root.addView(excellent,new LinearLayout.LayoutParams(-1,uiDp(48)));
         root.addView(powerful,new LinearLayout.LayoutParams(-1,uiDp(48)));
-        standard.setChecked(gp.getBoolean(standardKey,standardDefault));
-        excellent.setChecked(gp.getBoolean(excellentKey,false));
-        powerful.setChecked(gp.getBoolean(powerKey,false));
+        standard.setChecked(stdOn||standardDefault);
+        excellent.setChecked(excOn);
+        powerful.setChecked(powOn);
+        applyStrategyIndicatorProfile();
         standard.setOnCheckedChangeListener((b,on)->{
-            gp.edit().putBoolean(standardKey,on).apply();
-            Toast.makeText(this,"STANDAR "+(on?"ON":"OFF")+" • auto-entry mandiri • "+symbol,Toast.LENGTH_SHORT).show();
+            if(on){
+                gp.edit().putBoolean(standardKey,true).putBoolean(excellentKey,false).putBoolean(powerKey,false).apply();
+                excellent.setChecked(false);powerful.setChecked(false);
+            }else gp.edit().putBoolean(standardKey,false).apply();
+            applyStrategyIndicatorProfile();queueNativeIndicatorState();
+            Toast.makeText(this,"STANDAR "+(on?"ON":"OFF")+" • "+symbol,Toast.LENGTH_SHORT).show();
         });
         excellent.setOnCheckedChangeListener((b,on)->{
-            gp.edit().putBoolean(excellentKey,on).apply();
-            Toast.makeText(this,"EXCELLENT "+(on?"ON":"OFF")+" • auto-entry mandiri • "+symbol,Toast.LENGTH_SHORT).show();
+            if(on){
+                gp.edit().putBoolean(excellentKey,true).putBoolean(standardKey,false).putBoolean(powerKey,false).apply();
+                standard.setChecked(false);powerful.setChecked(false);
+            }else gp.edit().putBoolean(excellentKey,false).apply();
+            applyStrategyIndicatorProfile();queueNativeIndicatorState();
+            Toast.makeText(this,"EXCELLENT "+(on?"ON":"OFF")+" • "+symbol,Toast.LENGTH_SHORT).show();
         });
         powerful.setOnCheckedChangeListener((b,on)->{
             if(on&&gp.getFloat("powerfull_pip_size_"+symbol,0f)<=0f){
@@ -1776,7 +1792,11 @@ public class MainActivity extends Activity {
                 showPowerfullDialog();
                 return;
             }
-            gp.edit().putBoolean(powerKey,on).apply();
+            if(on){
+                gp.edit().putBoolean(powerKey,true).putBoolean(standardKey,false).putBoolean(excellentKey,false).apply();
+                standard.setChecked(false);excellent.setChecked(false);
+            }else gp.edit().putBoolean(powerKey,false).apply();
+            applyStrategyIndicatorProfile();queueNativeIndicatorState();
             Toast.makeText(this,"POWERFULL "+(on?"ON":"OFF")+" • "+symbol,Toast.LENGTH_SHORT).show();
         });
         Button openPower=btn("PENGATURAN DETAIL POWERFULL");openPower.setTextSize(11);openPower.setTextColor(Color.WHITE);
@@ -2230,23 +2250,47 @@ public class MainActivity extends Activity {
         if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-uiDp(36),uiDp(430)),-2);}
     }
 
+    private String activeStrategyForSymbol(String symbol){
+        SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        if(gp.getBoolean(strategyEnabledKey("STANDAR",symbol),false))return "STANDAR";
+        if(gp.getBoolean(strategyEnabledKey("EXCELLENT",symbol),false))return "EXCELLENT";
+        if(gp.getBoolean("powerfull_enabled_"+symbol,false))return "POWERFULL";
+        return "OFF";
+    }
+
+    private void applyStrategyIndicatorProfile(){
+        if(chart==null)return;
+        String mode=activeStrategyForSymbol(mt5SymbolForMarket(selectedMarket));
+        boolean standard="STANDAR".equals(mode),excellent="EXCELLENT".equals(mode);
+        chart.setShowEMA50(standard&&ind("ema50",true));
+        chart.setShowEMA200(standard&&ind("ema200",true));
+        chart.setShowSR(standard&&ind("sr",true));
+        chart.setShowFibo(standard&&ind("fibo",true));
+        chart.setShowRSI(excellent&&ind("rsi",true));
+        chart.setShowATR(excellent&&ind("atr",true));
+        chart.setShowMACD(standard&&ind("macd",false));
+    }
+
     void loadIndicatorSettings(){
         chart.setFibonacciLevels(readFibonacciLevels());
-        chart.setShowEMA50(ind("ema50",true));chart.setShowEMA200(ind("ema200",true));
-        chart.setShowSR(ind("sr",true));chart.setShowFibo(ind("fibo",true));chart.setShowRSI(ind("rsi",true));chart.setShowMACD(ind("macd",true));chart.setShowATR(ind("atr",true));
         chart.setShowSignals(ind("signals",true));chart.setShowWickBos(ind("wickbos",true));chart.setShowTradeLevels(ind("orders",true));chart.setShowPosition(ind("position",true));chart.setShowBidAsk(ind("bidask",true));
+        applyStrategyIndicatorProfile();
         queueNativeIndicatorState();
     }
 
     private void queueNativeIndicatorState(){
         long id=System.currentTimeMillis();
+        String symbol=mt5SymbolForMarket(selectedMarket);
+        String strategy=activeStrategyForSymbol(symbol);
+        boolean standard="STANDAR".equals(strategy);
         String command="id="+id+
-            ";symbol="+mt5SymbolForMarket(selectedMarket)+
+            ";symbol="+symbol+
             ";tf="+selectedTf+
-            ";ema50="+(ind("ema50",true)?"1":"0")+
-            ";ema200="+(ind("ema200",true)?"1":"0")+
-            ";sr="+(ind("sr",true)?"1":"0")+
-            ";fibo="+(ind("fibo",true)?"1":"0");
+            ";strategy="+strategy+
+            ";ema50="+(standard&&ind("ema50",true)?"1":"0")+
+            ";ema200="+(standard&&ind("ema200",true)?"1":"0")+
+            ";sr="+(standard&&ind("sr",true)?"1":"0")+
+            ";fibo="+(standard&&ind("fibo",true)?"1":"0");
         getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putString("indicator_next",command).apply();
         AppLog.add(this,"MT5 INDICATORS","queued native chart state id="+id);
     }
