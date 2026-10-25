@@ -1704,6 +1704,176 @@ public class MainActivity extends Activity {
         else if("live_chart".equals(action))showChartDisplayDialog();
         else if("strategy".equals(action))showStrategyDialog();
         else if("risk".equals(action))showRiskManagementDialog();
+        else if("powerfull".equals(action))showPowerfullDialog();
+    }
+
+    /**
+     * SMART AUTO-POWERFULL is intentionally isolated from legacy SMART AUTO settings.
+     * It writes only powerfull_* per-symbol preferences and never toggles "auto" or
+     * "operation_mode" used by the existing Fibo/wick entry manager.
+     */
+    private void showPowerfullDialog(){
+        final String symbol=mt5SymbolForMarket(selectedMarket);
+        final SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        LinearLayout root=new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(uiDp(14),uiDp(12),uiDp(14),uiDp(10));
+        root.setBackground(roundBg(Color.rgb(3,18,30),16));
+
+        TextView heading=tv("SMART AUTO-POWERFULL",18);
+        heading.setTextColor(Color.rgb(0,225,175));
+        heading.setTypeface(null,Typeface.BOLD);
+        root.addView(heading,new LinearLayout.LayoutParams(-1,uiDp(34)));
+        TextView market=tv("MARKET "+symbol+" • STRATEGI TERPISAH",12);
+        market.setTextColor(Color.CYAN);
+        root.addView(market,new LinearLayout.LayoutParams(-1,uiDp(26)));
+        TextView explanation=tv("Prediksi distribusi M5 historis • BUY LIMIT 1% / SELL LIMIT 99% • profit dinamis per tick • SL sekitar 3 pip.",11);
+        explanation.setTextColor(Color.LTGRAY);
+        explanation.setGravity(Gravity.TOP|Gravity.START);
+        explanation.setPadding(0,uiDp(2),0,uiDp(8));
+        root.addView(explanation,new LinearLayout.LayoutParams(-1,uiDp(52)));
+
+        LinearLayout fields=new LinearLayout(this);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        Switch enabled=new Switch(this);
+        enabled.setText("Aktifkan SMART AUTO-POWERFULL");
+        enabled.setTextSize(14);
+        enabled.setTextColor(Color.WHITE);
+        enabled.setChecked(gp.getBoolean("powerfull_enabled_"+symbol,false));
+        enabled.setPadding(uiDp(6),uiDp(4),uiDp(6),uiDp(4));
+        fields.addView(enabled,new LinearLayout.LayoutParams(-1,uiDp(50)));
+
+        EditText lot=new EditText(this);
+        lot.setSingleLine(true);
+        lot.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        lot.setHint("Lot POWERFULL • minimum "+lotText(minLotForSymbol(symbol)));
+        lot.setText(String.format(Locale.US,"%.2f",gp.getFloat("powerfull_lot_"+symbol,(float)lotForMarket())));
+        styleDialogInput(lot);
+        fields.addView(lot,new LinearLayout.LayoutParams(-1,uiDp(48)));
+
+        EditText pipSize=new EditText(this);
+        pipSize.setSingleLine(true);
+        pipSize.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        pipSize.setHint("Ukuran harga untuk 1 pip (wajib dikonfirmasi)");
+        float savedPip=gp.getFloat("powerfull_pip_size_"+symbol,0.0f);
+        if(savedPip>0.0f)pipSize.setText(String.format(Locale.US,"%.8f",savedPip).replaceAll("0+$","").replaceAll("\\.$",""));
+        styleDialogInput(pipSize);
+        fields.addView(pipSize,new LinearLayout.LayoutParams(-1,uiDp(48)));
+
+        Spinner percentile=new Spinner(this);
+        String[] options={"P50 • median historis","P60 • rentang agak lebar","P70 • default seimbang","P80 • rentang lebar","P90 • ekstrem historis"};
+        ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,options);
+        percentile.setAdapter(adapter);
+        percentile.setBackground(roundBg(Color.rgb(7,30,47),10));
+        int savedPercentile=gp.getInt("powerfull_percentile_"+symbol,70);
+        percentile.setSelection(savedPercentile==50?0:savedPercentile==60?1:savedPercentile==80?3:savedPercentile==90?4:2);
+        fields.addView(percentile,new LinearLayout.LayoutParams(-1,uiDp(48)));
+
+        TextView pipNote=tv("Pip berbeda antar CFD/simbol. Isi nilai perubahan HARGA untuk 1 pip; contoh jika 1 pip = 0,10 harga, isi 0,10. Nilai 3 pip adalah batas risiko yang diinginkan, bukan jaminan kerugian maksimum saat gap/slippage.",10);
+        pipNote.setTextColor(Color.rgb(255,205,95));
+        pipNote.setGravity(Gravity.TOP|Gravity.START);
+        pipNote.setPadding(uiDp(6),uiDp(6),uiDp(6),uiDp(6));
+        fields.addView(pipNote,new LinearLayout.LayoutParams(-1,uiDp(78)));
+
+        TextView status=tv("Menunggu status EA POWERFULL…",11);
+        status.setTextColor(Color.CYAN);
+        status.setGravity(Gravity.TOP|Gravity.START);
+        status.setPadding(uiDp(7),uiDp(7),uiDp(7),uiDp(7));
+        status.setBackground(roundBg(Color.rgb(7,30,47),10));
+        fields.addView(status,new LinearLayout.LayoutParams(-1,uiDp(100)));
+
+        ScrollView scroll=new ScrollView(this);
+        scroll.setFillViewport(false);
+        scroll.addView(fields);
+        root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1f));
+
+        LinearLayout actions=new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        Button save=btn("SIMPAN POWERFULL");
+        save.setTextSize(11);
+        save.setBackground(roundBg(Color.rgb(0,105,83),10));
+        Button close=btn("TUTUP");
+        close.setTextSize(11);
+        close.setBackground(roundBg(Color.rgb(53,65,77),10));
+        LinearLayout.LayoutParams actionParams=new LinearLayout.LayoutParams(0,uiDp(46),1f);
+        actionParams.setMargins(0,uiDp(6),uiDp(4),0);
+        actions.addView(save,actionParams);
+        LinearLayout.LayoutParams closeParams=new LinearLayout.LayoutParams(0,uiDp(46),1f);
+        closeParams.setMargins(uiDp(4),uiDp(6),0,0);
+        actions.addView(close,closeParams);
+        root.addView(actions,new LinearLayout.LayoutParams(-1,uiDp(54)));
+
+        AlertDialog dialog=new AlertDialog.Builder(this).setView(root).create();
+        final Handler statusHandler=new Handler(Looper.getMainLooper());
+        final Runnable[] statusRefresh=new Runnable[1];
+        statusRefresh[0]=()->{
+            try{
+                String current=gp.getString("powerfull_status_"+symbol,"MENUNGGU_EA");
+                String samples=gp.getString("powerfull_samples_"+symbol,"0");
+                String range=gp.getString("powerfull_range_pips_"+symbol,"");
+                String low=gp.getString("powerfull_low_"+symbol,"");
+                String high=gp.getString("powerfull_high_"+symbol,"");
+                String detail=gp.getString("powerfull_detail_"+symbol,"");
+                long at=gp.getLong("powerfull_state_at_"+symbol,0L);
+                long age=at>0L?Math.max(0L,(System.currentTimeMillis()-at)/1000L):-1L;
+                String ageText=age<0L?"belum ada heartbeat":(age>8L?"STALE "+age+"s":"segar "+age+"s");
+                String summary="EA: "+current+" • "+ageText
+                    +"\nSample M5: "+samples
+                    +"\nPrediksi rentang: "+(range.isEmpty()?"--":range+" pip")
+                    +"\nProyeksi Low–High: "+(low.isEmpty()?"--":low)+" – "+(high.isEmpty()?"--":high)
+                    +(detail.isEmpty()?"":"\n"+detail);
+                status.setText(summary);
+            }catch(Throwable ignored){}
+            if(dialog.isShowing())statusHandler.postDelayed(statusRefresh[0],1000L);
+        };
+        dialog.setOnDismissListener(d->statusHandler.removeCallbacks(statusRefresh[0]));
+        close.setOnClickListener(v->dialog.dismiss());
+        save.setOnClickListener(v->{
+            try{
+                double volume=Double.parseDouble(lot.getText().toString().trim());
+                String pipText=pipSize.getText().toString().trim().replace(',','.');
+                double pip=pipText.isEmpty()?0.0:Double.parseDouble(pipText);
+                int[] quantiles={50,60,70,80,90};
+                int q=quantiles[Math.max(0,Math.min(quantiles.length-1,percentile.getSelectedItemPosition()))];
+                double minLot=minLotForSymbol(symbol);
+                if(!Double.isFinite(volume)||volume<minLot){
+                    Toast.makeText(this,"Lot minimum "+symbol+" = "+lotText(minLot),Toast.LENGTH_LONG).show();
+                    return;
+                }
+                if(!Double.isFinite(pip)||pip<0.0){
+                    Toast.makeText(this,"Ukuran pip tidak valid",Toast.LENGTH_LONG).show();
+                    return;
+                }
+                if(enabled.isChecked()&&pip<=0.0){
+                    Toast.makeText(this,"Isi ukuran harga untuk 1 pip sebelum POWERFULL diaktifkan",Toast.LENGTH_LONG).show();
+                    return;
+                }
+                double point=preferenceDouble(gp,"broker_quote_point_"+symbol,0.0);
+                if(enabled.isChecked()&&point>0.0&&pip+1e-12<point){
+                    Toast.makeText(this,"Ukuran 1 pip tidak boleh lebih kecil dari MT5 point "+String.format(Locale.US,"%.8f",point),Toast.LENGTH_LONG).show();
+                    return;
+                }
+                gp.edit()
+                    .putBoolean("powerfull_enabled_"+symbol,enabled.isChecked())
+                    .putFloat("powerfull_lot_"+symbol,(float)volume)
+                    .putFloat("powerfull_pip_size_"+symbol,(float)pip)
+                    .putInt("powerfull_percentile_"+symbol,q)
+                    .apply();
+                AppLog.add(this,"SMART AUTO-POWERFULL","settings saved symbol="+symbol+" enabled="+enabled.isChecked()
+                    +" lot="+lotText(volume)+" pipSize="+String.format(Locale.US,"%.8f",pip)+" quantile=P"+q
+                    +" stopLossPips=3 • legacy auto preferences unchanged");
+                Toast.makeText(this,enabled.isChecked()
+                    ?"POWERFULL tersimpan • menunggu validasi model, tick, spread, dan SL MT5"
+                    :"POWERFULL nonaktif • posisi terbuka yang ada tetap dikelola sampai selesai",
+                    Toast.LENGTH_LONG).show();
+                dialog.dismiss();
+            }catch(Exception ex){
+                AppLog.add(this,"SMART AUTO-POWERFULL","settings error "+ex.getClass().getSimpleName()+": "+ex.getMessage());
+                Toast.makeText(this,"Periksa nilai lot dan ukuran pip",Toast.LENGTH_LONG).show();
+            }
+        });
+        showSizedDialog(dialog,0.86f,450);
+        statusRefresh[0].run();
     }
 
     private int uiDp(float value){return Math.round(value*getResources().getDisplayMetrics().density);}
