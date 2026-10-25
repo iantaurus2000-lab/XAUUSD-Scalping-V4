@@ -39,6 +39,73 @@ string lastIndicatorCommandId="";
 datetime lastIndicatorBar=0, lastIndicatorDiag=0;
 #define RAYYAN_EMA_DRAW_BARS 140
 
+#define POWERFULL_MAGIC 4104451
+#define POWERFULL_HISTORY_LIMIT 105120
+#define POWERFULL_MIN_HISTORY 2000
+#define POWERFULL_CONFIG_TIMEOUT_MS 300
+#define POWERFULL_STATUS_INTERVAL_MS 2000
+#define POWERFULL_REPLAN_MAX 2
+
+string powerSymbols[3]={"XAUUSDm","BTCUSDm","ETHUSDm"};
+struct PowerfullConfig {
+   bool enabled;
+   double lot;
+   double pipSize;
+   double stopPips;
+   int percentile;
+   string reason;
+};
+PowerfullConfig powerCfg[3];
+datetime powerSeenBar[3];
+datetime powerLastSeedBar[3];
+uint powerLastModelAttemptMs[3];
+uint powerModelBuiltAtMs[3];
+uint powerLastSeedAttemptMs[3];
+uint powerLastManageMs[3];
+uint powerConfigReceivedMs[3];
+uint powerLastStatePublishMs[3];
+uint powerLastConfigPollMs=0;
+uint powerLastLegacyTimerMs=0;
+int powerConfigRoundRobin=0;
+int powerReplans[3];
+bool powerModelGood[3];
+bool powerReplacementPending[3];
+int powerHistorySamples[3];
+int powerHistoryDays[3];
+double powerBaseRangePips[3];
+double powerForecastRangePips[3];
+double powerUpperShare[3];
+double powerProjectedLow[3];
+double powerProjectedHigh[3];
+double powerLastBid[3];
+double powerLastAsk[3];
+long powerLastTickMs[3];
+string powerLastStatus[3];
+string powerLastDetail[3];
+
+void managePowerfullAllMarkets(bool pollConfig);
+void managePowerfullSymbol(int index);
+bool powerGatewayGet(string path,int &httpCode,string &body,string &diagnostic);
+bool powerRefreshConfig(int index);
+bool powerBuildModel(int index);
+void powerProjectBounds(int index,double candleOpen);
+void powerPublishState(int index,string status,string detail,datetime barTime);
+int powerPendingCount(string symbol);
+int powerPositionCount(string symbol);
+bool powerCancelPendingForSymbol(string symbol);
+bool powerCancelStalePending(string symbol,datetime currentBar);
+bool powerPlacePair(int index,datetime barTime,const MqlTick &tick);
+void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double candleOpen,
+                          bool hasPreviousTick,double previousBid);
+double powerProjectedNet(ulong ticket);
+bool powerClosePosition(ulong ticket,string reason);
+string powerShortSymbol(string symbol);
+datetime powerOrderBarFromComment(string comment);
+double powerRoundToTick(string symbol,double price);
+bool powerConfigFresh(int index);
+bool powerHasPendingOnBar(string symbol,datetime barTime);
+
+
 int OnInit(){
    // Remove legacy chart-attached EMA/MA indicators and old Rayyan EMA objects.
    // The EA below is the sole owner of the two colored EMA curves.
@@ -51,7 +118,7 @@ int OnInit(){
    ChartSetInteger(0,CHART_SHIFT,false);
    ChartSetInteger(0,CHART_SCALE,4);
    applyAll();
-   EventSetTimer(MathMax(1,PollSeconds));
+   if(!EventSetMillisecondTimer(100)) EventSetTimer(MathMax(1,PollSeconds));
    Print("RAYYAN4 START Gateway=",GatewayUrl," Symbol=",AllowedSymbol,
          " trade queue=/next indicator queue=/indicator_next");
    return(INIT_SUCCEEDED);
@@ -67,19 +134,29 @@ void OnDeinit(const int r){
    if(hEma50!=INVALID_HANDLE)IndicatorRelease(hEma50);
    if(hEma200!=INVALID_HANDLE)IndicatorRelease(hEma200);
 }
-void OnTick(){ manageTP2RetraceProtection(); }
+void OnTick(){
+   manageTP2RetraceProtection();
+   // Opportunistic fast path; no gateway config request is issued from this event.
+   managePowerfullAllMarkets(false);
+}
 
 void OnTimer(){
-   // Always service the trade queue first. Native OHLC publication is auxiliary
-   // and must never delay an incoming order.
-   manageTP2RetraceProtection();
-   processTradeQueue();
-   publishOrderState();
-   publishMarketQuotes();
-   publishNativeChartBars();
-   processIndicatorQueue();
-   updateChartCountdown();
-   // Screenshot mirroring disabled: native CopyRates OHLC is the chart source.
+   // Keep the existing queue/chart work at PollSeconds cadence even though the
+   // event timer is faster for isolated POWERFULL tick-level position management.
+   uint nowMs=GetTickCount();
+   uint legacyInterval=(uint)MathMax(1,PollSeconds)*1000;
+   if(powerLastLegacyTimerMs==0 || (uint)(nowMs-powerLastLegacyTimerMs)>=legacyInterval){
+      powerLastLegacyTimerMs=nowMs;
+      manageTP2RetraceProtection();
+      processTradeQueue();
+      publishOrderState();
+      publishMarketQuotes();
+      publishNativeChartBars();
+      processIndicatorQueue();
+      updateChartCountdown();
+      // Screenshot mirroring disabled: native CopyRates OHLC is the chart source.
+   }
+   managePowerfullAllMarkets(true);
 }
 
 void processTradeQueue(){
@@ -1056,4 +1133,658 @@ void updateFibo(){
       ObjectSetDouble(0,"RAYYAN8_FIBO",OBJPROP_LEVELVALUE,i,levels[i]);
       ObjectSetString(0,"RAYYAN8_FIBO",OBJPROP_LEVELTEXT,i,labels[i]);
    }
+}
+
+
+/* =========================================================================
+   SMART AUTO-POWERFULL -- isolated M5 distribution / dual LIMIT strategy.
+   Separate magic number and /power_config + /power_state endpoints. Legacy
+   /next, /ack, /state and RAYYAN_MAGIC order handling remain independent.
+   ========================================================================= */
+
+bool powerGatewayGet(string path,int &httpCode,string &body,string &diagnostic){
+   httpCode=-1; body=""; diagnostic="";
+   string base=GatewayUrl;
+   while(StringLen(base)>0 && StringSubstr(base,StringLen(base)-1,1)=="/")
+      base=StringSubstr(base,0,StringLen(base)-1);
+   if(StringFind(base,"http://")!=0 && StringFind(base,"https://")!=0){
+      diagnostic="GatewayUrl must start with http:// or https://";
+      return false;
+   }
+   string responseHeaders="";
+   char requestData[];
+   char responseData[];
+   ResetLastError();
+   int status=WebRequest("GET",base+path,"","",POWERFULL_CONFIG_TIMEOUT_MS,
+                         requestData,0,responseData,responseHeaders);
+   int err=GetLastError();
+   if(status==-1 || status==1001){
+      diagnostic="POWERFULL WebRequest failed err="+IntegerToString(err);
+      return false;
+   }
+   httpCode=status;
+   body=CharArrayToString(responseData,0,ArraySize(responseData),CP_UTF8);
+   return (status>=100 && status<=599);
+}
+
+bool powerRefreshConfig(int index){
+   if(index<0||index>=ArraySize(powerSymbols))return false;
+   int code=-1; string body="",diagnostic="";
+   bool received=powerGatewayGet("/power_config?symbol="+urlEncode(powerSymbols[index]),
+                                 code,body,diagnostic);
+   if(!received||code!=200){
+      if(TimeCurrent()-lastDiag>=10){
+         lastDiag=TimeCurrent();
+         Print("POWERFULL CONFIG ERROR symbol=",powerSymbols[index],
+               " code=",code," detail=",diagnostic);
+      }
+      return false;
+   }
+   if(field(body,"symbol")!=powerSymbols[index]){
+      Print("POWERFULL CONFIG INVALID symbol=",powerSymbols[index]," body=",body);
+      return false;
+   }
+   string symbol=powerSymbols[index];
+   double lot=StringToDouble(field(body,"lot"));
+   double pip=StringToDouble(field(body,"pip"));
+   double stop=StringToDouble(field(body,"stopPips"));
+   int percentile=(int)StringToInteger(field(body,"percentile"));
+   string reason=field(body,"reason");
+   bool requested=(field(body,"enabled")=="1");
+   double minLot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
+   if(minLot<=0.0)minLot=(symbol=="XAUUSDm"?0.01:0.10);
+   bool valid=MathIsValidNumber(lot)&&lot+1e-8>=minLot
+      &&MathIsValidNumber(pip)&&pip>0.0
+      &&MathIsValidNumber(stop)&&stop>0.0
+      &&(percentile==50||percentile==60||percentile==70||percentile==80||percentile==90);
+   powerCfg[index].enabled=requested&&valid;
+   powerCfg[index].lot=lot;
+   powerCfg[index].pipSize=pip;
+   powerCfg[index].stopPips=stop;
+   powerCfg[index].percentile=percentile;
+   powerCfg[index].reason=!requested?"DISABLED":(valid?reason:"CONFIG_INVALID");
+   powerConfigReceivedMs[index]=GetTickCount();
+   return true;
+}
+
+bool powerConfigFresh(int index){
+   if(index<0||index>=ArraySize(powerSymbols)||powerConfigReceivedMs[index]==0)return false;
+   return (uint)(GetTickCount()-powerConfigReceivedMs[index])<=10000;
+}
+
+void managePowerfullAllMarkets(bool pollConfig){
+   uint nowMs=GetTickCount();
+   if(pollConfig&&(powerLastConfigPollMs==0||
+      (uint)(nowMs-powerLastConfigPollMs)>=1000)){
+      powerLastConfigPollMs=nowMs;
+      int index=powerConfigRoundRobin;
+      powerConfigRoundRobin=(powerConfigRoundRobin+1)%ArraySize(powerSymbols);
+      powerRefreshConfig(index);
+   }
+   for(int i=0;i<ArraySize(powerSymbols);i++)managePowerfullSymbol(i);
+}
+
+bool powerBuildModel(int index){
+   string symbol=powerSymbols[index];
+   double pip=powerCfg[index].pipSize;
+   if(pip<=0.0)return false;
+   MqlRates rates[];
+   ArraySetAsSeries(rates,true);
+   ResetLastError();
+   int copied=CopyRates(symbol,PERIOD_M5,1,POWERFULL_HISTORY_LIMIT,rates);
+   if(copied<POWERFULL_MIN_HISTORY){
+      powerModelGood[index]=false;
+      powerHistorySamples[index]=MathMax(0,copied);
+      Print("POWERFULL HISTORY SHORT symbol=",symbol," copied=",copied,
+            " minimum=",POWERFULL_MIN_HISTORY," err=",GetLastError());
+      return false;
+   }
+   datetime cutoff=TimeCurrent()-365*24*60*60;
+   double ranges[];
+   ArrayResize(ranges,copied);
+   int n=0;
+   double rangeSum=0.0,upperSum=0.0,recentSum=0.0;
+   int recentCount=0;
+   datetime oldest=0;
+   for(int i=0;i<copied;i++){
+      if(rates[i].time<cutoff)continue;
+      double span=rates[i].high-rates[i].low;
+      if(!MathIsValidNumber(span)||span<=0.0||rates[i].open<=0.0)continue;
+      double rangePips=span/pip;
+      if(!MathIsValidNumber(rangePips)||rangePips<=0.0)continue;
+      ranges[n++]=rangePips;
+      rangeSum+=rangePips;
+      upperSum+=(rates[i].high-rates[i].open)/span;
+      if(oldest==0||rates[i].time<oldest)oldest=rates[i].time;
+      if(i<14){recentSum+=rangePips;recentCount++;}
+   }
+   if(n<POWERFULL_MIN_HISTORY||recentCount<5){
+      powerModelGood[index]=false;
+      powerHistorySamples[index]=n;
+      Print("POWERFULL HISTORY WINDOW TOO SHORT symbol=",symbol," bars=",n);
+      return false;
+   }
+   ArrayResize(ranges,n);
+   ArraySort(ranges);
+   int percentile=powerCfg[index].percentile;
+   if(percentile<50||percentile>90)percentile=70;
+   int q=(int)MathFloor((percentile/100.0)*(n-1));
+   if(q<0)q=0;
+   if(q>=n)q=n-1;
+   double quantileRange=ranges[q];
+   double historicalMean=rangeSum/n;
+   double recentMean=recentSum/recentCount;
+   double scale=historicalMean>0.0?recentMean/historicalMean:1.0;
+   scale=MathMax(0.50,MathMin(2.00,scale));
+   double forecast=quantileRange*scale;
+   double upperShare=MathMax(0.35,MathMin(0.65,upperSum/n));
+   if(!MathIsValidNumber(forecast)||forecast<=0.0)return false;
+   powerBaseRangePips[index]=forecast;
+   powerForecastRangePips[index]=forecast;
+   powerUpperShare[index]=upperShare;
+   powerHistorySamples[index]=n;
+   powerHistoryDays[index]=oldest>0?(int)((TimeCurrent()-oldest)/86400):0;
+   powerModelGood[index]=true;
+   powerModelBuiltAtMs[index]=GetTickCount();
+   Print("POWERFULL MODEL symbol=",symbol," samples=",n," historyDays=",powerHistoryDays[index],
+         " P",percentile,"=",DoubleToString(quantileRange,2)," pip scale=",DoubleToString(scale,2),
+         " rangeForecast=",DoubleToString(forecast,2));
+   return true;
+}
+
+void powerProjectBounds(int index,double candleOpen){
+   double pip=powerCfg[index].pipSize;
+   double span=powerForecastRangePips[index]*pip;
+   double upper=span*powerUpperShare[index];
+   double lower=span-upper;
+   powerProjectedLow[index]=candleOpen-lower;
+   powerProjectedHigh[index]=candleOpen+upper;
+}
+
+string powerShortSymbol(string symbol){
+   if(symbol=="XAUUSDm")return "XAU";
+   if(symbol=="BTCUSDm")return "BTC";
+   if(symbol=="ETHUSDm")return "ETH";
+   return "UNK";
+}
+
+datetime powerOrderBarFromComment(string comment){
+   string parts[];
+   int count=StringSplit(comment,'-',parts);
+   if(count<4||parts[0]!="PWR")return 0;
+   return (datetime)StringToInteger(parts[2]);
+}
+
+int powerPendingCount(string symbol){
+   int count=0;
+   for(int i=OrdersTotal()-1;i>=0;i--){
+      ulong ticket=OrderGetTicket(i);
+      if(ticket==0)continue;
+      if(OrderGetString(ORDER_SYMBOL)!=symbol)continue;
+      if((long)OrderGetInteger(ORDER_MAGIC)!=POWERFULL_MAGIC)continue;
+      ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      if(type==ORDER_TYPE_BUY_LIMIT||type==ORDER_TYPE_SELL_LIMIT)count++;
+   }
+   return count;
+}
+
+int powerPositionCount(string symbol){
+   int count=0;
+   for(int i=PositionsTotal()-1;i>=0;i--){
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0)continue;
+      if(PositionGetString(POSITION_SYMBOL)!=symbol)continue;
+      if((long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
+      count++;
+   }
+   return count;
+}
+
+bool powerHasPendingOnBar(string symbol,datetime barTime){
+   for(int i=OrdersTotal()-1;i>=0;i--){
+      ulong ticket=OrderGetTicket(i);
+      if(ticket==0)continue;
+      if(OrderGetString(ORDER_SYMBOL)!=symbol)continue;
+      if((long)OrderGetInteger(ORDER_MAGIC)!=POWERFULL_MAGIC)continue;
+      ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      if(type!=ORDER_TYPE_BUY_LIMIT&&type!=ORDER_TYPE_SELL_LIMIT)continue;
+      if(powerOrderBarFromComment(OrderGetString(ORDER_COMMENT))==barTime)return true;
+   }
+   return false;
+}
+
+bool powerCancelPendingForSymbol(string symbol){
+   trade.SetExpertMagicNumber(POWERFULL_MAGIC);
+   for(int i=OrdersTotal()-1;i>=0;i--){
+      ulong ticket=OrderGetTicket(i);
+      if(ticket==0)continue;
+      if(OrderGetString(ORDER_SYMBOL)!=symbol)continue;
+      if((long)OrderGetInteger(ORDER_MAGIC)!=POWERFULL_MAGIC)continue;
+      ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      if(type!=ORDER_TYPE_BUY_LIMIT&&type!=ORDER_TYPE_SELL_LIMIT)continue;
+      ResetLastError();
+      bool deleted=trade.OrderDelete(ticket);
+      uint rc=trade.ResultRetcode();
+      if(!deleted||rc!=TRADE_RETCODE_DONE)
+         Print("POWERFULL CANCEL FAILED symbol=",symbol," ticket=",ticket,
+               " retcode=",rc," desc=",trade.ResultRetcodeDescription()," err=",GetLastError());
+      else Print("POWERFULL CANCEL OK symbol=",symbol," ticket=",ticket);
+   }
+   return powerPendingCount(symbol)==0;
+}
+
+bool powerCancelStalePending(string symbol,datetime currentBar){
+   trade.SetExpertMagicNumber(POWERFULL_MAGIC);
+   for(int i=OrdersTotal()-1;i>=0;i--){
+      ulong ticket=OrderGetTicket(i);
+      if(ticket==0)continue;
+      if(OrderGetString(ORDER_SYMBOL)!=symbol)continue;
+      if((long)OrderGetInteger(ORDER_MAGIC)!=POWERFULL_MAGIC)continue;
+      ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      if(type!=ORDER_TYPE_BUY_LIMIT&&type!=ORDER_TYPE_SELL_LIMIT)continue;
+      if(powerOrderBarFromComment(OrderGetString(ORDER_COMMENT))==currentBar)continue;
+      bool deleted=trade.OrderDelete(ticket);
+      uint rc=trade.ResultRetcode();
+      if(!deleted||rc!=TRADE_RETCODE_DONE)
+         Print("POWERFULL STALE CANCEL FAILED symbol=",symbol," ticket=",ticket," retcode=",rc);
+      else Print("POWERFULL STALE CANCEL OK symbol=",symbol," ticket=",ticket);
+   }
+   return powerPendingCount(symbol)==0;
+}
+
+double powerRoundToTick(string symbol,double price){
+   double step=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+   double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+   int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+   if(step<=0.0)step=point;
+   if(step<=0.0)return 0.0;
+   return NormalizeDouble(MathRound(price/step)*step,digits);
+}
+
+bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
+   string symbol=powerSymbols[index];
+   double pip=powerCfg[index].pipSize;
+   double lot=powerCfg[index].lot;
+   double stopPips=powerCfg[index].stopPips;
+   if(!powerModelGood[index]||pip<=0.0||powerForecastRangePips[index]<=0.0)return false;
+   if(DemoOnly&&AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
+      powerPublishState(index,"BLOCKED_NOT_DEMO","DemoOnly=TRUE; account is not demo",barTime);
+      return false;
+   }
+   if(!TerminalInfoInteger(TERMINAL_CONNECTED)||!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)
+      ||!MQLInfoInteger(MQL_TRADE_ALLOWED)||!AccountInfoInteger(ACCOUNT_TRADE_ALLOWED)){
+      powerPublishState(index,"BLOCKED_TRADING_DISABLED","Terminal/account trading permission unavailable",barTime);
+      return false;
+   }
+   double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+   double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+   double stopsPoints=(double)SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL);
+   double minDistance=stopsPoints*point;
+   if(point<=0.0||tickSize<=0.0){
+      powerPublishState(index,"BLOCKED_SYMBOL_SPEC","SYMBOL_POINT/TICK_SIZE invalid",barTime);
+      return false;
+   }
+   double stopDistance=stopPips*pip;
+   if(stopDistance+1e-10<minDistance+tickSize){
+      powerPublishState(index,"BLOCKED_SL_TOO_CLOSE","Broker stop level exceeds configured 3-pip loss guard",barTime);
+      return false;
+   }
+   double spreadPips=(tick.ask-tick.bid)/pip;
+   double spreadCap=MathMin(stopPips*0.50,powerForecastRangePips[index]*0.02);
+   if(!MathIsValidNumber(spreadPips)||spreadPips<0.0||spreadPips>spreadCap){
+      powerPublishState(index,"BLOCKED_SPREAD","spread="+DoubleToString(spreadPips,2)+
+                        " pip; limit="+DoubleToString(spreadCap,2)+" pip",barTime);
+      return false;
+   }
+   double low=powerProjectedLow[index];
+   double high=powerProjectedHigh[index];
+   double span=powerForecastRangePips[index]*pip;
+   double buyEntry=powerRoundToTick(symbol,low+span*0.01);
+   double sellEntry=powerRoundToTick(symbol,low+span*0.99);
+   if(buyEntry<=0.0||sellEntry<=buyEntry
+      ||buyEntry>=tick.ask-minDistance-tickSize
+      ||sellEntry<=tick.bid+minDistance+tickSize){
+      powerPublishState(index,"BLOCKED_ENTRY_GEOMETRY","predicted 1%/99% level is no longer a valid LIMIT price",barTime);
+      return false;
+   }
+   double minLot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
+   double maxLot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MAX);
+   double step=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+   if(minLot<=0.0||maxLot<minLot||step<=0.0||lot+1e-8<minLot||lot>maxLot+1e-8){
+      powerPublishState(index,"BLOCKED_LOT","configured lot does not match broker volume constraints",barTime);
+      return false;
+   }
+   lot=MathFloor((lot+1e-9)/step)*step;
+   lot=NormalizeDouble(lot,8);
+   if(lot+1e-8<minLot){
+      powerPublishState(index,"BLOCKED_LOT","rounded volume below broker minimum",barTime);
+      return false;
+   }
+
+   string baseComment="PWR-"+powerShortSymbol(symbol)+"-"+LongToString((long)barTime);
+   string buyComment=baseComment+"-B";
+   string sellComment=baseComment+"-S";
+   double buySL=powerRoundToTick(symbol,buyEntry-stopDistance);
+   double sellSL=powerRoundToTick(symbol,sellEntry+stopDistance);
+   trade.SetExpertMagicNumber(POWERFULL_MAGIC);
+   trade.SetTypeFillingBySymbol(symbol);
+   trade.SetAsyncMode(false);
+   ResetLastError();
+   bool buyOk=trade.BuyLimit(lot,buyEntry,symbol,buySL,0.0,ORDER_TIME_GTC,0,buyComment);
+   uint buyRc=trade.ResultRetcode();
+   ulong buyTicket=trade.ResultOrder();
+   if(!buyOk||(buyRc!=TRADE_RETCODE_PLACED&&buyRc!=TRADE_RETCODE_DONE)){
+      powerPublishState(index,"BUY_REJECTED","retcode="+IntegerToString((int)buyRc)+
+                        " "+trade.ResultRetcodeDescription(),barTime);
+      Print("POWERFULL BUY LIMIT FAILED symbol=",symbol," entry=",buyEntry," sl=",buySL,
+            " retcode=",buyRc," ",trade.ResultRetcodeDescription()," err=",GetLastError());
+      return false;
+   }
+
+   ResetLastError();
+   bool sellOk=trade.SellLimit(lot,sellEntry,symbol,sellSL,0.0,ORDER_TIME_GTC,0,sellComment);
+   uint sellRc=trade.ResultRetcode();
+   ulong sellTicket=trade.ResultOrder();
+   if(!sellOk||(sellRc!=TRADE_RETCODE_PLACED&&sellRc!=TRADE_RETCODE_DONE)){
+      bool rollback=powerCancelPendingForSymbol(symbol);
+      powerLastSeedBar[index]=barTime;
+      powerPublishState(index,rollback?"PAIR_ROLLED_BACK":"PAIR_PARTIAL_UNCERTAIN",
+                        "SELL rejected retcode="+IntegerToString((int)sellRc)+
+                        " "+trade.ResultRetcodeDescription(),barTime);
+      Print("POWERFULL SELL LIMIT FAILED symbol=",symbol," entry=",sellEntry," sl=",sellSL,
+            " retcode=",sellRc," ",trade.ResultRetcodeDescription(),
+            " rollback=",rollback," err=",GetLastError());
+      return false;
+   }
+   powerLastSeedBar[index]=barTime;
+   powerReplacementPending[index]=false;
+   trade.SetExpertMagicNumber(RAYYAN_MAGIC);
+   Print("POWERFULL PAIR PLACED symbol=",symbol," bar=",TimeToString(barTime,TIME_DATE|TIME_MINUTES),
+         " samples=",powerHistorySamples[index]," days=",powerHistoryDays[index],
+         " quantile=P",powerCfg[index].percentile," range=",DoubleToString(powerForecastRangePips[index],2),
+         " low=",DoubleToString(low,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+         " high=",DoubleToString(high,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+         " buyTicket=",buyTicket," buy=",buyEntry," sellTicket=",sellTicket," sell=",sellEntry,
+         " SL=",DoubleToString(stopPips,2)," pip each");
+   powerPublishState(index,"PAIR_PLACED","BUY 1% and SELL 99% pending sent; verify actual state in MT5",
+                     barTime);
+   return true;
+}
+
+double powerProjectedNet(ulong ticket){
+   if(ticket==0||!PositionSelectByTicket(ticket))return 0.0;
+   double commissionTotal=0.0,expectedExitCosts=0.0;
+   ulong positionId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+   if(positionId>0&&HistorySelectByPosition(positionId)){
+      int deals=HistoryDealsTotal();
+      for(int i=0;i<deals;i++){
+         ulong deal=HistoryDealGetTicket(i);
+         if(deal==0)continue;
+         double commission=HistoryDealGetDouble(deal,DEAL_COMMISSION);
+         double fee=HistoryDealGetDouble(deal,DEAL_FEE);
+         commissionTotal+=commission+fee;
+         long entry=HistoryDealGetInteger(deal,DEAL_ENTRY);
+         if(entry==DEAL_ENTRY_IN)expectedExitCosts+=MathAbs(commission+fee);
+      }
+   }
+   return PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP)
+          +commissionTotal-expectedExitCosts;
+}
+
+bool powerClosePosition(ulong ticket,string reason){
+   if(ticket==0||!PositionSelectByTicket(ticket))return false;
+   string symbol=PositionGetString(POSITION_SYMBOL);
+   trade.SetExpertMagicNumber(POWERFULL_MAGIC);
+   trade.SetTypeFillingBySymbol(symbol);
+   ResetLastError();
+   bool ok=trade.PositionClose(ticket);
+   uint rc=trade.ResultRetcode();
+   if(ok&&(rc==TRADE_RETCODE_DONE||rc==TRADE_RETCODE_DONE_PARTIAL)){
+      Print("POWERFULL CLOSE OK symbol=",symbol," ticket=",ticket," reason=",reason," retcode=",rc);
+      string suffix=LongToString((long)ticket);
+      string key="PW_HMODE_"+suffix;
+      string barKey="PW_HBAR_"+suffix;
+      if(GlobalVariableCheck(key))GlobalVariableDel(key);
+      if(GlobalVariableCheck(barKey))GlobalVariableDel(barKey);
+      return true;
+   }
+   Print("POWERFULL CLOSE FAILED symbol=",symbol," ticket=",ticket," reason=",reason,
+         " retcode=",rc," desc=",trade.ResultRetcodeDescription()," err=",GetLastError());
+   return false;
+}
+
+void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double candleOpen,
+                          bool hasPreviousTick,double previousBid){
+   string symbol=powerSymbols[index];
+   double pip=powerCfg[index].pipSize;
+   double stopPips=powerCfg[index].stopPips;
+   if(pip<=0.0||stopPips<=0.0)return;
+   long barEndMs=((long)barTime+300)*1000;
+   long remainingMs=barEndMs-tick.time_msc;
+   bool last100ms=(remainingMs>=0&&remainingMs<=100);
+   for(int i=PositionsTotal()-1;i>=0;i--){
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0)continue;
+      if(PositionGetString(POSITION_SYMBOL)!=symbol)continue;
+      if((long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
+      if(!PositionSelectByTicket(ticket))continue;
+      ENUM_POSITION_TYPE side=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      double entry=PositionGetDouble(POSITION_PRICE_OPEN);
+      double executable=(side==POSITION_TYPE_BUY?tick.bid:tick.ask);
+      double movementPips=(side==POSITION_TYPE_BUY?(executable-entry)/pip:(entry-executable)/pip);
+      double net=powerProjectedNet(ticket);
+      if(movementPips<=-stopPips){
+         powerClosePosition(ticket,"HARD_LOSS_GUARD_3PIP");
+         continue;
+      }
+      bool alignedMomentum=hasPreviousTick&&
+         (side==POSITION_TYPE_BUY
+            ?(tick.bid>candleOpen+pip*0.10&&tick.bid>previousBid)
+            :(tick.bid<candleOpen-pip*0.10&&tick.bid<previousBid));
+      string suffix=LongToString((long)ticket);
+      string holdKey="PW_HMODE_"+suffix;
+      string holdBarKey="PW_HBAR_"+suffix;
+      double holdMode=GlobalVariableCheck(holdKey)?GlobalVariableGet(holdKey):0.0;
+      datetime holdBar=GlobalVariableCheck(holdBarKey)?(datetime)GlobalVariableGet(holdBarKey):0;
+
+      // Only the final 100 ms + aligned momentum can arm a cross-candle hold.
+      if(last100ms&&net>0.0&&alignedMomentum){
+         GlobalVariableSet(holdKey,1.0);
+         GlobalVariableSet(holdBarKey,(double)barTime);
+         continue;
+      }
+      if(holdMode>=1.0&&holdBar>0){
+         if(holdMode==1.0&&barTime>holdBar){
+            if(alignedMomentum){
+               GlobalVariableSet(holdKey,2.0);
+               GlobalVariableSet(holdBarKey,(double)barTime);
+               continue;
+            }
+            if(tick.time_msc>((long)barTime*1000+1000)&&net>0.0)
+               powerClosePosition(ticket,"NEXT_M5_MOMENTUM_NOT_CONFIRMED");
+            else if(net<=0.0)
+               powerClosePosition(ticket,"CROSS_CANDLE_PROFIT_GUARD");
+            continue;
+         }
+         if(holdMode>=2.0&&barTime==holdBar){
+            bool reversed=hasPreviousTick&&
+               (side==POSITION_TYPE_BUY
+                  ?tick.bid<previousBid-pip*0.10
+                  :tick.bid>previousBid+pip*0.10);
+            if(net<=0.0)powerClosePosition(ticket,"CROSS_CANDLE_PROFIT_GUARD");
+            else if(reversed)powerClosePosition(ticket,"CROSS_CANDLE_MOMENTUM_REVERSED");
+            continue;
+         }
+      }
+      if(net>0.0)powerClosePosition(ticket,"DYNAMIC_NET_PROFIT");
+   }
+}
+
+void powerPublishState(int index,string status,string detail,datetime barTime){
+   uint nowMs=GetTickCount();
+   if(powerLastStatePublishMs[index]!=0&&
+      (uint)(nowMs-powerLastStatePublishMs[index])<POWERFULL_STATUS_INTERVAL_MS&&
+      status==powerLastStatus[index]&&detail==powerLastDetail[index])return;
+   powerLastStatePublishMs[index]=nowMs;
+   powerLastStatus[index]=status;
+   powerLastDetail[index]=detail;
+   string symbol=powerSymbols[index];
+   string path="/power_state?symbol="+urlEncode(symbol)
+      +"&status="+urlEncode(status)
+      +"&range="+DoubleToString(powerForecastRangePips[index],4)
+      +"&low="+DoubleToString(powerProjectedLow[index],(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))
+      +"&high="+DoubleToString(powerProjectedHigh[index],(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))
+      +"&bar="+LongToString((long)barTime)
+      +"&samples="+IntegerToString(powerHistorySamples[index])
+      +"&pending="+IntegerToString(powerPendingCount(symbol))
+      +"&positions="+IntegerToString(powerPositionCount(symbol))
+      +"&detail="+urlEncode(detail);
+   int code=-1; string body="",diagnostic="";
+   if(!powerGatewayGet(path,code,body,diagnostic)||code!=200||StringFind(body,"POWER STATE OK")<0){
+      if(TimeCurrent()-lastDiag>=10){
+         lastDiag=TimeCurrent();
+         Print("POWERFULL STATUS UPLOAD FAILED symbol=",symbol," code=",code," detail=",diagnostic,
+               " response=",body);
+      }
+   }
+}
+
+void managePowerfullSymbol(int index){
+   if(index<0||index>=ArraySize(powerSymbols))return;
+   uint nowMs=GetTickCount();
+   if(powerLastManageMs[index]!=0&&(uint)(nowMs-powerLastManageMs[index])<25)return;
+   powerLastManageMs[index]=nowMs;
+   string symbol=powerSymbols[index];
+   if(!SymbolSelect(symbol,true)){
+      powerPublishState(index,"SYMBOL_UNAVAILABLE","SymbolSelect failed; check broker Market Watch",0);
+      return;
+   }
+   MqlTick tick;
+   if(!SymbolInfoTick(symbol,tick)||tick.bid<=0.0||tick.ask<tick.bid||tick.time_msc<=0){
+      powerPublishState(index,"QUOTE_INVALID","SymbolInfoTick unavailable or invalid",0);
+      return;
+   }
+   long tickAgeMs=(long)TimeCurrent()*1000-tick.time_msc;
+   if(tickAgeMs>5000||tickAgeMs< -3000){
+      powerPublishState(index,"QUOTE_STALE","MT5 tick age="+IntegerToString((int)tickAgeMs)+
+                        " ms; server SL stays active and new actions wait for a fresh tick",0);
+      return;
+   }
+   datetime barTime=iTime(symbol,PERIOD_M5,0);
+   double candleOpen=iOpen(symbol,PERIOD_M5,0);
+   double candleHigh=iHigh(symbol,PERIOD_M5,0);
+   double candleLow=iLow(symbol,PERIOD_M5,0);
+   if(barTime<=0||candleOpen<=0.0||candleHigh<candleLow||candleLow<=0.0){
+      powerPublishState(index,"M5_DATA_WAIT","current MT5 M5 OHLC is not ready",barTime);
+      return;
+   }
+   bool hasPreviousTick=powerLastTickMs[index]>0;
+   double previousBid=powerLastBid[index];
+   powerManagePositions(index,tick,barTime,candleOpen,hasPreviousTick,previousBid);
+   powerLastBid[index]=tick.bid;
+   powerLastAsk[index]=tick.ask;
+   powerLastTickMs[index]=tick.time_msc;
+
+   bool configFresh=powerConfigFresh(index);
+   if(!configFresh){
+      powerCancelPendingForSymbol(symbol);
+      powerPublishState(index,"CONFIG_STALE","No fresh /power_config heartbeat; new entries locked",barTime);
+      return;
+   }
+   if(!powerCfg[index].enabled){
+      powerCancelPendingForSymbol(symbol);
+      powerPublishState(index,"OFF",powerCfg[index].reason==""?"POWERFULL disabled":powerCfg[index].reason,barTime);
+      return;
+   }
+
+   bool newBar=(powerSeenBar[index]!=barTime);
+   if(newBar){
+      powerSeenBar[index]=barTime;
+      powerLastSeedBar[index]=0;
+      powerReplans[index]=0;
+      powerReplacementPending[index]=false;
+      powerForecastRangePips[index]=0.0;
+      powerProjectedLow[index]=0.0;
+      powerProjectedHigh[index]=0.0;
+   }
+   bool modelDue=!powerModelGood[index]||powerModelBuiltAtMs[index]==0||
+      (uint)(nowMs-powerModelBuiltAtMs[index])>=15*60*1000;
+   if(modelDue&&(powerLastModelAttemptMs[index]==0||
+      (uint)(nowMs-powerLastModelAttemptMs[index])>=30000)){
+      powerLastModelAttemptMs[index]=nowMs;
+      if(!powerBuildModel(index)){
+         powerCancelPendingForSymbol(symbol);
+         powerPublishState(index,"HISTORY_NOT_READY","Need >= "+IntegerToString(POWERFULL_MIN_HISTORY)+
+                           " valid M5 bars within the last 365 days; loaded samples="+
+                           IntegerToString(powerHistorySamples[index]),barTime);
+         return;
+      }
+   }
+   if(!powerModelGood[index]){
+      powerCancelPendingForSymbol(symbol);
+      powerPublishState(index,"MODEL_NOT_READY","Historical M5 distribution is not ready",barTime);
+      return;
+   }
+   if(newBar||powerForecastRangePips[index]<=0.0)
+      powerForecastRangePips[index]=powerBaseRangePips[index];
+   powerProjectBounds(index,candleOpen);
+
+   powerCancelStalePending(symbol,barTime);
+   int pending=powerPendingCount(symbol);
+   int positions=powerPositionCount(symbol);
+   double pip=powerCfg[index].pipSize;
+   double realizedPips=(candleHigh-candleLow)/pip;
+
+   // Reforecast if current M5 realized range is materially beyond the prediction.
+   // Replacements are bounded to prevent rapid delete/recreate oscillation.
+   if(realizedPips>powerForecastRangePips[index]*1.15&&powerReplans[index]<POWERFULL_REPLAN_MAX){
+      double revised=MathMax(powerForecastRangePips[index],realizedPips*1.20);
+      if(revised>powerForecastRangePips[index]*1.12){
+         powerForecastRangePips[index]=revised;
+         powerProjectBounds(index,candleOpen);
+         bool canceled=powerCancelPendingForSymbol(symbol);
+         powerReplans[index]++;
+         if(canceled&&positions==0){
+            powerLastSeedBar[index]=0;
+            powerReplacementPending[index]=true;
+            powerPublishState(index,"DISTRIBUTION_REVISED","realized="+DoubleToString(realizedPips,2)+
+                              " pip; new forecast="+DoubleToString(revised,2)+" pip; replacing pending pair",barTime);
+         }else{
+            powerLastSeedBar[index]=barTime;
+            powerReplacementPending[index]=false;
+            powerPublishState(index,"DISTRIBUTION_REVISED_NO_REENTRY","realized="+
+                              DoubleToString(realizedPips,2)+" pip; stale pending cancelled; open position prevents reseed",barTime);
+            return;
+         }
+         pending=powerPendingCount(symbol);
+         if(pending>0){
+            powerPublishState(index,"CANCEL_PENDING","Waiting until old pending orders are confirmed deleted",barTime);
+            return;
+         }
+      }
+   }
+
+   pending=powerPendingCount(symbol);
+   positions=powerPositionCount(symbol);
+   if(pending>0){
+      if(powerHasPendingOnBar(symbol,barTime)){
+         powerLastSeedBar[index]=barTime;
+         powerPublishState(index,"PENDING_ACTIVE","Powerfull pending orders present in MT5; awaiting fill or forecast recheck",barTime);
+      }else powerPublishState(index,"CANCEL_PENDING","Waiting for stale pending deletion",barTime);
+      return;
+   }
+   if(positions>0){
+      powerPublishState(index,"POSITION_ACTIVE","Open Powerfull position(s) are managed per tick; no new pair while exposure remains",barTime);
+      return;
+   }
+   if(powerLastSeedBar[index]==barTime&&!powerReplacementPending[index]){
+      powerPublishState(index,"CYCLE_COMPLETE","This M5 candle already had a pair; duplicate cycle blocked",barTime);
+      return;
+   }
+   if(powerLastSeedAttemptMs[index]!=0&&(uint)(nowMs-powerLastSeedAttemptMs[index])<2000){
+      powerPublishState(index,"ENTRY_RETRY_WAIT","Order validation cooldown",barTime);
+      return;
+   }
+   powerLastSeedAttemptMs[index]=nowMs;
+   powerPlacePair(index,barTime,tick);
 }
