@@ -1752,35 +1752,9 @@ public class MainActivity extends Activity {
         excellent.setChecked("EXCELLENT".equals(current));
         powerful.setChecked("POWERFULL".equals(current));
         final boolean[] changing={false};
-        java.util.function.Consumer<String> activate=mode->{
-            if(changing[0])return;
-            changing[0]=true;
-            standard.setChecked("STANDAR".equals(mode));
-            excellent.setChecked("EXCELLENT".equals(mode));
-            powerful.setChecked("POWERFULL".equals(mode));
-            changing[0]=false;
-            SharedPreferences.Editor e=gp.edit().putString(key,mode);
-            if("STANDAR".equals(mode)||"EXCELLENT".equals(mode)){
-                e.putBoolean("powerfull_enabled_"+symbol,false);
-            }else if("POWERFULL".equals(mode)){
-                e.putBoolean("auto",false);
-                if(gp.getFloat("powerfull_pip_size_"+symbol,0f)<=0f){
-                    e.putString(key,"NONE").putBoolean("powerfull_enabled_"+symbol,false).apply();
-                    standard.setChecked(false);excellent.setChecked(false);powerful.setChecked(false);
-                    Toast.makeText(this,"Atur ukuran pip terlebih dahulu di menu POWERFULL.",Toast.LENGTH_LONG).show();
-                    showPowerfullDialog();
-                    return;
-                }
-                e.putBoolean("powerfull_enabled_"+symbol,true);
-            }else{
-                e.putBoolean("auto",false).putBoolean("powerfull_enabled_"+symbol,false);
-            }
-            e.apply();
-            Toast.makeText(this,"Profil "+mode+" tersimpan untuk "+symbol,Toast.LENGTH_SHORT).show();
-        };
-        standard.setOnCheckedChangeListener((b,on)->{if(!changing[0])activate.accept(on?"STANDAR":"NONE");});
-        excellent.setOnCheckedChangeListener((b,on)->{if(!changing[0])activate.accept(on?"EXCELLENT":"NONE");});
-        powerful.setOnCheckedChangeListener((b,on)->{if(!changing[0])activate.accept(on?"POWERFULL":"NONE");});
+        standard.setOnCheckedChangeListener((b,on)->{if(!changing[0])applyStrategyProfile(symbol,on?"STANDAR":"NONE",standard,excellent,powerful,changing);});
+        excellent.setOnCheckedChangeListener((b,on)->{if(!changing[0])applyStrategyProfile(symbol,on?"EXCELLENT":"NONE",standard,excellent,powerful,changing);});
+        powerful.setOnCheckedChangeListener((b,on)->{if(!changing[0])applyStrategyProfile(symbol,on?"POWERFULL":"NONE",standard,excellent,powerful,changing);});
         Button openPower=btn("PENGATURAN DETAIL POWERFULL");
         openPower.setTextSize(11);openPower.setTextColor(Color.WHITE);openPower.setBackground(roundBg(Color.rgb(8,70,103),10));
         root.addView(openPower,new LinearLayout.LayoutParams(-1,uiDp(44)));
@@ -1790,6 +1764,35 @@ public class MainActivity extends Activity {
         AlertDialog dialog=new AlertDialog.Builder(this).setView(root).create();
         close.setOnClickListener(v->dialog.dismiss());
         showSizedDialog(dialog,0.78f,420);
+    }
+
+    private void applyStrategyProfile(String symbol,String mode,Switch standard,Switch excellent,
+                                      Switch powerful,boolean[] changing){
+        changing[0]=true;
+        standard.setChecked("STANDAR".equals(mode));
+        excellent.setChecked("EXCELLENT".equals(mode));
+        powerful.setChecked("POWERFULL".equals(mode));
+        changing[0]=false;
+        SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        String key="rayyan_strategy_"+symbol;
+        SharedPreferences.Editor e=gp.edit().putString(key,mode);
+        if("STANDAR".equals(mode)||"EXCELLENT".equals(mode)){
+            e.putBoolean("powerfull_enabled_"+symbol,false);
+        }else if("POWERFULL".equals(mode)){
+            e.putBoolean("auto",false);
+            if(gp.getFloat("powerfull_pip_size_"+symbol,0f)<=0f){
+                e.putString(key,"NONE").putBoolean("powerfull_enabled_"+symbol,false).apply();
+                changing[0]=true;powerful.setChecked(false);changing[0]=false;
+                Toast.makeText(this,"Atur ukuran pip terlebih dahulu di menu POWERFULL.",Toast.LENGTH_LONG).show();
+                showPowerfullDialog();
+                return;
+            }
+            e.putBoolean("powerfull_enabled_"+symbol,true);
+        }else{
+            e.putBoolean("auto",false).putBoolean("powerfull_enabled_"+symbol,false);
+        }
+        e.apply();
+        Toast.makeText(this,"Profil "+mode+" tersimpan untuk "+symbol,Toast.LENGTH_SHORT).show();
     }
 
     /**
