@@ -5,6 +5,7 @@ import android.graphics.*;
 import android.view.*;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
@@ -23,6 +24,8 @@ public class CandleChartView extends View {
     private String timeframe="M1";
     private String marketName="XAUUSD";
     private String visualTheme="DEFAULT";
+    private volatile long mt5ServerTimeMs=0L;
+    private volatile long mt5ServerReceivedElapsedMs=0L;
     private final SimpleDateFormat time = new SimpleDateFormat("HH:mm", Locale.US);
     private double signalEntry, signalSl, signalTp1, signalTp2;
     private double[] fibonacciLevels = new double[]{-0.27,0,.236,.382,.5,.618,.786,1};
@@ -59,6 +62,13 @@ public class CandleChartView extends View {
     private int chartTextColor(){ return isLightTheme()?Color.rgb(78,93,109):Color.WHITE; }
     private int chartMutedTextColor(){ return isLightTheme()?Color.rgb(108,122,137):(isDarkTheme()?Color.rgb(177,195,215):Color.LTGRAY); }
     public void setTimeframe(String tf){ timeframe=tf==null?"M1":tf; invalidate(); }
+    /** Anchor MT5 server epoch time to Android's monotonic clock, immune to phone clock changes. */
+    public void setServerTime(long serverEpochMs,long receivedElapsedMs){
+        if(serverEpochMs<=0L||receivedElapsedMs<=0L)return;
+        mt5ServerTimeMs=serverEpochMs;
+        mt5ServerReceivedElapsedMs=receivedElapsedMs;
+        invalidate();
+    }
     public void setMarket(String market){
         String next=(market==null||market.trim().isEmpty())?"XAUUSD":market.trim().toUpperCase(Locale.US);
         if(!next.equals(marketName)){bid=0;ask=0;positionEntry=0;signalActive=false;}
@@ -395,12 +405,17 @@ public class CandleChartView extends View {
 
     private void drawCandleCountdown(Canvas c, float cx, float cy, float radius, Candle latest) {
         long period = periodForTimeframe();
-        long now = System.currentTimeMillis();
-        // Use candle time when available; align to wall-clock periods while the feed loads.
-        long baseTime = latest != null && latest.t > 0L ? latest.t : 0L;
-        long elapsed = Math.floorMod(now - baseTime, period);
-        long remaining = period - elapsed;
-        if (remaining <= 0L || remaining > period) remaining = period;
+        long elapsedNow=SystemClock.elapsedRealtime();
+        long serverAnchor=mt5ServerTimeMs;
+        long receivedAnchor=mt5ServerReceivedElapsedMs;
+        boolean serverClockValid=serverAnchor>0L&&receivedAnchor>0L&&elapsedNow>=receivedAnchor;
+        long remaining=0L;
+        if(serverClockValid&&latest!=null&&latest.t>0L){
+            long estimatedServerNow=serverAnchor+(elapsedNow-receivedAnchor);
+            long elapsedInBar=Math.floorMod(estimatedServerNow-latest.t,period);
+            remaining=period-elapsedInBar;
+            if(remaining<=0L||remaining>period)remaining=period;
+        }
 
         int ring = isLightTheme() ? Color.rgb(35, 112, 174) : Color.rgb(0, 215, 155);
         int face = isLightTheme() ? Color.rgb(255,255,255) : Color.rgb(8,22,34);
@@ -414,13 +429,16 @@ public class CandleChartView extends View {
         c.drawCircle(cx, cy, radius-1.6f, p);
         p.setStrokeCap(Paint.Cap.ROUND);
         p.setColor(ring);
-        float progress = (float)(remaining / (double)period);
+        float progress = serverClockValid&&latest!=null&&latest.t>0L
+            ? (float)(remaining / (double)period) : 0f;
         c.drawArc(cx-radius+2,cy-radius+2,cx+radius-2,cy+radius-2,
             -90f,360f*progress,false,p);
         p.setStrokeCap(Paint.Cap.BUTT);
         p.setStyle(Paint.Style.FILL);
         String label;
-        if (period <= 60_000L) {
+        if(!serverClockValid||latest==null||latest.t<=0L){
+            label="--";
+        } else if (period <= 60_000L) {
             label = String.format(Locale.US, "%02d", Math.max(0L, (remaining+999L)/1000L));
         } else if (period < 60*60_000L) {
             long totalSeconds=(remaining+999L)/1000L;
