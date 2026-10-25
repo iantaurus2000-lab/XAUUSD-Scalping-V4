@@ -712,13 +712,11 @@ public class MainActivity extends Activity {
                                         double spreadBid,double spreadAsk){
         String symbol=mt5SymbolForMarket(selectedMarket);
         SharedPreferences prefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        boolean standardOn=prefs.getBoolean(strategyEnabledKey("STANDAR",symbol),false);
-        boolean excellentOn=prefs.getBoolean(strategyEnabledKey("EXCELLENT",symbol),false);
-        // POWERFULL is an independent EA engine. Android evaluates EXCELLENT first,
-        // then STANDAR, and each strategy toggle is stored separately per symbol.
-        if(excellentOn)
+        String active=activeStrategyForSymbol(symbol);
+        // The selector fails closed if stale preferences somehow contain >1 active strategy.
+        if("EXCELLENT".equals(active))
             return ExcellentSignalEngine.evaluate(m1,m5,bid,ask,spreadBid,spreadAsk);
-        if(standardOn)
+        if("STANDAR".equals(active))
             return SignalEngine.evaluate(m1,m5,bid,ask,spreadBid,spreadAsk);
         return new SignalResult("WAIT","NEUTRAL",0,0,0,0,0,0,1,
             "STRATEGI STANDAR/EXCELLENT OFF • POWERFULL dikendalikan EA secara terpisah",
@@ -975,10 +973,8 @@ public class MainActivity extends Activity {
         // They do not depend on the legacy Smart Auto master or operation_mode=READY.
         // Keep the lifecycle manager restricted to M1 for new/replacement entries.
         String strategySymbol=mt5SymbolForMarket(selectedMarket);
-        String standardKey=strategyEnabledKey("STANDAR",strategySymbol);
-        boolean standardOn=gp.getBoolean(standardKey,false);
-        boolean excellentOn=gp.getBoolean(strategyEnabledKey("EXCELLENT",strategySymbol),false);
-        boolean androidStrategyAutoOn=standardOn||excellentOn;
+        String selectedStrategy=activeStrategyForSymbol(strategySymbol);
+        boolean androidStrategyAutoOn="STANDAR".equals(selectedStrategy)||"EXCELLENT".equals(selectedStrategy);
         boolean autoEnabled=androidStrategyAutoOn&&"M1".equals(selectedTf);
         if(m1==null||m1.length<30||m5==null||m5.length<60){
             autoDiagnostic(gp,"DATA_M1M5_SHORT|"+selectedMarket+"|"+selectedTf,
@@ -2256,9 +2252,14 @@ public class MainActivity extends Activity {
 
     private String activeStrategyForSymbol(String symbol){
         SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        if(gp.getBoolean(strategyEnabledKey("STANDAR",symbol),false))return "STANDAR";
-        if(gp.getBoolean(strategyEnabledKey("EXCELLENT",symbol),false))return "EXCELLENT";
-        if(gp.getBoolean("powerfull_enabled_"+symbol,false))return "POWERFULL";
+        boolean standard=gp.getBoolean(strategyEnabledKey("STANDAR",symbol),false);
+        boolean excellent=gp.getBoolean(strategyEnabledKey("EXCELLENT",symbol),false);
+        boolean powerfull=gp.getBoolean("powerfull_enabled_"+symbol,false);
+        int activeCount=(standard?1:0)+(excellent?1:0)+(powerfull?1:0);
+        if(activeCount>1)return "OFF"; // fail closed; never run or draw multiple strategies
+        if(standard)return "STANDAR";
+        if(excellent)return "EXCELLENT";
+        if(powerfull)return "POWERFULL";
         return "OFF";
     }
 
