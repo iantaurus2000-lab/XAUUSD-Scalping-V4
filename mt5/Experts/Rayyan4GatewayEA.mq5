@@ -78,6 +78,7 @@ bool powerModelGood[3];
 int powerModelPercentile[3];
 double powerModelPipSize[3];
 bool powerReplacementPending[3];
+bool powerCancelOnly[3];
 int powerHistorySamples[3];
 int powerHistoryDays[3];
 double powerBaseRangePips[3];
@@ -1552,10 +1553,18 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
    uint buyRc=powerTrade.ResultRetcode();
    ulong buyTicket=powerTrade.ResultOrder();
    if(!buyOk||(buyRc!=TRADE_RETCODE_PLACED&&buyRc!=TRADE_RETCODE_DONE)){
-      powerPublishState(index,"BUY_REJECTED","retcode="+IntegerToString((int)buyRc)+
-                        " "+powerTrade.ResultRetcodeDescription(),barTime);
+      // Treat timeouts/rejections as uncertain until the terminal order list proves
+      // there is no orphaned Powerfull pending order for this symbol.
+      bool cleanup=powerCancelPendingForSymbol(symbol);
+      powerLastSeedBar[index]=barTime;
+      powerReplacementPending[index]=false;
+      powerCancelOnly[index]=!cleanup;
+      powerPublishState(index,cleanup?"BUY_REJECTED_CLEAN":"BUY_REJECTED_UNCERTAIN",
+                        "retcode="+IntegerToString((int)buyRc)+" "+
+                        powerTrade.ResultRetcodeDescription()+" cleanup="+(cleanup?"OK":"PENDING"),barTime);
       Print("POWERFULL BUY LIMIT FAILED symbol=",symbol," entry=",buyEntry," sl=",buySL,
-            " retcode=",buyRc," ",powerTrade.ResultRetcodeDescription()," err=",GetLastError());
+            " retcode=",buyRc," ",powerTrade.ResultRetcodeDescription(),
+            " cleanup=",cleanup," err=",GetLastError());
       return false;
    }
 
@@ -1566,9 +1575,11 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
    if(!sellOk||(sellRc!=TRADE_RETCODE_PLACED&&sellRc!=TRADE_RETCODE_DONE)){
       bool rollback=powerCancelPendingForSymbol(symbol);
       powerLastSeedBar[index]=barTime;
+      powerReplacementPending[index]=false;
+      powerCancelOnly[index]=!rollback;
       powerPublishState(index,rollback?"PAIR_ROLLED_BACK":"PAIR_PARTIAL_UNCERTAIN",
                         "SELL rejected retcode="+IntegerToString((int)sellRc)+
-                        " "+powerTrade.ResultRetcodeDescription(),barTime);
+                        " "+powerTrade.ResultRetcodeDescription()+" rollback="+(rollback?"OK":"PENDING"),barTime);
       Print("POWERFULL SELL LIMIT FAILED symbol=",symbol," entry=",sellEntry," sl=",sellSL,
             " retcode=",sellRc," ",powerTrade.ResultRetcodeDescription(),
             " rollback=",rollback," err=",GetLastError());
@@ -1788,6 +1799,7 @@ void managePowerfullSymbol(int index){
       powerLastSeedBar[index]=0;
       powerReplans[index]=0;
       powerReplacementPending[index]=false;
+      powerCancelOnly[index]=false;
       powerForecastRangePips[index]=0.0;
       powerProjectedLow[index]=0.0;
       powerProjectedHigh[index]=0.0;
@@ -1852,22 +1864,30 @@ void managePowerfullSymbol(int index){
       // before allowing a replacement pair to enter the single order lifecycle.
       bool canceled=powerCancelPendingForSymbol(symbol);
       powerReplans[index]++;
-      if(canceled&&positions==0){
+      if(positions>0){
+         powerLastSeedBar[index]=barTime;
+         powerReplacementPending[index]=false;
+         powerCancelOnly[index]=false;
+         powerPublishState(index,"DISTRIBUTION_REVISED_NO_REENTRY",reviseReason+
+                           " | realized="+DoubleToString(realizedPips,2)+
+                           " pip | open position remains managed; no new pair while exposure exists",barTime);
+         return;
+      }else if(!canceled){
+         powerLastSeedBar[index]=0;
+         powerReplacementPending[index]=true;
+         powerCancelOnly[index]=false;
+         powerPublishState(index,"CANCEL_PENDING","Forecast changed; replacement blocked until all old pending orders are confirmed removed",barTime);
+         return;
+      }else{
          powerLastSeedBar[index]=0;
          powerLastSeedAttemptMs[index]=0;
          powerReplacementPending[index]=true;
+         powerCancelOnly[index]=false;
          powerPublishState(index,"DISTRIBUTION_REVISED",reviseReason+
                            " | realized="+DoubleToString(realizedPips,2)+
                            " pip | old="+DoubleToString(oldForecast,2)+
                            " pip | revised="+DoubleToString(revised,2)+
-                           " pip | replacing only after old pending count reaches zero",barTime);
-      }else{
-         powerLastSeedBar[index]=barTime;
-         powerReplacementPending[index]=false;
-         powerPublishState(index,"DISTRIBUTION_REVISED_NO_REENTRY",reviseReason+
-                           " | realized="+DoubleToString(realizedPips,2)+
-                           " pip | stale pending cancelled/verified; open position or cancel uncertainty blocks reseed",barTime);
-         return;
+                           " pip | old pending count is zero; replacement permitted",barTime);
       }
       pending=powerPendingCount(symbol);
       if(pending>0){
@@ -1879,6 +1899,30 @@ void managePowerfullSymbol(int index){
    pending=powerPendingCount(symbol);
    positions=powerPositionCount(symbol);
    if(positions>0)powerLastSeedBar[index]=barTime; // exposure in this candle blocks reseeding after it closes
+   if(powerReplacementPending[index]&&pending>0){
+      // Retry failed/throttled deletes. Never treat old orders as the new pair.
+      powerCancelPendingForSymbol(symbol);
+      pending=powerPendingCount(symbol);
+      if(pending>0){
+         powerPublishState(index,"CANCEL_PENDING","Replacement waits for confirmed zero Powerfull pending orders",barTime);
+         return;
+      }
+   }
+   if(powerCancelOnly[index]){
+      if(pending>0){
+         powerCancelPendingForSymbol(symbol);
+         pending=powerPendingCount(symbol);
+         if(pending>0){
+            powerPublishState(index,"CANCEL_PENDING","Partial/uncertain pair: retry cancellation; no replacement will be seeded",barTime);
+            return;
+         }
+      }
+      powerCancelOnly[index]=false;
+      if(positions==0&&powerLastSeedBar[index]==barTime){
+         powerPublishState(index,"PAIR_CLEANED_NO_RETRY","Uncertain/rejected pair is now cleared; no retry in this M5 candle",barTime);
+         return;
+      }
+   }
    if(pending>0){
       if(powerHasPendingOnBar(symbol,barTime)){
          powerLastSeedBar[index]=barTime;
