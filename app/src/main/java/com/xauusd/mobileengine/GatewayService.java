@@ -354,6 +354,9 @@ public final class GatewayService extends Service {
         SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         String suffix=symbol;
         boolean requested=p.getBoolean("powerfull_enabled_"+suffix,false);
+        boolean standardOn=p.getBoolean("rayyan_strategy_enabled_STANDAR_"+suffix,false);
+        boolean excellentOn=p.getBoolean("rayyan_strategy_enabled_EXCELLENT_"+suffix,false);
+        boolean strategyConflict=requested&&(standardOn||excellentOn);
         boolean buyLimit=p.getBoolean("powerfull_buy_limit_"+suffix,true);
         boolean sellLimit=p.getBoolean("powerfull_sell_limit_"+suffix,true);
         boolean reforecast=p.getBoolean("powerfull_reforecast_"+suffix,true);
@@ -368,8 +371,8 @@ public final class GatewayService extends Service {
             &&Double.isFinite(pip)&&pip>0.0
             &&(percentile==50||percentile==60||percentile==70||percentile==80||percentile==90);
         boolean hasEntrySide=buyLimit||sellLimit;
-        boolean enabled=requested&&valid&&hasEntrySide;
-        String reason=enabled?"READY":(!requested?"DISABLED":(!valid?"CONFIG_INVALID":"NO_ENTRY_SIDE"));
+        boolean enabled=requested&&valid&&hasEntrySide&&!strategyConflict;
+        String reason=enabled?"READY":(!requested?"DISABLED":(strategyConflict?"STRATEGY_CONFLICT":(!valid?"CONFIG_INVALID":"NO_ENTRY_SIDE")));
         return "symbol="+symbol
             +";enabled="+(enabled?"1":"0")
             +";buyLimit="+(buyLimit?"1":"0")
