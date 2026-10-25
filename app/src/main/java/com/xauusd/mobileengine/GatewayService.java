@@ -534,7 +534,18 @@ public final class GatewayService extends Service {
                 return;
             }
             logBgStatus("MT5_FEED_OK market="+market+" symbol="+symbol+" M1="+m1.length+" M5="+m5.length);
-            SignalResult s=SignalEngine.evaluate(m1,m5,t[0],t[1],t[0],t[1]);
+            SharedPreferences strategyPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+            boolean standard=strategyPrefs.getBoolean("rayyan_strategy_enabled_STANDAR_"+symbol,false);
+            boolean excellent=strategyPrefs.getBoolean("rayyan_strategy_enabled_EXCELLENT_"+symbol,false);
+            boolean powerful=strategyPrefs.getBoolean("powerfull_enabled_"+symbol,false);
+            int activeCount=(standard?1:0)+(excellent?1:0)+(powerful?1:0);
+            if(activeCount!=1 || powerful){
+                logBgStatus("BACKGROUND_SIGNAL_PAUSED strategy="+(activeCount>1?"CONFLICT":(powerful?"POWERFULL_EA_OWNED":"OFF"))+" symbol="+symbol);
+                return;
+            }
+            SignalResult s=excellent
+                ?ExcellentSignalEngine.evaluate(m1,m5,t[0],t[1],t[0],t[1])
+                :SignalEngine.evaluate(m1,m5,t[0],t[1],t[0],t[1]);
             if(s==null){logBgStatus("SIGNAL_RESULT_NULL");return;}
             String side=s.side;
             if(!"BUY".equals(side)&&!"SELL".equals(side))logBgStatus("SIGNAL_WAIT side="+side+" confidence="+s.confidence);
