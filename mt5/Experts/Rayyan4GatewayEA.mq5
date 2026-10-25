@@ -1774,14 +1774,20 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       string holdBarKey="PW_HBAR_"+suffix;
       double holdMode=GlobalVariableCheck(holdKey)?GlobalVariableGet(holdKey):0.0;
       datetime holdBar=GlobalVariableCheck(holdBarKey)?(datetime)GlobalVariableGet(holdBarKey):0;
+      if(!powerCfg[index].crossCandleHold){
+         if(GlobalVariableCheck(holdKey))GlobalVariableDel(holdKey);
+         if(GlobalVariableCheck(holdBarKey))GlobalVariableDel(holdBarKey);
+         holdMode=0.0;
+         holdBar=0;
+      }
 
       // Only the final 100 ms + aligned momentum can arm a cross-candle hold.
-      if(last100ms&&net>0.0&&alignedMomentum){
+      if(powerCfg[index].crossCandleHold&&last100ms&&net>0.0&&alignedMomentum){
          GlobalVariableSet(holdKey,1.0);
          GlobalVariableSet(holdBarKey,(double)barTime);
          continue;
       }
-      if(holdMode>=1.0&&holdBar>0){
+      if(powerCfg[index].crossCandleHold&&holdMode>=1.0&&holdBar>0){
          if(holdMode==1.0&&barTime>holdBar){
             if(alignedMomentum){
                GlobalVariableSet(holdKey,2.0);
@@ -1807,7 +1813,8 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
             continue;
          }
       }
-      if(net>0.0)powerClosePosition(ticket,"DYNAMIC_NET_PROFIT");
+      if(powerCfg[index].quickProfitClose&&net>0.0)
+         powerClosePosition(ticket,"DYNAMIC_NET_PROFIT");
    }
 }
 
