@@ -1987,8 +1987,10 @@ public class MainActivity extends Activity {
                     Toast.makeText(this,"Ukuran 1 pip tidak boleh lebih kecil dari MT5 point "+String.format(Locale.US,"%.8f",point),Toast.LENGTH_LONG).show();
                     return;
                 }
-                gp.edit()
+                SharedPreferences.Editor powerEditor=gp.edit()
                     .putBoolean("powerfull_enabled_"+symbol,enabled.isChecked())
+                    .putBoolean(strategyEnabledKey("STANDAR",symbol),false)
+                    .putBoolean(strategyEnabledKey("EXCELLENT",symbol),false)
                     .putBoolean("powerfull_buy_limit_"+symbol,buyLimitSwitch.isChecked())
                     .putBoolean("powerfull_sell_limit_"+symbol,sellLimitSwitch.isChecked())
                     .putBoolean("powerfull_reforecast_"+symbol,reforecastSwitch.isChecked())
@@ -1996,8 +1998,10 @@ public class MainActivity extends Activity {
                     .putBoolean("powerfull_cross_candle_"+symbol,crossCandleSwitch.isChecked())
                     .putFloat("powerfull_lot_"+symbol,(float)volume)
                     .putFloat("powerfull_pip_size_"+symbol,(float)pip)
-                    .putInt("powerfull_percentile_"+symbol,q)
-                    .apply();
+                    .putInt("powerfull_percentile_"+symbol,q);
+                powerEditor.apply();
+                applyStrategyIndicatorProfile();
+                queueNativeIndicatorState();
                 AppLog.add(this,"SMART AUTO-POWERFULL","settings saved symbol="+symbol+" enabled="+enabled.isChecked()
                     +" buyLimit="+buyLimitSwitch.isChecked()+" sellLimit="+sellLimitSwitch.isChecked()
                     +" reforecast="+reforecastSwitch.isChecked()+" quickProfit="+quickProfitSwitch.isChecked()
@@ -2300,10 +2304,11 @@ public class MainActivity extends Activity {
         if("ema50".equals(key)||"ema200".equals(key)||"sr".equals(key)||"fibo".equals(key))
             queueNativeIndicatorState();
         switch(key){
-            case "ema50":chart.setShowEMA50(enabled);break;case "ema200":chart.setShowEMA200(enabled);break;
-            case "sr":chart.setShowSR(enabled);break;case "fibo":chart.setShowFibo(enabled);break;case "rsi":chart.setShowRSI(enabled);break;case "macd":chart.setShowMACD(enabled);break;case "atr":chart.setShowATR(enabled);break;
             case "signals":chart.setShowSignals(enabled);break;case "wickbos":chart.setShowWickBos(enabled);break;case "orders":chart.setShowTradeLevels(enabled);break;case "position":chart.setShowPosition(enabled);break;case "bidask":chart.setShowBidAsk(enabled);break;
         }
+        // Indicator preferences are remembered, but only the active strategy may render them.
+        applyStrategyIndicatorProfile();
+        queueNativeIndicatorState();
     }
 
     private void showWinRateDialog(){
