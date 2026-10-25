@@ -79,7 +79,8 @@ public final class RayyanMenuLayout {
         addItems(host, content, Arrays.asList(
             new Item("⇄", "Gateway / Queue / ACK", "Status EA, antrean, dan konfirmasi MT5", "gateway"),
             new Item("▤", "Orders / History", "Log dan riwayat aktivitas aplikasi", "orders"),
-            new Item("✦", "Smart Auto Entry", "Pengaturan Auto Entry dan LIMIT demo", "mt5")
+            new Item("✦", "Smart Auto Entry", "Pengaturan Auto Entry dan LIMIT demo", "mt5"),
+            new Item("⚡", "SMART AUTO-POWERFULL", "Prediksi distribusi M5 • dual LIMIT • profit dinamis", "powerfull")
         ), actions);
 
         addSection(host, content, "ALAT & PENGATURAN");
