@@ -1457,6 +1457,15 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
    double lot=powerCfg[index].lot;
    double stopPips=powerCfg[index].stopPips;
    if(!powerModelGood[index]||pip<=0.0||powerForecastRangePips[index]<=0.0)return false;
+   long elapsedMs=tick.time_msc-(long)barTime*1000;
+   // First dual-LIMIT pair belongs at the beginning of its M5 candle. A forecast
+   // replacement may be sent later in the same candle, but only after old orders
+   // are confirmed deleted and with enough time before the specified expiry.
+   if(!powerReplacementPending[index]&&(elapsedMs<0||elapsedMs>5000)){
+      powerLastSeedBar[index]=barTime;
+      powerPublishState(index,"MISSED_ENTRY_WINDOW","Initial dual LIMIT not sent outside first 5 seconds of M5; wait for the next candle",barTime);
+      return false;
+   }
    if(DemoOnly&&AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
       powerPublishState(index,"BLOCKED_NOT_DEMO","DemoOnly=TRUE; account is not demo",barTime);
       return false;
