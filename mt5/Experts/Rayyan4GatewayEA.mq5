@@ -1468,6 +1468,12 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
    double lot=powerCfg[index].lot;
    double stopPips=powerCfg[index].stopPips;
    if(!powerModelGood[index]||pip<=0.0||powerForecastRangePips[index]<=0.0)return false;
+   // POWERFULL remains demo-only even if the legacy EA's shared DemoOnly input
+   // is changed for another workflow.
+   if(AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
+      powerPublishState(index,"BLOCKED_NOT_DEMO","SMART AUTO-POWERFULL is demo-only",barTime);
+      return false;
+   }
    ENUM_ACCOUNT_MARGIN_MODE marginMode=(ENUM_ACCOUNT_MARGIN_MODE)AccountInfoInteger(ACCOUNT_MARGIN_MODE);
    bool hedgeAllowed=(AccountInfoInteger(ACCOUNT_HEDGE_ALLOWED)!=0);
    if(marginMode!=ACCOUNT_MARGIN_MODE_RETAIL_HEDGING||!hedgeAllowed){
@@ -1482,12 +1488,6 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
    if(!powerReplacementPending[index]&&(elapsedMs<0||elapsedMs>5000)){
       powerLastSeedBar[index]=barTime;
       powerPublishState(index,"MISSED_ENTRY_WINDOW","Initial dual LIMIT not sent outside first 5 seconds of M5; wait for the next candle",barTime);
-      return false;
-   }
-   // POWERFULL remains demo-only even if the legacy EA's shared DemoOnly input
-   // is changed for another workflow.
-   if(AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
-      powerPublishState(index,"BLOCKED_NOT_DEMO","SMART AUTO-POWERFULL is demo-only",barTime);
       return false;
    }
    if(!TerminalInfoInteger(TERMINAL_CONNECTED)||!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)
