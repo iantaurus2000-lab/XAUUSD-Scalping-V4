@@ -92,7 +92,7 @@ public final class RayyanMenuLayout {
             new Item("♧", "Notifikasi", "Aktif/nonaktifkan notifikasi aplikasi", "notifications"),
             new Item("⚙", "Settings", "Pengaturan tampilan dan sistem", "settings")
         ), actions);
-        addFooter(host, root, "Gateway dan order tetap diatur oleh MainActivity.");
+        addFooter(host, root, "APK menjalankan STANDAR/EXCELLENT; POWERFULL dan model distribusinya dikelola EA MT5.");
         showDialog(host, root, "rayyan_main_menu");
     }
 
@@ -123,7 +123,7 @@ public final class RayyanMenuLayout {
             new Item("♧", "Notifikasi", "Aktif/nonaktifkan notifikasi aplikasi", "settings_notifications"),
             new Item("▤", "Log Sistem", "Lihat catatan aktivitas aplikasi", "settings_logs")
         ), actions);
-        addFooter(host, root, "Perubahan UI ini tidak mengubah konfigurasi koneksi.");
+        addFooter(host, root, "Setiap menu menyimpan pengaturan fitur terkait; koneksi hanya diubah melalui menu koneksi.");
         showDialog(host, root, "rayyan_settings");
     }
 
