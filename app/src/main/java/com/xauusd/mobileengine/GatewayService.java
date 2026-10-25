@@ -379,6 +379,7 @@ public final class GatewayService extends Service {
         String high=query(path,"high");
         String bar=query(path,"bar");
         String samples=query(path,"samples");
+        String days=query(path,"days");
         String pending=query(path,"pending");
         String positions=query(path,"positions");
         String detail=query(path,"detail");
@@ -388,6 +389,7 @@ public final class GatewayService extends Service {
             if(!high.isEmpty()&&!Double.isFinite(Double.parseDouble(high)))return "POWER STATE ERROR HIGH";
             if(!bar.isEmpty()&&Long.parseLong(bar)<0L)return "POWER STATE ERROR BAR";
             if(!samples.isEmpty()&&Integer.parseInt(samples)<0)return "POWER STATE ERROR SAMPLES";
+            if(!days.isEmpty()&&Integer.parseInt(days)<0)return "POWER STATE ERROR DAYS";
             if(!pending.isEmpty()&&Integer.parseInt(pending)<0)return "POWER STATE ERROR PENDING";
             if(!positions.isEmpty()&&Integer.parseInt(positions)<0)return "POWER STATE ERROR POSITIONS";
         }catch(Exception bad){return "POWER STATE ERROR FORMAT";}
@@ -399,6 +401,7 @@ public final class GatewayService extends Service {
             .putString("powerfull_high_"+symbol,high)
             .putString("powerfull_bar_"+symbol,bar)
             .putString("powerfull_samples_"+symbol,samples)
+            .putString("powerfull_days_"+symbol,days)
             .putString("powerfull_pending_"+symbol,pending)
             .putString("powerfull_positions_"+symbol,positions)
             .putString("powerfull_detail_"+symbol,detail)
