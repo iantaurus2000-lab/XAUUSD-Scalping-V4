@@ -229,6 +229,10 @@ public final class GatewayService extends Service {
                 edit.putString("mt5_bars_"+symbol+"_"+tf,bars)
                     .putLong("mt5_bars_at_"+symbol+"_"+tf,now)
                     .putInt("mt5_bars_count_"+symbol+"_"+tf,rows.length);
+                if(serverTimeMs>0L){
+                    edit.putLong("mt5_server_time_ms",serverTimeMs)
+                        .putLong("mt5_server_time_received_elapsed",SystemClock.elapsedRealtime());
+                }
                 total+=rows.length;
             }
             if(seen.isEmpty())return "BARS ERROR EMPTY";
