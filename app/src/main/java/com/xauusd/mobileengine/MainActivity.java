@@ -1712,6 +1712,17 @@ public class MainActivity extends Activity {
      * It writes only powerfull_* per-symbol preferences and never toggles "auto" or
      * "operation_mode" used by the existing Fibo/wick entry manager.
      */
+    private Switch addPowerfullToggle(LinearLayout parent,String label,boolean defaultValue){
+        Switch toggle=new Switch(this);
+        toggle.setText(label);
+        toggle.setTextSize(12);
+        toggle.setTextColor(Color.WHITE);
+        toggle.setChecked(defaultValue);
+        toggle.setPadding(uiDp(6),uiDp(2),uiDp(6),uiDp(2));
+        parent.addView(toggle,new LinearLayout.LayoutParams(-1,uiDp(42)));
+        return toggle;
+    }
+
     private void showPowerfullDialog(){
         final String symbol=mt5SymbolForMarket(selectedMarket);
         final SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
@@ -1727,7 +1738,7 @@ public class MainActivity extends Activity {
         TextView market=tv("MARKET "+symbol+" • STRATEGI TERPISAH",12);
         market.setTextColor(Color.CYAN);
         root.addView(market,new LinearLayout.LayoutParams(-1,uiDp(26)));
-        TextView explanation=tv("Prediksi distribusi M5 historis • BUY LIMIT 1% / SELL LIMIT 99% • profit dinamis per tick • SL sekitar 3 pip.",11);
+        TextView explanation=tv("Model distribusi M5 dari riwayat MT5 (tanpa indikator pihak ketiga) • entry 1%/99% • proteksi SL 3 pip selalu aktif.",11);
         explanation.setTextColor(Color.LTGRAY);
         explanation.setGravity(Gravity.TOP|Gravity.START);
         explanation.setPadding(0,uiDp(2),0,uiDp(8));
@@ -1742,6 +1753,22 @@ public class MainActivity extends Activity {
         enabled.setChecked(gp.getBoolean("powerfull_enabled_"+symbol,false));
         enabled.setPadding(uiDp(6),uiDp(4),uiDp(6),uiDp(4));
         fields.addView(enabled,new LinearLayout.LayoutParams(-1,uiDp(50)));
+
+        TextView featureTitle=tv("SAKELAR FITUR TERPISAH",11);
+        featureTitle.setTextColor(Color.CYAN);
+        featureTitle.setTypeface(null,Typeface.BOLD);
+        featureTitle.setPadding(uiDp(6),uiDp(8),uiDp(6),uiDp(2));
+        fields.addView(featureTitle,new LinearLayout.LayoutParams(-1,uiDp(30)));
+        Switch buyLimitSwitch=addPowerfullToggle(fields,"BUY LIMIT entry",
+            gp.getBoolean("powerfull_buy_limit_"+symbol,true));
+        Switch sellLimitSwitch=addPowerfullToggle(fields,"SELL LIMIT entry",
+            gp.getBoolean("powerfull_sell_limit_"+symbol,true));
+        Switch reforecastSwitch=addPowerfullToggle(fields,"Hitung ulang distribusi / ganti pending",
+            gp.getBoolean("powerfull_reforecast_"+symbol,true));
+        Switch quickProfitSwitch=addPowerfullToggle(fields,"Tutup cepat saat profit bersih positif",
+            gp.getBoolean("powerfull_quick_profit_"+symbol,true));
+        Switch crossCandleSwitch=addPowerfullToggle(fields,"Hold lintas candle jika momentum valid",
+            gp.getBoolean("powerfull_cross_candle_"+symbol,true));
 
         EditText lot=new EditText(this);
         lot.setSingleLine(true);
@@ -1850,6 +1877,10 @@ public class MainActivity extends Activity {
                     Toast.makeText(this,"Isi ukuran harga untuk 1 pip sebelum POWERFULL diaktifkan",Toast.LENGTH_LONG).show();
                     return;
                 }
+                if(enabled.isChecked()&&!buyLimitSwitch.isChecked()&&!sellLimitSwitch.isChecked()){
+                    Toast.makeText(this,"Aktifkan minimal BUY LIMIT atau SELL LIMIT",Toast.LENGTH_LONG).show();
+                    return;
+                }
                 double point=preferenceDouble(gp,"broker_quote_point_"+symbol,0.0);
                 if(enabled.isChecked()&&point>0.0&&pip+1e-12<point){
                     Toast.makeText(this,"Ukuran 1 pip tidak boleh lebih kecil dari MT5 point "+String.format(Locale.US,"%.8f",point),Toast.LENGTH_LONG).show();
@@ -1857,6 +1888,11 @@ public class MainActivity extends Activity {
                 }
                 gp.edit()
                     .putBoolean("powerfull_enabled_"+symbol,enabled.isChecked())
+                    .putBoolean("powerfull_buy_limit_"+symbol,buyLimitSwitch.isChecked())
+                    .putBoolean("powerfull_sell_limit_"+symbol,sellLimitSwitch.isChecked())
+                    .putBoolean("powerfull_reforecast_"+symbol,reforecastSwitch.isChecked())
+                    .putBoolean("powerfull_quick_profit_"+symbol,quickProfitSwitch.isChecked())
+                    .putBoolean("powerfull_cross_candle_"+symbol,crossCandleSwitch.isChecked())
                     .putFloat("powerfull_lot_"+symbol,(float)volume)
                     .putFloat("powerfull_pip_size_"+symbol,(float)pip)
                     .putInt("powerfull_percentile_"+symbol,q)
