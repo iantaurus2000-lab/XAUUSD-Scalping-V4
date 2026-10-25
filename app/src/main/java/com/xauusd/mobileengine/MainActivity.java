@@ -448,7 +448,7 @@ public class MainActivity extends Activity {
             status.setText("● "+strategy+" • STATUS ORDER MT5 BELUM SEGAR");
             return;
         }
-        status.setText("● MT5 + CHART LIVE • SMART AUTO MEMANTAU • "+market+" • M1");
+        status.setText("● "+strategy+" • MT5 + CHART LIVE • AUTO ENTRY SIAP • "+market+" • M1");
     }
 
     /** Keep last prices/spread visible when the feed pauses, but block all new entries. */
