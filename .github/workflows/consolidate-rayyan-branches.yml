@@ -1,0 +1,63 @@
+name: RAYYAN branch consolidation
+
+on:
+  push:
+    branches: [ RAYYAN ]
+    paths:
+      - '.github/workflows/consolidate-rayyan-branches.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  consolidate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Keep only RAYYAN and the active default branch
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+
+            // Try the repository setting first. GITHUB_TOKEN may not have the
+            // Administration permission needed for this endpoint, so fail closed.
+            try {
+              await github.rest.repos.update({ owner, repo, default_branch: 'RAYYAN' });
+              core.info('Repository default branch changed to RAYYAN.');
+            } catch (error) {
+              core.warning('Cannot change default branch with this workflow token (' +
+                (error.status || 'unknown status') + '): ' + error.message);
+            }
+
+            const metadata = await github.rest.repos.get({ owner, repo });
+            const defaultBranch = metadata.data.default_branch;
+            if (defaultBranch !== 'RAYYAN') {
+              core.warning('Default branch remains "' + defaultBranch +
+                '". It must be changed to RAYYAN in repository Settings before that last branch can be deleted.');
+            }
+
+            const branches = await github.paginate(github.rest.repos.listBranches, {
+              owner, repo, per_page: 100
+            });
+            const failures = [];
+            for (const branch of branches) {
+              if (branch.name === 'RAYYAN' || branch.name === defaultBranch) continue;
+              try {
+                await github.rest.git.deleteRef({
+                  owner, repo, ref: 'heads/' + branch.name
+                });
+                core.info('Deleted branch ' + branch.name);
+              } catch (error) {
+                failures.push(branch.name + ': ' + (error.status || '') + ' ' + error.message);
+              }
+            }
+
+            const remaining = await github.paginate(github.rest.repos.listBranches, {
+              owner, repo, per_page: 100
+            });
+            core.notice('Remaining branches: ' + remaining.map(branch => branch.name).join(', '));
+            if (failures.length) core.warning('Some branches could not be deleted: ' + failures.join(' | '));
+            if (remaining.some(branch => branch.name !== 'RAYYAN' && branch.name !== defaultBranch)) {
+              core.setFailed('Cleanup incomplete; inspect the branch list and the warnings above.');
+            }
