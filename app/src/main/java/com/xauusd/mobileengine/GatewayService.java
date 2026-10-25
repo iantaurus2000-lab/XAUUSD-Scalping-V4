@@ -147,7 +147,9 @@ public final class GatewayService extends Service {
                 if(id!=null&&!id.isEmpty()&&id.equals(field(queued,"id"))){
                     ip.edit().remove("indicator_next").putString("indicator_ack_id",id).putLong("indicator_ack_at",System.currentTimeMillis()).apply();out="INDICATOR ACK OK";
                 }else out="INDICATOR ACK STALE";
-            }else if(path.startsWith("/state"))out=receiveState(path);
+            }else if(path.startsWith("/power_config"))out=powerConfig(query(path,"symbol"));
+            else if(path.startsWith("/power_state"))out=receivePowerState(path);
+            else if(path.startsWith("/state"))out=receiveState(path);
             else if(path.startsWith("/quote"))out=receiveQuote(path);
             else out="Rayyan4 gateway OK";
             writeResponse(socket,200,"text/plain; charset=utf-8",out.getBytes(StandardCharsets.UTF_8));
@@ -334,6 +336,75 @@ public final class GatewayService extends Service {
             edit.apply();
             return "QUOTE OK COUNT="+seen.size();
         }catch(Exception e){return "QUOTE ERROR "+e.getClass().getSimpleName();}
+    }
+
+    /**
+     * Isolated SMART AUTO-POWERFULL configuration channel.
+     * It deliberately does not reuse /next, /ack, or the legacy order-state keys.
+     */
+    private synchronized String powerConfig(String symbol){
+        if(!"XAUUSDm".equals(symbol)&&!"BTCUSDm".equals(symbol)&&!"ETHUSDm".equals(symbol))
+            return "symbol=INVALID;enabled=0;reason=UNSUPPORTED_SYMBOL";
+        SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        String suffix=symbol;
+        boolean requested=p.getBoolean("powerfull_enabled_"+suffix,false);
+        double lot=p.getFloat("powerfull_lot_"+suffix,0.0f);
+        double pip=p.getFloat("powerfull_pip_size_"+suffix,0.0f);
+        int percentile=p.getInt("powerfull_percentile_"+suffix,70);
+        double stopPips=3.0;
+        double minimumLot=("BTCUSDm".equals(symbol)||"ETHUSDm".equals(symbol))?0.10:0.01;
+        boolean valid=Double.isFinite(lot)&&lot>=minimumLot
+            &&Double.isFinite(pip)&&pip>0.0
+            &&(percentile==50||percentile==60||percentile==70||percentile==80||percentile==90);
+        boolean enabled=requested&&valid;
+        String reason=enabled?"READY":(!requested?"DISABLED":"CONFIG_INVALID");
+        return "symbol="+symbol
+            +";enabled="+(enabled?"1":"0")
+            +";lot="+String.format(Locale.US,"%.4f",lot)
+            +";pip="+String.format(Locale.US,"%.8f",pip)
+            +";percentile="+percentile
+            +";stopPips="+String.format(Locale.US,"%.2f",stopPips)
+            +";reason="+reason;
+    }
+
+    /** Persists Powerfull-only status reported by the single MT5 EA. */
+    private synchronized String receivePowerState(String path){
+        String symbol=query(path,"symbol");
+        if(!"XAUUSDm".equals(symbol)&&!"BTCUSDm".equals(symbol)&&!"ETHUSDm".equals(symbol))
+            return "POWER STATE ERROR SYMBOL";
+        String status=query(path,"status");
+        if(status==null||status.trim().isEmpty())status="UNKNOWN";
+        String range=query(path,"range");
+        String low=query(path,"low");
+        String high=query(path,"high");
+        String bar=query(path,"bar");
+        String samples=query(path,"samples");
+        String pending=query(path,"pending");
+        String positions=query(path,"positions");
+        String detail=query(path,"detail");
+        try{
+            if(!range.isEmpty()&&!Double.isFinite(Double.parseDouble(range)))return "POWER STATE ERROR RANGE";
+            if(!low.isEmpty()&&!Double.isFinite(Double.parseDouble(low)))return "POWER STATE ERROR LOW";
+            if(!high.isEmpty()&&!Double.isFinite(Double.parseDouble(high)))return "POWER STATE ERROR HIGH";
+            if(!bar.isEmpty()&&Long.parseLong(bar)<0L)return "POWER STATE ERROR BAR";
+            if(!samples.isEmpty()&&Integer.parseInt(samples)<0)return "POWER STATE ERROR SAMPLES";
+            if(!pending.isEmpty()&&Integer.parseInt(pending)<0)return "POWER STATE ERROR PENDING";
+            if(!positions.isEmpty()&&Integer.parseInt(positions)<0)return "POWER STATE ERROR POSITIONS";
+        }catch(Exception bad){return "POWER STATE ERROR FORMAT";}
+        SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        p.edit()
+            .putString("powerfull_status_"+symbol,status)
+            .putString("powerfull_range_pips_"+symbol,range)
+            .putString("powerfull_low_"+symbol,low)
+            .putString("powerfull_high_"+symbol,high)
+            .putString("powerfull_bar_"+symbol,bar)
+            .putString("powerfull_samples_"+symbol,samples)
+            .putString("powerfull_pending_"+symbol,pending)
+            .putString("powerfull_positions_"+symbol,positions)
+            .putString("powerfull_detail_"+symbol,detail)
+            .putLong("powerfull_state_at_"+symbol,System.currentTimeMillis())
+            .apply();
+        return "POWER STATE OK";
     }
 
     private String first(String l){
