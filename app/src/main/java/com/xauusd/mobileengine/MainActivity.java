@@ -963,6 +963,7 @@ public class MainActivity extends Activity {
         long now=System.currentTimeMillis();
         gp.edit().putString("auto_last_signal_key",signalKey).putLong("auto_last_order_ms",now)
             .putString("smart_phase","QUEUED").putString("smart_active_id",orderId)
+            .putString("smart_active_strategy",activeStrategyForSymbol(mt5SymbolForMarket(selectedMarket)))
             .putString("smart_active_side",signal.side).putString("smart_active_symbol",mt5SymbolForMarket(selectedMarket))
             .putString("smart_active_entry",Double.toString(signal.entry)).putString("smart_active_ticket","")
             .putLong("smart_active_start_candle_ms",candleStamp).putLong("smart_active_queue_ms",now)
@@ -1026,6 +1027,9 @@ public class MainActivity extends Activity {
         double activeEntry=preferenceDouble(gp,"smart_active_entry",0.0);
         String activeSymbol=gp.getString("smart_active_symbol",mt5SymbolForMarket(selectedMarket));
         String activeTicket=gp.getString("smart_active_ticket","");
+        String activeStrategyOwner=gp.getString("smart_active_strategy","");
+        boolean activeOrderBelongsToSelectedStrategy=!activeStrategyOwner.isEmpty()
+            &&activeStrategyOwner.equals(selectedStrategy);
         long startedAt=gp.getLong("smart_active_start_candle_ms",candleStamp);
         String sideNow=normalizedStateSide(activeSide);
         double atr=SmartLimitReentry.atr(m1,14);
@@ -1149,10 +1153,13 @@ public class MainActivity extends Activity {
             boolean maxAge=elapsed>=maxPendingBars;
             // A fresh opposite-side wick is a valid same-candle replacement candidate.
             // Same-side price drift alone cannot repeatedly cancel/requeue the same setup.
-            boolean replacement=reentryEnabled&&autoEnabled&&elapsed<maxPendingBars
-                &&validFresh&&(sideChanged
+            boolean replacement=activeOrderBelongsToSelectedStrategy&&reentryEnabled&&autoEnabled
+                &&elapsed<maxPendingBars&&validFresh&&(sideChanged
                     ||(entryChanged&&withinMaxDistance&&movedAway&&continuation));
-            boolean structureInvalid=validFresh&&!s.side.equals(sideNow);
+            // A strategy switch must never let a new engine replace another engine's LIMIT.
+            // Unknown legacy ownership fails closed; expiry cancellation below remains active.
+            boolean structureInvalid=activeOrderBelongsToSelectedStrategy
+                &&validFresh&&!s.side.equals(sideNow);
             long retryAfter=gp.getLong("smart_cancel_retry_after_ms",0L);
             boolean shouldCancel=structureInvalid||maxAge||(reentryEnabled&&replacement);
             if(shouldCancel&&now>=retryAfter){
