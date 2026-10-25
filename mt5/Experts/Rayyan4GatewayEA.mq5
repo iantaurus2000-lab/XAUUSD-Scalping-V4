@@ -1811,33 +1811,57 @@ void managePowerfullSymbol(int index){
    double pip=powerCfg[index].pipSize;
    double realizedPips=(candleHigh-candleLow)/pip;
 
-   // Reforecast if current M5 realized range is materially beyond the prediction.
-   // Replacements are bounded to prevent rapid delete/recreate oscillation.
-   if(realizedPips>powerForecastRangePips[index]*1.15&&powerReplans[index]<POWERFULL_REPLAN_MAX){
-      double revised=MathMax(powerForecastRangePips[index],realizedPips*1.20);
-      if(revised>powerForecastRangePips[index]*1.12){
-         powerForecastRangePips[index]=revised;
-         powerProjectBounds(index,candleOpen);
-         bool canceled=powerCancelPendingForSymbol(symbol);
-         powerReplans[index]++;
-         if(canceled&&positions==0){
-            powerLastSeedBar[index]=0;
-            powerLastSeedAttemptMs[index]=0;
-            powerReplacementPending[index]=true;
-            powerPublishState(index,"DISTRIBUTION_REVISED","realized="+DoubleToString(realizedPips,2)+
-                              " pip; new forecast="+DoubleToString(revised,2)+" pip; replacing pending pair",barTime);
-         }else{
-            powerLastSeedBar[index]=barTime;
-            powerReplacementPending[index]=false;
-            powerPublishState(index,"DISTRIBUTION_REVISED_NO_REENTRY","realized="+
-                              DoubleToString(realizedPips,2)+" pip; stale pending cancelled; open position prevents reseed",barTime);
-            return;
-         }
-         pending=powerPendingCount(symbol);
-         if(pending>0){
-            powerPublishState(index,"CANCEL_PENDING","Waiting until old pending orders are confirmed deleted",barTime);
-            return;
-         }
+   // Re-evaluate both kinds of forecast error: range expansion beyond the
+   // prediction, and a slow range that is no longer on pace to reach that prediction.
+   // The under-pace projection is a conservative sqrt-time heuristic, recalculated
+   // only after 60 seconds and only when observed range is materially below expected pace.
+   double oldForecast=powerForecastRangePips[index];
+   double revised=oldForecast;
+   string reviseReason="";
+   long elapsedMs=tick.time_msc-(long)barTime*1000;
+   double elapsedSeconds=MathMax(0.0,MathMin(300.0,(double)elapsedMs/1000.0));
+   double elapsedFraction=elapsedSeconds/300.0;
+   if(realizedPips>oldForecast*1.15){
+      revised=MathMax(oldForecast,realizedPips*1.20);
+      reviseReason="RANGE_EXPANSION";
+   }else if(elapsedSeconds>=60.0&&realizedPips>0.0&&elapsedFraction>0.0){
+      double expectedSoFar=oldForecast*MathSqrt(elapsedFraction);
+      if(realizedPips<expectedSoFar*0.60){
+         double paceForecast=realizedPips/MathSqrt(MathMax(0.20,elapsedFraction));
+         revised=MathMax(realizedPips*1.20,oldForecast*0.35+paceForecast*0.65);
+         reviseReason="UNDER_PACE";
+      }
+   }
+   bool materialRevision=oldForecast>0.0&&
+      MathAbs(revised-oldForecast)>=oldForecast*0.12;
+   if(materialRevision&&powerReplans[index]<POWERFULL_REPLAN_MAX){
+      powerForecastRangePips[index]=revised;
+      powerProjectBounds(index,candleOpen);
+      // Delete only Powerfull magic orders, then verify the broker-side count
+      // before allowing a replacement pair to enter the single order lifecycle.
+      bool canceled=powerCancelPendingForSymbol(symbol);
+      powerReplans[index]++;
+      if(canceled&&positions==0){
+         powerLastSeedBar[index]=0;
+         powerLastSeedAttemptMs[index]=0;
+         powerReplacementPending[index]=true;
+         powerPublishState(index,"DISTRIBUTION_REVISED",reviseReason+
+                           " • realized="+DoubleToString(realizedPips,2)+
+                           " pip • old="+DoubleToString(oldForecast,2)+
+                           " pip • revised="+DoubleToString(revised,2)+
+                           " pip • replacing only after old pending count reaches zero",barTime);
+      }else{
+         powerLastSeedBar[index]=barTime;
+         powerReplacementPending[index]=false;
+         powerPublishState(index,"DISTRIBUTION_REVISED_NO_REENTRY",reviseReason+
+                           " • realized="+DoubleToString(realizedPips,2)+
+                           " pip • stale pending cancelled/verified; open position or cancel uncertainty blocks reseed",barTime);
+         return;
+      }
+      pending=powerPendingCount(symbol);
+      if(pending>0){
+         powerPublishState(index,"CANCEL_PENDING","Waiting until old pending orders are confirmed deleted",barTime);
+         return;
       }
    }
 
