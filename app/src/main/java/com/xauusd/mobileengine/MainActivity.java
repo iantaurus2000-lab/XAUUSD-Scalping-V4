@@ -972,11 +972,16 @@ public class MainActivity extends Activity {
     private void processAutoLimit(SignalResult s,Candle[] m1,Candle[] m5,
                                   double bid,double ask,long candleStamp){
         SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        // Keep monitoring/cancelling existing exposure even if AUTO is paused or the
-        // chart timeframe changes. New/replacement entries still require AUTO+READY+M1.
-        boolean autoEnabled=gp.getBoolean("auto",false)
-                &&"READY".equals(gp.getString("operation_mode","REST"))
-                &&"M1".equals(selectedTf);
+        // STANDAR/EXCELLENT own their per-symbol auto-entry permission.
+        // They do not depend on the legacy Smart Auto master or operation_mode=READY.
+        // Keep the lifecycle manager restricted to M1 for new/replacement entries.
+        String strategySymbol=mt5SymbolForMarket(selectedMarket);
+        String standardKey=strategyEnabledKey("STANDAR",strategySymbol);
+        boolean standardOn=gp.getBoolean(standardKey,
+                !gp.contains(standardKey)&&gp.getBoolean("auto",false));
+        boolean excellentOn=gp.getBoolean(strategyEnabledKey("EXCELLENT",strategySymbol),false);
+        boolean androidStrategyAutoOn=standardOn||excellentOn;
+        boolean autoEnabled=androidStrategyAutoOn&&"M1".equals(selectedTf);
         if(m1==null||m1.length<30||m5==null||m5.length<60){
             autoDiagnostic(gp,"DATA_M1M5_SHORT|"+selectedMarket+"|"+selectedTf,
                 "ENTRY BLOCKED • M1 kurang dari 30 atau M5 kurang dari 60 candle • market="+selectedMarket+" TF="+selectedTf);
@@ -1313,11 +1318,9 @@ public class MainActivity extends Activity {
             return;
         }
         if(!autoEnabled){
-            String why=!gp.getBoolean("auto",false)?"AUTO_SWITCH_OFF":
-                !"READY".equals(gp.getString("operation_mode","REST"))?"OPERATION_MODE_REST":
-                !"M1".equals(selectedTf)?"TIMEFRAME_NOT_M1":"AUTO_GATE_DISABLED";
-            if(readyCandidate)autoDiagnostic(gp,"AUTO_GATE|"+signalKey+"|"+why,
-                "READY DITAHAN • "+why+" • aktifkan Smart Auto + MODE SIAP TRADING + chart M1");
+            String why=!androidStrategyAutoOn?"ANDROID_STRATEGIES_OFF":"TIMEFRAME_NOT_M1";
+            if(readyCandidate)autoDiagnostic(gp,"STRATEGY_AUTO_GATE|"+signalKey+"|"+why,
+                "AUTO ENTRY DITAHAN • "+why+" • aktifkan STANDAR atau EXCELLENT untuk market ini dan gunakan chart M1");
             return;
         }
         if(!queueIsFree(gp)){
@@ -1750,7 +1753,7 @@ public class MainActivity extends Activity {
         root.setPadding(uiDp(18),uiDp(14),uiDp(18),uiDp(12));root.setBackground(roundBg(Color.rgb(3,18,30),16));
         TextView title=tv("STRATEGY CONTROL • "+symbol,17);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
         root.addView(title,new LinearLayout.LayoutParams(-1,uiDp(34)));
-        TextView note=tv("Sakelar tiap strategi independen per market. STANDAR dan EXCELLENT berbagi jalur sinyal Android: jika keduanya ON, EXCELLENT diprioritaskan. Keduanya tetap memerlukan Smart Auto master + MODE SIAP. POWERFULL berjalan melalui EA MT5. Uji di akun demo sebelum mengaktifkan beberapa mesin bersamaan.",11);
+        TextView note=tv("Sakelar strategi independen per market. STANDAR/EXCELLENT auto-entry tidak bergantung pada Smart Auto master atau MODE READY; aktifkan salah satu, gunakan chart M1, dan pastikan EA MT5/quote aktif. Keduanya berbagi satu slot sinyal Android: jika dua-duanya ON, EXCELLENT diprioritaskan. POWERFULL tetap berjalan mandiri melalui EA MT5. Uji di akun demo.",11);
         note.setTextColor(Color.LTGRAY);note.setPadding(0,0,0,uiDp(8));root.addView(note,new LinearLayout.LayoutParams(-1,-2));
         root.addView(standard,new LinearLayout.LayoutParams(-1,uiDp(48)));
         root.addView(excellent,new LinearLayout.LayoutParams(-1,uiDp(48)));
@@ -1760,11 +1763,11 @@ public class MainActivity extends Activity {
         powerful.setChecked(gp.getBoolean(powerKey,false));
         standard.setOnCheckedChangeListener((b,on)->{
             gp.edit().putBoolean(standardKey,on).apply();
-            Toast.makeText(this,"STANDAR "+(on?"ON":"OFF")+" • "+symbol,Toast.LENGTH_SHORT).show();
+            Toast.makeText(this,"STANDAR "+(on?"ON":"OFF")+" • auto-entry mandiri • "+symbol,Toast.LENGTH_SHORT).show();
         });
         excellent.setOnCheckedChangeListener((b,on)->{
             gp.edit().putBoolean(excellentKey,on).apply();
-            Toast.makeText(this,"EXCELLENT "+(on?"ON":"OFF")+" • "+symbol,Toast.LENGTH_SHORT).show();
+            Toast.makeText(this,"EXCELLENT "+(on?"ON":"OFF")+" • auto-entry mandiri • "+symbol,Toast.LENGTH_SHORT).show();
         });
         powerful.setOnCheckedChangeListener((b,on)->{
             if(on&&gp.getFloat("powerfull_pip_size_"+symbol,0f)<=0f){
