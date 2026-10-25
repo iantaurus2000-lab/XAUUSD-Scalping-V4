@@ -1496,6 +1496,10 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
    double lot=powerCfg[index].lot;
    double stopPips=powerCfg[index].stopPips;
    if(!powerModelGood[index]||pip<=0.0||powerForecastRangePips[index]<=0.0)return false;
+   if(!powerCfg[index].buyLimitEnabled&&!powerCfg[index].sellLimitEnabled){
+      powerPublishState(index,"BLOCKED_NO_ENTRY_SIDE","Enable at least one of BUY LIMIT / SELL LIMIT",barTime);
+      return false;
+   }
    // POWERFULL remains demo-only even if the legacy EA's shared DemoOnly input
    // is changed for another workflow.
    if(AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
@@ -1558,10 +1562,15 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
    double span=powerForecastRangePips[index]*pip;
    double buyEntry=powerFloorToTick(symbol,low+span*0.01);
    double sellEntry=powerCeilToTick(symbol,low+span*0.99);
-   if(buyEntry<=0.0||sellEntry<=buyEntry
-      ||buyEntry>=tick.ask-minDistance-tickSize
-      ||sellEntry<=tick.bid+minDistance+tickSize){
-      powerPublishState(index,"BLOCKED_ENTRY_GEOMETRY","predicted 1%/99% level is no longer a valid LIMIT price",barTime);
+   bool buyGeometryOk=!powerCfg[index].buyLimitEnabled||
+      (buyEntry>0.0&&buyEntry<tick.ask-minDistance-tickSize);
+   bool sellGeometryOk=!powerCfg[index].sellLimitEnabled||
+      (sellEntry>buyEntry&&sellEntry>tick.bid+minDistance+tickSize);
+   if(!buyGeometryOk||!sellGeometryOk){
+      string invalidSide=(!buyGeometryOk&&!sellGeometryOk?"BUY and SELL":
+                          (!buyGeometryOk?"BUY LIMIT":"SELL LIMIT"));
+      powerPublishState(index,"BLOCKED_ENTRY_GEOMETRY",invalidSide+
+         " projected level is no longer a valid broker LIMIT price",barTime);
       return false;
    }
    double minLot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
@@ -1586,54 +1595,66 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
    powerTrade.SetExpertMagicNumber(POWERFULL_MAGIC);
    powerTrade.SetTypeFillingBySymbol(symbol);
    powerTrade.SetAsyncMode(false);
-   ResetLastError();
-   bool buyOk=powerTrade.BuyLimit(lot,buyEntry,symbol,buySL,0.0,ORDER_TIME_SPECIFIED,expiry,buyComment);
-   uint buyRc=powerTrade.ResultRetcode();
-   ulong buyTicket=powerTrade.ResultOrder();
-   if(!buyOk||(buyRc!=TRADE_RETCODE_PLACED&&buyRc!=TRADE_RETCODE_DONE)){
-      // Treat timeouts/rejections as uncertain until the terminal order list proves
-      // there is no orphaned Powerfull pending order for this symbol.
-      bool cleanup=powerCancelPendingForSymbol(symbol);
-      powerLastSeedBar[index]=barTime;
-      powerReplacementPending[index]=false;
-      powerCancelOnly[index]=!cleanup;
-      powerPublishState(index,cleanup?"BUY_REJECTED_CLEAN":"BUY_REJECTED_UNCERTAIN",
-                        "retcode="+IntegerToString((int)buyRc)+" "+
-                        powerTrade.ResultRetcodeDescription()+" cleanup="+(cleanup?"OK":"PENDING"),barTime);
-      Print("POWERFULL BUY LIMIT FAILED symbol=",symbol," entry=",buyEntry," sl=",buySL,
-            " retcode=",buyRc," ",powerTrade.ResultRetcodeDescription(),
-            " cleanup=",cleanup," err=",GetLastError());
-      return false;
+   bool buyOk=!powerCfg[index].buyLimitEnabled;
+   uint buyRc=TRADE_RETCODE_DONE;
+   ulong buyTicket=0;
+   if(powerCfg[index].buyLimitEnabled){
+      ResetLastError();
+      buyOk=powerTrade.BuyLimit(lot,buyEntry,symbol,buySL,0.0,ORDER_TIME_SPECIFIED,expiry,buyComment);
+      buyRc=powerTrade.ResultRetcode();
+      buyTicket=powerTrade.ResultOrder();
+      if(!buyOk||(buyRc!=TRADE_RETCODE_PLACED&&buyRc!=TRADE_RETCODE_DONE)){
+         bool cleanup=powerCancelPendingForSymbol(symbol);
+         powerLastSeedBar[index]=barTime;
+         powerReplacementPending[index]=false;
+         powerCancelOnly[index]=!cleanup;
+         powerPublishState(index,cleanup?"BUY_REJECTED_CLEAN":"BUY_REJECTED_UNCERTAIN",
+                           "retcode="+IntegerToString((int)buyRc)+" "+
+                           powerTrade.ResultRetcodeDescription()+" cleanup="+(cleanup?"OK":"PENDING"),barTime);
+         Print("POWERFULL BUY LIMIT FAILED symbol=",symbol," entry=",buyEntry," sl=",buySL,
+               " retcode=",buyRc," ",powerTrade.ResultRetcodeDescription(),
+               " cleanup=",cleanup," err=",GetLastError());
+         return false;
+      }
    }
 
-   ResetLastError();
-   bool sellOk=powerTrade.SellLimit(lot,sellEntry,symbol,sellSL,0.0,ORDER_TIME_SPECIFIED,expiry,sellComment);
-   uint sellRc=powerTrade.ResultRetcode();
-   ulong sellTicket=powerTrade.ResultOrder();
-   if(!sellOk||(sellRc!=TRADE_RETCODE_PLACED&&sellRc!=TRADE_RETCODE_DONE)){
-      bool rollback=powerCancelPendingForSymbol(symbol);
-      powerLastSeedBar[index]=barTime;
-      powerReplacementPending[index]=false;
-      powerCancelOnly[index]=!rollback;
-      powerPublishState(index,rollback?"PAIR_ROLLED_BACK":"PAIR_PARTIAL_UNCERTAIN",
-                        "SELL rejected retcode="+IntegerToString((int)sellRc)+
-                        " "+powerTrade.ResultRetcodeDescription()+" rollback="+(rollback?"OK":"PENDING"),barTime);
-      Print("POWERFULL SELL LIMIT FAILED symbol=",symbol," entry=",sellEntry," sl=",sellSL,
-            " retcode=",sellRc," ",powerTrade.ResultRetcodeDescription(),
-            " rollback=",rollback," err=",GetLastError());
-      return false;
+   bool sellOk=!powerCfg[index].sellLimitEnabled;
+   uint sellRc=TRADE_RETCODE_DONE;
+   ulong sellTicket=0;
+   if(powerCfg[index].sellLimitEnabled){
+      ResetLastError();
+      sellOk=powerTrade.SellLimit(lot,sellEntry,symbol,sellSL,0.0,ORDER_TIME_SPECIFIED,expiry,sellComment);
+      sellRc=powerTrade.ResultRetcode();
+      sellTicket=powerTrade.ResultOrder();
+      if(!sellOk||(sellRc!=TRADE_RETCODE_PLACED&&sellRc!=TRADE_RETCODE_DONE)){
+         bool rollback=powerCancelPendingForSymbol(symbol);
+         powerLastSeedBar[index]=barTime;
+         powerReplacementPending[index]=false;
+         powerCancelOnly[index]=!rollback;
+         powerPublishState(index,rollback?"PAIR_ROLLED_BACK":"PAIR_PARTIAL_UNCERTAIN",
+                           "SELL rejected retcode="+IntegerToString((int)sellRc)+
+                           " "+powerTrade.ResultRetcodeDescription()+" rollback="+(rollback?"OK":"PENDING"),barTime);
+         Print("POWERFULL SELL LIMIT FAILED symbol=",symbol," entry=",sellEntry," sl=",sellSL,
+               " retcode=",sellRc," ",powerTrade.ResultRetcodeDescription(),
+               " rollback=",rollback," err=",GetLastError());
+         return false;
+      }
    }
    powerLastSeedBar[index]=barTime;
    powerReplacementPending[index]=false;
    powerTrade.SetExpertMagicNumber(POWERFULL_MAGIC);
-   Print("POWERFULL PAIR PLACED symbol=",symbol," bar=",TimeToString(barTime,TIME_DATE|TIME_MINUTES),
+   string sideText="";
+   if(powerCfg[index].buyLimitEnabled)sideText="BUY LIMIT";
+   if(powerCfg[index].sellLimitEnabled)sideText+=(sideText==""?"":" + ")+ "SELL LIMIT";
+   Print("POWERFULL ENTRY PLACED symbol=",symbol," side=",sideText,
+         " bar=",TimeToString(barTime,TIME_DATE|TIME_MINUTES),
          " samples=",powerHistorySamples[index]," days=",powerHistoryDays[index],
          " quantile=P",powerCfg[index].percentile," range=",DoubleToString(powerForecastRangePips[index],2),
          " low=",DoubleToString(low,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
          " high=",DoubleToString(high,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
          " buyTicket=",buyTicket," buy=",buyEntry," sellTicket=",sellTicket," sell=",sellEntry,
          " SL=",DoubleToString(stopPips,2)," pip each");
-   powerPublishState(index,"PAIR_PLACED","BUY 1% and SELL 99% pending sent; verify actual state in MT5",
+   powerPublishState(index,"PAIR_PLACED",sideText+" order(s) placed; each enabled side has server SL",
                      barTime);
    return true;
 }
