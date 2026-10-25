@@ -1898,8 +1898,11 @@ public class MainActivity extends Activity {
                     .putInt("powerfull_percentile_"+symbol,q)
                     .apply();
                 AppLog.add(this,"SMART AUTO-POWERFULL","settings saved symbol="+symbol+" enabled="+enabled.isChecked()
+                    +" buyLimit="+buyLimitSwitch.isChecked()+" sellLimit="+sellLimitSwitch.isChecked()
+                    +" reforecast="+reforecastSwitch.isChecked()+" quickProfit="+quickProfitSwitch.isChecked()
+                    +" crossCandleHold="+crossCandleSwitch.isChecked()
                     +" lot="+lotText(volume)+" pipSize="+String.format(Locale.US,"%.8f",pip)+" quantile=P"+q
-                    +" stopLossPips=3 • legacy auto preferences unchanged");
+                    +" stopLossPips=3 (mandatory) • legacy auto preferences unchanged");
                 Toast.makeText(this,enabled.isChecked()
                     ?"POWERFULL tersimpan • menunggu validasi model, tick, spread, dan SL MT5"
                     :"POWERFULL nonaktif • posisi terbuka yang ada tetap dikelola sampai selesai",
