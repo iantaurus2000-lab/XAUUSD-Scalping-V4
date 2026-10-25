@@ -1260,8 +1260,11 @@ bool powerBuildModel(int index){
    if(copied<POWERFULL_MIN_HISTORY){
       powerModelGood[index]=false;
       powerHistorySamples[index]=MathMax(0,copied);
+      powerHistoryDays[index]=(copied>0&&ArraySize(rates)>=copied&&rates[copied-1].time>0)
+         ?(int)((TimeCurrent()-rates[copied-1].time)/86400):0;
       Print("POWERFULL HISTORY SHORT symbol=",symbol," copied=",copied,
-            " minimum=",POWERFULL_MIN_HISTORY," err=",GetLastError());
+            " minimum=",POWERFULL_MIN_HISTORY," days=",powerHistoryDays[index],
+            " err=",GetLastError());
       return false;
    }
    datetime cutoff=TimeCurrent()-365*24*60*60;
@@ -1283,10 +1286,19 @@ bool powerBuildModel(int index){
       if(oldest==0||rates[i].time<oldest)oldest=rates[i].time;
       if(i<14){recentSum+=rangePips;recentCount++;}
    }
+   powerHistorySamples[index]=n;
+   powerHistoryDays[index]=oldest>0?(int)((TimeCurrent()-oldest)/86400):0;
    if(n<POWERFULL_MIN_HISTORY||recentCount<5){
       powerModelGood[index]=false;
-      powerHistorySamples[index]=n;
-      Print("POWERFULL HISTORY WINDOW TOO SHORT symbol=",symbol," bars=",n);
+      Print("POWERFULL HISTORY WINDOW TOO SHORT symbol=",symbol," bars=",n,
+            " recent=",recentCount," days=",powerHistoryDays[index]);
+      return false;
+   }
+   if(powerHistoryDays[index]<POWERFULL_MIN_HISTORY_DAYS){
+      powerModelGood[index]=false;
+      Print("POWERFULL HISTORY COVERAGE SHORT symbol=",symbol,
+            " days=",powerHistoryDays[index]," requiredDays=",POWERFULL_MIN_HISTORY_DAYS,
+            " samples=",n," | increase MT5 Max bars/load more M5 history");
       return false;
    }
    ArrayResize(ranges,n);
@@ -1307,15 +1319,6 @@ bool powerBuildModel(int index){
    powerBaseRangePips[index]=forecast;
    powerForecastRangePips[index]=forecast;
    powerUpperShare[index]=upperShare;
-   powerHistorySamples[index]=n;
-   powerHistoryDays[index]=oldest>0?(int)((TimeCurrent()-oldest)/86400):0;
-   if(powerHistoryDays[index]<POWERFULL_MIN_HISTORY_DAYS){
-      powerModelGood[index]=false;
-      Print("POWERFULL HISTORY COVERAGE SHORT symbol=",symbol,
-            " days=",powerHistoryDays[index]," requiredDays=",POWERFULL_MIN_HISTORY_DAYS,
-            " samples=",n," | increase MT5 Max bars/load more M5 history");
-      return false;
-   }
    powerModelGood[index]=true;
    powerModelBuiltAtMs[index]=GetTickCount();
    Print("POWERFULL MODEL symbol=",symbol," samples=",n," historyDays=",powerHistoryDays[index],
