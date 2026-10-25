@@ -1805,9 +1805,15 @@ public class MainActivity extends Activity {
             Toast.makeText(this,"EXCELLENT "+(on?"ON":"OFF")+" • "+symbol,Toast.LENGTH_SHORT).show();
         });
         powerful.setOnCheckedChangeListener((b,on)->{
-            if(on&&gp.getFloat("powerfull_pip_size_"+symbol,0f)<=0f){
+            double configuredLot=gp.getFloat("powerfull_lot_"+symbol,0f);
+            double configuredPip=gp.getFloat("powerfull_pip_size_"+symbol,0f);
+            boolean hasSide=gp.getBoolean("powerfull_buy_limit_"+symbol,true)
+                ||gp.getBoolean("powerfull_sell_limit_"+symbol,true);
+            boolean configReady=configuredLot>=minLotForSymbol(symbol)
+                &&configuredPip>0.0&&hasSide;
+            if(on&&!configReady){
                 powerful.setChecked(false);
-                Toast.makeText(this,"Atur ukuran pip terlebih dahulu di menu POWERFULL.",Toast.LENGTH_LONG).show();
+                Toast.makeText(this,"Simpan lot minimum, ukuran pip, dan minimal satu sisi LIMIT di POWERFULL terlebih dahulu.",Toast.LENGTH_LONG).show();
                 showPowerfullDialog();
                 return;
             }
