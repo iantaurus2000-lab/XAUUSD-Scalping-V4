@@ -18,7 +18,20 @@
 - The model filters completed M5 bars to the last 365 calendar days, sorts High-Low range sizes, selects configured P50/P60/P70/P80/P90 quantile, and scales by the ratio between the last 14-bar average and the year-window average (bounded 0.50–2.00).
 - At least 2,000 valid candles and 350 days of history are required. If history is shorter, the model fails closed and reports the actual loaded day coverage.
 - Projected High/Low use the new candle's Open as anchor and a historical average upper-range share, clamped between 35% and 65%.
-- This is a transparent baseline/heuristic model, not a trained or statistically validated predictor. Its forward performance remains unverified until a tick-based backtest and demo test are performed.
+- No third-party indicator is used. This is a transparent baseline/heuristic model, not a trained or statistically validated predictor. Percentile (P50-P90) describes historical range distribution; it is not the probability that price will touch an entry level. Forward performance remains unverified until tick-based out-of-sample and demo tests are performed.
+
+## Independent feature controls
+
+Each symbol has separately persisted switches in Android, passed through `/power_config`, and applied by the EA:
+
+- **Master POWERFULL ON/OFF** — OFF cancels Powerfull pending orders and blocks new entries. Any already-open Powerfull position remains under the EA's position/risk management until closed.
+- **BUY LIMIT ON/OFF** and **SELL LIMIT ON/OFF** — enable either side independently. Turning one side OFF cancels that side's own pending orders after broker confirmation; it does not forcibly close an already-open position.
+- **Reforecast / pending replacement ON/OFF** — when OFF, forecast deviations do not cancel and replace a pending order; pending orders retain their candle-close expiration.
+- **Fast net-profit close ON/OFF** — when ON, the EA attempts to close as soon as estimated net profit becomes positive. When OFF, this particular profit-close rule is disabled; the mandatory server SL and software loss guard remain active.
+- **Cross-candle momentum hold ON/OFF** — when ON, a profitable position can be held across a candle boundary only when the final-tick momentum conditions are met, followed by next-candle confirmation. OFF clears saved hold state.
+- The configured ~3-pip hard-risk guard and server-side SL are intentionally **not toggleable** in this UI.
+
+The switches are per symbol (`XAUUSDm`, `BTCUSDm`, and `ETHUSDm`); saving one symbol does not change settings for another symbol or the legacy SMART AUTO-standar / SMART AUTO-EXCELLENT modes.
 
 ## Entry and order lifecycle
 
@@ -44,11 +57,11 @@
 3. Verify the three EA config requests are round-robin and status fields are scoped by symbol.
 4. Verify fresh M5 history reports actual days/samples; missing history blocks entry.
 5. In MT5 Strategy Tester/demo, confirm only `POWERFULL_MAGIC` orders are touched by cancel/re-price code.
-6. Confirm initial pair is sent only in first five seconds; both pending orders expire at M5 close.
+6. Test the initial pair inside the first 1-2 seconds of a new M5 candle; confirm per-side ON/OFF, pending expiry at M5 close, and server SL on each enabled order.
 7. Force a rejected second order and verify rollback/partial-uncertain status without duplicate pair.
 8. Exercise both upward and under-pace reforecast; verify old pending count is zero before replacement.
 9. Test each market's actual pip/tick/point/volume/stops/expiry specifications before enabling it.
-10. Test profitable tick close, ~3-pip software guard plus server SL, late-candle hold, next-bar confirmation, momentum reversal, terminal disconnect, stale quote and order rejection.
+10. Test each feature toggle independently, including profitable tick close, mandatory ~3-pip software guard plus server SL, late-candle hold, next-bar confirmation, momentum reversal, terminal disconnect, stale quote and order rejection.
 11. Verify legacy `/next` + `/ack` orders and the original Fibo/wick pathway behave as before.
 
-No APK build, MetaEditor compile, unit test, backtest, or terminal/demo execution has been run for these changes yet.
+Build / test status for this branch is recorded in the associated GitHub Actions run; compiling does not replace the still-required MT5 demo acceptance checks.
