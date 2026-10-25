@@ -1004,7 +1004,7 @@ public class MainActivity extends Activity {
         }
         if(readyCandidate&&autoEnabled){
             autoDiagnostic(gp,"READY_AUTO_ON|"+signalKey,
-                "READY + SMART AUTO ON • memeriksa EA heartbeat, state order, antrean, lot, cooldown");
+                "READY + AUTO STRATEGI ON • memeriksa EA heartbeat, state order, antrean, lot, cooldown");
         }
         if(!eaOnline){
             autoDiagnostic(gp,"EA_OFFLINE|"+(readyCandidate?signalKey:selectedMarket+"|"+selectedTf),
