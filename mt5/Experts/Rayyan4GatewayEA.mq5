@@ -1469,9 +1469,10 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
    double stopPips=powerCfg[index].stopPips;
    if(!powerModelGood[index]||pip<=0.0||powerForecastRangePips[index]<=0.0)return false;
    ENUM_ACCOUNT_MARGIN_MODE marginMode=(ENUM_ACCOUNT_MARGIN_MODE)AccountInfoInteger(ACCOUNT_MARGIN_MODE);
-   if(marginMode!=ACCOUNT_MARGIN_MODE_RETAIL_HEDGING){
+   bool hedgeAllowed=(AccountInfoInteger(ACCOUNT_HEDGE_ALLOWED)!=0);
+   if(marginMode!=ACCOUNT_MARGIN_MODE_RETAIL_HEDGING||!hedgeAllowed){
       powerPublishState(index,"BLOCKED_NETTING_ACCOUNT",
-         "POWERFULL requires MT5 hedging mode so BUY and SELL positions stay isolated from legacy strategies",barTime);
+         "POWERFULL requires MT5 hedging mode with opposite positions allowed; legacy order paths remain untouched",barTime);
       return false;
    }
    long elapsedMs=tick.time_msc-(long)barTime*1000;
@@ -1483,8 +1484,10 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
       powerPublishState(index,"MISSED_ENTRY_WINDOW","Initial dual LIMIT not sent outside first 5 seconds of M5; wait for the next candle",barTime);
       return false;
    }
-   if(DemoOnly&&AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
-      powerPublishState(index,"BLOCKED_NOT_DEMO","DemoOnly=TRUE; account is not demo",barTime);
+   // POWERFULL remains demo-only even if the legacy EA's shared DemoOnly input
+   // is changed for another workflow.
+   if(AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
+      powerPublishState(index,"BLOCKED_NOT_DEMO","SMART AUTO-POWERFULL is demo-only",barTime);
       return false;
    }
    if(!TerminalInfoInteger(TERMINAL_CONNECTED)||!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)
