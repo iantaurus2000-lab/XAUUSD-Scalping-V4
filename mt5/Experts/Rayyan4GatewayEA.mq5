@@ -1,6 +1,7 @@
 #property strict
 #include <Trade/Trade.mqh>
 CTrade trade;
+CTrade powerTrade; // isolated order manager: legacy CTrade state/magic remains untouched
 #define RAYYAN_MAGIC 4104407
 
 input string GatewayUrl="http://192.168.0.112:8787";
@@ -62,13 +63,18 @@ uint powerLastModelAttemptMs[3];
 uint powerModelBuiltAtMs[3];
 uint powerLastSeedAttemptMs[3];
 uint powerLastManageMs[3];
+uint powerLastCancelAttemptMs[3];
 uint powerConfigReceivedMs[3];
 uint powerLastStatePublishMs[3];
 uint powerLastConfigPollMs=0;
+bool powerAllowGatewayCalls=false;
+bool powerFastTickOnly=false;
 uint powerLastLegacyTimerMs=0;
 int powerConfigRoundRobin=0;
 int powerReplans[3];
 bool powerModelGood[3];
+int powerModelPercentile[3];
+double powerModelPipSize[3];
 bool powerReplacementPending[3];
 int powerHistorySamples[3];
 int powerHistoryDays[3];
@@ -1185,6 +1191,8 @@ bool powerRefreshConfig(int index){
       return false;
    }
    string symbol=powerSymbols[index];
+   double oldPipSize=powerCfg[index].pipSize;
+   int oldPercentile=powerCfg[index].percentile;
    double lot=StringToDouble(field(body,"lot"));
    double pip=StringToDouble(field(body,"pip"));
    double stop=StringToDouble(field(body,"stopPips"));
@@ -1204,6 +1212,11 @@ bool powerRefreshConfig(int index){
    powerCfg[index].percentile=percentile;
    powerCfg[index].reason=!requested?"DISABLED":(valid?reason:"CONFIG_INVALID");
    powerConfigReceivedMs[index]=GetTickCount();
+   if(valid&&(MathAbs(pip-oldPipSize)>1e-12||percentile!=oldPercentile)){
+      powerModelGood[index]=false;
+      powerModelBuiltAtMs[index]=0;
+      powerLastModelAttemptMs[index]=0;
+   }
    return true;
 }
 
@@ -1213,6 +1226,8 @@ bool powerConfigFresh(int index){
 }
 
 void managePowerfullAllMarkets(bool pollConfig){
+   powerAllowGatewayCalls=pollConfig;
+   powerFastTickOnly=!pollConfig;
    uint nowMs=GetTickCount();
    if(pollConfig&&(powerLastConfigPollMs==0||
       (uint)(nowMs-powerLastConfigPollMs)>=1000)){
@@ -1222,9 +1237,12 @@ void managePowerfullAllMarkets(bool pollConfig){
       powerRefreshConfig(index);
    }
    for(int i=0;i<ArraySize(powerSymbols);i++)managePowerfullSymbol(i);
+   powerFastTickOnly=false;
+   powerAllowGatewayCalls=false;
 }
 
 bool powerBuildModel(int index){
+   powerModelGood[index]=false;
    string symbol=powerSymbols[index];
    double pip=powerCfg[index].pipSize;
    if(pip<=0.0)return false;
@@ -1354,7 +1372,14 @@ bool powerHasPendingOnBar(string symbol,datetime barTime){
 }
 
 bool powerCancelPendingForSymbol(string symbol){
-   trade.SetExpertMagicNumber(POWERFULL_MAGIC);
+   int symbolIndex=-1;
+   for(int s=0;s<ArraySize(powerSymbols);s++)if(powerSymbols[s]==symbol){symbolIndex=s;break;}
+   uint nowMs=GetTickCount();
+   if(symbolIndex>=0&&powerLastCancelAttemptMs[symbolIndex]!=0&&
+      (uint)(nowMs-powerLastCancelAttemptMs[symbolIndex])<300)
+      return powerPendingCount(symbol)==0;
+   if(symbolIndex>=0)powerLastCancelAttemptMs[symbolIndex]=nowMs;
+   powerTrade.SetExpertMagicNumber(POWERFULL_MAGIC);
    for(int i=OrdersTotal()-1;i>=0;i--){
       ulong ticket=OrderGetTicket(i);
       if(ticket==0)continue;
@@ -1363,18 +1388,25 @@ bool powerCancelPendingForSymbol(string symbol){
       ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
       if(type!=ORDER_TYPE_BUY_LIMIT&&type!=ORDER_TYPE_SELL_LIMIT)continue;
       ResetLastError();
-      bool deleted=trade.OrderDelete(ticket);
-      uint rc=trade.ResultRetcode();
+      bool deleted=powerTrade.OrderDelete(ticket);
+      uint rc=powerTrade.ResultRetcode();
       if(!deleted||rc!=TRADE_RETCODE_DONE)
          Print("POWERFULL CANCEL FAILED symbol=",symbol," ticket=",ticket,
-               " retcode=",rc," desc=",trade.ResultRetcodeDescription()," err=",GetLastError());
+               " retcode=",rc," desc=",powerTrade.ResultRetcodeDescription()," err=",GetLastError());
       else Print("POWERFULL CANCEL OK symbol=",symbol," ticket=",ticket);
    }
    return powerPendingCount(symbol)==0;
 }
 
 bool powerCancelStalePending(string symbol,datetime currentBar){
-   trade.SetExpertMagicNumber(POWERFULL_MAGIC);
+   int symbolIndex=-1;
+   for(int s=0;s<ArraySize(powerSymbols);s++)if(powerSymbols[s]==symbol){symbolIndex=s;break;}
+   uint nowMs=GetTickCount();
+   if(symbolIndex>=0&&powerLastCancelAttemptMs[symbolIndex]!=0&&
+      (uint)(nowMs-powerLastCancelAttemptMs[symbolIndex])<300)
+      return powerPendingCount(symbol)==0;
+   if(symbolIndex>=0)powerLastCancelAttemptMs[symbolIndex]=nowMs;
+   powerTrade.SetExpertMagicNumber(POWERFULL_MAGIC);
    for(int i=OrdersTotal()-1;i>=0;i--){
       ulong ticket=OrderGetTicket(i);
       if(ticket==0)continue;
@@ -1383,8 +1415,8 @@ bool powerCancelStalePending(string symbol,datetime currentBar){
       ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
       if(type!=ORDER_TYPE_BUY_LIMIT&&type!=ORDER_TYPE_SELL_LIMIT)continue;
       if(powerOrderBarFromComment(OrderGetString(ORDER_COMMENT))==currentBar)continue;
-      bool deleted=trade.OrderDelete(ticket);
-      uint rc=trade.ResultRetcode();
+      bool deleted=powerTrade.OrderDelete(ticket);
+      uint rc=powerTrade.ResultRetcode();
       if(!deleted||rc!=TRADE_RETCODE_DONE)
          Print("POWERFULL STALE CANCEL FAILED symbol=",symbol," ticket=",ticket," retcode=",rc);
       else Print("POWERFULL STALE CANCEL OK symbol=",symbol," ticket=",ticket);
@@ -1399,6 +1431,24 @@ double powerRoundToTick(string symbol,double price){
    if(step<=0.0)step=point;
    if(step<=0.0)return 0.0;
    return NormalizeDouble(MathRound(price/step)*step,digits);
+}
+
+double powerFloorToTick(string symbol,double price){
+   double step=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+   double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+   int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+   if(step<=0.0)step=point;
+   if(step<=0.0)return 0.0;
+   return NormalizeDouble(MathFloor(price/step+1e-10)*step,digits);
+}
+
+double powerCeilToTick(string symbol,double price){
+   double step=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+   double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+   int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+   if(step<=0.0)step=point;
+   if(step<=0.0)return 0.0;
+   return NormalizeDouble(MathCeil(price/step-1e-10)*step,digits);
 }
 
 bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
@@ -1439,8 +1489,8 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
    double low=powerProjectedLow[index];
    double high=powerProjectedHigh[index];
    double span=powerForecastRangePips[index]*pip;
-   double buyEntry=powerRoundToTick(symbol,low+span*0.01);
-   double sellEntry=powerRoundToTick(symbol,low+span*0.99);
+   double buyEntry=powerFloorToTick(symbol,low+span*0.01);
+   double sellEntry=powerCeilToTick(symbol,low+span*0.99);
    if(buyEntry<=0.0||sellEntry<=buyEntry
       ||buyEntry>=tick.ask-minDistance-tickSize
       ||sellEntry<=tick.bid+minDistance+tickSize){
@@ -1461,44 +1511,44 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
       return false;
    }
 
-   string baseComment="PWR-"+powerShortSymbol(symbol)+"-"+LongToString((long)barTime);
+   string baseComment="PWR-"+powerShortSymbol(symbol)+"-"+IntegerToString((long)barTime);
    string buyComment=baseComment+"-B";
    string sellComment=baseComment+"-S";
-   double buySL=powerRoundToTick(symbol,buyEntry-stopDistance);
-   double sellSL=powerRoundToTick(symbol,sellEntry+stopDistance);
-   trade.SetExpertMagicNumber(POWERFULL_MAGIC);
-   trade.SetTypeFillingBySymbol(symbol);
-   trade.SetAsyncMode(false);
+   double buySL=powerFloorToTick(symbol,buyEntry-stopDistance);
+   double sellSL=powerCeilToTick(symbol,sellEntry+stopDistance);
+   powerTrade.SetExpertMagicNumber(POWERFULL_MAGIC);
+   powerTrade.SetTypeFillingBySymbol(symbol);
+   powerTrade.SetAsyncMode(false);
    ResetLastError();
-   bool buyOk=trade.BuyLimit(lot,buyEntry,symbol,buySL,0.0,ORDER_TIME_GTC,0,buyComment);
-   uint buyRc=trade.ResultRetcode();
-   ulong buyTicket=trade.ResultOrder();
+   bool buyOk=powerTrade.BuyLimit(lot,buyEntry,symbol,buySL,0.0,ORDER_TIME_GTC,0,buyComment);
+   uint buyRc=powerTrade.ResultRetcode();
+   ulong buyTicket=powerTrade.ResultOrder();
    if(!buyOk||(buyRc!=TRADE_RETCODE_PLACED&&buyRc!=TRADE_RETCODE_DONE)){
       powerPublishState(index,"BUY_REJECTED","retcode="+IntegerToString((int)buyRc)+
-                        " "+trade.ResultRetcodeDescription(),barTime);
+                        " "+powerTrade.ResultRetcodeDescription(),barTime);
       Print("POWERFULL BUY LIMIT FAILED symbol=",symbol," entry=",buyEntry," sl=",buySL,
-            " retcode=",buyRc," ",trade.ResultRetcodeDescription()," err=",GetLastError());
+            " retcode=",buyRc," ",powerTrade.ResultRetcodeDescription()," err=",GetLastError());
       return false;
    }
 
    ResetLastError();
-   bool sellOk=trade.SellLimit(lot,sellEntry,symbol,sellSL,0.0,ORDER_TIME_GTC,0,sellComment);
-   uint sellRc=trade.ResultRetcode();
-   ulong sellTicket=trade.ResultOrder();
+   bool sellOk=powerTrade.SellLimit(lot,sellEntry,symbol,sellSL,0.0,ORDER_TIME_GTC,0,sellComment);
+   uint sellRc=powerTrade.ResultRetcode();
+   ulong sellTicket=powerTrade.ResultOrder();
    if(!sellOk||(sellRc!=TRADE_RETCODE_PLACED&&sellRc!=TRADE_RETCODE_DONE)){
       bool rollback=powerCancelPendingForSymbol(symbol);
       powerLastSeedBar[index]=barTime;
       powerPublishState(index,rollback?"PAIR_ROLLED_BACK":"PAIR_PARTIAL_UNCERTAIN",
                         "SELL rejected retcode="+IntegerToString((int)sellRc)+
-                        " "+trade.ResultRetcodeDescription(),barTime);
+                        " "+powerTrade.ResultRetcodeDescription(),barTime);
       Print("POWERFULL SELL LIMIT FAILED symbol=",symbol," entry=",sellEntry," sl=",sellSL,
-            " retcode=",sellRc," ",trade.ResultRetcodeDescription(),
+            " retcode=",sellRc," ",powerTrade.ResultRetcodeDescription(),
             " rollback=",rollback," err=",GetLastError());
       return false;
    }
    powerLastSeedBar[index]=barTime;
    powerReplacementPending[index]=false;
-   trade.SetExpertMagicNumber(RAYYAN_MAGIC);
+   powerTrade.SetExpertMagicNumber(RAYYAN_MAGIC);
    Print("POWERFULL PAIR PLACED symbol=",symbol," bar=",TimeToString(barTime,TIME_DATE|TIME_MINUTES),
          " samples=",powerHistorySamples[index]," days=",powerHistoryDays[index],
          " quantile=P",powerCfg[index].percentile," range=",DoubleToString(powerForecastRangePips[index],2),
@@ -1534,11 +1584,11 @@ double powerProjectedNet(ulong ticket){
 bool powerClosePosition(ulong ticket,string reason){
    if(ticket==0||!PositionSelectByTicket(ticket))return false;
    string symbol=PositionGetString(POSITION_SYMBOL);
-   trade.SetExpertMagicNumber(POWERFULL_MAGIC);
-   trade.SetTypeFillingBySymbol(symbol);
+   powerTrade.SetExpertMagicNumber(POWERFULL_MAGIC);
+   powerTrade.SetTypeFillingBySymbol(symbol);
    ResetLastError();
-   bool ok=trade.PositionClose(ticket);
-   uint rc=trade.ResultRetcode();
+   bool ok=powerTrade.PositionClose(ticket);
+   uint rc=powerTrade.ResultRetcode();
    if(ok&&(rc==TRADE_RETCODE_DONE||rc==TRADE_RETCODE_DONE_PARTIAL)){
       Print("POWERFULL CLOSE OK symbol=",symbol," ticket=",ticket," reason=",reason," retcode=",rc);
       string suffix=LongToString((long)ticket);
@@ -1549,7 +1599,7 @@ bool powerClosePosition(ulong ticket,string reason){
       return true;
    }
    Print("POWERFULL CLOSE FAILED symbol=",symbol," ticket=",ticket," reason=",reason,
-         " retcode=",rc," desc=",trade.ResultRetcodeDescription()," err=",GetLastError());
+         " retcode=",rc," desc=",powerTrade.ResultRetcodeDescription()," err=",GetLastError());
    return false;
 }
 
@@ -1621,6 +1671,7 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
 }
 
 void powerPublishState(int index,string status,string detail,datetime barTime){
+   if(!powerAllowGatewayCalls)return; // never perform a synchronous HTTP request inside OnTick
    uint nowMs=GetTickCount();
    if(powerLastStatePublishMs[index]!=0&&
       (uint)(nowMs-powerLastStatePublishMs[index])<POWERFULL_STATUS_INTERVAL_MS&&
@@ -1685,6 +1736,9 @@ void managePowerfullSymbol(int index){
    powerLastAsk[index]=tick.ask;
    powerLastTickMs[index]=tick.time_msc;
 
+   // OnTick handles open positions only. Model loading, HTTP, cancellations and new
+   // entry submission stay on the throttled timer path so the legacy order queue is isolated.
+   if(powerFastTickOnly)return;
    bool configFresh=powerConfigFresh(index);
    if(!configFresh){
       powerCancelPendingForSymbol(symbol);
@@ -1746,6 +1800,7 @@ void managePowerfullSymbol(int index){
          powerReplans[index]++;
          if(canceled&&positions==0){
             powerLastSeedBar[index]=0;
+            powerLastSeedAttemptMs[index]=0;
             powerReplacementPending[index]=true;
             powerPublishState(index,"DISTRIBUTION_REVISED","realized="+DoubleToString(realizedPips,2)+
                               " pip; new forecast="+DoubleToString(revised,2)+" pip; replacing pending pair",barTime);
