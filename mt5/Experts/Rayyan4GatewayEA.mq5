@@ -1437,6 +1437,46 @@ bool powerCancelPendingForSymbol(string symbol){
    return powerPendingCount(symbol)==0;
 }
 
+bool powerHasDisabledPending(string symbol,bool allowBuy,bool allowSell){
+   for(int i=OrdersTotal()-1;i>=0;i--){
+      ulong ticket=OrderGetTicket(i);
+      if(ticket==0)continue;
+      if(OrderGetString(ORDER_SYMBOL)!=symbol)continue;
+      if((long)OrderGetInteger(ORDER_MAGIC)!=POWERFULL_MAGIC)continue;
+      ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      if((type==ORDER_TYPE_BUY_LIMIT&&!allowBuy)||(type==ORDER_TYPE_SELL_LIMIT&&!allowSell))
+         return true;
+   }
+   return false;
+}
+
+bool powerCancelDisabledPending(string symbol,bool allowBuy,bool allowSell){
+   int symbolIndex=-1;
+   for(int s=0;s<ArraySize(powerSymbols);s++)if(powerSymbols[s]==symbol){symbolIndex=s;break;}
+   uint nowMs=GetTickCount();
+   if(symbolIndex>=0&&powerLastCancelAttemptMs[symbolIndex]!=0&&
+      (uint)(nowMs-powerLastCancelAttemptMs[symbolIndex])<300)
+      return !powerHasDisabledPending(symbol,allowBuy,allowSell);
+   if(symbolIndex>=0)powerLastCancelAttemptMs[symbolIndex]=nowMs;
+   powerTrade.SetExpertMagicNumber(POWERFULL_MAGIC);
+   for(int i=OrdersTotal()-1;i>=0;i--){
+      ulong ticket=OrderGetTicket(i);
+      if(ticket==0)continue;
+      if(OrderGetString(ORDER_SYMBOL)!=symbol)continue;
+      if((long)OrderGetInteger(ORDER_MAGIC)!=POWERFULL_MAGIC)continue;
+      ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      if(!((type==ORDER_TYPE_BUY_LIMIT&&!allowBuy)||(type==ORDER_TYPE_SELL_LIMIT&&!allowSell)))continue;
+      ResetLastError();
+      bool deleted=powerTrade.OrderDelete(ticket);
+      uint rc=powerTrade.ResultRetcode();
+      if(!deleted||rc!=TRADE_RETCODE_DONE)
+         Print("POWERFULL DISABLED-SIDE CANCEL FAILED symbol=",symbol," ticket=",ticket,
+               " retcode=",rc," desc=",powerTrade.ResultRetcodeDescription()," err=",GetLastError());
+      else Print("POWERFULL DISABLED-SIDE CANCEL OK symbol=",symbol," ticket=",ticket);
+   }
+   return !powerHasDisabledPending(symbol,allowBuy,allowSell);
+}
+
 bool powerCancelStalePending(string symbol,datetime currentBar){
    int symbolIndex=-1;
    for(int s=0;s<ArraySize(powerSymbols);s++)if(powerSymbols[s]==symbol){symbolIndex=s;break;}
@@ -1896,6 +1936,11 @@ void managePowerfullSymbol(int index){
       powerForecastRangePips[index]=powerBaseRangePips[index];
    powerProjectBounds(index,candleOpen);
 
+   if(!powerCancelDisabledPending(symbol,powerCfg[index].buyLimitEnabled,powerCfg[index].sellLimitEnabled)){
+      powerPublishState(index,"DISABLED_SIDE_CANCEL_PENDING",
+         "A pending side switched OFF; waiting for broker confirmation of its deletion",barTime);
+      return;
+   }
    powerCancelStalePending(symbol,barTime);
    int pending=powerPendingCount(symbol);
    int positions=powerPositionCount(symbol);
@@ -1925,7 +1970,7 @@ void managePowerfullSymbol(int index){
    }
    bool materialRevision=oldForecast>0.0&&
       MathAbs(revised-oldForecast)>=oldForecast*0.12;
-   if(materialRevision&&pending>0&&powerHasPendingOnBar(symbol,barTime)&&positions==0&&powerReplans[index]<POWERFULL_REPLAN_MAX){
+   if(powerCfg[index].autoReforecast&&materialRevision&&pending>0&&powerHasPendingOnBar(symbol,barTime)&&positions==0&&powerReplans[index]<POWERFULL_REPLAN_MAX){
       powerForecastRangePips[index]=revised;
       powerProjectBounds(index,candleOpen);
       // Delete only Powerfull magic orders, then verify the broker-side count
