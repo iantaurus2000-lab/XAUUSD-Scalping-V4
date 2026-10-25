@@ -711,7 +711,6 @@ public class MainActivity extends Activity {
     private SignalResult evaluateSignal(Candle[] m1,Candle[] m5,double bid,double ask,
                                         double spreadBid,double spreadAsk){
         String symbol=mt5SymbolForMarket(selectedMarket);
-        SharedPreferences prefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         String active=activeStrategyForSymbol(symbol);
         // The selector fails closed if stale preferences somehow contain >1 active strategy.
         if("EXCELLENT".equals(active))
@@ -1748,7 +1747,6 @@ public class MainActivity extends Activity {
             stdOn=false;excOn=false;powOn=false;
             AppLog.add(this,"STRATEGY","multiple active strategies found; all switched OFF for safe isolation");
         }
-        boolean standardDefault=false;
         Switch standard=new Switch(this);standard.setText("STANDAR • Fibo/Wick LIMIT");standard.setTextColor(Color.WHITE);
         Switch excellent=new Switch(this);excellent.setText("EXCELLENT • konfirmasi tambahan");excellent.setTextColor(Color.WHITE);
         Switch powerful=new Switch(this);powerful.setText("POWERFULL • model distribusi M5 di EA");powerful.setTextColor(Color.WHITE);
@@ -1761,7 +1759,7 @@ public class MainActivity extends Activity {
         root.addView(standard,new LinearLayout.LayoutParams(-1,uiDp(48)));
         root.addView(excellent,new LinearLayout.LayoutParams(-1,uiDp(48)));
         root.addView(powerful,new LinearLayout.LayoutParams(-1,uiDp(48)));
-        standard.setChecked(stdOn||standardDefault);
+        standard.setChecked(stdOn);
         excellent.setChecked(excOn);
         powerful.setChecked(powOn);
         applyStrategyIndicatorProfile();
