@@ -698,6 +698,7 @@ public class MainActivity extends Activity {
     private boolean isEntryReady(SignalResult signal,double bid,double ask){
         if(signal==null||!hasFreshEntryQuotes()||!QuoteSafety.valid(bid,ask))return false;
         if(!"BUY".equals(signal.side)&&!"SELL".equals(signal.side))return false;
+        if(signal.score<getMinimumEntryConfidence())return false;
         if(!signal.spreadFilter||!signal.atrFilter)return false;
         if(signal.entry<=0||signal.sl<=0||signal.tp1<=0||signal.tp2<=0)return false;
         if("BUY".equals(signal.side))return signal.sl<signal.entry&&signal.tp1>signal.entry&&signal.tp2>signal.tp1;
@@ -727,7 +728,7 @@ public class MainActivity extends Activity {
         if(signal==null)return "SIGNAL BELUM TERSEDIA";
         if(!hasFreshEntryQuotes()||!QuoteSafety.valid(bid,ask))return "QUOTE BROKER/CHART STALE";
         if(!"BUY".equals(signal.side)&&!"SELL".equals(signal.side))return signal.setup==null||signal.setup.isEmpty()?"BELUM ADA SETUP TREND/WICK M1":signal.setup;
-        
+        if(signal.score<getMinimumEntryConfidence())return "CONFIDENCE DI BAWAH MINIMUM "+getMinimumEntryConfidence()+"%";
         if(!signal.atrFilter)return "ATR FILTER GAGAL";
         if(!signal.spreadFilter)return "SPREAD FILTER GAGAL";
         if(signal.entry<=0||signal.sl<=0||signal.tp1<=0||signal.tp2<=0)return "LEVEL ENTRY / SL / TP TIDAK VALID";
@@ -1677,11 +1678,24 @@ public class MainActivity extends Activity {
         TextView note=tv("Panduan baca-sinyal • bukan jaminan hasil",12);note.setTextColor(Color.LTGRAY);
         box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(36)));
         LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
-        addPanelRow(rows,"01 • TREND M5","EMA50/EMA200 pada candle M5 tertutup menentukan bias BUY atau SELL.",Color.WHITE);
-        addPanelRow(rows,"02 • ENTRY LIMIT UJUNG WICK","Harga LIMIT ditempatkan sedikit masuk dari ujung wick M1 yang sudah tertutup; tidak mengejar harga dengan MARKET.",Color.WHITE);
-        addPanelRow(rows,"03 • KONFIRMASI CANDLE","Candle M1 tertutup harus mendukung arah tren atau menunjukkan rejection wick yang valid.",Color.WHITE);
-        addPanelRow(rows,"04 • ENTRY / SL / TARGET","SL berada di luar ujung wick dengan buffer ATR; TP1 = 1R dan TP2 = 1,8R.",Color.WHITE);
-        addPanelRow(rows,"05 • PENGAMAN","ATR dan spread tetap divalidasi. Quote MT5 harus segar, EA online, antrean kosong, dan tidak ada exposure aktif.",Color.CYAN);
+        String activeMode=activeStrategyForSymbol(mt5SymbolForMarket(selectedMarket));
+        if("STANDAR".equals(activeMode)){
+            addPanelRow(rows,"MESIN AKTIF","STANDAR • EMA50/EMA200 M5 + Fibo/SR + setup wick M1.",Color.CYAN);
+            addPanelRow(rows,"ENTRY LIMIT","Entry dari area wick/Fibonacci; tidak mengejar harga dengan MARKET.",Color.WHITE);
+            addPanelRow(rows,"SL / TARGET","SL di luar area setup dengan buffer ATR; TP1 = 1R dan TP2 = 1,8R.",Color.WHITE);
+        }else if("EXCELLENT".equals(activeMode)){
+            addPanelRow(rows,"MESIN AKTIF","EXCELLENT • EMA20/EMA50 M5 + RSI/ATR + wick/sweep M1.",Color.CYAN);
+            addPanelRow(rows,"ENTRY LIMIT","Entry hanya setelah konfirmasi internal EXCELLENT dan geometri LIMIT valid.",Color.WHITE);
+            addPanelRow(rows,"SL / TARGET","SL dan TP dihitung dari setup/ATR; validasi spread dan arah tetap berjalan.",Color.WHITE);
+        }else if("POWERFULL".equals(activeMode)){
+            addPanelRow(rows,"MESIN AKTIF","POWERFULL • model distribusi historis M5 dijalankan EA MT5; bukan signal engine Android.",Color.CYAN);
+            addPanelRow(rows,"ENTRY / PENDING","Atur BUY/SELL LIMIT, lot, ukuran pip, dan persentil di detail POWERFULL.",Color.WHITE);
+            addPanelRow(rows,"STATUS","Periksa heartbeat EA, kualitas model, jumlah sampel, dan status order.",Color.WHITE);
+        }else{
+            addPanelRow(rows,"MESIN AKTIF","OFF • tidak ada strategi otomatis yang dipilih untuk market ini.",Color.rgb(255,205,95));
+            addPanelRow(rows,"AKTIFKAN","Buka Strategy Control lalu pilih tepat satu: STANDAR, EXCELLENT, atau POWERFULL.",Color.WHITE);
+        }
+        addPanelRow(rows,"PENGAMAN","Quote MT5 harus segar, EA online, status order jelas, antrean aman, lot dan geometri order valid.",Color.CYAN);
         ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
         box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
         AlertDialog d=new AlertDialog.Builder(this).setView(box).setPositiveButton("TUTUP",null).create();
@@ -2158,13 +2172,18 @@ public class MainActivity extends Activity {
     }
     void showSignalDialog(){
         if(lastSignal==null){Toast.makeText(this,"Menunggu data Signal Engine...",Toast.LENGTH_SHORT).show();return;}
+        String activeMode=activeStrategyForSymbol(mt5SymbolForMarket(selectedMarket));
+        if(!"STANDAR".equals(activeMode)&&!"EXCELLENT".equals(activeMode)){
+            Toast.makeText(this,"Signal Android tidak aktif • mode "+activeMode,Toast.LENGTH_SHORT).show();
+            return;
+        }
         SignalResult s=lastSignal;
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(12));
         box.setBackground(roundBg(Color.rgb(3,18,30),16));
         TextView title=tv("SIGNAL ENGINE",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
         box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(38)));
-        TextView note=tv(selectedMarket+" • M5 bias + M1 entry",12);note.setTextColor(Color.LTGRAY);
+        TextView note=tv(selectedMarket+" • STRATEGI "+activeMode+" • M5 + M1",12);note.setTextColor(Color.LTGRAY);
         box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(34)));
         LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
         addPanelRow(rows,"MARKET",selectedMarket,Color.WHITE);
@@ -2176,10 +2195,16 @@ public class MainActivity extends Activity {
         addPanelRow(rows,"TAKE PROFIT 2 (TP2)",String.valueOf(s.tp2),green);
         addPanelRow(rows,"RISK : REWARD",String.format(Locale.US,"%.2f",s.rr),Color.WHITE);
         addPanelRow(rows,"CONFIDENCE",s.confidence+"/5  •  ENTRY SCORE "+s.score+"%",Color.CYAN);
-        addPanelRow(rows,"M5 TREND / EMA50-200",String.valueOf(s.m5Bias),("BUY".equals(s.m5Bias)||"SELL".equals(s.m5Bias))?green:Color.LTGRAY);
-        addPanelRow(rows,"FIBONACCI ZONE 50–61.8%",onoff("BUY".equals(s.side)||"SELL".equals(s.side)),("BUY".equals(s.side)||"SELL".equals(s.side))?green:Color.LTGRAY);
-        addPanelRow(rows,"CANDLE CONFIRMATION",onoff("BUY".equals(s.side)||"SELL".equals(s.side)),("BUY".equals(s.side)||"SELL".equals(s.side))?green:Color.LTGRAY);
-        addPanelRow(rows,"WICK CONFLUENCE (OPSIONAL)",onoff(s.wickRejection),s.wickRejection?green:Color.LTGRAY);
+        if("STANDAR".equals(activeMode)){
+            addPanelRow(rows,"M5 TREND / EMA50-200",String.valueOf(s.m5Bias),("BUY".equals(s.m5Bias)||"SELL".equals(s.m5Bias))?green:Color.LTGRAY);
+            addPanelRow(rows,"FIBONACCI ZONE 50–61.8%",onoff("BUY".equals(s.side)||"SELL".equals(s.side)),("BUY".equals(s.side)||"SELL".equals(s.side))?green:Color.LTGRAY);
+            addPanelRow(rows,"CANDLE CONFIRMATION",onoff("BUY".equals(s.side)||"SELL".equals(s.side)),("BUY".equals(s.side)||"SELL".equals(s.side))?green:Color.LTGRAY);
+            addPanelRow(rows,"WICK REJECTION",onoff(s.wickRejection),s.wickRejection?green:Color.LTGRAY);
+        }else{
+            addPanelRow(rows,"M5 EMA20/50 BIAS",String.valueOf(s.m5Bias),("BUY".equals(s.m5Bias)||"SELL".equals(s.m5Bias))?green:Color.LTGRAY);
+            addPanelRow(rows,"WICK REJECTION",onoff(s.wickRejection),s.wickRejection?green:Color.LTGRAY);
+            addPanelRow(rows,"LIQUIDITY SWEEP",onoff(s.liquiditySweep),s.liquiditySweep?green:Color.LTGRAY);
+        }
         addPanelRow(rows,"ATR FILTER",onoff(s.atrFilter),s.atrFilter?green:Color.LTGRAY);
         addPanelRow(rows,"SPREAD FILTER",onoff(s.spreadFilter),s.spreadFilter?green:Color.LTGRAY);
         ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
