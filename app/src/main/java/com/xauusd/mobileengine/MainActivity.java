@@ -2813,16 +2813,25 @@ public class MainActivity extends Activity {
         TextView panelTitle=tv("AUTO ENTRY / MT5 • DEMO",18);
         panelTitle.setTextColor(Color.CYAN);panelTitle.setTypeface(null,Typeface.BOLD);
         root.addView(panelTitle,new LinearLayout.LayoutParams(-1,uiDp(36)));
-        TextView panelNote=tv("EMA M5 + Fibo 38.2/50/61.8/78.6 + rejection wick M1 • TP1/TP2 tersinkron",12);
+        String strategyMode=activeStrategyForSymbol(selectedMt5Symbol);
+        String strategyDescription="STANDAR".equals(strategyMode)
+            ?"STANDAR aktif • Fibo/wick M1 + EMA50/200 M5"
+            :("EXCELLENT".equals(strategyMode)
+                ?"EXCELLENT aktif • EMA20/50 M5 + RSI/ATR + wick/sweep M1"
+                :("POWERFULL".equals(strategyMode)
+                    ?"POWERFULL aktif • model distribusi M5 dikelola EA"
+                    :"Strategi OFF • auto-entry strategi tidak berjalan"));
+        TextView panelNote=tv(strategyDescription+" • TP1/TP2 dan level order divalidasi",12);
         panelNote.setTextColor(Color.LTGRAY);
-        root.addView(panelNote,new LinearLayout.LayoutParams(-1,uiDp(32)));
+        panelNote.setMaxLines(2);
+        root.addView(panelNote,new LinearLayout.LayoutParams(-1,uiDp(40)));
 
         LinearLayout fields=new LinearLayout(this);
         fields.setOrientation(LinearLayout.VERTICAL);
         fields.setPadding(0,uiDp(3),0,uiDp(5));
 
         Switch auto=new Switch(this);
-        auto.setText("SMART AUTO • Fibo + wick rejection LIMIT");
+        auto.setText("SMART AUTO MASTER • lifecycle legacy");
         auto.setTextSize(14);auto.setPadding(uiDp(10),uiDp(4),uiDp(10),uiDp(4));
         auto.setBackground(roundBg(Color.rgb(7,30,47),12));
         auto.setMinHeight(uiDp(52));auto.setMinimumHeight(uiDp(52));
@@ -2855,7 +2864,7 @@ public class MainActivity extends Activity {
         mode.setSelection("READY".equals(gatewayPrefs.getString("operation_mode","REST"))?1:0);
 
         TextView modeHint=tv("DEMO ONLY • "+selectedMt5Symbol+" • minimum lot "+lotText(minLotForSymbol(selectedMt5Symbol))+
-            " • Auto entry hanya pada chart M1; EA MT5 harus polling aktif.",11);
+            " • EA MT5 harus polling aktif. STANDAR/EXCELLENT ON/OFF di Strategy Control dan tidak bergantung pada master ini atau MODE SIAP TRADING.",10);
         modeHint.setTextSize(11);modeHint.setTextColor(Color.CYAN);
         modeHint.setPadding(uiDp(10),uiDp(7),uiDp(10),uiDp(7));
         modeHint.setBackground(roundBg(Color.rgb(7,30,47),10));
