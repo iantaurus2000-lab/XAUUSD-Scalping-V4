@@ -1886,6 +1886,11 @@ void managePowerfullSymbol(int index){
       // Delete only Powerfull magic orders, then verify the broker-side count
       // before allowing a replacement pair to enter the single order lifecycle.
       bool canceled=powerCancelPendingForSymbol(symbol);
+      // Broker fill/delete status may change while the synchronous trade request
+      // is in flight. Re-read positions and pending orders before choosing a branch.
+      positions=powerPositionCount(symbol);
+      pending=powerPendingCount(symbol);
+      canceled=canceled&&(pending==0);
       powerReplans[index]++;
       if(positions>0){
          powerLastSeedBar[index]=barTime;
