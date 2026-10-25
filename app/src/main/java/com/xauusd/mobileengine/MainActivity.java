@@ -1780,7 +1780,7 @@ public class MainActivity extends Activity {
         status.setGravity(Gravity.TOP|Gravity.START);
         status.setPadding(uiDp(7),uiDp(7),uiDp(7),uiDp(7));
         status.setBackground(roundBg(Color.rgb(7,30,47),10));
-        fields.addView(status,new LinearLayout.LayoutParams(-1,uiDp(100)));
+        fields.addView(status,new LinearLayout.LayoutParams(-1,uiDp(124)));
 
         ScrollView scroll=new ScrollView(this);
         scroll.setFillViewport(false);
@@ -1810,6 +1810,7 @@ public class MainActivity extends Activity {
             try{
                 String current=gp.getString("powerfull_status_"+symbol,"MENUNGGU_EA");
                 String samples=gp.getString("powerfull_samples_"+symbol,"0");
+                String days=gp.getString("powerfull_days_"+symbol,"0");
                 String range=gp.getString("powerfull_range_pips_"+symbol,"");
                 String low=gp.getString("powerfull_low_"+symbol,"");
                 String high=gp.getString("powerfull_high_"+symbol,"");
@@ -1819,6 +1820,7 @@ public class MainActivity extends Activity {
                 String ageText=age<0L?"belum ada heartbeat":(age>8L?"STALE "+age+"s":"segar "+age+"s");
                 String summary="EA: "+current+" • "+ageText
                     +"\nSample M5: "+samples
+                    +"\\nRiwayat tersedia: "+days+" hari dari 365"
                     +"\nPrediksi rentang: "+(range.isEmpty()?"--":range+" pip")
                     +"\nProyeksi Low–High: "+(low.isEmpty()?"--":low)+" – "+(high.isEmpty()?"--":high)
                     +(detail.isEmpty()?"":"\n"+detail);
