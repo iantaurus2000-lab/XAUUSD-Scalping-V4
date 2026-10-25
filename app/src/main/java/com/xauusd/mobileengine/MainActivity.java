@@ -1456,6 +1456,10 @@ public class MainActivity extends Activity {
                 WinRateTracker.record(this,"READY",selectedMarket,s.side,s.entry,s.sl,s.tp1,candleStamp);
                 trackPrefs.edit().putString("last_ready_key",readyTrackKey).apply();
             }
+            String activeStrategy=activeStrategyForSymbol(mt5SymbolForMarket(selectedMarket));
+            if("STANDAR".equals(activeStrategy)||"EXCELLENT".equals(activeStrategy)){
+                WinRateTracker.record(this,"STRATEGY_"+activeStrategy,selectedMarket,s.side,s.entry,s.sl,s.tp1,candleStamp);
+            }
         }
 
         boolean changed=previous==null||!s.side.equals(previous.side);
@@ -2312,18 +2316,22 @@ public class MainActivity extends Activity {
         WinRateTracker.Stats ready=WinRateTracker.stats(this,"READY");
         WinRateTracker.Stats manual=WinRateTracker.stats(this,"MANUAL");
         WinRateTracker.Stats smart=WinRateTracker.stats(this,"SMART_AUTO");
+        WinRateTracker.Stats standard=WinRateTracker.stats(this,"STRATEGY_STANDAR");
+        WinRateTracker.Stats excellent=WinRateTracker.stats(this,"STRATEGY_EXCELLENT");
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(uiDp(16),uiDp(14),uiDp(16),uiDp(12));
         box.setBackground(roundBg(Color.rgb(3,18,30),16));
         TextView title=tv("HASIL UJI • WIN RATE",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
         box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(38)));
-        TextView note=tv("READY = sinyal simulasi • MANUAL/SMART AUTO = perintah berhasil masuk antrean APK",11);
+        TextView note=tv("Akurasi STANDAR/EXCELLENT dihitung terpisah dari sinyal valid pada candle M1; ini simulasi level Entry/SL/TP1, bukan bukti order terisi MT5. POWERFULL dikelola EA dan belum masuk ke statistik simulasi ini.",11);
         note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
         box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(42)));
         LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
-        addWinRateRow(rows,"1. SINYAL ENTRY READY",ready);
-        addWinRateRow(rows,"2. ORDER MANUAL",manual);
-        addWinRateRow(rows,"3. SMART AUTO ENTRY",smart);
+        addWinRateRow(rows,"1. AKURASI STRATEGI STANDAR",standard);
+        addWinRateRow(rows,"2. AKURASI STRATEGI EXCELLENT",excellent);
+        addWinRateRow(rows,"3. SINYAL ENTRY READY",ready);
+        addWinRateRow(rows,"4. ORDER MANUAL",manual);
+        addWinRateRow(rows,"5. SMART AUTO ENTRY",smart);
         TextView rule=tv("WIN: TP1 tersentuh dahulu • LOSS: SL tersentuh dahulu • OPEN: belum selesai • AMBIGU: TP1 dan SL tersentuh dalam candle sama. Garis ENTRY tetap pada harga yang dicatat terakhir.",11);
         rule.setTextColor(Color.rgb(255,205,95));rule.setGravity(Gravity.TOP|Gravity.START);
         rule.setPadding(uiDp(10),uiDp(8),uiDp(10),uiDp(8));rule.setBackground(roundBg(Color.rgb(7,30,47),10));
@@ -2333,7 +2341,7 @@ public class MainActivity extends Activity {
         disclaimer.setPadding(uiDp(10),uiDp(8),uiDp(10),uiDp(8));rows.addView(disclaimer);
         TextView detailTitle=tv("RIWAYAT TERAKHIR",13);detailTitle.setTextColor(Color.CYAN);detailTitle.setTypeface(null,Typeface.BOLD);
         rows.addView(detailTitle,new LinearLayout.LayoutParams(-1,uiDp(32)));
-        TextView details=tv("READY\n"+WinRateTracker.details(this,"READY")+"\n\nMANUAL\n"+WinRateTracker.details(this,"MANUAL")+"\n\nSMART AUTO\n"+WinRateTracker.details(this,"SMART_AUTO"),11);
+        TextView details=tv("STRATEGI STANDAR\n"+WinRateTracker.details(this,"STRATEGY_STANDAR")+"\n\nSTRATEGI EXCELLENT\n"+WinRateTracker.details(this,"STRATEGY_EXCELLENT")+"\n\nREADY\n"+WinRateTracker.details(this,"READY")+"\n\nMANUAL\n"+WinRateTracker.details(this,"MANUAL")+"\n\nSMART AUTO\n"+WinRateTracker.details(this,"SMART_AUTO"),11);
         details.setTextIsSelectable(true);details.setGravity(Gravity.TOP|Gravity.START);
         details.setPadding(uiDp(10),uiDp(8),uiDp(10),uiDp(8));details.setBackground(roundBg(Color.rgb(6,25,40),10));
         rows.addView(details,new LinearLayout.LayoutParams(-1,-2));
