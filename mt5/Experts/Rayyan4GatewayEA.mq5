@@ -46,6 +46,8 @@ datetime lastIndicatorBar=0, lastIndicatorDiag=0;
 #define POWERFULL_MIN_HISTORY 2000
 #define POWERFULL_MIN_HISTORY_DAYS 350
 #define POWERFULL_CONFIG_TIMEOUT_MS 300
+#define POWERFULL_STATUS_TIMEOUT_MS 100
+#define POWERFULL_GATEWAY_MIN_GAP_MS 250
 #define POWERFULL_STATUS_INTERVAL_MS 2000
 #define POWERFULL_REPLAN_MAX 2
 
@@ -69,6 +71,7 @@ uint powerLastCancelAttemptMs[3];
 uint powerConfigReceivedMs[3];
 uint powerLastStatePublishMs[3];
 uint powerLastConfigPollMs=0;
+uint powerLastGatewayRequestMs=0;
 bool powerAllowGatewayCalls=false;
 bool powerFastTickOnly=false;
 uint powerLastLegacyTimerMs=0;
@@ -94,7 +97,7 @@ string powerLastDetail[3];
 
 void managePowerfullAllMarkets(bool pollConfig);
 void managePowerfullSymbol(int index);
-bool powerGatewayGet(string path,int &httpCode,string &body,string &diagnostic);
+bool powerGatewayGet(string path,int &httpCode,string &body,string &diagnostic,int timeoutMs);
 bool powerRefreshConfig(int index);
 bool powerBuildModel(int index);
 void powerProjectBounds(int index,double candleOpen);
@@ -1151,7 +1154,7 @@ void updateFibo(){
    /next, /ack, /state and RAYYAN_MAGIC order handling remain independent.
    ========================================================================= */
 
-bool powerGatewayGet(string path,int &httpCode,string &body,string &diagnostic){
+bool powerGatewayGet(string path,int &httpCode,string &body,string &diagnostic,int timeoutMs){
    httpCode=-1; body=""; diagnostic="";
    string base=GatewayUrl;
    while(StringLen(base)>0 && StringSubstr(base,StringLen(base)-1,1)=="/")
@@ -1164,7 +1167,7 @@ bool powerGatewayGet(string path,int &httpCode,string &body,string &diagnostic){
    char requestData[];
    char responseData[];
    ResetLastError();
-   int status=WebRequest("GET",base+path,"","",POWERFULL_CONFIG_TIMEOUT_MS,
+   int status=WebRequest("GET",base+path,"","",timeoutMs,
                          requestData,0,responseData,responseHeaders);
    int err=GetLastError();
    if(status==-1 || status==1001){
@@ -1180,7 +1183,8 @@ bool powerRefreshConfig(int index){
    if(index<0||index>=ArraySize(powerSymbols))return false;
    int code=-1; string body="",diagnostic="";
    bool received=powerGatewayGet("/power_config?symbol="+urlEncode(powerSymbols[index]),
-                                 code,body,diagnostic);
+                                 code,body,diagnostic,POWERFULL_CONFIG_TIMEOUT_MS);
+   powerLastGatewayRequestMs=GetTickCount();
    if(!received||code!=200){
       if(TimeCurrent()-powerLastDiag>=10){
          powerLastDiag=TimeCurrent();
@@ -1715,6 +1719,10 @@ void powerPublishState(int index,string status,string detail,datetime barTime){
    if(powerLastStatePublishMs[index]!=0&&
       (uint)(nowMs-powerLastStatePublishMs[index])<POWERFULL_STATUS_INTERVAL_MS&&
       status==powerLastStatus[index]&&detail==powerLastDetail[index])return;
+   // Limit Powerfull status traffic so intermittent gateway latency cannot create
+   // a burst of synchronous HTTP calls after the legacy /next queue was serviced.
+   if(powerLastGatewayRequestMs!=0&&
+      (uint)(nowMs-powerLastGatewayRequestMs)<POWERFULL_GATEWAY_MIN_GAP_MS)return;
    powerLastStatePublishMs[index]=nowMs;
    powerLastStatus[index]=status;
    powerLastDetail[index]=detail;
@@ -1731,7 +1739,9 @@ void powerPublishState(int index,string status,string detail,datetime barTime){
       +"&positions="+IntegerToString(powerPositionCount(symbol))
       +"&detail="+urlEncode(detail);
    int code=-1; string body="",diagnostic="";
-   if(!powerGatewayGet(path,code,body,diagnostic)||code!=200||StringFind(body,"POWER STATE OK")<0){
+   bool stateSent=powerGatewayGet(path,code,body,diagnostic,POWERFULL_STATUS_TIMEOUT_MS);
+   powerLastGatewayRequestMs=GetTickCount();
+   if(!stateSent||code!=200||StringFind(body,"POWER STATE OK")<0){
       if(TimeCurrent()-powerLastDiag>=10){
          powerLastDiag=TimeCurrent();
          Print("POWERFULL STATUS UPLOAD FAILED symbol=",symbol," code=",code," detail=",diagnostic,
