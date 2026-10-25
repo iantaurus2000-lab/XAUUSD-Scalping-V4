@@ -1712,6 +1712,9 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
                powerClosePosition(ticket,"CROSS_CANDLE_PROFIT_GUARD");
             continue;
          }
+         // Keep an armed position through the remainder of its original candle.
+         // The hard-loss guard above remains active during this hold.
+         if(holdMode==1.0&&barTime==holdBar)continue;
          if(holdMode>=2.0&&barTime==holdBar){
             bool reversed=hasPreviousTick&&
                (side==POSITION_TYPE_BUY
