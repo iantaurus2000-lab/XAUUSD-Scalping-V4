@@ -417,30 +417,35 @@ public class MainActivity extends Activity {
             updateSignal(m1Data,m5Data);
     }
 
-    /** Show the real blocker for AUTO without changing the trade safety gates. */
+    /** Report the blocker for the selected per-market strategy, not the legacy master switch. */
     private void updateLiveGatewayStatus(String market){
         if(status==null)return;
         SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        if(!gp.getBoolean("auto",false)){
-            status.setText("● QUOTE LIVE • SMART AUTO OFF • "+market+" • "+selectedTf);
+        String symbol=mt5SymbolForMarket(market);
+        String strategy=activeStrategyForSymbol(symbol);
+        long now=System.currentTimeMillis();
+        if("POWERFULL".equals(strategy)){
+            long powerAt=gp.getLong("powerfull_state_at_"+symbol,0L);
+            boolean fresh=powerAt>0L&&now>=powerAt&&now-powerAt<=8000L;
+            String powerState=gp.getString("powerfull_status_"+symbol,"MENUNGGU_EA");
+            status.setText("● POWERFULL EA • "+(fresh?powerState:"STATUS EA STALE")+" • "+market+" • M5");
             return;
         }
-        if(!"READY".equals(gp.getString("operation_mode","REST"))){
-            status.setText("● QUOTE LIVE • MODE REST • SMART AUTO PAUSED");
+        if(!"STANDAR".equals(strategy)&&!"EXCELLENT".equals(strategy)){
+            status.setText("● QUOTE LIVE • STRATEGI OFF • "+market+" • "+selectedTf);
             return;
         }
         if(!"M1".equals(selectedTf)){
-            status.setText("● QUOTE LIVE • SMART AUTO MENUNGGU M1");
+            status.setText("● "+strategy+" • MENUNGGU M1 UNTUK ENTRY • "+market+" • "+selectedTf);
             return;
         }
         if(!GatewayService.isEaRecentlyOnline(this)){
-            status.setText("● QUOTE LIVE • TRADE EA OFFLINE • AUTO MENUNGGU");
+            status.setText("● "+strategy+" • EA MT5 OFFLINE • ENTRY DITAHAN");
             return;
         }
-        long now=System.currentTimeMillis();
         long stateAt=gp.getLong("ea_order_state_at",0L);
         if(stateAt<=0L||now<stateAt||now-stateAt>8000L){
-            status.setText("● QUOTE LIVE • STATUS ORDER EA BELUM SEGAR");
+            status.setText("● "+strategy+" • STATUS ORDER MT5 BELUM SEGAR");
             return;
         }
         status.setText("● MT5 + CHART LIVE • SMART AUTO MEMANTAU • "+market+" • M1");
@@ -995,7 +1000,7 @@ public class MainActivity extends Activity {
             autoDiagnostic(gp,"READY_SEEN|"+signalKey,
                 "READY TERDETEKSI • "+signalKey+" • score="+s.score+" conf="+s.confidence+
                 "/5 wick="+s.wickRejection+" sweep="+s.liquiditySweep+" spreadOK="+s.spreadFilter+
-                " M5="+s.m5Bias+" • tahap berikutnya memerlukan gate Smart Auto");
+                " M5="+s.m5Bias+" • memeriksa gate strategi aktif, quote, EA, dan status order");
         }
         if(readyCandidate&&autoEnabled){
             autoDiagnostic(gp,"READY_AUTO_ON|"+signalKey,
@@ -1004,14 +1009,14 @@ public class MainActivity extends Activity {
         if(!eaOnline){
             autoDiagnostic(gp,"EA_OFFLINE|"+(readyCandidate?signalKey:selectedMarket+"|"+selectedTf),
                 "ENTRY BLOCKED • EA MT5 /next offline • ready="+readyCandidate+" • tidak mengirim order");
-            if(status!=null&&autoEnabled)status.setText("● SMART AUTO BLOCKED • EA /next OFFLINE");
+            if(status!=null&&autoEnabled)status.setText("● "+selectedStrategy+" BLOCKED • EA /next OFFLINE");
             return;
         }
         if(!stateFresh){
             autoDiagnostic(gp,"STATE_STALE|"+(readyCandidate?signalKey:selectedMarket+"|"+selectedTf),
                 "ENTRY BLOCKED • status order MT5 stale/heartbeat >8s • state="+remoteState+
                 " ageMs="+(stateAt>0?Math.max(0L,now-stateAt):-1L)+" • tidak membuat order duplikat");
-            if(status!=null&&autoEnabled)status.setText("● SMART AUTO BLOCKED • STATUS ORDER MT5 STALE");
+            if(status!=null&&autoEnabled)status.setText("● "+selectedStrategy+" BLOCKED • STATUS ORDER MT5 STALE");
             return;
         }
 
@@ -1309,7 +1314,7 @@ public class MainActivity extends Activity {
 
         // Fail closed if the EA snapshot is not a verified flat state.
         if(!"NONE".equals(remoteState)){
-            if(status!=null&&autoEnabled)status.setText("● SMART AUTO BLOCKED • EA STATE "+remoteState);
+            if(status!=null&&autoEnabled)status.setText("● "+selectedStrategy+" BLOCKED • EA STATE "+remoteState);
             return;
         }
         if(!autoEnabled){
