@@ -1832,7 +1832,7 @@ public class MainActivity extends Activity {
         close.setOnClickListener(v->dialog.dismiss());
         save.setOnClickListener(v->{
             try{
-                double volume=Double.parseDouble(lot.getText().toString().trim());
+                double volume=Double.parseDouble(lot.getText().toString().trim().replace(',', '.'));
                 String pipText=pipSize.getText().toString().trim().replace(',','.');
                 double pip=pipText.isEmpty()?0.0:Double.parseDouble(pipText);
                 int[] quantiles={50,60,70,80,90};
