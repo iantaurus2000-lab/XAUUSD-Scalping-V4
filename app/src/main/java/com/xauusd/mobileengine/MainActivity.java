@@ -1758,7 +1758,7 @@ public class MainActivity extends Activity {
         root.setPadding(uiDp(18),uiDp(14),uiDp(18),uiDp(12));root.setBackground(roundBg(Color.rgb(3,18,30),16));
         TextView title=tv("STRATEGY CONTROL • "+symbol,17);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
         root.addView(title,new LinearLayout.LayoutParams(-1,uiDp(34)));
-        TextView note=tv("Pilih MAKSIMAL SATU strategi per market. STANDAR: EMA50/EMA200 + Fibo/SR. EXCELLENT: RSI/ATR untuk konfirmasi internal. POWERFULL: model distribusi di EA tanpa indikator klasik. Semua OFF = chart bersih tanpa indikator strategi. Auto-entry Android memerlukan chart M1, quote segar dan EA MT5 online; tidak bergantung pada Smart Auto master/MODE READY.",11);
+        TextView note=tv("Pilih MAKSIMAL SATU strategi per market. STANDAR: EMA50/EMA200 + Fibo/SR. EXCELLENT: EMA20/50 M5 + RSI/ATR + wick/sweep M1 untuk logika internal. POWERFULL: model distribusi EA tanpa indikator klasik. Semua OFF = chart bersih. Auto-entry Android memerlukan M1, quote segar dan EA online; tidak bergantung pada Smart Auto master/MODE READY.",11);
         note.setTextColor(Color.LTGRAY);note.setPadding(0,0,0,uiDp(8));root.addView(note,new LinearLayout.LayoutParams(-1,-2));
         root.addView(standard,new LinearLayout.LayoutParams(-1,uiDp(48)));
         root.addView(excellent,new LinearLayout.LayoutParams(-1,uiDp(48)));
