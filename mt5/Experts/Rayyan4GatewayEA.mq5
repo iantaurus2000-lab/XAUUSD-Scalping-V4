@@ -36,7 +36,9 @@ uint lastScreenshotTick=0;
 input int SRLookbackBars=80;
 input int FiboLookbackBars=60;
 int hEma50=INVALID_HANDLE, hEma200=INVALID_HANDLE;
-bool onEma50=true, onEma200=true, onSR=true, onFibo=true;
+// Fail closed: no strategy means no technical indicators on the MT5 chart.
+bool onEma50=false, onEma200=false, onSR=false, onFibo=false;
+string indicatorStrategy="OFF";
 string lastIndicatorCommandId="";
 datetime lastIndicatorBar=0, lastIndicatorDiag=0;
 #define RAYYAN_EMA_DRAW_BARS 140
@@ -982,10 +984,17 @@ void processIndicatorQueue(){
             return; // never ACK a chart state that was not applied
          }
 
-         onEma50=(field(cmd,"ema50")=="1");
-         onEma200=(field(cmd,"ema200")=="1");
-         onSR=(field(cmd,"sr")=="1");
-         onFibo=(field(cmd,"fibo")=="1");
+         string requestedStrategy=field(cmd,"strategy");
+         if(requestedStrategy!="STANDAR" && requestedStrategy!="EXCELLENT" &&
+            requestedStrategy!="POWERFULL") requestedStrategy="OFF";
+         indicatorStrategy=requestedStrategy;
+         // Only STANDAR owns the EMA50/EMA200, SR and Fibonacci drawing layer.
+         // EXCELLENT uses its own internal EMA20/50 + RSI/ATR calculations;
+         // POWERFULL uses its distribution model and must not inherit classic overlays.
+         onEma50=(indicatorStrategy=="STANDAR" && field(cmd,"ema50")=="1");
+         onEma200=(indicatorStrategy=="STANDAR" && field(cmd,"ema200")=="1");
+         onSR=(indicatorStrategy=="STANDAR" && field(cmd,"sr")=="1");
+         onFibo=(indicatorStrategy=="STANDAR" && field(cmd,"fibo")=="1");
          applyAll();
 
          string ack="";
@@ -993,6 +1002,7 @@ void processIndicatorQueue(){
             StringFind(ack,"INDICATOR ACK OK")>=0){
             lastIndicatorCommandId=id;
             Print("RAYYAN4 indicators ACK id=",id,
+                  " strategy=",indicatorStrategy,
                   " EMA50=",onEma50," EMA200=",onEma200,
                   " SR=",onSR," FIBO=",onFibo);
          }else{
