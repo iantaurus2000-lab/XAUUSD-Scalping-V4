@@ -23,7 +23,7 @@
 ## Entry and order lifecycle
 
 - At the start of a new M5 candle, attempt a BUY LIMIT at 1% of forecast range above projected Low and a SELL LIMIT at 99% of forecast range above projected Low.
-- The first pair must be sent within the opening 5 seconds of that M5 bar. Replacements can be sent later only after a material forecast revision, provided the prior pending-order count is confirmed zero and more than five seconds remain before candle close.
+- The initial BUY LIMIT + SELL LIMIT pair must be submitted immediately within the first 1-2 seconds of each new M5 candle (EA hard deadline: 2 seconds, aiming for the first available tick near 1 second). If that window is missed, do not make a late initial entry; wait for the next M5 candle. Forecast replacements are a separate path and require the old pending-order count to be confirmed zero before replacement.
 - Pending orders use specified expiration at the M5 candle close. A broker which does not support specified expiration is not eligible for this strategy until a safe expiry mechanism is agreed.
 - A separate magic number scopes all Powerfull order queries/deletes. If one side of a pair is rejected, the EA attempts to roll back the other still-pending side and prevents duplicate seeding in that bar.
 - A live Powerfull position blocks a new pair for that symbol while the position is open; no unlimited stacking.
