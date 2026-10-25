@@ -1468,6 +1468,12 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
    double lot=powerCfg[index].lot;
    double stopPips=powerCfg[index].stopPips;
    if(!powerModelGood[index]||pip<=0.0||powerForecastRangePips[index]<=0.0)return false;
+   ENUM_ACCOUNT_MARGIN_MODE marginMode=(ENUM_ACCOUNT_MARGIN_MODE)AccountInfoInteger(ACCOUNT_MARGIN_MODE);
+   if(marginMode!=ACCOUNT_MARGIN_MODE_RETAIL_HEDGING){
+      powerPublishState(index,"BLOCKED_NETTING_ACCOUNT",
+         "POWERFULL requires MT5 hedging mode so BUY and SELL positions stay isolated from legacy strategies",barTime);
+      return false;
+   }
    long elapsedMs=tick.time_msc-(long)barTime*1000;
    // First dual-LIMIT pair belongs at the beginning of its M5 candle. A forecast
    // replacement may be sent later in the same candle, but only after old orders
