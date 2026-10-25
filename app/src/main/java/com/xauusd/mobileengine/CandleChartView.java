@@ -408,7 +408,7 @@ public class CandleChartView extends View {
         long elapsedNow=SystemClock.elapsedRealtime();
         long serverAnchor=mt5ServerTimeMs;
         long receivedAnchor=mt5ServerReceivedElapsedMs;
-        boolean serverClockValid=serverAnchor>0L&&receivedAnchor>0L&&elapsedNow>=receivedAnchor;
+        boolean serverClockValid=serverAnchor>0L&&receivedAnchor>0L&&elapsedNow>=receivedAnchor&&(elapsedNow-receivedAnchor)<=10_000L;
         long remaining=0L;
         if(serverClockValid&&latest!=null&&latest.t>0L){
             long estimatedServerNow=serverAnchor+(elapsedNow-receivedAnchor);
