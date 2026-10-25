@@ -1989,8 +1989,8 @@ public class MainActivity extends Activity {
                 }
                 SharedPreferences.Editor powerEditor=gp.edit()
                     .putBoolean("powerfull_enabled_"+symbol,enabled.isChecked())
-                    .putBoolean(strategyEnabledKey("STANDAR",symbol),false)
-                    .putBoolean(strategyEnabledKey("EXCELLENT",symbol),false)
+                    .putBoolean(strategyEnabledKey("STANDAR",symbol),enabled.isChecked()?false:gp.getBoolean(strategyEnabledKey("STANDAR",symbol),false))
+                    .putBoolean(strategyEnabledKey("EXCELLENT",symbol),enabled.isChecked()?false:gp.getBoolean(strategyEnabledKey("EXCELLENT",symbol),false))
                     .putBoolean("powerfull_buy_limit_"+symbol,buyLimitSwitch.isChecked())
                     .putBoolean("powerfull_sell_limit_"+symbol,sellLimitSwitch.isChecked())
                     .putBoolean("powerfull_reforecast_"+symbol,reforecastSwitch.isChecked())
