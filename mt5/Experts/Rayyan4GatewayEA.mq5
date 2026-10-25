@@ -54,6 +54,11 @@ datetime lastIndicatorBar=0, lastIndicatorDiag=0;
 string powerSymbols[3]={"XAUUSDm","BTCUSDm","ETHUSDm"};
 struct PowerfullConfig {
    bool enabled;
+   bool buyLimitEnabled;
+   bool sellLimitEnabled;
+   bool autoReforecast;
+   bool quickProfitClose;
+   bool crossCandleHold;
    double lot;
    double pipSize;
    double stopPips;
@@ -1207,18 +1212,34 @@ bool powerRefreshConfig(int index){
    int percentile=(int)StringToInteger(field(body,"percentile"));
    string reason=field(body,"reason");
    bool requested=(field(body,"enabled")=="1");
+   string buyFlag=field(body,"buyLimit");
+   string sellFlag=field(body,"sellLimit");
+   string reforecastFlag=field(body,"reforecast");
+   string quickProfitFlag=field(body,"quickProfit");
+   string crossCandleFlag=field(body,"crossCandleHold");
+   // Missing optional fields default ON for compatibility with an older APK gateway.
+   bool buyEnabled=(buyFlag==""||buyFlag=="1");
+   bool sellEnabled=(sellFlag==""||sellFlag=="1");
+   bool reforecastEnabled=(reforecastFlag==""||reforecastFlag=="1");
+   bool quickProfitEnabled=(quickProfitFlag==""||quickProfitFlag=="1");
+   bool crossCandleEnabled=(crossCandleFlag==""||crossCandleFlag=="1");
    double minLot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
    if(minLot<=0.0)minLot=(symbol=="XAUUSDm"?0.01:0.10);
    bool valid=MathIsValidNumber(lot)&&lot+1e-8>=minLot
       &&MathIsValidNumber(pip)&&pip>0.0
       &&MathIsValidNumber(stop)&&stop>0.0
       &&(percentile==50||percentile==60||percentile==70||percentile==80||percentile==90);
-   powerCfg[index].enabled=requested&&valid;
+   powerCfg[index].buyLimitEnabled=buyEnabled;
+   powerCfg[index].sellLimitEnabled=sellEnabled;
+   powerCfg[index].autoReforecast=reforecastEnabled;
+   powerCfg[index].quickProfitClose=quickProfitEnabled;
+   powerCfg[index].crossCandleHold=crossCandleEnabled;
+   powerCfg[index].enabled=requested&&valid&&(buyEnabled||sellEnabled);
    powerCfg[index].lot=lot;
    powerCfg[index].pipSize=pip;
    powerCfg[index].stopPips=stop;
    powerCfg[index].percentile=percentile;
-   powerCfg[index].reason=!requested?"DISABLED":(valid?reason:"CONFIG_INVALID");
+   powerCfg[index].reason=(reason!=""?reason:(!requested?"DISABLED":(valid?"READY":"CONFIG_INVALID")));
    powerConfigReceivedMs[index]=GetTickCount();
    if(valid&&(MathAbs(pip-oldPipSize)>1e-12||percentile!=oldPercentile)){
       powerModelGood[index]=false;
