@@ -1,7 +1,6 @@
 name: RAYYAN SMART AUTO-POWERFULL APK + EA Build
 on:
-  push:
-    branches: [ RAYYAN ]
+  # Build is manual-only while source revisions are being synchronized.
   workflow_dispatch:
 jobs:
   android-apk:
