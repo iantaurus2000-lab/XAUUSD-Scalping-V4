@@ -91,34 +91,24 @@ public class CandleChartView extends View {
         invalidate();
     }
 
-    /** Fresh feed quote updates the visible forming candle on each one-second tick. */
+    /**
+     * Update only the live Bid/Ask overlay. Candle OHLC is authoritative MT5 CopyRates data,
+     * supplied through setData(); a tick must never synthesize or mutate an OHLC candle.
+     * This prevents midpoint quotes, phone-clock boundaries, and stale ticks from drifting
+     * the APK chart away from the selected MT5 symbol/timeframe.
+     */
     public void updateLiveBar(double b,double a,long nowMs,String tf){
         if(!QuoteSafety.valid(b,a)||nowMs<=0L)return;
         if(tf!=null) timeframe=tf;
-        long period=LiveCandleUpdater.periodMillis(tf==null?timeframe:tf);
-        double price=(b+a)*0.5;
-        if(!cs.isEmpty()&&period>0L){
-            Candle last=cs.get(cs.size()-1);
-            long barTime=(nowMs/period)*period;
-            if(last!=null&&last.t>0L&&barTime>=last.t){
-                if(barTime==last.t){
-                    last.h=Math.max(last.h,price);
-                    last.l=Math.min(last.l,price);
-                    last.c=price;
-                }else if(barTime-last.t==period){
-                    if(cs.size()>=50)cs.remove(0);
-                    cs.add(new Candle(barTime,last.c,Math.max(last.c,price),Math.min(last.c,price),price));
-                    if(follow)positionLatestCandle();
-                }
-            }
-        }
-        bid=b; ask=a;
+        bid=b;
+        ask=a;
         invalidate();
     }
 
-    /** Backwards-compatible feed tick API backed by the forming-bar updater. */
+    /** Backwards-compatible tick API; updates price overlays only, never candle OHLC. */
     public void setTick(double b,double a,String tf){
-        updateLiveBar(b,a,System.currentTimeMillis(),tf);
+        if(!QuoteSafety.valid(b,a))return;
+        setQuote(b,a,tf);
     }
     public void clearQuote(){bid=0;ask=0;invalidate();}
 
