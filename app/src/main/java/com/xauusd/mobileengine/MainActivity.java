@@ -1747,7 +1747,7 @@ public class MainActivity extends Activity {
         lot.setSingleLine(true);
         lot.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
         lot.setHint("Lot POWERFULL • minimum "+lotText(minLotForSymbol(symbol)));
-        lot.setText(String.format(Locale.US,"%.2f",gp.getFloat("powerfull_lot_"+symbol,(float)lotForMarket())));
+        lot.setText(String.format(Locale.US,"%.2f",gp.getFloat("powerfull_lot_"+symbol,(float)Math.max(minLotForSymbol(symbol),lotForMarket()))));
         styleDialogInput(lot);
         fields.addView(lot,new LinearLayout.LayoutParams(-1,uiDp(48)));
 
