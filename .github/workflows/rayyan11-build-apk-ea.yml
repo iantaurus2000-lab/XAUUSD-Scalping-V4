@@ -1,7 +1,7 @@
-name: Rayyan12 SMART AUTO-POWERFULL APK + EA Build
+name: RAYYAN SMART AUTO-POWERFULL APK + EA Build
 on:
   push:
-    branches: [ rayyan11-fibo-wick-sync, rayyan12-smart-auto-powerfull ]
+    branches: [ RAYYAN ]
   workflow_dispatch:
 jobs:
   android-apk:
@@ -25,7 +25,7 @@ jobs:
         run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: Rayyan12-SMART-AUTO-POWERFULL-APK
+          name: RAYYAN-SMART-AUTO-POWERFULL-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
@@ -123,7 +123,7 @@ jobs:
           if ($compileLog -match '(?im)\b[1-9]\d* errors?\b') { throw 'MetaEditor reported compile errors.' }
       - uses: actions/upload-artifact@v4
         with:
-          name: Rayyan12-SMART-AUTO-POWERFULL-EA
+          name: RAYYAN-SMART-AUTO-POWERFULL-EA
           path: |
             mt5/Experts/Rayyan4GatewayEA.ex5
             mt5/Experts/Rayyan4GatewayEA.mq5
