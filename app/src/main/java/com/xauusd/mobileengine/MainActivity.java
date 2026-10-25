@@ -1750,7 +1750,7 @@ public class MainActivity extends Activity {
         root.setPadding(uiDp(18),uiDp(14),uiDp(18),uiDp(12));root.setBackground(roundBg(Color.rgb(3,18,30),16));
         TextView title=tv("STRATEGY CONTROL • "+symbol,17);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
         root.addView(title,new LinearLayout.LayoutParams(-1,uiDp(34)));
-        TextView note=tv("Sakelar independen. STANDAR dan EXCELLENT berbagi jalur sinyal Android: jika keduanya ON, EXCELLENT diprioritaskan. POWERFULL berjalan melalui EA MT5. Pastikan pengujian demo sebelum mengaktifkan beberapa mesin bersamaan.",11);
+        TextView note=tv("Sakelar tiap strategi independen per market. STANDAR dan EXCELLENT berbagi jalur sinyal Android: jika keduanya ON, EXCELLENT diprioritaskan. Keduanya tetap memerlukan Smart Auto master + MODE SIAP. POWERFULL berjalan melalui EA MT5. Uji di akun demo sebelum mengaktifkan beberapa mesin bersamaan.",11);
         note.setTextColor(Color.LTGRAY);note.setPadding(0,0,0,uiDp(8));root.addView(note,new LinearLayout.LayoutParams(-1,-2));
         root.addView(standard,new LinearLayout.LayoutParams(-1,uiDp(48)));
         root.addView(excellent,new LinearLayout.LayoutParams(-1,uiDp(48)));
@@ -1760,8 +1760,6 @@ public class MainActivity extends Activity {
         powerful.setChecked(gp.getBoolean(powerKey,false));
         standard.setOnCheckedChangeListener((b,on)->{
             gp.edit().putBoolean(standardKey,on).apply();
-            if(on)gp.edit().putBoolean("auto",true).apply();
-            else if(!excellent.isChecked())gp.edit().putBoolean("auto",false).apply();
             Toast.makeText(this,"STANDAR "+(on?"ON":"OFF")+" • "+symbol,Toast.LENGTH_SHORT).show();
         });
         excellent.setOnCheckedChangeListener((b,on)->{
