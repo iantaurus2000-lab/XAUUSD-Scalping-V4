@@ -702,6 +702,19 @@ public class MainActivity extends Activity {
     }
     private SignalResult evaluateSignal(Candle[] m1,Candle[] m5,double bid,double ask,
                                         double spreadBid,double spreadAsk){
+        String symbol=mt5SymbolForMarket(selectedMarket);
+        SharedPreferences prefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        String profile=prefs.getString("rayyan_strategy_"+symbol,
+            prefs.getBoolean("auto",false)?"STANDAR":"NONE");
+        if("EXCELLENT".equals(profile))
+            return ExcellentSignalEngine.evaluate(m1,m5,bid,ask,spreadBid,spreadAsk);
+        if("POWERFULL".equals(profile))
+            return new SignalResult("WAIT","NEUTRAL",0,0,0,0,0,0,1,
+                "POWERFULL diproses oleh EA MT5 • Android tidak membuat sinyal/order ganda",
+                false,false,false,false,false,false,false,false);
+        if("NONE".equals(profile))
+            return new SignalResult("WAIT","NEUTRAL",0,0,0,0,0,0,1,
+                "SEMUA STRATEGI OFF",false,false,false,false,false,false,false,false);
         return SignalEngine.evaluate(m1,m5,bid,ask,spreadBid,spreadAsk);
     }
     private String autoEntryBlockReason(SignalResult signal,double bid,double ask,boolean m1Context){
@@ -1702,9 +1715,81 @@ public class MainActivity extends Activity {
         else if("settings".equals(action))showSettingsPanel(null);
         else if("settings_theme".equals(action))showThemeDialog();
         else if("live_chart".equals(action))showChartDisplayDialog();
+        else if("strategy_control".equals(action))showStrategyControlDialog();
         else if("strategy".equals(action))showStrategyDialog();
         else if("risk".equals(action))showRiskManagementDialog();
         else if("powerfull".equals(action))showPowerfullDialog();
+    }
+
+    /**
+     * Profiles are mutually exclusive per symbol to prevent competing signal engines.
+     * STANDAR and EXCELLENT still require the existing Smart Auto READY controls.
+     * POWERFULL is executed by the EA, never by Android's legacy order path.
+     */
+    private void showStrategyControlDialog(){
+        final String symbol=mt5SymbolForMarket(selectedMarket);
+        final SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        final String key="rayyan_strategy_"+symbol;
+        String fallback=gp.getBoolean("auto",false)?"STANDAR":"NONE";
+        String current=gp.getString(key,fallback);
+        LinearLayout root=new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(uiDp(18),uiDp(14),uiDp(18),uiDp(12));
+        root.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("STRATEGY CONTROL • "+symbol,17);
+        title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        root.addView(title,new LinearLayout.LayoutParams(-1,uiDp(34)));
+        TextView note=tv("Hanya satu mesin sinyal aktif per market. STANDAR/EXCELLENT tetap memerlukan Smart Auto + MODE SIAP TRADING; POWERFULL dikelola EA MT5.",11);
+        note.setTextColor(Color.LTGRAY);note.setPadding(0,0,0,uiDp(8));
+        root.addView(note,new LinearLayout.LayoutParams(-1,-2));
+        Switch standard=new Switch(this);standard.setText("STANDAR • Fibo/Wick LIMIT");standard.setTextColor(Color.WHITE);
+        Switch excellent=new Switch(this);excellent.setText("EXCELLENT • konfirmasi tambahan");excellent.setTextColor(Color.WHITE);
+        Switch powerful=new Switch(this);powerful.setText("POWERFULL • model distribusi M5 di EA");powerful.setTextColor(Color.WHITE);
+        root.addView(standard,new LinearLayout.LayoutParams(-1,uiDp(48)));
+        root.addView(excellent,new LinearLayout.LayoutParams(-1,uiDp(48)));
+        root.addView(powerful,new LinearLayout.LayoutParams(-1,uiDp(48)));
+        standard.setChecked("STANDAR".equals(current));
+        excellent.setChecked("EXCELLENT".equals(current));
+        powerful.setChecked("POWERFULL".equals(current));
+        final boolean[] changing={false};
+        java.util.function.Consumer<String> activate=mode->{
+            if(changing[0])return;
+            changing[0]=true;
+            standard.setChecked("STANDAR".equals(mode));
+            excellent.setChecked("EXCELLENT".equals(mode));
+            powerful.setChecked("POWERFULL".equals(mode));
+            changing[0]=false;
+            SharedPreferences.Editor e=gp.edit().putString(key,mode);
+            if("STANDAR".equals(mode)||"EXCELLENT".equals(mode)){
+                e.putBoolean("powerfull_enabled_"+symbol,false);
+            }else if("POWERFULL".equals(mode)){
+                e.putBoolean("auto",false);
+                if(gp.getFloat("powerfull_pip_size_"+symbol,0f)<=0f){
+                    e.putString(key,"NONE").putBoolean("powerfull_enabled_"+symbol,false).apply();
+                    standard.setChecked(false);excellent.setChecked(false);powerful.setChecked(false);
+                    Toast.makeText(this,"Atur ukuran pip terlebih dahulu di menu POWERFULL.",Toast.LENGTH_LONG).show();
+                    showPowerfullDialog();
+                    return;
+                }
+                e.putBoolean("powerfull_enabled_"+symbol,true);
+            }else{
+                e.putBoolean("auto",false).putBoolean("powerfull_enabled_"+symbol,false);
+            }
+            e.apply();
+            Toast.makeText(this,"Profil "+mode+" tersimpan untuk "+symbol,Toast.LENGTH_SHORT).show();
+        };
+        standard.setOnCheckedChangeListener((b,on)->{if(!changing[0])activate.accept(on?"STANDAR":"NONE");});
+        excellent.setOnCheckedChangeListener((b,on)->{if(!changing[0])activate.accept(on?"EXCELLENT":"NONE");});
+        powerful.setOnCheckedChangeListener((b,on)->{if(!changing[0])activate.accept(on?"POWERFULL":"NONE");});
+        Button openPower=btn("PENGATURAN DETAIL POWERFULL");
+        openPower.setTextSize(11);openPower.setTextColor(Color.WHITE);openPower.setBackground(roundBg(Color.rgb(8,70,103),10));
+        root.addView(openPower,new LinearLayout.LayoutParams(-1,uiDp(44)));
+        openPower.setOnClickListener(v->showPowerfullDialog());
+        Button close=btn("TUTUP");close.setTextColor(Color.WHITE);close.setBackground(roundBg(Color.rgb(53,65,77),10));
+        root.addView(close,new LinearLayout.LayoutParams(-1,uiDp(42)));
+        AlertDialog dialog=new AlertDialog.Builder(this).setView(root).create();
+        close.setOnClickListener(v->dialog.dismiss());
+        showSizedDialog(dialog,0.78f,420);
     }
 
     /**
