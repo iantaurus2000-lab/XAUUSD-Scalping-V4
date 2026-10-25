@@ -19,6 +19,7 @@ string pendingAckId="";
 string pendingAckResult="";
 string pendingAckDetail="";
 datetime lastDiag=0;
+datetime powerLastDiag=0;
 uint quoteDiagAtMs[3];
 string quoteDiagState[3];
 void manageTP2RetraceProtection();
@@ -1180,8 +1181,8 @@ bool powerRefreshConfig(int index){
    bool received=powerGatewayGet("/power_config?symbol="+urlEncode(powerSymbols[index]),
                                  code,body,diagnostic);
    if(!received||code!=200){
-      if(TimeCurrent()-lastDiag>=10){
-         lastDiag=TimeCurrent();
+      if(TimeCurrent()-powerLastDiag>=10){
+         powerLastDiag=TimeCurrent();
          Print("POWERFULL CONFIG ERROR symbol=",powerSymbols[index],
                " code=",code," detail=",diagnostic);
       }
@@ -1307,7 +1308,7 @@ bool powerBuildModel(int index){
       powerModelGood[index]=false;
       Print("POWERFULL HISTORY COVERAGE SHORT symbol=",symbol,
             " days=",powerHistoryDays[index]," requiredDays=",POWERFULL_MIN_HISTORY_DAYS,
-            " samples=",n," • increase MT5 Max bars/load more M5 history");
+            " samples=",n," | increase MT5 Max bars/load more M5 history");
       return false;
    }
    powerModelGood[index]=true;
@@ -1720,8 +1721,8 @@ void powerPublishState(int index,string status,string detail,datetime barTime){
       +"&detail="+urlEncode(detail);
    int code=-1; string body="",diagnostic="";
    if(!powerGatewayGet(path,code,body,diagnostic)||code!=200||StringFind(body,"POWER STATE OK")<0){
-      if(TimeCurrent()-lastDiag>=10){
-         lastDiag=TimeCurrent();
+      if(TimeCurrent()-powerLastDiag>=10){
+         powerLastDiag=TimeCurrent();
          Print("POWERFULL STATUS UPLOAD FAILED symbol=",symbol," code=",code," detail=",diagnostic,
                " response=",body);
       }
@@ -1856,16 +1857,16 @@ void managePowerfullSymbol(int index){
          powerLastSeedAttemptMs[index]=0;
          powerReplacementPending[index]=true;
          powerPublishState(index,"DISTRIBUTION_REVISED",reviseReason+
-                           " • realized="+DoubleToString(realizedPips,2)+
-                           " pip • old="+DoubleToString(oldForecast,2)+
-                           " pip • revised="+DoubleToString(revised,2)+
-                           " pip • replacing only after old pending count reaches zero",barTime);
+                           " | realized="+DoubleToString(realizedPips,2)+
+                           " pip | old="+DoubleToString(oldForecast,2)+
+                           " pip | revised="+DoubleToString(revised,2)+
+                           " pip | replacing only after old pending count reaches zero",barTime);
       }else{
          powerLastSeedBar[index]=barTime;
          powerReplacementPending[index]=false;
          powerPublishState(index,"DISTRIBUTION_REVISED_NO_REENTRY",reviseReason+
-                           " • realized="+DoubleToString(realizedPips,2)+
-                           " pip • stale pending cancelled/verified; open position or cancel uncertainty blocks reseed",barTime);
+                           " | realized="+DoubleToString(realizedPips,2)+
+                           " pip | stale pending cancelled/verified; open position or cancel uncertainty blocks reseed",barTime);
          return;
       }
       pending=powerPendingCount(symbol);
