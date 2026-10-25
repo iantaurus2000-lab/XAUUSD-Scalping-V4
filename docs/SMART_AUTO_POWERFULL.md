@@ -6,6 +6,7 @@
 - The EA uses `POWERFULL_MAGIC = 4104451` and its own `CTrade powerTrade` instance.
 - The strategy is permanently demo-only and requires an MT5 hedging account with opposite positions allowed. This prevents two pending directions from netting against one another or a legacy position.
 - Its configuration/status route is `/power_config` and `/power_state`; it does not consume or clear the legacy `/next`, `/ack`, `/state`, or indicator queue.
+- The EA uses a 100 ms timer for cross-symbol tick checks and retains the legacy trade/chart/indicator work in its original `PollSeconds` gated sequence before Powerfull gateway calls. If the millisecond timer cannot be installed, MT5 falls back to the original timer cadence.
 - Legacy `RAYYAN_MAGIC = 4104407`, the Fibo/wick signal engine, and its order queue remain separate.
 - This feature branch is not the base/build branch. Do not run the existing build workflow until explicitly instructed.
 
