@@ -71,6 +71,7 @@ uint powerLastCancelAttemptMs[3];
 uint powerConfigReceivedMs[3];
 uint powerLastStatePublishMs[3];
 uint powerLastConfigPollMs=0;
+uint powerLastLegacyTimerMs=0;
 uint powerLastGatewayRequestMs=0;
 bool powerAllowGatewayCalls=false;
 bool powerFastTickOnly=false;
@@ -129,7 +130,7 @@ int OnInit(){
    ChartSetInteger(0,CHART_SHIFT,false);
    ChartSetInteger(0,CHART_SCALE,4);
    applyAll();
-   EventSetTimer(MathMax(1,PollSeconds));
+   if(!EventSetMillisecondTimer(100)) EventSetTimer(MathMax(1,PollSeconds));
    Print("RAYYAN4 START Gateway=",GatewayUrl," Symbol=",AllowedSymbol,
          " trade queue=/next indicator queue=/indicator_next");
    return(INIT_SUCCEEDED);
@@ -152,16 +153,22 @@ void OnTick(){
 }
 
 void OnTimer(){
-   // Original legacy poll cadence/order is retained. POWERFULL runs only after the
-   // existing /next + /ack, quote, native-bar and indicator work has been serviced.
-   manageTP2RetraceProtection();
-   processTradeQueue();
-   publishOrderState();
-   publishMarketQuotes();
-   publishNativeChartBars();
-   processIndicatorQueue();
-   updateChartCountdown();
-   // Screenshot mirroring disabled: native CopyRates OHLC is the chart source.
+   // Fast 100 ms housekeeping lets the EA inspect all subscribed symbols near the
+   // M5 boundary. Legacy gateway/chart work still runs only at PollSeconds cadence
+   // and is serviced before any POWERFULL-specific gateway request.
+   uint nowMs=GetTickCount();
+   uint legacyInterval=(uint)MathMax(1,PollSeconds)*1000;
+   if(powerLastLegacyTimerMs==0 || (uint)(nowMs-powerLastLegacyTimerMs)>=legacyInterval){
+      powerLastLegacyTimerMs=nowMs;
+      manageTP2RetraceProtection();
+      processTradeQueue();
+      publishOrderState();
+      publishMarketQuotes();
+      publishNativeChartBars();
+      processIndicatorQueue();
+      updateChartCountdown();
+      // Screenshot mirroring disabled: native CopyRates OHLC is the chart source.
+   }
    managePowerfullAllMarkets(true);
 }
 
