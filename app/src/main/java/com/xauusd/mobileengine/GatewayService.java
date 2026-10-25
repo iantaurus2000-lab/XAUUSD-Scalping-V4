@@ -348,6 +348,11 @@ public final class GatewayService extends Service {
         SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         String suffix=symbol;
         boolean requested=p.getBoolean("powerfull_enabled_"+suffix,false);
+        boolean buyLimit=p.getBoolean("powerfull_buy_limit_"+suffix,true);
+        boolean sellLimit=p.getBoolean("powerfull_sell_limit_"+suffix,true);
+        boolean reforecast=p.getBoolean("powerfull_reforecast_"+suffix,true);
+        boolean quickProfit=p.getBoolean("powerfull_quick_profit_"+suffix,true);
+        boolean crossCandle=p.getBoolean("powerfull_cross_candle_"+suffix,true);
         double lot=p.getFloat("powerfull_lot_"+suffix,0.0f);
         double pip=p.getFloat("powerfull_pip_size_"+suffix,0.0f);
         int percentile=p.getInt("powerfull_percentile_"+suffix,70);
@@ -356,10 +361,16 @@ public final class GatewayService extends Service {
         boolean valid=Double.isFinite(lot)&&lot>=minimumLot
             &&Double.isFinite(pip)&&pip>0.0
             &&(percentile==50||percentile==60||percentile==70||percentile==80||percentile==90);
-        boolean enabled=requested&&valid;
-        String reason=enabled?"READY":(!requested?"DISABLED":"CONFIG_INVALID");
+        boolean hasEntrySide=buyLimit||sellLimit;
+        boolean enabled=requested&&valid&&hasEntrySide;
+        String reason=enabled?"READY":(!requested?"DISABLED":(!valid?"CONFIG_INVALID":"NO_ENTRY_SIDE"));
         return "symbol="+symbol
             +";enabled="+(enabled?"1":"0")
+            +";buyLimit="+(buyLimit?"1":"0")
+            +";sellLimit="+(sellLimit?"1":"0")
+            +";reforecast="+(reforecast?"1":"0")
+            +";quickProfit="+(quickProfit?"1":"0")
+            +";crossCandleHold="+(crossCandle?"1":"0")
             +";lot="+String.format(Locale.US,"%.4f",lot)
             +";pip="+String.format(Locale.US,"%.8f",pip)
             +";percentile="+percentile
