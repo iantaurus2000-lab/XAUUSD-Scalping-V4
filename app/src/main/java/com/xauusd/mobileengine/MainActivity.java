@@ -2171,12 +2171,12 @@ public class MainActivity extends Activity {
         d.show();if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-36,430),-2);}
     }
     void showSignalDialog(){
-        if(lastSignal==null){Toast.makeText(this,"Menunggu data Signal Engine...",Toast.LENGTH_SHORT).show();return;}
         String activeMode=activeStrategyForSymbol(mt5SymbolForMarket(selectedMarket));
         if(!"STANDAR".equals(activeMode)&&!"EXCELLENT".equals(activeMode)){
             Toast.makeText(this,"Signal Android tidak aktif • mode "+activeMode,Toast.LENGTH_SHORT).show();
             return;
         }
+        if(lastSignal==null){Toast.makeText(this,"Menunggu data Signal Engine...",Toast.LENGTH_SHORT).show();return;}
         SignalResult s=lastSignal;
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(12));
@@ -2426,8 +2426,9 @@ public class MainActivity extends Activity {
         String activeMode=activeStrategyForSymbol(mt5SymbolForMarket(selectedMarket));
         TextView note=tv("Mode aktif: "+activeMode+". EMA50/EMA200/SR/Fibo hanya tampil pada STANDAR; RSI/ATR hanya pada EXCELLENT; MACD selalu nonaktif. Preferensi layer lain tetap tersimpan.",12);note.setTextColor(Color.LTGRAY);note.setMaxLines(3);box.addView(note,new LinearLayout.LayoutParams(-1,52));
         ScrollView scroll=new ScrollView(this);LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);scroll.addView(list);
-        for(int i=0;i<names.length;i++){final int index=i;boolean enabled=ind(keys[i],true);
+        for(int i=0;i<names.length;i++){final int index=i;
             boolean standardLayer=index<=3, excellentLayer=index==4||index==6, macdLayer=index==5;
+            boolean enabled=macdLayer?false:ind(keys[i],true);
             boolean allowed=!standardLayer||"STANDAR".equals(activeMode);
             if(excellentLayer)allowed="EXCELLENT".equals(activeMode);
             if(macdLayer)allowed=false;
