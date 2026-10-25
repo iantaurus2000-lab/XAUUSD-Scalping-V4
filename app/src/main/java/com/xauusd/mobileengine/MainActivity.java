@@ -1188,7 +1188,7 @@ public class MainActivity extends Activity {
             if(activeId.equals(orderId)&&"QUEUED".equals(result))return;
             if(activeId.equals(orderId)&&"EXECUTED".equals(result)){
                 if(remoteId.equals(activeId)&&"NONE".equals(remoteState)){
-                    gp.edit().putString("smart_phase","IDLE").remove("smart_active_id")
+                    gp.edit().putString("smart_phase","IDLE").remove("smart_active_id").remove("smart_active_strategy")
                         .putString("smart_last_log_key","EXECUTED_WITHOUT_ACTIVE_ORDER").apply();
                     AppLog.add(this,"SMART LIMIT","EA reports no pending order/position after EXECUTED; no immediate resend");
                 }else if(now-gp.getLong("smart_active_queue_ms",now)>10000L){
@@ -1205,7 +1205,7 @@ public class MainActivity extends Activity {
                 return;
             }
             if(activeId.equals(orderId)&&!"QUEUED".equals(result)){
-                gp.edit().putString("smart_phase","IDLE").remove("smart_active_id")
+                gp.edit().putString("smart_phase","IDLE").remove("smart_active_id").remove("smart_active_strategy")
                     .putString("smart_last_log_key","ORDER_REJECTED|"+activeId).apply();
                 AppLog.add(this,"SMART LIMIT","initial order rejected: "+result+"; no automatic duplicate retry");
                 return;
@@ -1230,7 +1230,7 @@ public class MainActivity extends Activity {
             boolean commandSettled=!activeId.equals(statusId)||!"QUEUED".equals(orderStatus);
             if(stateFresh&&"NONE".equals(remoteState)&&queueEmpty&&commandSettled
                     &&now-uncertainSince>=30000L){
-                gp.edit().putString("smart_phase","IDLE").remove("smart_active_id")
+                gp.edit().putString("smart_phase","IDLE").remove("smart_active_id").remove("smart_active_strategy")
                     .remove("smart_uncertain_since_ms")
                     .putBoolean("smart_reentry_allowed",false).apply();
                 AppLog.add(this,"SMART LIMIT","AUTO re-armed after 30s + fresh EA NONE + empty queue; awaiting a new signal");
@@ -1266,12 +1266,12 @@ public class MainActivity extends Activity {
                             AppLog.add(this,"SMART LIMIT","re-entry queued after CANCELLED ACK + EA NONE; side="+sideNow);
                         }else{
                             AppLog.add(this,"SMART LIMIT","old order cancelled; replacement not queued because fresh validation/queue failed");
-                            gp.edit().putString("smart_phase","IDLE").remove("smart_active_id")
+                            gp.edit().putString("smart_phase","IDLE").remove("smart_active_id").remove("smart_active_strategy")
                                 .putBoolean("smart_reentry_allowed",false).apply();
                         }
                     }else{
                         AppLog.add(this,"SMART LIMIT","old order confirmed cancelled; fresh replacement conditions no longer valid; waiting");
-                        gp.edit().putString("smart_phase","IDLE").remove("smart_active_id")
+                        gp.edit().putString("smart_phase","IDLE").remove("smart_active_id").remove("smart_active_strategy")
                             .putBoolean("smart_reentry_allowed",false)
                             .putString("smart_blocked_signal_key",signalKey).apply();
                     }
@@ -1288,7 +1288,7 @@ public class MainActivity extends Activity {
                         gp.edit().putString("smart_phase","POSITION").apply();
                         AppLog.add(this,"SMART LIMIT","cancel race resolved as POSITION; replacement prohibited");
                     }else{
-                        gp.edit().putString("smart_phase","IDLE").remove("smart_active_id")
+                        gp.edit().putString("smart_phase","IDLE").remove("smart_active_id").remove("smart_active_strategy")
                             .putBoolean("smart_reentry_allowed",false).apply();
                         AppLog.add(this,"SMART LIMIT","cancel outcome inconclusive; active state cleared only after EA reports no active exposure");
                     }
@@ -1301,7 +1301,7 @@ public class MainActivity extends Activity {
         if("POSITION".equals(phase)){
             // A closed position never triggers a replacement for that same setup.
             if("NONE".equals(remoteState)){
-                gp.edit().putString("smart_phase","IDLE").remove("smart_active_id")
+                gp.edit().putString("smart_phase","IDLE").remove("smart_active_id").remove("smart_active_strategy")
                     .putBoolean("smart_reentry_allowed",false).apply();
                 AppLog.add(this,"SMART LIMIT","position lifecycle ended; waiting for a new signal");
             }
@@ -1312,7 +1312,7 @@ public class MainActivity extends Activity {
             // Pending/position vanished without our confirmed cancel ACK (e.g. fill,
             // TP/SL, manual cancel). Never infer "unfilled"; do not re-enter this setup.
             if("NONE".equals(remoteState)){
-                gp.edit().putString("smart_phase","IDLE").remove("smart_active_id")
+                gp.edit().putString("smart_phase","IDLE").remove("smart_active_id").remove("smart_active_strategy")
                     .putBoolean("smart_reentry_allowed",false).apply();
                 AppLog.add(this,"SMART LIMIT","active order ended outside managed cancel; no re-entry for old order");
             }
