@@ -857,7 +857,7 @@ bool appendBarsForTimeframe(string symbol,ENUM_TIMEFRAMES tf,string tfName,int c
          DoubleToString(rates[i].close,digits);
    }
    if(StringLen(batch)>0) batch+="\n";
-   batch+="symbol="+symbol+";tf="+tfName+";bars="+bars;
+   batch+="symbol="+symbol+";tf="+tfName+";bars="+bars+";serverTime="+IntegerToString((long)TimeCurrent()*1000);
    return true;
 }
 
