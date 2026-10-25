@@ -85,6 +85,7 @@ public final class RayyanMenuLayout {
 
         addSection(host, content, "ALAT & PENGATURAN");
         addItems(host, content, Arrays.asList(
+            new Item("✦", "Strategy Control", "STANDAR, EXCELLENT, POWERFULL • pilih mesin aktif", "strategy_control"),
             new Item("✦", "Strategy", "Informasi strategi scalping", "strategy"),
             new Item("◒", "Risk Management", "Informasi kontrol risiko", "risk"),
             new Item("✉", "Telegram", "Token bot dan Chat ID", "telegram"),
