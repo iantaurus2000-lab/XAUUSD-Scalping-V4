@@ -1558,7 +1558,7 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
    }
    powerLastSeedBar[index]=barTime;
    powerReplacementPending[index]=false;
-   powerTrade.SetExpertMagicNumber(RAYYAN_MAGIC);
+   powerTrade.SetExpertMagicNumber(POWERFULL_MAGIC);
    Print("POWERFULL PAIR PLACED symbol=",symbol," bar=",TimeToString(barTime,TIME_DATE|TIME_MINUTES),
          " samples=",powerHistorySamples[index]," days=",powerHistoryDays[index],
          " quantile=P",powerCfg[index].percentile," range=",DoubleToString(powerForecastRangePips[index],2),
@@ -1714,7 +1714,9 @@ void powerPublishState(int index,string status,string detail,datetime barTime){
 void managePowerfullSymbol(int index){
    if(index<0||index>=ArraySize(powerSymbols))return;
    uint nowMs=GetTickCount();
-   if(powerLastManageMs[index]!=0&&(uint)(nowMs-powerLastManageMs[index])<25)return;
+   // Timer housekeeping is throttled; the OnTick path must inspect every arriving tick.
+   if(!powerFastTickOnly&&powerLastManageMs[index]!=0&&
+      (uint)(nowMs-powerLastManageMs[index])<25)return;
    powerLastManageMs[index]=nowMs;
    string symbol=powerSymbols[index];
    if(!SymbolSelect(symbol,true)){
@@ -1832,6 +1834,7 @@ void managePowerfullSymbol(int index){
 
    pending=powerPendingCount(symbol);
    positions=powerPositionCount(symbol);
+   if(positions>0)powerLastSeedBar[index]=barTime; // exposure in this candle blocks reseeding after it closes
    if(pending>0){
       if(powerHasPendingOnBar(symbol,barTime)){
          powerLastSeedBar[index]=barTime;
