@@ -506,6 +506,14 @@ public class MainActivity extends Activity {
         if("H4".equals(tf))return "4h";if("D1".equals(tf))return "1d";return "1m";
     }
 
+    private void syncChartServerClock(){
+        if(chart==null)return;
+        SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        long serverMs=gp.getLong("mt5_server_time_ms",0L);
+        long receivedElapsed=gp.getLong("mt5_server_time_received_elapsed",0L);
+        chart.setServerTime(serverMs,receivedElapsed);
+    }
+
     private Candle[] readNativeMt5Bars(String market,String tf,int limit){
         SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         String symbol=mt5SymbolForMarket(market);
@@ -537,7 +545,7 @@ public class MainActivity extends Activity {
         Candle[] m1=readNativeMt5Bars(market,"M1",200);
         Candle[] m5=readNativeMt5Bars(market,"M5",200);
         if(visible!=null){
-            chart.setData(visible);chart.goLive();
+            chart.setData(visible);syncChartServerClock();chart.goLive();
             m1Data=m1==null?new Candle[0]:m1;
             m5Data=m5==null?new Candle[0]:m5;
             if(m1Data.length>=30&&m5Data.length>=60){
@@ -548,7 +556,7 @@ public class MainActivity extends Activity {
                 resetEntryReadyUi("riwayat M1/M5 MT5 belum lengkap; entry dikunci");
             }
         }else{
-            chart.setData(new Candle[0]);
+            chart.setData(new Candle[0]);syncChartServerClock();
             m1Data=new Candle[0];m5Data=new Candle[0];
             status.setText("● MENUNGGU OHLC MT5 • "+market+" • "+tf);
             resetEntryReadyUi("menunggu data candle langsung dari MT5");
@@ -585,7 +593,7 @@ public class MainActivity extends Activity {
                         return;
                     }
                     boolean wasFollowing=chart.isFollow();
-                    chart.setData(fresh);
+                    chart.setData(fresh);syncChartServerClock();
                     if(wasFollowing)chart.goLive();
                     m1Data=freshM1==null?new Candle[0]:freshM1;
                     m5Data=freshM5==null?new Candle[0]:freshM5;
