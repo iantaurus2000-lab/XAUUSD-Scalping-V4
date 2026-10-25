@@ -1883,7 +1883,7 @@ void managePowerfullSymbol(int index){
    }
    bool materialRevision=oldForecast>0.0&&
       MathAbs(revised-oldForecast)>=oldForecast*0.12;
-   if(materialRevision&&pending>0&&positions==0&&powerReplans[index]<POWERFULL_REPLAN_MAX){
+   if(materialRevision&&pending>0&&powerHasPendingOnBar(symbol,barTime)&&positions==0&&powerReplans[index]<POWERFULL_REPLAN_MAX){
       powerForecastRangePips[index]=revised;
       powerProjectBounds(index,candleOpen);
       // Delete only Powerfull magic orders, then verify the broker-side count
