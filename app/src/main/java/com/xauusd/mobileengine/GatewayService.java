@@ -342,7 +342,7 @@ public final class GatewayService extends Service {
      * Isolated SMART AUTO-POWERFULL configuration channel.
      * It deliberately does not reuse /next, /ack, or the legacy order-state keys.
      */
-    private synchronized String powerConfig(String symbol){
+    private String powerConfig(String symbol){
         if(!"XAUUSDm".equals(symbol)&&!"BTCUSDm".equals(symbol)&&!"ETHUSDm".equals(symbol))
             return "symbol=INVALID;enabled=0;reason=UNSUPPORTED_SYMBOL";
         SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
@@ -368,7 +368,7 @@ public final class GatewayService extends Service {
     }
 
     /** Persists Powerfull-only status reported by the single MT5 EA. */
-    private synchronized String receivePowerState(String path){
+    private String receivePowerState(String path){
         String symbol=query(path,"symbol");
         if(!"XAUUSDm".equals(symbol)&&!"BTCUSDm".equals(symbol)&&!"ETHUSDm".equals(symbol))
             return "POWER STATE ERROR SYMBOL";
