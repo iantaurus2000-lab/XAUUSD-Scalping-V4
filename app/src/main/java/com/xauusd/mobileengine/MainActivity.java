@@ -1767,6 +1767,7 @@ public class MainActivity extends Activity {
         excellent.setChecked(excOn);
         powerful.setChecked(powOn);
         applyStrategyIndicatorProfile();
+        queueNativeIndicatorState();
         standard.setOnCheckedChangeListener((b,on)->{
             if(on){
                 gp.edit().putBoolean(standardKey,true).putBoolean(excellentKey,false).putBoolean(powerKey,false).apply();
