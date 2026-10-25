@@ -1867,7 +1867,7 @@ void managePowerfullSymbol(int index){
       if(positions>0){
          powerLastSeedBar[index]=barTime;
          powerReplacementPending[index]=false;
-         powerCancelOnly[index]=false;
+         powerCancelOnly[index]=!canceled;
          powerPublishState(index,"DISTRIBUTION_REVISED_NO_REENTRY",reviseReason+
                            " | realized="+DoubleToString(realizedPips,2)+
                            " pip | open position remains managed; no new pair while exposure exists",barTime);
