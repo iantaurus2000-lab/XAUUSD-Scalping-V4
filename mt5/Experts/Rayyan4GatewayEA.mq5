@@ -43,6 +43,7 @@ datetime lastIndicatorBar=0, lastIndicatorDiag=0;
 #define POWERFULL_MAGIC 4104451
 #define POWERFULL_HISTORY_LIMIT 105120
 #define POWERFULL_MIN_HISTORY 2000
+#define POWERFULL_MIN_HISTORY_DAYS 350
 #define POWERFULL_CONFIG_TIMEOUT_MS 300
 #define POWERFULL_STATUS_INTERVAL_MS 2000
 #define POWERFULL_REPLAN_MAX 2
@@ -1302,6 +1303,13 @@ bool powerBuildModel(int index){
    powerUpperShare[index]=upperShare;
    powerHistorySamples[index]=n;
    powerHistoryDays[index]=oldest>0?(int)((TimeCurrent()-oldest)/86400):0;
+   if(powerHistoryDays[index]<POWERFULL_MIN_HISTORY_DAYS){
+      powerModelGood[index]=false;
+      Print("POWERFULL HISTORY COVERAGE SHORT symbol=",symbol,
+            " days=",powerHistoryDays[index]," requiredDays=",POWERFULL_MIN_HISTORY_DAYS,
+            " samples=",n," • increase MT5 Max bars/load more M5 history");
+      return false;
+   }
    powerModelGood[index]=true;
    powerModelBuiltAtMs[index]=GetTickCount();
    Print("POWERFULL MODEL symbol=",symbol," samples=",n," historyDays=",powerHistoryDays[index],
@@ -1790,8 +1798,10 @@ void managePowerfullSymbol(int index){
       powerLastModelAttemptMs[index]=nowMs;
       if(!powerBuildModel(index)){
          powerCancelPendingForSymbol(symbol);
-         powerPublishState(index,"HISTORY_NOT_READY","Need >= "+IntegerToString(POWERFULL_MIN_HISTORY)+
-                           " valid M5 bars within the last 365 days; loaded samples="+
+         powerPublishState(index,"HISTORY_NOT_READY","Need >= "+IntegerToString(POWERFULL_MIN_HISTORY_DAYS)+
+                           " days and >= "+IntegerToString(POWERFULL_MIN_HISTORY)+
+                           " valid M5 bars within last 365 days; loadedDays="+
+                           IntegerToString(powerHistoryDays[index])+" samples="+
                            IntegerToString(powerHistorySamples[index]),barTime);
          return;
       }
