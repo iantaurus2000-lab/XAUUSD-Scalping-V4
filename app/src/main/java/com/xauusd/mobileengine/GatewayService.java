@@ -195,6 +195,7 @@ public final class GatewayService extends Service {
             for(String record:records){
                 if(record==null||record.trim().isEmpty())continue;
                 String symbol="",tf="",bars="";
+                long serverTimeMs=0L;
                 for(String part:record.split(";")){
                     int eq=part.indexOf('=');
                     if(eq<=0)continue;
@@ -203,6 +204,7 @@ public final class GatewayService extends Service {
                     if("symbol".equals(key))symbol=value;
                     else if("tf".equals(key))tf=value;
                     else if("bars".equals(key))bars=value;
+                    else if("serverTime".equals(key))serverTimeMs=Long.parseLong(value);
                 }
                 if(!("XAUUSDm".equals(symbol)||"BTCUSDm".equals(symbol)||"ETHUSDm".equals(symbol)))
                     return "BARS ERROR SYMBOL";
