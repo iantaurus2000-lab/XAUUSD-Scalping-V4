@@ -4,6 +4,7 @@
 
 - New app preferences use `powerfull_*` keys, separated by broker symbol.
 - The EA uses `POWERFULL_MAGIC = 4104451` and its own `CTrade powerTrade` instance.
+- The strategy is permanently demo-only and requires an MT5 hedging account with opposite positions allowed. This prevents two pending directions from netting against one another or a legacy position.
 - Its configuration/status route is `/power_config` and `/power_state`; it does not consume or clear the legacy `/next`, `/ack`, `/state`, or indicator queue.
 - Legacy `RAYYAN_MAGIC = 4104407`, the Fibo/wick signal engine, and its order queue remain separate.
 - This feature branch is not the base/build branch. Do not run the existing build workflow until explicitly instructed.
