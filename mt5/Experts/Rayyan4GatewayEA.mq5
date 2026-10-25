@@ -1489,12 +1489,12 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
       return false;
    }
    long elapsedMs=tick.time_msc-(long)barTime*1000;
-   // First dual-LIMIT pair belongs at the beginning of its M5 candle. A forecast
-   // replacement may be sent later in the same candle, but only after old orders
-   // are confirmed deleted and with enough time before the specified expiry.
-   if(!powerReplacementPending[index]&&(elapsedMs<0||elapsedMs>5000)){
+   // Initial dual-LIMIT pair must be submitted immediately, within the first
+   // 2 seconds of the new M5 candle (target: about 1 second when ticks arrive).
+   // Forecast replacements remain a separate path and require confirmed cleanup.
+   if(!powerReplacementPending[index]&&(elapsedMs<0||elapsedMs>2000)){
       powerLastSeedBar[index]=barTime;
-      powerPublishState(index,"MISSED_ENTRY_WINDOW","Initial dual LIMIT not sent outside first 5 seconds of M5; wait for the next candle",barTime);
+      powerPublishState(index,"MISSED_ENTRY_WINDOW","Initial dual LIMIT not sent within first 1-2 seconds of M5; wait for the next candle",barTime);
       return false;
    }
    if(!TerminalInfoInteger(TERMINAL_CONNECTED)||!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)
