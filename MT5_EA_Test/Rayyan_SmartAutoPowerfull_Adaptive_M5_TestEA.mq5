@@ -4,7 +4,7 @@
 //+------------------------------------------------------------------+
 #property strict
 #property version "1.00"
-#property description "Standalone M5 adaptive pending EA with manual lot and stop-loss controls"
+#property description "Standalone M5 adaptive pending EA with manual lot, SL, and confirmed momentum profit protection"
 
 #include <Trade/Trade.mqh>
 CTrade trade;
@@ -104,6 +104,8 @@ void RunStrategy()
    if(bar<=0) return;
    currentBar=bar;
 
+   // Protect open positions before considering new entries.
+   ManageOpenPositions();
    if(OurPosition())
    {
       CancelPendings();
@@ -167,6 +169,61 @@ void UpdateLimit(ENUM_ORDER_TYPE type,double price,datetime expiry)
               " lot=",DoubleToString(lotSize,2)," SLpts=",slPoints);
 }
 
+
+// Momentum is measured from closed M5 candles only; no EMA-based exit.
+// A direction is confirmed only when two consecutive candle-to-candle moves agree.
+// If the direction is mixed/uncertain, positions are held and SL remains active.
+int MomentumDirection(int shift)
+{
+   double c0=iClose(_Symbol,PERIOD_M5,shift);
+   double c1=iClose(_Symbol,PERIOD_M5,shift+1);
+   double c2=iClose(_Symbol,PERIOD_M5,shift+2);
+   if(c0<=0 || c1<=0 || c2<=0) return 0;
+   if(c0>c1 && c1>c2) return 1;
+   if(c0<c1 && c1<c2) return -1;
+   return 0;
+}
+
+void ManageOpenPositions()
+{
+   // Current confirmed momentum uses the latest two closed M5 candles.
+   // Previous momentum uses the two candles immediately before that window.
+   int previousMomentum=MomentumDirection(3);
+   int currentMomentum=MomentumDirection(1);
+
+   // Unclear momentum or no confirmed direction change: do not force-close.
+   if(previousMomentum==0 || currentMomentum==0 ||
+      previousMomentum==currentMomentum) return;
+
+   for(int i=PositionsTotal()-1;i>=0;i--)
+   {
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol ||
+         (ulong)PositionGetInteger(POSITION_MAGIC)!=MagicNumber) continue;
+
+      double netProfit=PositionGetDouble(POSITION_PROFIT)+
+                       PositionGetDouble(POSITION_SWAP);
+      if(netProfit<=0.0) continue; // protect profit only; SL remains the loss limit
+
+      ENUM_POSITION_TYPE type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      bool closeForReversal=
+         (type==POSITION_TYPE_BUY  && previousMomentum>0 && currentMomentum<0) ||
+         (type==POSITION_TYPE_SELL && previousMomentum<0 && currentMomentum>0);
+
+      if(closeForReversal)
+      {
+         if(trade.PositionClose(ticket))
+            Print("Profit protection: closed ",
+                  type==POSITION_TYPE_BUY ? "BUY" : "SELL",
+                  " after confirmed M5 momentum reversal. Net floating profit before close=",
+                  DoubleToString(netProfit,2));
+         else
+            Print("Profit protection close failed: ",trade.ResultRetcode(),
+                  " ",trade.ResultRetcodeDescription());
+      }
+   }
+}
 
 bool OurPosition()
 {
