@@ -20,6 +20,9 @@ input int    MinProfitLockPoints = 5;
 input int    TickSamplesForAnalysis = 12;
 input double MomentumStrongPoints = 4.0; // minimum tick displacement in points
 input int    DeviationPoints = 20;
+input int    PendingPlacementSecondsBeforeClose = 3; // place new pending only in final seconds of M5 candle
+input double MaxPendingDistanceATR = 1.5; // cancel stale pending if market moves too far away
+input int    MinHoldCandlesBeforeProfitClose = 2; // wait for several M5 candles before profit exit
 
 string P = "RYSAP_";
 bool running = false;
@@ -149,6 +152,11 @@ void RunStrategy()
    datetime bar = iTime(_Symbol, PERIOD_M5, 0);
    if(bar <= 0) return;
    currentBar = bar;
+   CancelDistantPendings(t);
+   int secondsLeft = (int)(bar + PeriodSeconds(PERIOD_M5) - TimeCurrent());
+   secondsLeft = (int)MathMax(0, MathMin(PeriodSeconds(PERIOD_M5), secondsLeft));
+   // New pending orders are submitted only in the final seconds of the live M5 candle.
+   if(secondsLeft > (int)MathMax(0, PendingPlacementSecondsBeforeClose)) return;
 
    double hi = iHigh(_Symbol, PERIOD_M5, 0);
    double lo = iLow(_Symbol, PERIOD_M5, 0);
@@ -244,6 +252,36 @@ void UpdatePendingAtEndpoint(bool isBuy, double target, MqlTick &t, double gap)
    if(!isBuy && type == ORDER_TYPE_SELL_LIMIT && target <= t.bid + gap) target = NormalizePrice(t.bid + gap);
    if(!isBuy && type == ORDER_TYPE_SELL_STOP && target >= t.bid - gap) target = NormalizePrice(t.bid - gap);
    UpdateLimit(type, target);
+}
+
+void CancelDistantPendings(MqlTick &t)
+{
+   double atrBuf[1];
+   double atr = 0.0;
+   if(CopyBuffer(atrHandle, 0, 1, 1, atrBuf) == 1) atr = atrBuf[0];
+   if(atr <= 0.0) atr = ProjectedRange();
+   if(atr <= 0.0 || MaxPendingDistanceATR <= 0.0) return;
+   double maxDistance = atr * MaxPendingDistanceATR;
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = OrderGetTicket(i);
+      if(ticket == 0) continue;
+      if(OrderGetString(ORDER_SYMBOL) != _Symbol || (ulong)OrderGetInteger(ORDER_MAGIC) != MagicNumber) continue;
+      ENUM_ORDER_TYPE ty = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      bool buy = (ty == ORDER_TYPE_BUY_LIMIT || ty == ORDER_TYPE_BUY_STOP);
+      bool sell = (ty == ORDER_TYPE_SELL_LIMIT || ty == ORDER_TYPE_SELL_STOP);
+      if(!buy && !sell) continue;
+      double orderPrice = OrderGetDouble(ORDER_PRICE_OPEN);
+      double marketPrice = (buy ? t.ask : t.bid);
+      if(MathAbs(orderPrice - marketPrice) > maxDistance)
+      {
+         if(trade.OrderDelete(ticket))
+            Print("Distant pending cancelled: ", EnumToString(ty), " distancePts=", DoubleToString(MathAbs(orderPrice-marketPrice)/_Point, 1),
+                  " maxPts=", DoubleToString(maxDistance/_Point, 1));
+         else
+            Print("Distant pending cancellation failed: ", trade.ResultRetcodeDescription());
+      }
+   }
 }
 
 void UpdateLimit(ENUM_ORDER_TYPE type, double price)
@@ -548,19 +586,23 @@ void ManageOpenPositions(MqlTick &t)
       bool allowBuy = false, allowSell = false; int buyScore = 0, sellScore = 0;
       DetectExhaustion(t, allowBuy, allowSell, buyScore, sellScore);
       bool oppositeReversal = (side == POSITION_TYPE_BUY ? allowSell : allowBuy);
+      datetime openedAt = (datetime)PositionGetInteger(POSITION_TIME);
+      int barsHeld = iBarShift(_Symbol, PERIOD_M5, openedAt, false);
+      if(barsHeld < 0) barsHeld = 0;
+      int requiredHoldBars = (int)MathMax(0, MinHoldCandlesBeforeProfitClose);
       double recentNet = TickPriceAgo(0) - TickPriceAgo(3);
       double priorNet = TickPriceAgo(4) - TickPriceAgo(7);
       double threshold = MathMax(2.0 * _Point, MomentumStrongPoints * _Point);
       bool momentumStillStrong = (side == POSITION_TYPE_BUY ?
                                   (recentNet >= threshold && priorNet > 0.0) :
                                   (recentNet <= -threshold && priorNet < 0.0));
-      if(profit > 0.0 && oppositeReversal)
+      if(barsHeld >= requiredHoldBars && profit > 0.0 && oppositeReversal)
       {
          if(!trade.PositionClose(ticket)) Print("Signal reversal close failed: ", trade.ResultRetcodeDescription());
          else GlobalVariableDel(key);
          continue;
       }
-      if(profit > 0.0 && !momentumStillStrong &&
+      if(barsHeld >= requiredHoldBars && profit > 0.0 && !momentumStillStrong &&
          lockedMove >= MinProfitLockPoints * _Point && retrace >= trailDistance)
       {
          if(!trade.PositionClose(ticket)) Print("Profit-lock close failed: ", trade.ResultRetcodeDescription());
@@ -583,7 +625,9 @@ void Panel()
       "\nSL Entry 1 / BUY: " + IntegerToString(slEntry1Points) + " points" +
       "\nSL Entry 2 / SELL: " + IntegerToString(slEntry2Points) + " points" +
       "\nTP: OFF" +
-      "\nEntry: predicted next-candle wick endpoints" +
+      "\nEntry: final " + IntegerToString(PendingPlacementSecondsBeforeClose) + " sec of M5 candle" +
+      "\nPending max distance: " + DoubleToString(MaxPendingDistanceATR, 1) + " ATR" +
+      "\nMin profit hold: " + IntegerToString(MinHoldCandlesBeforeProfitClose) + " M5 candles" +
       "\nActual signal: " + lastSignalText +
       "\nForecast: " + lastForecastText +
       "\nExhaustion: tick momentum + slowing + wick rejection";
