@@ -68,3 +68,67 @@ jobs:
             MT5_EA_Test/uji-test-mt5.mq5
           if-no-files-found: error
           retention-days: 14
+
+  mt5-ea:
+    name: Compile MQL5 EAs with MetaEditor
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: RAYYAN
+
+      - name: Download MetaTrader 5 installer
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" -OutFile "$env:RUNNER_TEMP\mt5setup.exe"
+
+      - name: Install MetaTrader 5 / MetaEditor
+        shell: pwsh
+        run: |
+          $installer = "$env:RUNNER_TEMP\mt5setup.exe"
+          $proc = Start-Process -FilePath $installer -ArgumentList @('/auto','/path:C:\MT5Build') -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "MetaTrader installer exited with code $($proc.ExitCode)" }
+          $editor = Get-ChildItem -Path "C:\MT5Build" -Filter "metaeditor64.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $editor) { throw "MetaEditor64.exe not found after installation" }
+          "METAEDITOR_PATH=$($editor.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Compile both EAs
+        shell: pwsh
+        run: |
+          $experts = "C:\MT5Build\MQL5\Experts"
+          New-Item -ItemType Directory -Force -Path $experts | Out-Null
+          New-Item -ItemType Directory -Force -Path "build\ea" | Out-Null
+          $sources = @(
+            @{ Source = "mt5\Experts\Rayyan4GatewayEA.mq5"; Name = "Rayyan4GatewayEA" },
+            @{ Source = "MT5_EA_Test\uji-test-mt5.mq5"; Name = "uji-test-mt5" }
+          )
+          foreach ($item in $sources) {
+            $source = Join-Path $experts ($item.Name + ".mq5")
+            Copy-Item $item.Source $source -Force
+            $log = Join-Path $experts ($item.Name + ".log")
+            $proc = Start-Process -FilePath $env:METAEDITOR_PATH -ArgumentList @('/portable', "/compile:$source", '/log') -Wait -PassThru
+            Start-Sleep -Seconds 2
+            $ex5 = Join-Path $experts ($item.Name + ".ex5")
+            if (-not (Test-Path $ex5)) {
+              if (Test-Path $log) { Get-Content $log | Write-Host }
+              throw "Compilation did not create $($item.Name).ex5"
+            }
+            if (Test-Path $log) {
+              $logText = Get-Content $log -Raw
+              if ($logText -match "\\b[1-9][0-9]* errors?\\b") {
+                Get-Content $log | Write-Host
+                throw "MetaEditor reported compile errors for $($item.Name)"
+              }
+              Copy-Item $log ("build\\ea\\" + $item.Name + ".log") -Force
+            }
+            Copy-Item $ex5 ("build\\ea\\" + $item.Name + ".ex5") -Force
+          }
+
+      - name: Upload compiled EA binaries and logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rayyan-POWERFULL-MT5-EA-ex5
+          path: build/ea/*
+          if-no-files-found: error
+          retention-days: 14
