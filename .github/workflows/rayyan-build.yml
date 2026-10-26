@@ -116,7 +116,7 @@ jobs:
             }
             if (Test-Path $log) {
               $logText = Get-Content $log -Raw
-              if ($logText -match "\\b[1-9][0-9]* errors?\\b") {
+              if ($logText -match "\b[1-9][0-9]* errors?\b") {
                 Get-Content $log | Write-Host
                 throw "MetaEditor reported compile errors for $($item.Name)"
               }
