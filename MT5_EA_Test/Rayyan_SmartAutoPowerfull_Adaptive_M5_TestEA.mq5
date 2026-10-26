@@ -4,7 +4,7 @@
 //+------------------------------------------------------------------+
 #property strict
 #property version "1.00"
-#property description "Standalone M5 adaptive pending EA with confirmed-reversal profit protection"
+#property description "Standalone M5 adaptive pending EA with manual lot and stop-loss controls"
 
 #include <Trade/Trade.mqh>
 CTrade trade;
@@ -14,7 +14,6 @@ input ulong  MagicNumber = 26102601;
 input double InitialLot = 0.01;
 input double LotStep = 0.01;
 input int    StopLossPoints = 300;
-input int    TakeProfitPoints = 450;
 input int    MaxEntriesPerM5Candle = 2;
 input int    MinDistancePoints = 30;
 input double RangeOffsetFraction = 0.20;
@@ -24,24 +23,19 @@ input int    DeviationPoints = 20;
 string P = "RYSAP_";
 bool running = false;
 double lotSize;
-int slPoints, tpPoints;
+int slPoints;
 datetime currentBar = 0;
 int atrHandle = INVALID_HANDLE;
-int emaFastHandle = INVALID_HANDLE;
-int emaSlowHandle = INVALID_HANDLE;
 
 int OnInit()
 {
    lotSize = NormalizeLot(InitialLot);
    slPoints = MathMax(1, StopLossPoints);
-   tpPoints = MathMax(1, TakeProfitPoints);
    trade.SetExpertMagicNumber(MagicNumber);
    trade.SetDeviationInPoints(DeviationPoints);
    trade.SetTypeFillingBySymbol(_Symbol);
    atrHandle = iATR(_Symbol, PERIOD_M5, 14);
-   emaFastHandle = iMA(_Symbol, PERIOD_M5, 9, 0, MODE_EMA, PRICE_CLOSE);
-   emaSlowHandle = iMA(_Symbol, PERIOD_M5, 21, 0, MODE_EMA, PRICE_CLOSE);
-   if(atrHandle == INVALID_HANDLE || emaFastHandle == INVALID_HANDLE || emaSlowHandle == INVALID_HANDLE)
+   if(atrHandle == INVALID_HANDLE)
       return INIT_FAILED;
 
    ChartSetInteger(0, CHART_COLOR_CANDLE_BULL, clrLimeGreen);
@@ -55,8 +49,6 @@ int OnInit()
    MakeButton("LP","LOT +",80,50,65,22,clrDimGray);
    MakeButton("SM","SL -50",10,77,65,22,clrDimGray);
    MakeButton("SP","SL +50",80,77,65,22,clrDimGray);
-   MakeButton("TM","TP -50",10,104,65,22,clrDimGray);
-   MakeButton("TP","TP +50",80,104,65,22,clrDimGray);
 
    ObjectCreate(0,P+"INFO",OBJ_LABEL,0,0,0);
    ObjectSetInteger(0,P+"INFO",OBJPROP_CORNER,CORNER_LEFT_UPPER);
@@ -76,8 +68,6 @@ void OnDeinit(const int reason)
 {
    EventKillTimer();
    if(atrHandle != INVALID_HANDLE) IndicatorRelease(atrHandle);
-   if(emaFastHandle != INVALID_HANDLE) IndicatorRelease(emaFastHandle);
-   if(emaSlowHandle != INVALID_HANDLE) IndicatorRelease(emaSlowHandle);
    for(int i=ObjectsTotal(0)-1;i>=0;i--)
    {
       string n=ObjectName(0,i);
@@ -97,8 +87,6 @@ void OnChartEvent(const int id,const long &lp,const double &dp,const string &sp)
    else if(sp==P+"LP") lotSize=NormalizeLot(lotSize+LotStep);
    else if(sp==P+"SM") slPoints=(int)MathMax(1,slPoints-50);
    else if(sp==P+"SP") slPoints+=50;
-   else if(sp==P+"TM") tpPoints=(int)MathMax(1,tpPoints-50);
-   else if(sp==P+"TP") tpPoints+=50;
    Panel();
 }
 
@@ -116,7 +104,6 @@ void RunStrategy()
    if(bar<=0) return;
    currentBar=bar;
 
-   ManageOpenPositions();
    if(OurPosition())
    {
       CancelPendings();
@@ -148,16 +135,14 @@ void RunStrategy()
 void UpdateLimit(ENUM_ORDER_TYPE type,double price,datetime expiry)
 {
    ulong ticket=FindPending(type);
-   double sl,tp;
+   double sl;
    if(type==ORDER_TYPE_BUY_LIMIT)
    {
       sl=NormalizePrice(price-slPoints*_Point);
-      tp=NormalizePrice(price+tpPoints*_Point);
    }
    else
    {
       sl=NormalizePrice(price+slPoints*_Point);
-      tp=NormalizePrice(price-tpPoints*_Point);
    }
 
    if(ticket!=0)
@@ -166,61 +151,22 @@ void UpdateLimit(ENUM_ORDER_TYPE type,double price,datetime expiry)
       double old=OrderGetDouble(ORDER_PRICE_OPEN);
       datetime oldExp=(datetime)OrderGetInteger(ORDER_TIME_EXPIRATION);
       if(MathAbs(old-price)>=20*_Point || oldExp!=expiry)
-         if(!trade.OrderModify(ticket,price,sl,tp,ORDER_TIME_SPECIFIED,expiry,0))
+         if(!trade.OrderModify(ticket,price,sl,0.0,ORDER_TIME_SPECIFIED,expiry,0))
             Print("OrderModify failed: ",trade.ResultRetcodeDescription());
       return;
    }
 
    bool ok=false;
    if(type==ORDER_TYPE_BUY_LIMIT)
-      ok=trade.BuyLimit(lotSize,price,_Symbol,sl,tp,ORDER_TIME_SPECIFIED,expiry,"Rayyan SAP M5");
+      ok=trade.BuyLimit(lotSize,price,_Symbol,sl,0.0,ORDER_TIME_SPECIFIED,expiry,"Rayyan SAP M5");
    else
-      ok=trade.SellLimit(lotSize,price,_Symbol,sl,tp,ORDER_TIME_SPECIFIED,expiry,"Rayyan SAP M5");
+      ok=trade.SellLimit(lotSize,price,_Symbol,sl,0.0,ORDER_TIME_SPECIFIED,expiry,"Rayyan SAP M5");
 
    if(!ok) Print("Pending placement failed: ",trade.ResultRetcode()," ",trade.ResultRetcodeDescription());
    else Print("Pending placed: ",EnumToString(type)," price=",DoubleToString(price,_Digits),
-              " lot=",DoubleToString(lotSize,2)," SLpts=",slPoints," TPpts=",tpPoints);
+              " lot=",DoubleToString(lotSize,2)," SLpts=",slPoints);
 }
 
-// Close only profitable positions after a confirmed M5 momentum reversal.
-// A single opposite candle is not enough: require EMA(9)/EMA(21) crossover
-// on the last closed candle plus a matching candle direction.
-void ManageOpenPositions()
-{
-   double fast[2], slow[2];
-   if(CopyBuffer(emaFastHandle,0,1,2,fast)!=2 ||
-      CopyBuffer(emaSlowHandle,0,1,2,slow)!=2) return;
-
-   // CopyBuffer stores the oldest requested value at index 0:
-   // index 0 = shift 2 (older closed candle), index 1 = shift 1 (latest closed candle).
-   bool bearishReversal = (fast[0] >= slow[0] && fast[1] < slow[1] &&
-                           iClose(_Symbol,PERIOD_M5,1) < iOpen(_Symbol,PERIOD_M5,1));
-   bool bullishReversal = (fast[0] <= slow[0] && fast[1] > slow[1] &&
-                           iClose(_Symbol,PERIOD_M5,1) > iOpen(_Symbol,PERIOD_M5,1));
-   if(!bearishReversal && !bullishReversal) return;
-
-   for(int i=PositionsTotal()-1;i>=0;i--)
-   {
-      ulong ticket=PositionGetTicket(i);
-      if(ticket==0) continue;
-      if(PositionGetString(POSITION_SYMBOL)!=_Symbol ||
-         (ulong)PositionGetInteger(POSITION_MAGIC)!=MagicNumber) continue;
-
-      double netProfit=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
-      if(netProfit<=0.0) continue; // Never close a losing position by this rule.
-
-      ENUM_POSITION_TYPE type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
-      bool closeNow=(type==POSITION_TYPE_BUY && bearishReversal) ||
-                    (type==POSITION_TYPE_SELL && bullishReversal);
-      if(closeNow)
-      {
-         if(trade.PositionClose(ticket))
-            Print("Profit protection: closed ",EnumToString(type)," after confirmed M5 reversal. Net profit before close=",DoubleToString(netProfit,2));
-         else
-            Print("Profit-protection close failed: ",trade.ResultRetcodeDescription());
-      }
-   }
-}
 
 bool OurPosition()
 {
@@ -326,7 +272,6 @@ void Panel()
    string txt="SMART AUTO-POWERFULL (M5)\nStatus: "+st+
       "\nSymbol: "+_Symbol+"\nLot: "+DoubleToString(lotSize,2)+
       "\nSL: "+IntegerToString(slPoints)+" points"+
-      "\nTP: "+IntegerToString(tpPoints)+" points"+
       "\nMax entries/candle: "+IntegerToString(MaxEntriesPerM5Candle);
    ObjectSetString(0,P+"INFO",OBJPROP_TEXT,txt);
 }
