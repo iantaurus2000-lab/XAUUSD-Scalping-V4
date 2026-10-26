@@ -63,6 +63,11 @@ struct PowerfullConfig {
    double pipSize;
    double stopPips;
    int percentile;
+   int pendingPlacementSeconds;
+   double maxPendingDistanceATR;
+   int minHoldCandles;
+   double reversalATRFactor;
+   int minProfitLockPoints;
    string reason;
 };
 PowerfullConfig powerCfg[3];
@@ -92,6 +97,11 @@ int powerHistoryDays[3];
 double powerBaseRangePips[3];
 double powerForecastRangePips[3];
 double powerUpperShare[3];
+double powerUpperWickPips[3];
+double powerLowerWickPips[3];
+double powerTickPrices[3][32];
+int powerTickWriteIndex[3];
+int powerTickSampleCount[3];
 double powerProjectedLow[3];
 double powerProjectedHigh[3];
 double powerLastBid[3];
@@ -110,10 +120,16 @@ void powerPublishState(int index,string status,string detail,datetime barTime);
 int powerPendingCount(string symbol);
 int powerPositionCount(string symbol);
 bool powerCancelPendingForSymbol(string symbol);
-bool powerCancelStalePending(string symbol,datetime currentBar);
-bool powerPlacePair(int index,datetime barTime,const MqlTick &tick);
+bool powerCancelDistantPendings(int index,const MqlTick &tick);
+bool powerHasPendingSide(string symbol,bool buySide);
+bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick &tick,double target);
 void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double candleOpen,
                           bool hasPreviousTick,double previousBid);
+double powerAtrPrice(int index);
+void powerRecordTick(int index,double mid);
+double powerTickPriceAgo(int index,int ago);
+bool powerDetectSignals(int index,const MqlTick &tick,bool &allowBuy,bool &allowSell,
+                        int &buyScore,int &sellScore);
 double powerProjectedNet(ulong ticket);
 bool powerClosePosition(ulong ticket,string reason);
 string powerShortSymbol(string symbol);
@@ -1225,23 +1241,43 @@ bool powerRefreshConfig(int index){
    string reforecastFlag=field(body,"reforecast");
    string quickProfitFlag=field(body,"quickProfit");
    string crossCandleFlag=field(body,"crossCandleHold");
-   // Missing optional fields default ON for compatibility with an older APK gateway.
+   string pendingSecondsText=field(body,"pendingSeconds");
+   string maxPendingAtrText=field(body,"maxPendingATR");
+   string minHoldText=field(body,"minHoldCandles");
+   string reversalAtrText=field(body,"reversalATRFactor");
+   string minProfitLockText=field(body,"minProfitLockPoints");
+   // Optional new fields default to the tested values when an older APK is still connected.
    bool buyEnabled=(buyFlag==""||buyFlag=="1");
    bool sellEnabled=(sellFlag==""||sellFlag=="1");
    bool reforecastEnabled=(reforecastFlag==""||reforecastFlag=="1");
    bool quickProfitEnabled=(quickProfitFlag==""||quickProfitFlag=="1");
    bool crossCandleEnabled=(crossCandleFlag==""||crossCandleFlag=="1");
+   int pendingSeconds=(pendingSecondsText==""?3:(int)StringToInteger(pendingSecondsText));
+   double maxPendingAtr=(maxPendingAtrText==""?1.5:StringToDouble(maxPendingAtrText));
+   int minHold=(minHoldText==""?2:(int)StringToInteger(minHoldText));
+   double reversalAtr=(reversalAtrText==""?0.25:StringToDouble(reversalAtrText));
+   int minProfitLock=(minProfitLockText==""?5:(int)StringToInteger(minProfitLockText));
    double minLot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
    if(minLot<=0.0)minLot=(symbol=="XAUUSDm"?0.01:0.10);
    bool valid=MathIsValidNumber(lot)&&lot+1e-8>=minLot
       &&MathIsValidNumber(pip)&&pip>0.0
       &&MathIsValidNumber(stop)&&stop>0.0
-      &&(percentile==50||percentile==60||percentile==70||percentile==80||percentile==90);
+      &&(percentile==50||percentile==60||percentile==70||percentile==75||percentile==80||percentile==90)
+      &&pendingSeconds>=1&&pendingSeconds<=10
+      &&MathIsValidNumber(maxPendingAtr)&&maxPendingAtr>=0.5&&maxPendingAtr<=5.0
+      &&minHold>=0&&minHold<=12
+      &&MathIsValidNumber(reversalAtr)&&reversalAtr>=0.05&&reversalAtr<=2.0
+      &&minProfitLock>=1&&minProfitLock<=100000;
    powerCfg[index].buyLimitEnabled=buyEnabled;
    powerCfg[index].sellLimitEnabled=sellEnabled;
    powerCfg[index].autoReforecast=reforecastEnabled;
    powerCfg[index].quickProfitClose=quickProfitEnabled;
    powerCfg[index].crossCandleHold=crossCandleEnabled;
+   powerCfg[index].pendingPlacementSeconds=pendingSeconds;
+   powerCfg[index].maxPendingDistanceATR=maxPendingAtr;
+   powerCfg[index].minHoldCandles=minHold;
+   powerCfg[index].reversalATRFactor=reversalAtr;
+   powerCfg[index].minProfitLockPoints=minProfitLock;
    powerCfg[index].enabled=requested&&valid&&(buyEnabled||sellEnabled);
    powerCfg[index].lot=lot;
    powerCfg[index].pipSize=pip;
@@ -1279,8 +1315,8 @@ void managePowerfullAllMarkets(bool pollConfig){
 }
 
 bool powerBuildModel(int index){
-   // Simple forecast: average up to five COMPLETED M5 wick-to-wick ranges.
-   // No long-history minimum, percentile, or historical-distribution scaling.
+   // Port of the tested EA model: separate upper/lower wick distributions,
+   // 75th-percentile wick estimates, projected range blend, and M5 ATR blend.
    powerModelGood[index]=false;
    string symbol=powerSymbols[index];
    double pip=powerCfg[index].pipSize;
@@ -1288,43 +1324,81 @@ bool powerBuildModel(int index){
    MqlRates rates[];
    ArraySetAsSeries(rates,true);
    ResetLastError();
-   int copied=CopyRates(symbol,PERIOD_M5,1,5,rates);
+   int copied=CopyRates(symbol,PERIOD_M5,1,21,rates);
    if(copied<3){
       powerHistorySamples[index]=MathMax(0,copied);
       powerHistoryDays[index]=0;
-      Print("POWERFULL FORECAST WAIT symbol=",symbol," completedM5=",copied," required=3 err=",GetLastError());
+      Print("POWERFULL WICK FORECAST WAIT symbol=",symbol," completedM5=",copied," required=3 err=",GetLastError());
       return false;
    }
-   double rangeSum=0.0;
-   int validBars=0;
-   for(int i=0;i<copied;i++){
-      double span=rates[i].high-rates[i].low;
-      if(rates[i].time<=0||!MathIsValidNumber(span)||span<=0.0)continue;
-      if(rates[i].low<=0.0||rates[i].high<rates[i].low)continue;
-      rangeSum+=span/pip;
-      validBars++;
+   double ranges[20],upperWicks[20],lowerWicks[20];
+   int used=0;
+   for(int i=0;i<copied&&used<20;i++){
+      double h=rates[i].high,l=rates[i].low,o=rates[i].open,cl=rates[i].close;
+      if(rates[i].time<=0||h<=0.0||l<=0.0||h<l||o<=0.0||cl<=0.0)continue;
+      ranges[used]=h-l;
+      upperWicks[used]=MathMax(0.0,h-MathMax(o,cl));
+      lowerWicks[used]=MathMax(0.0,MathMin(o,cl)-l);
+      used++;
    }
-   powerHistorySamples[index]=validBars;
+   powerHistorySamples[index]=used;
    powerHistoryDays[index]=0;
-   if(validBars<3)return false;
-   double forecast=rangeSum/validBars;
-   if(!MathIsValidNumber(forecast)||forecast<=0.0)return false;
-   powerBaseRangePips[index]=forecast;
-   powerForecastRangePips[index]=forecast;
-   powerUpperShare[index]=0.50;
+   if(used<3)return false;
+   // Sort each distribution independently, matching the standalone MT5 test EA.
+   for(int a=0;a<used-1;a++){
+      for(int b=a+1;b<used;b++){
+         if(ranges[b]<ranges[a]){double v=ranges[a];ranges[a]=ranges[b];ranges[b]=v;}
+         if(upperWicks[b]<upperWicks[a]){double v=upperWicks[a];upperWicks[a]=upperWicks[b];upperWicks[b]=v;}
+         if(lowerWicks[b]<lowerWicks[a]){double v=lowerWicks[a];lowerWicks[a]=lowerWicks[b];lowerWicks[b]=v;}
+      }
+   }
+   int q=(int)MathMin(used-1,MathFloor((used-1)*0.75));
+   double avgRange=0.0;
+   for(int k=0;k<used;k++)avgRange+=ranges[k];
+   avgRange/=used;
+   double projectedRange=0.65*ranges[q]+0.35*avgRange;
+   // Wilder handle-free ATR approximation over up to 14 completed M5 true ranges.
+   double atrSum=0.0;
+   int atrUsed=0;
+   int atrCount=(int)MathMin(14,copied-1);
+   for(int j=0;j<atrCount;j++){
+      double h=rates[j].high,l=rates[j].low,prevClose=rates[j+1].close;
+      if(h<=0.0||l<=0.0||prevClose<=0.0||h<l)continue;
+      double tr=MathMax(h-l,MathMax(MathAbs(h-prevClose),MathAbs(l-prevClose)));
+      if(MathIsValidNumber(tr)&&tr>0.0){atrSum+=tr;atrUsed++;}
+   }
+   if(atrUsed>0){
+      double atr=atrSum/atrUsed;
+      if(atr>0.0)projectedRange=0.50*projectedRange+0.50*atr;
+   }
+   double upper=upperWicks[q],lower=lowerWicks[q];
+   if(upper+lower>projectedRange&&upper+lower>0.0){
+      double scale=projectedRange/(upper+lower);
+      upper*=scale;
+      lower*=scale;
+   }
+   if(!MathIsValidNumber(projectedRange)||projectedRange<=0.0)return false;
+   powerBaseRangePips[index]=avgRange/pip;
+   powerForecastRangePips[index]=projectedRange/pip;
+   powerUpperWickPips[index]=upper/pip;
+   powerLowerWickPips[index]=lower/pip;
+   powerUpperShare[index]=(upper+lower>0.0?upper/(upper+lower):0.50);
    powerModelGood[index]=true;
    powerModelBuiltAtMs[index]=GetTickCount();
-   Print("POWERFULL SIMPLE FORECAST symbol=",symbol," bars=",validBars," avgRange=",DoubleToString(forecast,2)," pip; method=mean of completed M5 candles");
+   Print("POWERFULL WICK FORECAST symbol=",symbol," bars=",used,
+         " rangePips=",DoubleToString(powerForecastRangePips[index],2),
+         " upperWickPips=",DoubleToString(powerUpperWickPips[index],2),
+         " lowerWickPips=",DoubleToString(powerLowerWickPips[index],2),
+         " percentile=75 ATRblend=ON");
    return true;
 }
 
-void powerProjectBounds(int index,double candleOpen){
-   double span=powerForecastRangePips[index]*powerCfg[index].pipSize;
-   double half=span*0.50;
-   powerProjectedLow[index]=candleOpen-half;
-   powerProjectedHigh[index]=candleOpen+half;
+void powerProjectBounds(int index,double candleAnchor){
+   double pip=powerCfg[index].pipSize;
+   if(pip<=0.0||candleAnchor<=0.0)return;
+   powerProjectedLow[index]=candleAnchor-powerLowerWickPips[index]*pip;
+   powerProjectedHigh[index]=candleAnchor+powerUpperWickPips[index]*pip;
 }
-
 string powerShortSymbol(string symbol){
    if(symbol=="XAUUSDm")return "XAU";
    if(symbol=="BTCUSDm")return "BTC";
