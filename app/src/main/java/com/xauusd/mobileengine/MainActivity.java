@@ -1950,13 +1950,13 @@ public class MainActivity extends Activity {
         styleDialogInput(reversalAtrFactor);
         fields.addView(reversalAtrFactor,new LinearLayout.LayoutParams(-1,uiDp(48)));
 
-        TextView forecastNote=tv("Prediksi sisi wick BUY/SELL dihitung terpisah dari candle M5 selesai (persentil 75% + ATR). Sinyal pending membutuhkan perubahan arah tick dan penolakan wick atau perlambatan tick. Pending baru dikirim pada detik terakhir candle; pending lama dipertahankan kecuali terlalu jauh (> ATR yang dipilih) atau sisi dimatikan.",10);
+        TextView forecastNote=tv("Prediksi sisi wick BUY/SELL memakai 20 candle M5 selesai, distribusi upper/lower wick persentil 75%, dan ATR14 MT5. Sinyal perlu minimal 12 sampel tick, perubahan arah dengan ambang 4 point, ditambah penolakan wick atau perlambatan tick. Jarak minimum order 30 point atau lebih bila diwajibkan broker. Pending baru hanya dikirim pada detik terakhir M5; pending lama tidak dibatalkan saat candle/sinyal berubah, kecuali jaraknya > ATR yang dipilih atau sisi dimatikan.",10);
         forecastNote.setTextColor(Color.CYAN);
         forecastNote.setGravity(Gravity.TOP|Gravity.START);
         forecastNote.setPadding(uiDp(6),uiDp(6),uiDp(6),uiDp(6));
         fields.addView(forecastNote,new LinearLayout.LayoutParams(-1,uiDp(104)));
 
-        TextView pipNote=tv("Ukuran pip berbeda per simbol. SL server POWERFULL yang sudah ada tetap 3 pip; TP tetap OFF. Exit profit menunggu jumlah candle minimum, lalu memeriksa reversal berlawanan atau retracement dari harga terbaik dengan ATR. Stop-loss dan slippage tetap dapat menutup posisi lebih awal.",10);
+        TextView pipNote=tv("Ukuran pip berbeda per simbol. SL server POWERFULL tetap 3 pip; TP OFF. Exit profit menunggu candle minimum (default 2), lalu memeriksa reversal berlawanan atau trailing ATR (default 0,25 ATR dengan kunci minimum 5 point). SL dan slippage dapat menutup posisi lebih awal.",10);
         pipNote.setTextColor(Color.rgb(255,205,95));
         pipNote.setGravity(Gravity.TOP|Gravity.START);
         pipNote.setPadding(uiDp(6),uiDp(6),uiDp(6),uiDp(6));
