@@ -78,6 +78,7 @@ uint powerModelBuiltAtMs[3];
 uint powerLastSeedAttemptMs[3];
 uint powerLastManageMs[3];
 uint powerLastCancelAttemptMs[3];
+uint powerLastDistanceCancelAttemptMs[3];
 uint powerConfigReceivedMs[3];
 uint powerLastStatePublishMs[3];
 uint powerLastConfigPollMs=0;
@@ -1421,7 +1422,8 @@ int powerPendingCount(string symbol){
       if(OrderGetString(ORDER_SYMBOL)!=symbol)continue;
       if((long)OrderGetInteger(ORDER_MAGIC)!=POWERFULL_MAGIC)continue;
       ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
-      if(type==ORDER_TYPE_BUY_LIMIT||type==ORDER_TYPE_SELL_LIMIT)count++;
+      if(type==ORDER_TYPE_BUY_LIMIT||type==ORDER_TYPE_SELL_LIMIT||
+         type==ORDER_TYPE_BUY_STOP||type==ORDER_TYPE_SELL_STOP)count++;
    }
    return count;
 }
@@ -1485,7 +1487,8 @@ bool powerHasDisabledPending(string symbol,bool allowBuy,bool allowSell){
       if(OrderGetString(ORDER_SYMBOL)!=symbol)continue;
       if((long)OrderGetInteger(ORDER_MAGIC)!=POWERFULL_MAGIC)continue;
       ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
-      if((type==ORDER_TYPE_BUY_LIMIT&&!allowBuy)||(type==ORDER_TYPE_SELL_LIMIT&&!allowSell))
+      if(((type==ORDER_TYPE_BUY_LIMIT||type==ORDER_TYPE_BUY_STOP)&&!allowBuy)||
+         ((type==ORDER_TYPE_SELL_LIMIT||type==ORDER_TYPE_SELL_STOP)&&!allowSell))
          return true;
    }
    return false;
@@ -1506,7 +1509,8 @@ bool powerCancelDisabledPending(string symbol,bool allowBuy,bool allowSell){
       if(OrderGetString(ORDER_SYMBOL)!=symbol)continue;
       if((long)OrderGetInteger(ORDER_MAGIC)!=POWERFULL_MAGIC)continue;
       ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
-      if(!((type==ORDER_TYPE_BUY_LIMIT&&!allowBuy)||(type==ORDER_TYPE_SELL_LIMIT&&!allowSell)))continue;
+      if(!(((type==ORDER_TYPE_BUY_LIMIT||type==ORDER_TYPE_BUY_STOP)&&!allowBuy)||
+           ((type==ORDER_TYPE_SELL_LIMIT||type==ORDER_TYPE_SELL_STOP)&&!allowSell)))continue;
       ResetLastError();
       bool deleted=powerTrade.OrderDelete(ticket);
       uint rc=powerTrade.ResultRetcode();
@@ -1518,14 +1522,34 @@ bool powerCancelDisabledPending(string symbol,bool allowBuy,bool allowSell){
    return !powerHasDisabledPending(symbol,allowBuy,allowSell);
 }
 
-bool powerCancelStalePending(string symbol,datetime currentBar){
-   int symbolIndex=-1;
-   for(int s=0;s<ArraySize(powerSymbols);s++)if(powerSymbols[s]==symbol){symbolIndex=s;break;}
+bool powerHasPendingSide(string symbol,bool buySide){
+   for(int i=OrdersTotal()-1;i>=0;i--){
+      ulong ticket=OrderGetTicket(i);
+      if(ticket==0)continue;
+      if(OrderGetString(ORDER_SYMBOL)!=symbol)continue;
+      if((long)OrderGetInteger(ORDER_MAGIC)!=POWERFULL_MAGIC)continue;
+      ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      bool existingBuy=(type==ORDER_TYPE_BUY_LIMIT||type==ORDER_TYPE_BUY_STOP);
+      bool pending=(type==ORDER_TYPE_BUY_LIMIT||type==ORDER_TYPE_BUY_STOP||
+                    type==ORDER_TYPE_SELL_LIMIT||type==ORDER_TYPE_SELL_STOP);
+      if(pending&&existingBuy==buySide)return true;
+   }
+   return false;
+}
+
+bool powerCancelDistantPendings(int index,const MqlTick &tick){
+   if(index<0||index>=ArraySize(powerSymbols))return false;
+   string symbol=powerSymbols[index];
    uint nowMs=GetTickCount();
-   if(symbolIndex>=0&&powerLastCancelAttemptMs[symbolIndex]!=0&&
-      (uint)(nowMs-powerLastCancelAttemptMs[symbolIndex])<300)
-      return powerPendingCount(symbol)==0;
-   if(symbolIndex>=0)powerLastCancelAttemptMs[symbolIndex]=nowMs;
+   if(powerLastDistanceCancelAttemptMs[index]!=0&&
+      (uint)(nowMs-powerLastDistanceCancelAttemptMs[index])<250)
+      return true;
+   powerLastDistanceCancelAttemptMs[index]=nowMs;
+   double atr=powerAtrPrice(index);
+   if(atr<=0.0)atr=powerForecastRangePips[index]*powerCfg[index].pipSize;
+   if(atr<=0.0||powerCfg[index].maxPendingDistanceATR<=0.0)return true;
+   double maxDistance=atr*powerCfg[index].maxPendingDistanceATR;
+   bool allSafe=true;
    powerTrade.SetExpertMagicNumber(POWERFULL_MAGIC);
    for(int i=OrdersTotal()-1;i>=0;i--){
       ulong ticket=OrderGetTicket(i);
@@ -1533,17 +1557,30 @@ bool powerCancelStalePending(string symbol,datetime currentBar){
       if(OrderGetString(ORDER_SYMBOL)!=symbol)continue;
       if((long)OrderGetInteger(ORDER_MAGIC)!=POWERFULL_MAGIC)continue;
       ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
-      if(type!=ORDER_TYPE_BUY_LIMIT&&type!=ORDER_TYPE_SELL_LIMIT)continue;
-      if(powerOrderBarFromComment(OrderGetString(ORDER_COMMENT))==currentBar)continue;
+      bool buy=(type==ORDER_TYPE_BUY_LIMIT||type==ORDER_TYPE_BUY_STOP);
+      bool sell=(type==ORDER_TYPE_SELL_LIMIT||type==ORDER_TYPE_SELL_STOP);
+      if(!buy&&!sell)continue;
+      double orderPrice=OrderGetDouble(ORDER_PRICE_OPEN);
+      double marketPrice=(buy?tick.ask:tick.bid);
+      double distance=MathAbs(orderPrice-marketPrice);
+      if(distance<=maxDistance)continue;
+      ResetLastError();
       bool deleted=powerTrade.OrderDelete(ticket);
       uint rc=powerTrade.ResultRetcode();
-      if(!deleted||rc!=TRADE_RETCODE_DONE)
-         Print("POWERFULL STALE CANCEL FAILED symbol=",symbol," ticket=",ticket," retcode=",rc);
-      else Print("POWERFULL STALE CANCEL OK symbol=",symbol," ticket=",ticket);
+      if(!deleted||rc!=TRADE_RETCODE_DONE){
+         allSafe=false;
+         Print("POWERFULL DISTANT PENDING CANCEL FAILED symbol=",symbol," ticket=",ticket,
+               " distancePts=",DoubleToString(distance/SymbolInfoDouble(symbol,SYMBOL_POINT),1),
+               " maxATR=",DoubleToString(powerCfg[index].maxPendingDistanceATR,2),
+               " retcode=",rc," desc=",powerTrade.ResultRetcodeDescription()," err=",GetLastError());
+      }else{
+         Print("POWERFULL DISTANT PENDING CANCEL OK symbol=",symbol," ticket=",ticket,
+               " distancePts=",DoubleToString(distance/SymbolInfoDouble(symbol,SYMBOL_POINT),1),
+               " maxATR=",DoubleToString(powerCfg[index].maxPendingDistanceATR,2));
+      }
    }
-   return powerPendingCount(symbol)==0;
+   return allSafe;
 }
-
 double powerRoundToTick(string symbol,double price){
    double step=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
    double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
