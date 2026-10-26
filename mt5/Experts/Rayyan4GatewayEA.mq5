@@ -1468,7 +1468,9 @@ bool powerCancelPendingForSymbol(string symbol){
       if(OrderGetString(ORDER_SYMBOL)!=symbol)continue;
       if((long)OrderGetInteger(ORDER_MAGIC)!=POWERFULL_MAGIC)continue;
       ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
-      if(type!=ORDER_TYPE_BUY_LIMIT&&type!=ORDER_TYPE_SELL_LIMIT)continue;
+      bool pending=(type==ORDER_TYPE_BUY_LIMIT||type==ORDER_TYPE_SELL_LIMIT||
+                    type==ORDER_TYPE_BUY_STOP||type==ORDER_TYPE_SELL_STOP);
+      if(!pending)continue;
       ResetLastError();
       bool deleted=powerTrade.OrderDelete(ticket);
       uint rc=powerTrade.ResultRetcode();
@@ -1479,7 +1481,6 @@ bool powerCancelPendingForSymbol(string symbol){
    }
    return powerPendingCount(symbol)==0;
 }
-
 bool powerHasDisabledPending(string symbol,bool allowBuy,bool allowSell){
    for(int i=OrdersTotal()-1;i>=0;i--){
       ulong ticket=OrderGetTicket(i);
@@ -1933,7 +1934,7 @@ void powerPublishState(int index,string status,string detail,datetime barTime){
 void managePowerfullSymbol(int index){
    if(index<0||index>=ArraySize(powerSymbols))return;
    uint nowMs=GetTickCount();
-   // Timer housekeeping is throttled; the OnTick path must inspect every arriving tick.
+   // Timer housekeeping is throttled; OnTick still manages positions at tick frequency.
    if(!powerFastTickOnly&&powerLastManageMs[index]!=0&&
       (uint)(nowMs-powerLastManageMs[index])<25)return;
    powerLastManageMs[index]=nowMs;
@@ -1961,30 +1962,41 @@ void managePowerfullSymbol(int index){
       powerPublishState(index,"M5_DATA_WAIT","current MT5 M5 OHLC is not ready",barTime);
       return;
    }
-   bool hasPreviousTick=powerLastTickMs[index]>0;
+
+   bool hasPreviousTick=(powerLastTickMs[index]>0);
    double previousBid=powerLastBid[index];
+   if(tick.time_msc!=powerLastTickMs[index])
+      powerRecordTick(index,(tick.bid+tick.ask)*0.5);
    powerManagePositions(index,tick,barTime,candleOpen,hasPreviousTick,previousBid);
    powerLastBid[index]=tick.bid;
    powerLastAsk[index]=tick.ask;
    powerLastTickMs[index]=tick.time_msc;
 
-   // OnTick handles open positions only. Model loading, HTTP, cancellations and new
-   // entry submission stay on the throttled timer path so the legacy order queue is isolated.
+   // Only timer cycles perform model/config/order work; OnTick manages positions.
    if(powerFastTickOnly)return;
-   // Continue using the last valid config during temporary gateway delays.
    if(!powerCfg[index].enabled){
       powerCancelPendingForSymbol(symbol);
       powerPublishState(index,"OFF",powerCfg[index].reason==""?"POWERFULL disabled":powerCfg[index].reason,barTime);
       return;
    }
 
+   // Cancel explicitly disabled sides or pending orders that have drifted far from price.
+   // A new M5 candle or temporary signal change alone never deletes a pending order.
+   if(!powerCancelDisabledPending(symbol,powerCfg[index].buyLimitEnabled,powerCfg[index].sellLimitEnabled)){
+      powerPublishState(index,"DISABLED_SIDE_CANCEL_PENDING",
+         "A disabled side's pending deletion is awaiting broker confirmation",barTime);
+      return;
+   }
+   if(!powerCancelDistantPendings(index,tick)){
+      powerPublishState(index,"DISTANT_CANCEL_PENDING",
+         "A distant pending order is awaiting broker deletion confirmation",barTime);
+      return;
+   }
+
    bool newBar=(powerSeenBar[index]!=barTime);
    if(newBar){
       powerSeenBar[index]=barTime;
-      powerLastSeedBar[index]=0;
       powerReplans[index]=0;
-      powerReplacementPending[index]=false;
-      powerCancelOnly[index]=false;
       powerForecastRangePips[index]=0.0;
       powerProjectedLow[index]=0.0;
       powerProjectedHigh[index]=0.0;
@@ -1995,75 +2007,52 @@ void managePowerfullSymbol(int index){
       (uint)(nowMs-powerLastModelAttemptMs[index])>=30000)){
       powerLastModelAttemptMs[index]=nowMs;
       if(!powerBuildModel(index)){
-         powerCancelPendingForSymbol(symbol);
-         powerPublishState(index,"FORECAST_WAIT","Need at least 3 completed M5 candles; loaded="+
-                           IntegerToString(powerHistorySamples[index]),barTime);
+         powerPublishState(index,"FORECAST_WAIT","Need at least 3 completed M5 candles for wick/ATR projection; loaded="+
+                           IntegerToString(powerHistorySamples[index])+"; existing pending retained",barTime);
          return;
       }
    }
    if(!powerModelGood[index]){
-      powerCancelPendingForSymbol(symbol);
-      powerPublishState(index,"MODEL_NOT_READY","Historical M5 distribution is not ready",barTime);
+      powerPublishState(index,"MODEL_NOT_READY","Wick/ATR history is not ready; existing pending retained",barTime);
       return;
    }
+   // Keep the most recent forecast for order targets. Existing orders are not repriced.
    if(newBar||powerForecastRangePips[index]<=0.0)
       powerForecastRangePips[index]=powerBaseRangePips[index];
-   powerProjectBounds(index,candleOpen);
+   powerProjectBounds(index,tick.bid);
 
-   if(!powerCancelDisabledPending(symbol,powerCfg[index].buyLimitEnabled,powerCfg[index].sellLimitEnabled)){
-      powerPublishState(index,"DISABLED_SIDE_CANCEL_PENDING",
-         "A pending side switched OFF; waiting for broker confirmation of its deletion",barTime);
-      return;
+   bool allowBuy=false,allowSell=false;
+   int buyScore=0,sellScore=0;
+   powerDetectSignals(index,tick,allowBuy,allowSell,buyScore,sellScore);
+   long remainingMs=((long)barTime+PeriodSeconds(PERIOD_M5))*1000-tick.time_msc;
+   long entryWindowMs=(long)powerCfg[index].pendingPlacementSeconds*1000;
+   bool placed=false;
+
+   // Submit newly eligible entries only during the last configured seconds of the live M5 candle.
+   // No per-candle entry cap; an existing pending on the same side prevents duplicates.
+   if(remainingMs>=0&&remainingMs<=entryWindowMs){
+      if(allowBuy&&powerCfg[index].buyLimitEnabled&&!powerHasPendingSide(symbol,true))
+         placed=powerPlacePendingSide(index,true,barTime,tick,powerProjectedLow[index])||placed;
+      if(allowSell&&powerCfg[index].sellLimitEnabled&&!powerHasPendingSide(symbol,false))
+         placed=powerPlacePendingSide(index,false,barTime,tick,powerProjectedHigh[index])||placed;
    }
-   powerCancelStalePending(symbol,barTime);
+
    int pending=powerPendingCount(symbol);
    int positions=powerPositionCount(symbol);
-      pending=powerPendingCount(symbol);
-   positions=powerPositionCount(symbol);
-   if(positions>0)powerLastSeedBar[index]=barTime; // exposure in this candle blocks reseeding after it closes
-   if(powerReplacementPending[index]&&pending>0){
-      // Retry failed/throttled deletes. Never treat old orders as the new pair.
-      powerCancelPendingForSymbol(symbol);
-      pending=powerPendingCount(symbol);
-      if(pending>0){
-         powerPublishState(index,"CANCEL_PENDING","Replacement waits for confirmed zero Powerfull pending orders",barTime);
-         return;
-      }
-   }
-   if(powerCancelOnly[index]){
-      if(pending>0){
-         powerCancelPendingForSymbol(symbol);
-         pending=powerPendingCount(symbol);
-         if(pending>0){
-            powerPublishState(index,"CANCEL_PENDING","Partial/uncertain pair: retry cancellation; no replacement will be seeded",barTime);
-            return;
-         }
-      }
-      powerCancelOnly[index]=false;
-      if(positions==0&&powerLastSeedBar[index]==barTime){
-         powerPublishState(index,"PAIR_CLEANED_NO_RETRY","Uncertain/rejected pair is now cleared; no retry in this M5 candle",barTime);
-         return;
-      }
-   }
+   string signalDetail="tick reversal BUY="+IntegerToString(buyScore)+"/3 SELL="+
+      IntegerToString(sellScore)+"/3; samples="+IntegerToString(powerTickSampleCount[index])+
+      "; pending="+IntegerToString(pending)+"; positions="+IntegerToString(positions)+
+      "; secondsToM5Close="+IntegerToString((int)MathMax(0,remainingMs/1000));
    if(pending>0){
-      if(powerHasPendingOnBar(symbol,barTime)){
-         powerLastSeedBar[index]=barTime;
-         powerPublishState(index,"PENDING_ACTIVE","Powerfull pending orders present in MT5; awaiting fill or forecast recheck",barTime);
-      }else powerPublishState(index,"CANCEL_PENDING","Waiting for stale pending deletion",barTime);
-      return;
+      powerPublishState(index,"PENDING_ACTIVE",signalDetail+"; GTC orders remain until distant/side-disabled",barTime);
+   }else if(positions>0){
+      powerPublishState(index,"POSITION_ACTIVE",signalDetail+"; reversal/trailing profit manager active",barTime);
+   }else if(remainingMs>entryWindowMs){
+      powerPublishState(index,"WAIT_FINAL_M5_SECONDS",signalDetail+"; new pending waits for final "+
+         IntegerToString(powerCfg[index].pendingPlacementSeconds)+" seconds",barTime);
+   }else if(placed){
+      powerPublishState(index,"PENDING_PLACED",signalDetail+"; pending submitted at projected wick endpoint",barTime);
+   }else{
+      powerPublishState(index,"WAIT_REVERSAL_SIGNAL",powerLastDetail[index]+"; pending only on final M5 seconds",barTime);
    }
-   if(positions>0){
-      powerPublishState(index,"POSITION_ACTIVE","Open Powerfull position(s) are managed per tick; no new pair while exposure remains",barTime);
-      return;
-   }
-   if(powerLastSeedBar[index]==barTime&&!powerReplacementPending[index]){
-      powerPublishState(index,"CYCLE_COMPLETE","This M5 candle already had a pair; duplicate cycle blocked",barTime);
-      return;
-   }
-   if(powerLastSeedAttemptMs[index]!=0&&(uint)(nowMs-powerLastSeedAttemptMs[index])<2000){
-      powerPublishState(index,"ENTRY_RETRY_WAIT","Order validation cooldown",barTime);
-      return;
-   }
-   powerLastSeedAttemptMs[index]=nowMs;
-   powerPlacePair(index,barTime,tick);
 }
