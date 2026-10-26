@@ -2,8 +2,8 @@
 //| uji-test-mt5.mq5 - Adaptive M5 pending-order test EA              |
 //+------------------------------------------------------------------+
 #property strict
-#property version "1.10"
-#property description "Adaptive M5 pending EA; editable SL per side; no TP"
+#property version "1.20"
+#property description "Adaptive M5 wick-distribution EA with reversal profit management"
 
 #include <Trade/Trade.mqh>
 CTrade trade;
@@ -15,7 +15,9 @@ input double LotStep = 0.01;
 input int    MaxEntriesPerM5Candle = 2;
 input int    MinDistancePoints = 30;
 input int    DistributionLookback = 20;
-input double RangeOffsetFraction = 0.20;
+input double RangeOffsetFraction = 0.20; // retained for compatibility; endpoint entries are used
+input double ReversalATRFactor = 0.25;
+input int    MinProfitLockPoints = 5;
 input int    DeviationPoints = 20;
 
 string P = "RYSAP_";
@@ -26,6 +28,8 @@ int slEntry2Points = 0; // SELL pending SL; 0 = disabled
 datetime currentBar = 0;
 int atrHandle = INVALID_HANDLE;
 string edit1Name, edit2Name;
+string lotButtonName;
+string timerCircleName, timerTextName;
 
 int OnInit()
 {
@@ -37,8 +41,11 @@ int OnInit()
    if(atrHandle == INVALID_HANDLE) return INIT_FAILED;
 
    MakeButton("TOGGLE", "START", 10, 20, 90, 26, clrDarkGreen);
-   MakeButton("LM", "LOT -", 10, 53, 65, 22, clrDimGray);
-   MakeButton("LP", "LOT +", 80, 53, 65, 22, clrDimGray);
+   MakeButton("LM", "LOT -", 10, 53, 58, 22, clrDimGray);
+   lotButtonName = P + "LOTVALUE";
+   MakeButton("LOTVALUE", "LOT: " + DoubleToString(lotSize, 2), 72, 53, 100, 22, clrDarkSlateBlue);
+   MakeButton("LP", "LOT +", 176, 53, 58, 22, clrDimGray);
+   MakeButton("CLOSEALL", "CLOSE ALL ORDER", 10, 208, 224, 26, clrFireBrick);
 
    MakeLabel("SL1LBL", "SL Entry 1 / BUY (points; 0=OFF)", 10, 83);
    edit1Name = P + "SL1EDIT";
@@ -50,7 +57,15 @@ int OnInit()
    MakeEdit(edit2Name, "0", 10, 148, 125, 23);
    MakeButton("SL2SET", "SET SL2", 140, 148, 75, 23, clrSteelBlue);
 
-   MakeLabel("INFO", "", 10, 180);
+   MakeLabel("INFO", "", 10, 242);
+   timerCircleName = P + "M5CIRCLE";
+   timerTextName = P + "M5TIMER";
+   MakeLabel("M5CIRCLE", "●", 10, 430);
+   ObjectSetInteger(0, timerCircleName, OBJPROP_FONTSIZE, 72);
+   ObjectSetInteger(0, timerCircleName, OBJPROP_COLOR, clrSteelBlue);
+   MakeLabel("M5TIMER", "05:00", 38, 463);
+   ObjectSetInteger(0, timerTextName, OBJPROP_FONTSIZE, 16);
+   ObjectSetInteger(0, timerTextName, OBJPROP_COLOR, clrWhite);
    currentBar = iTime(_Symbol, PERIOD_M5, 0);
    EventSetTimer(1);
    Panel();
@@ -84,6 +99,7 @@ void OnChartEvent(const int id, const long &lp, const double &dp, const string &
    }
    else if(sp == P + "LM") lotSize = NormalizeLot(lotSize - LotStep);
    else if(sp == P + "LP") lotSize = NormalizeLot(lotSize + LotStep);
+   else if(sp == P + "CLOSEALL") CloseAllOurTrades();
    else if(sp == P + "SL1SET") ReadSLField(1);
    else if(sp == P + "SL2SET") ReadSLField(2);
    Panel();
@@ -122,7 +138,7 @@ void RunStrategy()
    if(bar <= 0) return;
    currentBar = bar;
 
-   if(OurPosition()) { CancelPendings(); return; }
+   ManageOpenPositions(t);
    if(EntriesThisBar(bar) >= MaxEntriesPerM5Candle) { CancelPendings(); return; }
 
    double hi = iHigh(_Symbol, PERIOD_M5, 0);
@@ -135,45 +151,68 @@ void RunStrategy()
    int stopLevel = (int)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
    double gap = MathMax(MinDistancePoints, stopLevel + 1) * _Point;
 
-   // BUY is referenced to the lower wick; SELL to the upper wick.
-   double buy = NormalizePrice(MathMin(lo + offset, t.ask - gap));
-   double sell = NormalizePrice(MathMax(hi - offset, t.bid + gap));
-   if(buy >= t.ask) buy = NormalizePrice(t.ask - gap);
-   if(sell <= t.bid) sell = NormalizePrice(t.bid + gap);
-
+   // Predict candle endpoints from the distribution of completed M5 candles.
+   double predictedUpper = NormalizePrice(MathMax(hi, lo + projectedRange));
+   double predictedLower = NormalizePrice(MathMin(lo, hi - projectedRange));
    datetime expiry = bar + PeriodSeconds(PERIOD_M5);
    if(expiry <= TimeCurrent() + 2) return;
-   UpdateLimit(ORDER_TYPE_BUY_LIMIT, buy, expiry);
-   UpdateLimit(ORDER_TYPE_SELL_LIMIT, sell, expiry);
+   UpdatePendingAtEndpoint(true, predictedLower, expiry, t, gap);
+   UpdatePendingAtEndpoint(false, predictedUpper, expiry, t, gap);
 }
 
 double ProjectedRange()
 {
    double atrBuf[1], atr = 0;
    if(CopyBuffer(atrHandle, 0, 1, 1, atrBuf) == 1) atr = atrBuf[0];
-   double sum = 0;
-   int used = 0;
+   double ranges[200]; int used = 0;
    int count = (int)MathMax(1, MathMin(DistributionLookback, 200));
+   double upperWickSum = 0, lowerWickSum = 0;
    for(int i = 1; i <= count; i++)
    {
-      double h = iHigh(_Symbol, PERIOD_M5, i);
-      double l = iLow(_Symbol, PERIOD_M5, i);
-      if(h > 0 && l > 0 && h >= l) { sum += h - l; used++; }
+      double h = iHigh(_Symbol, PERIOD_M5, i), l = iLow(_Symbol, PERIOD_M5, i);
+      double o = iOpen(_Symbol, PERIOD_M5, i), cl = iClose(_Symbol, PERIOD_M5, i);
+      if(h <= 0 || l <= 0 || h < l || o <= 0 || cl <= 0) continue;
+      ranges[used++] = h - l;
+      upperWickSum += MathMax(0.0, h - MathMax(o, cl));
+      lowerWickSum += MathMax(0.0, MathMin(o, cl) - l);
    }
-   double avgRange = (used > 0 ? sum / used : 0);
-   if(atr > 0 && avgRange > 0) return 0.5 * atr + 0.5 * avgRange;
-   if(atr > 0) return atr;
-   return avgRange;
+   if(used <= 0) return atr;
+   for(int a = 0; a < used - 1; a++)
+      for(int b = a + 1; b < used; b++)
+         if(ranges[b] < ranges[a]) { double tmp = ranges[a]; ranges[a] = ranges[b]; ranges[b] = tmp; }
+   double avgRange = 0;
+   for(int k = 0; k < used; k++) avgRange += ranges[k];
+   avgRange /= used;
+   double q75 = ranges[(int)MathMin(used - 1, MathFloor((used - 1) * 0.75))];
+   double wickBias = 0;
+   if(upperWickSum + lowerWickSum > 0) wickBias = (upperWickSum - lowerWickSum) / (upperWickSum + lowerWickSum);
+   double distRange = (0.65 * q75 + 0.35 * avgRange) * (1.0 + MathMax(-0.08, MathMin(0.08, wickBias * 0.08)));
+   if(atr > 0) return 0.5 * atr + 0.5 * distRange;
+   return distRange;
+}
+
+void UpdatePendingAtEndpoint(bool isBuy, double target, datetime expiry, MqlTick &t, double gap)
+{
+   ENUM_ORDER_TYPE type;
+   if(isBuy) type = (target < t.ask - gap ? ORDER_TYPE_BUY_LIMIT : ORDER_TYPE_BUY_STOP);
+   else type = (target > t.bid + gap ? ORDER_TYPE_SELL_LIMIT : ORDER_TYPE_SELL_STOP);
+   target = NormalizePrice(target);
+   if(isBuy && type == ORDER_TYPE_BUY_LIMIT && target >= t.ask - gap) target = NormalizePrice(t.ask - gap);
+   if(isBuy && type == ORDER_TYPE_BUY_STOP && target <= t.ask + gap) target = NormalizePrice(t.ask + gap);
+   if(!isBuy && type == ORDER_TYPE_SELL_LIMIT && target <= t.bid + gap) target = NormalizePrice(t.bid + gap);
+   if(!isBuy && type == ORDER_TYPE_SELL_STOP && target >= t.bid - gap) target = NormalizePrice(t.bid - gap);
+   UpdateLimit(type, target, expiry);
 }
 
 void UpdateLimit(ENUM_ORDER_TYPE type, double price, datetime expiry)
 {
    // Entry 1 = BUY pending SL; Entry 2 = SELL pending SL. TP is always disabled.
-   int slPts = (type == ORDER_TYPE_BUY_LIMIT ? slEntry1Points : slEntry2Points);
+   bool buySide = (type == ORDER_TYPE_BUY_LIMIT || type == ORDER_TYPE_BUY_STOP);
+   int slPts = (buySide ? slEntry1Points : slEntry2Points);
    double sl = 0.0;
    if(slPts > 0)
    {
-      if(type == ORDER_TYPE_BUY_LIMIT) sl = NormalizePrice(price - slPts * _Point);
+      if(buySide) sl = NormalizePrice(price - slPts * _Point);
       else sl = NormalizePrice(price + slPts * _Point);
    }
 
@@ -183,7 +222,7 @@ void UpdateLimit(ENUM_ORDER_TYPE type, double price, datetime expiry)
       if(!OrderSelect(ticket)) return;
       double old = OrderGetDouble(ORDER_PRICE_OPEN);
       datetime oldExp = (datetime)OrderGetInteger(ORDER_TIME_EXPIRATION);
-      if(MathAbs(old - price) >= 20 * _Point || oldExp != expiry ||
+      if(MathAbs(old - price) >= 2 * _Point || oldExp != expiry ||
          MathAbs(OrderGetDouble(ORDER_SL) - sl) >= _Point)
       {
          if(!trade.OrderModify(ticket, price, sl, 0.0, ORDER_TIME_SPECIFIED, expiry, 0))
@@ -195,8 +234,12 @@ void UpdateLimit(ENUM_ORDER_TYPE type, double price, datetime expiry)
    bool ok = false;
    if(type == ORDER_TYPE_BUY_LIMIT)
       ok = trade.BuyLimit(lotSize, price, _Symbol, sl, 0.0, ORDER_TIME_SPECIFIED, expiry, "uji-test-mt5 BUY");
-   else
+   else if(type == ORDER_TYPE_BUY_STOP)
+      ok = trade.BuyStop(lotSize, price, _Symbol, sl, 0.0, ORDER_TIME_SPECIFIED, expiry, "uji-test-mt5 BUY");
+   else if(type == ORDER_TYPE_SELL_LIMIT)
       ok = trade.SellLimit(lotSize, price, _Symbol, sl, 0.0, ORDER_TIME_SPECIFIED, expiry, "uji-test-mt5 SELL");
+   else
+      ok = trade.SellStop(lotSize, price, _Symbol, sl, 0.0, ORDER_TIME_SPECIFIED, expiry, "uji-test-mt5 SELL");
 
    if(!ok)
       Print("Pending placement failed: ", trade.ResultRetcode(), " ", trade.ResultRetcodeDescription());
@@ -240,7 +283,7 @@ void CancelPendings()
       if(OrderGetString(ORDER_SYMBOL) != _Symbol ||
          (ulong)OrderGetInteger(ORDER_MAGIC) != MagicNumber) continue;
       ENUM_ORDER_TYPE ty = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
-      if(ty == ORDER_TYPE_BUY_LIMIT || ty == ORDER_TYPE_SELL_LIMIT)
+      if(ty == ORDER_TYPE_BUY_LIMIT || ty == ORDER_TYPE_SELL_LIMIT || ty == ORDER_TYPE_BUY_STOP || ty == ORDER_TYPE_SELL_STOP)
          if(!trade.OrderDelete(ticket)) Print("OrderDelete failed: ", trade.ResultRetcodeDescription());
    }
 }
@@ -331,17 +374,85 @@ void MakeEdit(string name, string value, int x, int y, int w, int h)
    ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
 }
 
+double EstimateMoney(double points)
+{
+   if(points <= 0 || lotSize <= 0) return 0.0;
+   double openPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   if(openPrice <= 0) return 0.0;
+   double result = 0.0;
+   if(!OrderCalcProfit(ORDER_TYPE_BUY, _Symbol, lotSize, openPrice, openPrice + points * _Point, result)) return 0.0;
+   return MathAbs(result);
+}
+
+void UpdateM5Timer()
+{
+   if(ObjectFind(0, timerTextName) < 0) return;
+   datetime bar = iTime(_Symbol, PERIOD_M5, 0);
+   int remain = (int)(bar + PeriodSeconds(PERIOD_M5) - TimeCurrent());
+   remain = (int)MathMax(0, MathMin(PeriodSeconds(PERIOD_M5), remain));
+   string ss = IntegerToString(remain % 60);
+   if(StringLen(ss) < 2) ss = "0" + ss;
+   ObjectSetString(0, timerTextName, OBJPROP_TEXT, IntegerToString(remain / 60) + ":" + ss);
+   ChartRedraw(0);
+}
+
+void CloseAllOurTrades()
+{
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol || (ulong)PositionGetInteger(POSITION_MAGIC) != MagicNumber) continue;
+      if(!trade.PositionClose(ticket)) Print("Close position failed: ", trade.ResultRetcodeDescription());
+   }
+   CancelPendings();
+}
+
+void ManageOpenPositions(MqlTick &t)
+{
+   double atrBuf[1], atr = 0.0;
+   if(CopyBuffer(atrHandle, 0, 1, 1, atrBuf) == 1) atr = atrBuf[0];
+   double trailDistance = MathMax(MinProfitLockPoints * _Point, atr * ReversalATRFactor);
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol || (ulong)PositionGetInteger(POSITION_MAGIC) != MagicNumber) continue;
+      ENUM_POSITION_TYPE side = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      double entry = PositionGetDouble(POSITION_PRICE_OPEN);
+      double profit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+      string key = "RYSAP_PEAK_" + (string)ticket;
+      double favorable = (side == POSITION_TYPE_BUY ? t.bid : t.ask);
+      if(!GlobalVariableCheck(key)) GlobalVariableSet(key, favorable);
+      double extreme = GlobalVariableGet(key);
+      if((side == POSITION_TYPE_BUY && favorable > extreme) || (side == POSITION_TYPE_SELL && favorable < extreme))
+      { extreme = favorable; GlobalVariableSet(key, extreme); }
+      double retrace = (side == POSITION_TYPE_BUY ? extreme - favorable : favorable - extreme);
+      double lockedMove = (side == POSITION_TYPE_BUY ? favorable - entry : entry - favorable);
+      if(profit > 0.0 && lockedMove >= MinProfitLockPoints * _Point && retrace >= trailDistance)
+      {
+         if(!trade.PositionClose(ticket)) Print("Reversal close failed: ", trade.ResultRetcodeDescription());
+         else GlobalVariableDel(key);
+      }
+   }
+}
+
 void Panel()
 {
    if(ObjectFind(0, P + "INFO") < 0) return;
    string st = running ? "RUNNING" : "STOPPED";
    if(DemoAccountOnly && !IsDemo()) st += " / DEMO REQUIRED";
+   double projectedPts = ProjectedRange() / _Point;
+   double projectedMoney = EstimateMoney(projectedPts);
    string txt = "UJI TEST MT5 - ADAPTIVE M5\nStatus: " + st +
       "\nSymbol: " + _Symbol +
       "\nLot: " + DoubleToString(lotSize, 2) +
+      "\nProjected range: " + DoubleToString(projectedPts, 1) + " points (~" + AccountInfoString(ACCOUNT_CURRENCY) + " " + DoubleToString(projectedMoney, 2) + ")" +
       "\nSL Entry 1 / BUY: " + IntegerToString(slEntry1Points) + " points" +
       "\nSL Entry 2 / SELL: " + IntegerToString(slEntry2Points) + " points" +
       "\nTP: OFF" +
-      "\nProjected full range: " + DoubleToString(ProjectedRange() / _Point, 1) + " points";
+      "\nEntry: predicted wick endpoints";
    ObjectSetString(0, P + "INFO", OBJPROP_TEXT, txt);
+   if(ObjectFind(0, lotButtonName) >= 0) ObjectSetString(0, lotButtonName, OBJPROP_TEXT, "LOT: " + DoubleToString(lotSize, 2));
+   UpdateM5Timer();
 }
