@@ -52,6 +52,7 @@ datetime lastIndicatorBar=0, lastIndicatorDiag=0;
 #define POWERFULL_REPLAN_MAX 2
 
 string powerSymbols[3]={"XAUUSDm","BTCUSDm","ETHUSDm"};
+int powerAtrHandles[3]={INVALID_HANDLE,INVALID_HANDLE,INVALID_HANDLE};
 struct PowerfullConfig {
    bool enabled;
    bool buyLimitEnabled;
@@ -146,6 +147,12 @@ int OnInit(){
    cleanupDuplicateEmaLayers();
    hEma50=iMA(_Symbol,_Period,50,0,MODE_EMA,PRICE_CLOSE);
    hEma200=iMA(_Symbol,_Period,200,0,MODE_EMA,PRICE_CLOSE);
+   for(int i=0;i<ArraySize(powerSymbols);i++){
+      if(SymbolSelect(powerSymbols[i],true))
+         powerAtrHandles[i]=iATR(powerSymbols[i],PERIOD_M5,14);
+      if(powerAtrHandles[i]==INVALID_HANDLE)
+         Print("POWERFULL ATR HANDLE WARNING symbol=",powerSymbols[i]," error=",GetLastError());
+   }
    if(hEma50==INVALID_HANDLE || hEma200==INVALID_HANDLE)
       Print("RAYYAN4 INDICATOR WARNING EMA handles=",hEma50,",",hEma200);
    ChartSetInteger(0,CHART_AUTOSCROLL,true);
@@ -167,6 +174,12 @@ void OnDeinit(const int r){
    deleteEmaSegments("RAYYAN_EMA200_SEG_");
    if(hEma50!=INVALID_HANDLE)IndicatorRelease(hEma50);
    if(hEma200!=INVALID_HANDLE)IndicatorRelease(hEma200);
+   for(int i=0;i<ArraySize(powerAtrHandles);i++){
+      if(powerAtrHandles[i]!=INVALID_HANDLE){
+         IndicatorRelease(powerAtrHandles[i]);
+         powerAtrHandles[i]=INVALID_HANDLE;
+      }
+   }
 }
 void OnTick(){
    manageTP2RetraceProtection();
@@ -1358,20 +1371,9 @@ bool powerBuildModel(int index){
    for(int k=0;k<used;k++)avgRange+=ranges[k];
    avgRange/=used;
    double projectedRange=0.65*ranges[q]+0.35*avgRange;
-   // Wilder handle-free ATR approximation over up to 14 completed M5 true ranges.
-   double atrSum=0.0;
-   int atrUsed=0;
-   int atrCount=(int)MathMin(14,copied-1);
-   for(int j=0;j<atrCount;j++){
-      double h=rates[j].high,l=rates[j].low,prevClose=rates[j+1].close;
-      if(h<=0.0||l<=0.0||prevClose<=0.0||h<l)continue;
-      double tr=MathMax(h-l,MathMax(MathAbs(h-prevClose),MathAbs(l-prevClose)));
-      if(MathIsValidNumber(tr)&&tr>0.0){atrSum+=tr;atrUsed++;}
-   }
-   if(atrUsed>0){
-      double atr=atrSum/atrUsed;
-      if(atr>0.0)projectedRange=0.50*projectedRange+0.50*atr;
-   }
+   // Use the same native M5 ATR(14) indicator as the tested standalone EA.
+   double atr=powerAtrPrice(index);
+   if(atr>0.0)projectedRange=0.50*projectedRange+0.50*atr;
    double upper=upperWicks[q],lower=lowerWicks[q];
    if(upper+lower>projectedRange&&upper+lower>0.0){
       double scale=projectedRange/(upper+lower);
@@ -1626,23 +1628,16 @@ double powerTickPriceAgo(int index,int ago){
 
 double powerAtrPrice(int index){
    if(index<0||index>=ArraySize(powerSymbols))return 0.0;
-   string symbol=powerSymbols[index];
-   MqlRates rates[];
-   ArraySetAsSeries(rates,true);
-   int copied=CopyRates(symbol,PERIOD_M5,1,15,rates);
-   if(copied<2)return 0.0;
-   double sum=0.0;
-   int used=0;
-   int count=(int)MathMin(14,copied-1);
-   for(int i=0;i<count;i++){
-      double h=rates[i].high,l=rates[i].low,prevClose=rates[i+1].close;
-      if(h<=0.0||l<=0.0||prevClose<=0.0||h<l)continue;
-      double tr=MathMax(h-l,MathMax(MathAbs(h-prevClose),MathAbs(l-prevClose)));
-      if(MathIsValidNumber(tr)&&tr>0.0){sum+=tr;used++;}
+   if(powerAtrHandles[index]==INVALID_HANDLE){
+      if(!SymbolSelect(powerSymbols[index],true))return 0.0;
+      powerAtrHandles[index]=iATR(powerSymbols[index],PERIOD_M5,14);
+      if(powerAtrHandles[index]==INVALID_HANDLE)return 0.0;
    }
-   return (used>0?sum/used:0.0);
+   double buffer[1];
+   if(CopyBuffer(powerAtrHandles[index],0,1,1,buffer)!=1)return 0.0;
+   if(!MathIsValidNumber(buffer[0])||buffer[0]<=0.0)return 0.0;
+   return buffer[0];
 }
-
 bool powerDetectSignals(int index,const MqlTick &tick,bool &allowBuy,bool &allowSell,
                         int &buyScore,int &sellScore){
    allowBuy=false;allowSell=false;buyScore=0;sellScore=0;
