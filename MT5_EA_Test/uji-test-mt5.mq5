@@ -12,7 +12,6 @@ input bool   DemoAccountOnly = true;
 input ulong  MagicNumber = 26102601;
 input double InitialLot = 0.01;
 input double LotStep = 0.01;
-input int    MaxEntriesPerM5Candle = 2;
 input int    MinDistancePoints = 30;
 input int    DistributionLookback = 20;
 input double RangeOffsetFraction = 0.20; // retained for compatibility; endpoint entries are used
@@ -151,9 +150,6 @@ void RunStrategy()
    if(bar <= 0) return;
    currentBar = bar;
 
-   if(OurPosition()) { CancelPendings(); return; }
-   if(EntriesThisBar(bar) >= MaxEntriesPerM5Candle) { CancelPendings(); return; }
-
    double hi = iHigh(_Symbol, PERIOD_M5, 0);
    double lo = iLow(_Symbol, PERIOD_M5, 0);
    if(hi <= 0 || lo <= 0 || hi < lo) return;
@@ -173,16 +169,13 @@ void RunStrategy()
    double predictedLower = NormalizePrice(nextCandleAnchor - predictedLowerWick);
    lastForecastText = "NEXT M5 WICKS: BUY " + DoubleToString(predictedLower, _Digits) +
                       " | SELL " + DoubleToString(predictedUpper, _Digits);
-   datetime expiry = bar + 2 * PeriodSeconds(PERIOD_M5);
-   if(expiry <= TimeCurrent() + 2) return;
    bool allowBuy = false, allowSell = false;
    int buyScore = 0, sellScore = 0;
    DetectExhaustion(t, allowBuy, allowSell, buyScore, sellScore);
    lastSignalText = "BUY " + IntegerToString(buyScore) + "/3 | SELL " + IntegerToString(sellScore) + "/3";
-   if(allowBuy) UpdatePendingAtEndpoint(true, predictedLower, expiry, t, gap);
-   else CancelPendingSide(true);
-   if(allowSell) UpdatePendingAtEndpoint(false, predictedUpper, expiry, t, gap);
-   else CancelPendingSide(false);
+   // Keep pending orders after placement; temporary signal changes do not cancel them.
+   if(allowBuy) UpdatePendingAtEndpoint(true, predictedLower, t, gap);
+   if(allowSell) UpdatePendingAtEndpoint(false, predictedUpper, t, gap);
 }
 
 double ProjectedRange()
@@ -240,7 +233,7 @@ void ProjectedWicks(double &upperWick, double &lowerWick, double &projectedRange
    }
 }
 
-void UpdatePendingAtEndpoint(bool isBuy, double target, datetime expiry, MqlTick &t, double gap)
+void UpdatePendingAtEndpoint(bool isBuy, double target, MqlTick &t, double gap)
 {
    ENUM_ORDER_TYPE type;
    if(isBuy) type = (target < t.ask - gap ? ORDER_TYPE_BUY_LIMIT : ORDER_TYPE_BUY_STOP);
@@ -250,10 +243,10 @@ void UpdatePendingAtEndpoint(bool isBuy, double target, datetime expiry, MqlTick
    if(isBuy && type == ORDER_TYPE_BUY_STOP && target <= t.ask + gap) target = NormalizePrice(t.ask + gap);
    if(!isBuy && type == ORDER_TYPE_SELL_LIMIT && target <= t.bid + gap) target = NormalizePrice(t.bid + gap);
    if(!isBuy && type == ORDER_TYPE_SELL_STOP && target >= t.bid - gap) target = NormalizePrice(t.bid - gap);
-   UpdateLimit(type, target, expiry);
+   UpdateLimit(type, target);
 }
 
-void UpdateLimit(ENUM_ORDER_TYPE type, double price, datetime expiry)
+void UpdateLimit(ENUM_ORDER_TYPE type, double price)
 {
    // Entry 1 = BUY pending SL; Entry 2 = SELL pending SL. TP is always disabled.
    bool buySide = (type == ORDER_TYPE_BUY_LIMIT || type == ORDER_TYPE_BUY_STOP);
@@ -265,40 +258,19 @@ void UpdateLimit(ENUM_ORDER_TYPE type, double price, datetime expiry)
       else sl = NormalizePrice(price + slPts * _Point);
    }
 
+   // Freeze the first pending order on each side; do not move/delete it on later ticks.
    ulong ticket = FindPending(type);
-   if(ticket != 0)
-   {
-      if(!OrderSelect(ticket)) return;
-      ENUM_ORDER_TYPE existingType = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
-      if(existingType != type)
-      {
-         if(!trade.OrderDelete(ticket)) { Print("Pending type switch delete failed: ", trade.ResultRetcodeDescription()); return; }
-         ticket = 0;
-      }
-      if(ticket == 0) { /* create the correctly typed pending order below */ }
-      else
-      {
-      double old = OrderGetDouble(ORDER_PRICE_OPEN);
-      datetime oldExp = (datetime)OrderGetInteger(ORDER_TIME_EXPIRATION);
-      if(MathAbs(old - price) >= 2 * _Point || oldExp != expiry ||
-         MathAbs(OrderGetDouble(ORDER_SL) - sl) >= _Point)
-      {
-         if(!trade.OrderModify(ticket, price, sl, 0.0, ORDER_TIME_SPECIFIED, expiry, 0))
-            Print("OrderModify failed: ", trade.ResultRetcodeDescription());
-      }
-      return;
-      }
-   }
+   if(ticket != 0) return;
 
    bool ok = false;
    if(type == ORDER_TYPE_BUY_LIMIT)
-      ok = trade.BuyLimit(lotSize, price, _Symbol, sl, 0.0, ORDER_TIME_SPECIFIED, expiry, "uji-test-mt5 BUY");
+      ok = trade.BuyLimit(lotSize, price, _Symbol, sl, 0.0, ORDER_TIME_GTC, 0, "uji-test-mt5 BUY");
    else if(type == ORDER_TYPE_BUY_STOP)
-      ok = trade.BuyStop(lotSize, price, _Symbol, sl, 0.0, ORDER_TIME_SPECIFIED, expiry, "uji-test-mt5 BUY");
+      ok = trade.BuyStop(lotSize, price, _Symbol, sl, 0.0, ORDER_TIME_GTC, 0, "uji-test-mt5 BUY");
    else if(type == ORDER_TYPE_SELL_LIMIT)
-      ok = trade.SellLimit(lotSize, price, _Symbol, sl, 0.0, ORDER_TIME_SPECIFIED, expiry, "uji-test-mt5 SELL");
+      ok = trade.SellLimit(lotSize, price, _Symbol, sl, 0.0, ORDER_TIME_GTC, 0, "uji-test-mt5 SELL");
    else
-      ok = trade.SellStop(lotSize, price, _Symbol, sl, 0.0, ORDER_TIME_SPECIFIED, expiry, "uji-test-mt5 SELL");
+      ok = trade.SellStop(lotSize, price, _Symbol, sl, 0.0, ORDER_TIME_GTC, 0, "uji-test-mt5 SELL");
 
    if(!ok)
       Print("Pending placement failed: ", trade.ResultRetcode(), " ", trade.ResultRetcodeDescription());
@@ -362,22 +334,6 @@ void CancelPendings()
       if(ty == ORDER_TYPE_BUY_LIMIT || ty == ORDER_TYPE_SELL_LIMIT || ty == ORDER_TYPE_BUY_STOP || ty == ORDER_TYPE_SELL_STOP)
          if(!trade.OrderDelete(ticket)) Print("OrderDelete failed: ", trade.ResultRetcodeDescription());
    }
-}
-
-int EntriesThisBar(datetime bar)
-{
-   if(!HistorySelect(bar, TimeCurrent())) return 0;
-   int count = 0;
-   for(int i = 0; i < HistoryDealsTotal(); i++)
-   {
-      ulong d = HistoryDealGetTicket(i);
-      if(d == 0) continue;
-      if(HistoryDealGetString(d, DEAL_SYMBOL) != _Symbol ||
-         (ulong)HistoryDealGetInteger(d, DEAL_MAGIC) != MagicNumber) continue;
-      ENUM_DEAL_ENTRY e = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(d, DEAL_ENTRY);
-      if(e == DEAL_ENTRY_IN || e == DEAL_ENTRY_INOUT) count++;
-   }
-   return count;
 }
 
 bool IsDemo()
@@ -630,7 +586,6 @@ void Panel()
       "\nEntry: predicted next-candle wick endpoints" +
       "\nActual signal: " + lastSignalText +
       "\nForecast: " + lastForecastText +
-      "\nMax entries/candle: " + IntegerToString(MaxEntriesPerM5Candle) +
       "\nExhaustion: tick momentum + slowing + wick rejection";
    ObjectSetString(0, P + "INFO", OBJPROP_TEXT, txt);
    if(ObjectFind(0, lotButtonName) >= 0) ObjectSetString(0, lotButtonName, OBJPROP_TEXT, "LOT: " + DoubleToString(lotSize, 2));
