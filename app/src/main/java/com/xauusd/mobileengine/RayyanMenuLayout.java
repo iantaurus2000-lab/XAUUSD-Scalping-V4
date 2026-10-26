@@ -80,7 +80,7 @@ public final class RayyanMenuLayout {
             new Item("⇄", "Gateway / Queue / ACK", "Status EA, antrean, dan konfirmasi MT5", "gateway"),
             new Item("▤", "Orders / History", "Log dan riwayat aktivitas aplikasi", "orders"),
             new Item("✦", "Smart Auto Entry", "Pengaturan Auto Entry dan LIMIT demo", "mt5"),
-            new Item("⚡", "SMART AUTO-POWERFULL", "Prediksi distribusi M5 • dual LIMIT • profit dinamis", "powerfull")
+            new Item("⚡", "SMART AUTO-POWERFULL", "Wick M5 + tick reversal • pending akhir candle • profit dinamis", "powerfull")
         ), actions);
 
         addSection(host, content, "ALAT & PENGATURAN");
