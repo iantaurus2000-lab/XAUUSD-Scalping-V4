@@ -364,12 +364,11 @@ public final class GatewayService extends Service {
         boolean crossCandle=p.getBoolean("powerfull_cross_candle_"+suffix,true);
         double lot=p.getFloat("powerfull_lot_"+suffix,0.0f);
         double pip=p.getFloat("powerfull_pip_size_"+suffix,0.0f);
-        int percentile=p.getInt("powerfull_percentile_"+suffix,70);
+        int percentile=p.getInt("powerfull_percentile_"+suffix,70); // retained for old APK/EA protocol compatibility
         double stopPips=3.0;
         double minimumLot=("BTCUSDm".equals(symbol)||"ETHUSDm".equals(symbol))?0.10:0.01;
         boolean valid=Double.isFinite(lot)&&lot>=minimumLot
-            &&Double.isFinite(pip)&&pip>0.0
-            &&(percentile==50||percentile==60||percentile==70||percentile==80||percentile==90);
+            &&Double.isFinite(pip)&&pip>0.0;
         boolean hasEntrySide=buyLimit||sellLimit;
         boolean enabled=requested&&valid&&hasEntrySide&&!strategyConflict;
         String reason=enabled?"READY":(!requested?"DISABLED":(strategyConflict?"STRATEGY_CONFLICT":(!valid?"CONFIG_INVALID":"NO_ENTRY_SIDE")));
