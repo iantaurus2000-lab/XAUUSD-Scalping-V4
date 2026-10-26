@@ -12,6 +12,7 @@ on:
       - '.github/workflows/rayyan-build.yml'
       - 'mt5/Experts/Rayyan4GatewayEA.mq5'
       - 'MT5_EA_Test/uji-test-mt5.mq5'
+      - 'app/rayyan4-debug.keystore.b64'
   workflow_dispatch:
 
 permissions:
@@ -20,7 +21,7 @@ permissions:
 jobs:
   android-apk:
     name: Build Android APK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -33,20 +34,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: '8.10'
 
-      - name: Generate build-only debug signing key
-        run: |
-          keytool -genkeypair -noprompt -keystore app/rayyan4-debug.keystore -storepass rayyan4debug -keypass rayyan4debug -alias rayyan4debug -dname "CN=Rayyan Build" -keyalg RSA -keysize 2048 -validity 10000
+      - name: Restore debug signing key
+        run: base64 -d app/rayyan4-debug.keystore.b64 > app/rayyan4-debug.keystore
 
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
@@ -55,7 +49,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: XAUUSD-Mobile-Engine-RAYYAN-POWERFULL-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
 
@@ -78,51 +72,64 @@ jobs:
         with:
           ref: RAYYAN
 
-      - name: Download MetaTrader 5 installer
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" -OutFile "$env:RUNNER_TEMP\mt5setup.exe"
-
       - name: Install MetaTrader 5 / MetaEditor
         shell: pwsh
         run: |
-          $installer = "$env:RUNNER_TEMP\mt5setup.exe"
-          $proc = Start-Process -FilePath $installer -ArgumentList @('/auto','/path:C:\MT5Build') -Wait -PassThru
-          if ($proc.ExitCode -ne 0) { throw "MetaTrader installer exited with code $($proc.ExitCode)" }
-          $editor = Get-ChildItem -Path "C:\MT5Build" -Filter "metaeditor64.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $editor) { throw "MetaEditor64.exe not found after installation" }
-          "METAEDITOR_PATH=$($editor.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $installer = Join-Path $env:RUNNER_TEMP 'mt5setup.exe'
+          Invoke-WebRequest -Uri 'https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe' -OutFile $installer
+          Start-Process -FilePath $installer -ArgumentList '/auto' -Wait
+          $candidates = @('C:\Program Files\MetaTrader 5\metaeditor64.exe', 'C:\Program Files (x86)\MetaTrader 5\metaeditor64.exe')
+          $editor = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $editor) {
+            $editor = Get-ChildItem "$env:APPDATA\MetaQuotes\Terminal" -Filter 'metaeditor64.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -First 1
+          }
+          if (-not $editor) { throw 'MetaEditor64.exe was not found after MT5 installation.' }
+          $terminalCandidates = @('C:\Program Files\MetaTrader 5\terminal64.exe', 'C:\Program Files (x86)\MetaTrader 5\terminal64.exe')
+          $terminal = $terminalCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($terminal) {
+            $bootstrap = Start-Process -FilePath $terminal -ArgumentList '/portable' -PassThru
+            Start-Sleep -Seconds 8
+            Stop-Process -Id $bootstrap.Id -Force -ErrorAction SilentlyContinue
+          }
+          $dataRoot = Join-Path $env:APPDATA 'MetaQuotes\Terminal'
+          $tradeInclude = Get-ChildItem @('C:\Program Files\MetaTrader 5', 'C:\Program Files (x86)\MetaTrader 5', $dataRoot) -Filter 'Trade.mqh' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $tradeInclude) { throw 'MT5 standard library Trade.mqh is missing; cannot compile EA safely.' }
+          $includeSource = $tradeInclude.Directory.Parent.FullName
+          $dataDirs = Get-ChildItem $dataRoot -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path (Join-Path $_.FullName 'MQL5') }
+          foreach ($dataDir in $dataDirs) {
+            $targetInclude = Join-Path $dataDir.FullName 'MQL5\Include'
+            New-Item -ItemType Directory -Path $targetInclude -Force | Out-Null
+            Copy-Item (Join-Path $includeSource '*') $targetInclude -Recurse -Force
+          }
+          "METAEDITOR=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Compile both EAs
         shell: pwsh
         run: |
-          $experts = "C:\MT5Build\MQL5\Experts"
-          New-Item -ItemType Directory -Force -Path $experts | Out-Null
-          New-Item -ItemType Directory -Force -Path "build\ea" | Out-Null
+          New-Item -ItemType Directory -Force -Path build\ea | Out-Null
           $sources = @(
-            @{ Source = "mt5\Experts\Rayyan4GatewayEA.mq5"; Name = "Rayyan4GatewayEA" },
-            @{ Source = "MT5_EA_Test\uji-test-mt5.mq5"; Name = "uji-test-mt5" }
+            @{ Source = 'mt5/Experts/Rayyan4GatewayEA.mq5'; Name = 'Rayyan4GatewayEA' },
+            @{ Source = 'MT5_EA_Test/uji-test-mt5.mq5'; Name = 'uji-test-mt5' }
           )
           foreach ($item in $sources) {
-            $source = Join-Path $experts ($item.Name + ".mq5")
-            Copy-Item $item.Source $source -Force
-            $log = Join-Path $experts ($item.Name + ".log")
-            $proc = Start-Process -FilePath $env:METAEDITOR_PATH -ArgumentList @('/portable', "/compile:$source", '/log') -Wait -PassThru
+            $source = (Resolve-Path $item.Source).Path
+            $log = Join-Path $env:RUNNER_TEMP ($item.Name + '-compile.log')
+            Remove-Item $log -Force -ErrorAction SilentlyContinue
+            $args = "/compile:`"$source`" /log:`"$log`""
+            $process = Start-Process -FilePath $env:METAEDITOR -ArgumentList $args -PassThru -Wait
             Start-Sleep -Seconds 2
-            $ex5 = Join-Path $experts ($item.Name + ".ex5")
-            if (-not (Test-Path $ex5)) {
-              if (Test-Path $log) { Get-Content $log | Write-Host }
-              throw "Compilation did not create $($item.Name).ex5"
+            if (-not (Test-Path $log)) { throw "MetaEditor did not create compile log for $($item.Name); exit code $($process.ExitCode)." }
+            Get-Content $log
+            $compileLog = Get-Content $log -Raw
+            if ($compileLog -match '(?im)\b[1-9]\d* errors?\b') { throw "MetaEditor reported compile errors for $($item.Name)." }
+            $binary = Join-Path (Split-Path $source) ($item.Name + '.ex5')
+            if (-not (Test-Path $binary)) {
+              $found = Get-ChildItem "$env:APPDATA\MetaQuotes\Terminal" -Filter ($item.Name + '.ex5') -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($found) { Copy-Item $found.FullName $binary -Force }
             }
-            if (Test-Path $log) {
-              $logText = Get-Content $log -Raw
-              if ($logText -match "\b[1-9][0-9]* errors?\b") {
-                Get-Content $log | Write-Host
-                throw "MetaEditor reported compile errors for $($item.Name)"
-              }
-              Copy-Item $log ("build\\ea\\" + $item.Name + ".log") -Force
-            }
-            Copy-Item $ex5 ("build\\ea\\" + $item.Name + ".ex5") -Force
+            if (-not (Test-Path $binary)) { throw "EA compile did not produce $binary." }
+            Copy-Item $binary (Join-Path 'build\ea' ($item.Name + '.ex5')) -Force
+            Copy-Item $log (Join-Path 'build\ea' ($item.Name + '.log')) -Force
           }
 
       - name: Upload compiled EA binaries and logs
