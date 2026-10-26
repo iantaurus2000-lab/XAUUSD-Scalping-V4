@@ -1896,8 +1896,6 @@ public class MainActivity extends Activity {
             gp.getBoolean("powerfull_buy_limit_"+symbol,true));
         Switch sellLimitSwitch=addPowerfullToggle(fields,"SELL LIMIT entry",
             gp.getBoolean("powerfull_sell_limit_"+symbol,true));
-        Switch reforecastSwitch=addPowerfullToggle(fields,"Hitung ulang distribusi / ganti pending",
-            gp.getBoolean("powerfull_reforecast_"+symbol,true));
         Switch quickProfitSwitch=addPowerfullToggle(fields,"Tutup cepat saat profit bersih positif",
             gp.getBoolean("powerfull_quick_profit_"+symbol,true));
         Switch crossCandleSwitch=addPowerfullToggle(fields,"Hold lintas candle jika momentum valid",
@@ -2020,7 +2018,6 @@ public class MainActivity extends Activity {
                     .putBoolean(strategyEnabledKey("EXCELLENT",symbol),enabled.isChecked()?false:gp.getBoolean(strategyEnabledKey("EXCELLENT",symbol),false))
                     .putBoolean("powerfull_buy_limit_"+symbol,buyLimitSwitch.isChecked())
                     .putBoolean("powerfull_sell_limit_"+symbol,sellLimitSwitch.isChecked())
-                    .putBoolean("powerfull_reforecast_"+symbol,reforecastSwitch.isChecked())
                     .putBoolean("powerfull_quick_profit_"+symbol,quickProfitSwitch.isChecked())
                     .putBoolean("powerfull_cross_candle_"+symbol,crossCandleSwitch.isChecked())
                     .putFloat("powerfull_lot_"+symbol,(float)volume)
@@ -2030,7 +2027,7 @@ public class MainActivity extends Activity {
                 queueNativeIndicatorState();
                 AppLog.add(this,"SMART AUTO-POWERFULL","settings saved symbol="+symbol+" enabled="+enabled.isChecked()
                     +" buyLimit="+buyLimitSwitch.isChecked()+" sellLimit="+sellLimitSwitch.isChecked()
-                    +" reforecast="+reforecastSwitch.isChecked()+" quickProfit="+quickProfitSwitch.isChecked()
+                    +" quickProfit="+quickProfitSwitch.isChecked()
                     +" crossCandleHold="+crossCandleSwitch.isChecked()
                     +" lot="+lotText(volume)+" pipSize="+String.format(Locale.US,"%.8f",pip)
                     +" forecast=mean of completed M5 ranges • stopLossPips=3 (mandatory) • legacy auto preferences unchanged");
