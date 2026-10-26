@@ -1,0 +1,70 @@
+name: Rayyan POWERFULL build
+
+on:
+  push:
+    branches:
+      - RAYYAN
+    paths:
+      - 'app/**'
+      - 'pingtest/**'
+      - '*.gradle'
+      - 'settings.gradle'
+      - '.github/workflows/rayyan-build.yml'
+      - 'mt5/Experts/Rayyan4GatewayEA.mq5'
+      - 'MT5_EA_Test/uji-test-mt5.mq5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-apk:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: RAYYAN
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Generate build-only debug signing key
+        run: |
+          keytool -genkeypair -noprompt -keystore app/rayyan4-debug.keystore -storepass rayyan4debug -keypass rayyan4debug -alias rayyan4debug -dname "CN=Rayyan Build" -keyalg RSA -keysize 2048 -validity 10000
+
+      - name: Build debug APK
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: XAUUSD-Mobile-Engine-RAYYAN-POWERFULL-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload EA source package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rayyan-POWERFULL-MQ5-source
+          path: |
+            mt5/Experts/Rayyan4GatewayEA.mq5
+            MT5_EA_Test/uji-test-mt5.mq5
+          if-no-files-found: error
+          retention-days: 14
