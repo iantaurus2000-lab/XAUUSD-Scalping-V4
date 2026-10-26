@@ -18,7 +18,6 @@ input int    DistributionLookback = 20;
 input double RangeOffsetFraction = 0.20; // retained for compatibility; endpoint entries are used
 input double ReversalATRFactor = 0.25;
 input int    MinProfitLockPoints = 5;
-input int    ExhaustionMinScore = 3; // out of 4 independent clues
 input int    TickSamplesForAnalysis = 12;
 input int    DeviationPoints = 20;
 
@@ -29,7 +28,6 @@ int slEntry1Points = 0; // BUY pending SL; 0 = disabled
 int slEntry2Points = 0; // SELL pending SL; 0 = disabled
 datetime currentBar = 0;
 int atrHandle = INVALID_HANDLE;
-int rsiHandle = INVALID_HANDLE, bandsHandle = INVALID_HANDLE, adxHandle = INVALID_HANDLE;
 double tickPrices[32];
 int tickWriteIndex = 0, tickSampleCount = 0;
 string lastSignalText = "WAITING FOR TICK DATA";
@@ -44,11 +42,9 @@ int OnInit()
    trade.SetDeviationInPoints(DeviationPoints);
    trade.SetTypeFillingBySymbol(_Symbol);
    atrHandle = iATR(_Symbol, PERIOD_M5, 14);
-   rsiHandle = iRSI(_Symbol, PERIOD_M5, 14, PRICE_CLOSE);
-   bandsHandle = iBands(_Symbol, PERIOD_M5, 20, 0, 2.0, PRICE_CLOSE);
-   adxHandle = iADX(_Symbol, PERIOD_M5, 14);
-   if(atrHandle == INVALID_HANDLE || rsiHandle == INVALID_HANDLE || bandsHandle == INVALID_HANDLE || adxHandle == INVALID_HANDLE) return INIT_FAILED;
+   if(atrHandle == INVALID_HANDLE) return INIT_FAILED;
 
+   ApplyCandleColors();
    MakeButton("TOGGLE", "START", 10, 20, 90, 26, clrDarkGreen);
    MakeButton("LM", "LOT -", 10, 53, 58, 22, clrDimGray);
    lotButtonName = P + "LOTVALUE";
@@ -86,9 +82,6 @@ void OnDeinit(const int reason)
 {
    EventKillTimer();
    if(atrHandle != INVALID_HANDLE) IndicatorRelease(atrHandle);
-   if(rsiHandle != INVALID_HANDLE) IndicatorRelease(rsiHandle);
-   if(bandsHandle != INVALID_HANDLE) IndicatorRelease(bandsHandle);
-   if(adxHandle != INVALID_HANDLE) IndicatorRelease(adxHandle);
    for(int i=ObjectsTotal(0)-1; i>=0; i--)
    {
       string n = ObjectName(0, i);
@@ -102,7 +95,7 @@ void OnTick()
    if(SymbolInfoTick(_Symbol, tick) && tick.bid > 0 && tick.ask > 0) RecordTickSample((tick.bid + tick.ask) * 0.5);
    RunStrategy();
 }
-void OnTimer() { Panel(); if(running) RunStrategy(); }
+void OnTimer() { ApplyCandleColors(); Panel(); if(running) RunStrategy(); }
 
 void OnChartEvent(const int id, const long &lp, const double &dp, const string &sp)
 {
@@ -163,20 +156,24 @@ void RunStrategy()
    double lo = iLow(_Symbol, PERIOD_M5, 0);
    if(hi <= 0 || lo <= 0 || hi < lo) return;
 
-   double projectedRange = ProjectedRange();
+   double predictedUpperWick = 0.0, predictedLowerWick = 0.0, projectedRange = 0.0;
+   ProjectedWicks(predictedUpperWick, predictedLowerWick, projectedRange);
    if(projectedRange <= 0) return;
    int stopLevel = (int)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
    double gap = MathMax(MinDistancePoints, stopLevel + 1) * _Point;
 
-   // Predict candle endpoints from the distribution of completed M5 candles.
-   double predictedUpper = NormalizePrice(MathMax(hi, lo + projectedRange));
-   double predictedLower = NormalizePrice(MathMin(lo, hi - projectedRange));
+   // Predict wick endpoints from separate historical upper/lower-wick distributions.
+   double op = iOpen(_Symbol, PERIOD_M5, 0), cl = iClose(_Symbol, PERIOD_M5, 0);
+   if(op <= 0 || cl <= 0) return;
+   double bodyHigh = MathMax(op, cl), bodyLow = MathMin(op, cl);
+   double predictedUpper = NormalizePrice(MathMax(hi, bodyHigh + predictedUpperWick));
+   double predictedLower = NormalizePrice(MathMin(lo, bodyLow - predictedLowerWick));
    datetime expiry = bar + PeriodSeconds(PERIOD_M5);
    if(expiry <= TimeCurrent() + 2) return;
    bool allowBuy = false, allowSell = false;
    int buyScore = 0, sellScore = 0;
    DetectExhaustion(t, allowBuy, allowSell, buyScore, sellScore);
-   lastSignalText = "BUY " + IntegerToString(buyScore) + "/4 | SELL " + IntegerToString(sellScore) + "/4";
+   lastSignalText = "BUY " + IntegerToString(buyScore) + "/3 | SELL " + IntegerToString(sellScore) + "/3";
    if(allowBuy) UpdatePendingAtEndpoint(true, predictedLower, expiry, t, gap);
    else CancelPendingSide(true);
    if(allowSell) UpdatePendingAtEndpoint(false, predictedUpper, expiry, t, gap);
@@ -185,33 +182,57 @@ void RunStrategy()
 
 double ProjectedRange()
 {
-   double atrBuf[1], atr = 0;
-   if(CopyBuffer(atrHandle, 0, 1, 1, atrBuf) == 1) atr = atrBuf[0];
-   double ranges[200]; int used = 0;
+   double upperWick = 0.0, lowerWick = 0.0, range = 0.0;
+   ProjectedWicks(upperWick, lowerWick, range);
+   return range;
+}
+
+void ProjectedWicks(double &upperWick, double &lowerWick, double &projectedRange)
+{
+   upperWick = 0.0; lowerWick = 0.0; projectedRange = 0.0;
+   double ranges[200], upperWicks[200], lowerWicks[200];
+   int used = 0;
    int count = (int)MathMax(1, MathMin(DistributionLookback, 200));
-   double upperWickSum = 0, lowerWickSum = 0;
    for(int i = 1; i <= count; i++)
    {
       double h = iHigh(_Symbol, PERIOD_M5, i), l = iLow(_Symbol, PERIOD_M5, i);
       double o = iOpen(_Symbol, PERIOD_M5, i), cl = iClose(_Symbol, PERIOD_M5, i);
       if(h <= 0 || l <= 0 || h < l || o <= 0 || cl <= 0) continue;
-      ranges[used++] = h - l;
-      upperWickSum += MathMax(0.0, h - MathMax(o, cl));
-      lowerWickSum += MathMax(0.0, MathMin(o, cl) - l);
+      ranges[used] = h - l;
+      upperWicks[used] = MathMax(0.0, h - MathMax(o, cl));
+      lowerWicks[used] = MathMax(0.0, MathMin(o, cl) - l);
+      used++;
    }
-   if(used <= 0) return atr;
+   if(used <= 0)
+   {
+      double atrBuf[1];
+      if(CopyBuffer(atrHandle, 0, 1, 1, atrBuf) == 1) projectedRange = atrBuf[0];
+      return;
+   }
    for(int a = 0; a < used - 1; a++)
+   {
       for(int b = a + 1; b < used; b++)
-         if(ranges[b] < ranges[a]) { double tmp = ranges[a]; ranges[a] = ranges[b]; ranges[b] = tmp; }
-   double avgRange = 0;
+      {
+         if(ranges[b] < ranges[a]) { double v=ranges[a]; ranges[a]=ranges[b]; ranges[b]=v; }
+         if(upperWicks[b] < upperWicks[a]) { double v=upperWicks[a]; upperWicks[a]=upperWicks[b]; upperWicks[b]=v; }
+         if(lowerWicks[b] < lowerWicks[a]) { double v=lowerWicks[a]; lowerWicks[a]=lowerWicks[b]; lowerWicks[b]=v; }
+      }
+   }
+   int q = (int)MathMin(used - 1, MathFloor((used - 1) * 0.75));
+   double avgRange = 0.0;
    for(int k = 0; k < used; k++) avgRange += ranges[k];
    avgRange /= used;
-   double q75 = ranges[(int)MathMin(used - 1, MathFloor((used - 1) * 0.75))];
-   double wickBias = 0;
-   if(upperWickSum + lowerWickSum > 0) wickBias = (upperWickSum - lowerWickSum) / (upperWickSum + lowerWickSum);
-   double distRange = (0.65 * q75 + 0.35 * avgRange) * (1.0 + MathMax(-0.08, MathMin(0.08, wickBias * 0.08)));
-   if(atr > 0) return 0.5 * atr + 0.5 * distRange;
-   return distRange;
+   projectedRange = 0.65 * ranges[q] + 0.35 * avgRange;
+   upperWick = upperWicks[q];
+   lowerWick = lowerWicks[q];
+   double atrBuf[1];
+   if(CopyBuffer(atrHandle, 0, 1, 1, atrBuf) == 1 && atrBuf[0] > 0)
+      projectedRange = 0.5 * projectedRange + 0.5 * atrBuf[0];
+   if(upperWick + lowerWick > projectedRange)
+   {
+      double scale = projectedRange / (upperWick + lowerWick);
+      upperWick *= scale; lowerWick *= scale;
+   }
 }
 
 void UpdatePendingAtEndpoint(bool isBuy, double target, datetime expiry, MqlTick &t, double gap)
@@ -424,14 +445,41 @@ void MakeEdit(string name, string value, int x, int y, int w, int h)
    ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
 }
 
+double ConvertAccountToUSD(double amount)
+{
+   string accountCurrency = AccountInfoString(ACCOUNT_CURRENCY);
+   if(accountCurrency == "USD") return amount;
+   int total = SymbolsTotal(false);
+   for(int i = 0; i < total; i++)
+   {
+      string symbol = SymbolName(i, false);
+      string base = SymbolInfoString(symbol, SYMBOL_CURRENCY_BASE);
+      string profit = SymbolInfoString(symbol, SYMBOL_CURRENCY_PROFIT);
+      MqlTick fx;
+      if(!SymbolInfoTick(symbol, fx) || fx.bid <= 0 || fx.ask <= 0) continue;
+      if(base == accountCurrency && profit == "USD") return amount * fx.bid;
+      if(base == "USD" && profit == accountCurrency) return amount / fx.ask;
+   }
+   return -1.0;
+}
+
 double EstimateMoney(double points)
 {
-   if(points <= 0 || lotSize <= 0) return 0.0;
+   if(points <= 0 || lotSize <= 0) return -1.0;
    double openPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   if(openPrice <= 0) return 0.0;
+   if(openPrice <= 0) return -1.0;
    double result = 0.0;
-   if(!OrderCalcProfit(ORDER_TYPE_BUY, _Symbol, lotSize, openPrice, openPrice + points * _Point, result)) return 0.0;
-   return MathAbs(result);
+   if(!OrderCalcProfit(ORDER_TYPE_BUY, _Symbol, lotSize, openPrice, openPrice + points * _Point, result)) return -1.0;
+   return ConvertAccountToUSD(MathAbs(result));
+}
+
+void ApplyCandleColors()
+{
+   ChartSetInteger(0, CHART_MODE, CHART_CANDLES);
+   ChartSetInteger(0, CHART_COLOR_CANDLE_BULL, clrGreen);
+   ChartSetInteger(0, CHART_COLOR_CANDLE_BEAR, clrRed);
+   ChartSetInteger(0, CHART_COLOR_CHART_UP, clrGreen);
+   ChartSetInteger(0, CHART_COLOR_CHART_DOWN, clrRed);
 }
 
 void UpdateM5Timer()
@@ -480,62 +528,33 @@ double TickPriceAgo(int ago)
 void DetectExhaustion(MqlTick &t, bool &allowBuy, bool &allowSell, int &buyScore, int &sellScore)
 {
    allowBuy = false; allowSell = false; buyScore = 0; sellScore = 0;
-   double rsiNow[1], rsiPrev[1], bandsUpper[1], bandsLower[1];
-   double adxNow[1], adxPrev[1], plusNow[1], plusPrev[1], minusNow[1], minusPrev[1], atrBuf[1];
-   if(CopyBuffer(rsiHandle, 0, 0, 1, rsiNow) < 1 ||
-      CopyBuffer(rsiHandle, 0, 1, 1, rsiPrev) < 1 ||
-      CopyBuffer(bandsHandle, 1, 0, 1, bandsUpper) < 1 ||
-      CopyBuffer(bandsHandle, 2, 0, 1, bandsLower) < 1 ||
-      CopyBuffer(adxHandle, 0, 0, 1, adxNow) < 1 ||
-      CopyBuffer(adxHandle, 0, 1, 1, adxPrev) < 1 ||
-      CopyBuffer(adxHandle, 1, 0, 1, plusNow) < 1 ||
-      CopyBuffer(adxHandle, 1, 1, 1, plusPrev) < 1 ||
-      CopyBuffer(adxHandle, 2, 0, 1, minusNow) < 1 ||
-      CopyBuffer(adxHandle, 2, 1, 1, minusPrev) < 1 ||
-      CopyBuffer(atrHandle, 0, 1, 1, atrBuf) < 1) { lastSignalText = "INDICATORS LOADING"; return; }
-
+   int required = (int)MathMax(8, MathMin(24, TickSamplesForAnalysis));
+   if(tickSampleCount < required)
+   {
+      lastSignalText = "COLLECTING TICKS";
+      return;
+   }
+   double recentNet = TickPriceAgo(0) - TickPriceAgo(3);
+   double priorNet = TickPriceAgo(4) - TickPriceAgo(7);
+   double olderNet = TickPriceAgo(7) - TickPriceAgo(MathMin(required - 1, 11));
+   double threshold = 2.0 * _Point;
+   bool tickTurnUp = (olderNet < -threshold && recentNet > 0.0 && priorNet <= threshold);
+   bool tickTurnDown = (olderNet > threshold && recentNet < 0.0 && priorNet >= -threshold);
+   bool tickSlowing = (MathAbs(recentNet) < MathAbs(olderNet) * 0.55);
    double hi = iHigh(_Symbol, PERIOD_M5, 0), lo = iLow(_Symbol, PERIOD_M5, 0);
    double op = iOpen(_Symbol, PERIOD_M5, 0), cl = iClose(_Symbol, PERIOD_M5, 0);
+   if(hi <= 0 || lo <= 0 || op <= 0 || cl <= 0 || hi < lo) return;
    double range = MathMax(hi - lo, _Point);
-   double lowerWick = MathMax(0.0, MathMin(op, cl) - lo);
    double upperWick = MathMax(0.0, hi - MathMax(op, cl));
-   double atr = atrBuf[0];
-
-   bool tickTurnUp = false, tickTurnDown = false, tickSlowing = false;
-   int required = (int)MathMax(8, MathMin(24, TickSamplesForAnalysis));
-   if(tickSampleCount >= required)
-   {
-      double recentNet = TickPriceAgo(0) - TickPriceAgo(3);
-      double priorNet = TickPriceAgo(4) - TickPriceAgo(7);
-      double olderNet = TickPriceAgo(7) - TickPriceAgo(MathMin(required - 1, 11));
-      double turnThreshold = MathMax(2.0 * _Point, atr * 0.005);
-      tickTurnUp = (olderNet < -turnThreshold && recentNet > 0 && priorNet <= turnThreshold);
-      tickTurnDown = (olderNet > turnThreshold && recentNet < 0 && priorNet >= -turnThreshold);
-      tickSlowing = (MathAbs(recentNet) < MathAbs(olderNet) * 0.55);
-   }
-
-   bool lowerExtreme = (lo <= bandsLower[0] + MathMax(atr * 0.12, 2 * _Point)) || (lowerWick / range >= 0.35);
-   bool upperExtreme = (hi >= bandsUpper[0] - MathMax(atr * 0.12, 2 * _Point)) || (upperWick / range >= 0.35);
-   bool rsiBuy = (rsiNow[0] <= 45.0 && rsiNow[0] > rsiPrev[0]) || (rsiPrev[0] < 30.0 && rsiNow[0] > rsiPrev[0]);
-   bool rsiSell = (rsiNow[0] >= 55.0 && rsiNow[0] < rsiPrev[0]) || (rsiPrev[0] > 70.0 && rsiNow[0] < rsiPrev[0]);
-   bool directionBuy = (plusNow[0] > plusPrev[0]) || (adxNow[0] < adxPrev[0] && plusNow[0] >= minusNow[0]);
-   bool directionSell = (minusNow[0] > minusPrev[0]) || (adxNow[0] < adxPrev[0] && minusNow[0] >= plusNow[0]);
-
-   if(lowerExtreme) buyScore++;
-   if(rsiBuy) buyScore++;
-   if(tickTurnUp) buyScore++;
-   if(directionBuy && tickSlowing) buyScore++;
-   if(upperExtreme) sellScore++;
-   if(rsiSell) sellScore++;
-   if(tickTurnDown) sellScore++;
-   if(directionSell && tickSlowing) sellScore++;
-
-   // A real tick turn is mandatory; other evidence must reach the configurable confluence score.
-   allowBuy = tickTurnUp && buyScore >= (int)MathMax(2, MathMin(4, ExhaustionMinScore));
-   allowSell = tickTurnDown && sellScore >= (int)MathMax(2, MathMin(4, ExhaustionMinScore));
+   double lowerWick = MathMax(0.0, MathMin(op, cl) - lo);
+   bool lowerWickExhaustion = (lowerWick > upperWick && lowerWick / range >= 0.30);
+   bool upperWickExhaustion = (upperWick > lowerWick && upperWick / range >= 0.30);
+   allowBuy = tickTurnUp && (lowerWickExhaustion || tickSlowing);
+   allowSell = tickTurnDown && (upperWickExhaustion || tickSlowing);
    if(allowBuy && allowSell) { allowBuy = false; allowSell = false; }
+   buyScore = (tickTurnUp ? 1 : 0) + (tickSlowing ? 1 : 0) + (lowerWickExhaustion ? 1 : 0);
+   sellScore = (tickTurnDown ? 1 : 0) + (tickSlowing ? 1 : 0) + (upperWickExhaustion ? 1 : 0);
 }
-
 void ManageOpenPositions(MqlTick &t)
 {
    double atrBuf[1], atr = 0.0;
@@ -584,7 +603,7 @@ void Panel()
    string txt = "UJI TEST MT5 - ADAPTIVE M5\nStatus: " + st +
       "\nSymbol: " + _Symbol +
       "\nLot: " + DoubleToString(lotSize, 2) +
-      "\nProjected range: " + DoubleToString(projectedPts, 1) + " points (~" + AccountInfoString(ACCOUNT_CURRENCY) + " " + DoubleToString(projectedMoney, 2) + ")" +
+      "\nProjected range: " + DoubleToString(projectedPts, 1) + " points (~" + (projectedMoney >= 0.0 ? "USD " + DoubleToString(projectedMoney, 2) : "USD unavailable: FX pair not found") + ")" +
       "\nSL Entry 1 / BUY: " + IntegerToString(slEntry1Points) + " points" +
       "\nSL Entry 2 / SELL: " + IntegerToString(slEntry2Points) + " points" +
       "\nTP: OFF" +
