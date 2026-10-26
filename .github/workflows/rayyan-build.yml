@@ -107,33 +107,31 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path build\ea | Out-Null
-          # MetaEditor resolves standard headers relative to its terminal data tree.
-          # Also stage the official Include tree beside the repository sources so external-path compilation resolves headers.
-          $includeSource = Get-ChildItem @('C:\Program Files\MetaTrader 5\MQL5\Include', 'C:\Program Files (x86)\MetaTrader 5\MQL5\Include', (Join-Path $env:APPDATA 'MetaQuotes\Terminal')) -Filter 'Trade.mqh' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $includeSource) { throw 'Could not locate official MQL5 Include\Trade\Trade.mqh.' }
-          $includeRoot = $includeSource.Directory.Parent.FullName
-          New-Item -ItemType Directory -Force -Path 'Include' | Out-Null
-          Copy-Item (Join-Path $includeRoot '*') 'Include' -Recurse -Force
+          $dataRoot = Join-Path $env:APPDATA 'MetaQuotes\Terminal'
+          $terminalData = Get-ChildItem $dataRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object { Test-Path (Join-Path $_.FullName 'MQL5\Include\Trade\Trade.mqh') } |
+            Select-Object -First 1
+          if (-not $terminalData) { throw 'No MT5 terminal data folder with MQL5\Include\Trade\Trade.mqh was found.' }
+          $experts = Join-Path $terminalData.FullName 'MQL5\Experts'
+          New-Item -ItemType Directory -Force -Path $experts | Out-Null
           $sources = @(
             @{ Source = 'mt5/Experts/Rayyan4GatewayEA.mq5'; Name = 'Rayyan4GatewayEA' },
             @{ Source = 'MT5_EA_Test/uji-test-mt5.mq5'; Name = 'uji-test-mt5' }
           )
           foreach ($item in $sources) {
             $source = (Resolve-Path $item.Source).Path
+            $terminalSource = Join-Path $experts ($item.Name + '.mq5')
+            Copy-Item $source $terminalSource -Force
             $log = Join-Path $env:RUNNER_TEMP ($item.Name + '-compile.log')
             Remove-Item $log -Force -ErrorAction SilentlyContinue
-            $args = "/compile:`"$source`" /log:`"$log`""
+            $args = "/compile:`"$terminalSource`" /log:`"$log`""
             $process = Start-Process -FilePath $env:METAEDITOR -ArgumentList $args -PassThru -Wait
             Start-Sleep -Seconds 2
             if (-not (Test-Path $log)) { throw "MetaEditor did not create compile log for $($item.Name); exit code $($process.ExitCode)." }
             Get-Content $log
             $compileLog = Get-Content $log -Raw
             if ($compileLog -match '(?im)\b[1-9]\d* errors?\b') { throw "MetaEditor reported compile errors for $($item.Name)." }
-            $binary = Join-Path (Split-Path $source) ($item.Name + '.ex5')
-            if (-not (Test-Path $binary)) {
-              $found = Get-ChildItem "$env:APPDATA\MetaQuotes\Terminal" -Filter ($item.Name + '.ex5') -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-              if ($found) { Copy-Item $found.FullName $binary -Force }
-            }
+            $binary = Join-Path $experts ($item.Name + '.ex5')
             if (-not (Test-Path $binary)) { throw "EA compile did not produce $binary." }
             Copy-Item $binary (Join-Path 'build\ea' ($item.Name + '.ex5')) -Force
             Copy-Item $log (Join-Path 'build\ea' ($item.Name + '.log')) -Force
