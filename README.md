@@ -28,4 +28,12 @@ The same EA draws EMA 50 (orange), EMA 200 (purple), Support/Resistance, and Fib
 - M5 history can be shorter than 201 candles: the engine keeps the 50/200 EMA when history is sufficient and adapts the slow EMA for 60–200 candles. The gateway URL, /next and /ack protocol are unchanged.
 
 
+## SMART AUTO-POWERFULL — wick, tick reversal, pending & profit management
+
+- POWERFULL remains an isolated EA engine using its own magic number and the existing `/power_config` and `/power_state` Gateway routes. This logic is applied per symbol to `XAUUSDm`, `BTCUSDm`, and `ETHUSDm`; STANDAR and EXCELLENT signal engines and the legacy `/next` order queue are not changed.
+- The model uses up to 20 completed M5 candles, separate upper/lower-wick distributions at the 75th percentile, and an ATR blend. A new BUY/SELL pending is eligible only in the last **3 seconds** of the live M5 candle, after tick-turn confirmation combined with wick rejection or tick slowing. The default minimum entry distance is **30 points**, subject to the broker stop level.
+- Pending orders use **GTC**. A change in candle or a temporary signal flip does not delete or reprice an existing pending. A pending is eligible for cancellation when the market has moved more than **1.5 ATR** from its entry, its direction is disabled in POWERFULL, or POWERFULL itself is switched off. One pending per direction is tracked at a time; an already-open position does not itself block another eligible pending.
+- Profitable positions are evaluated for an opposite reversal after a default hold of **2 M5 candles**. If net profit is positive, the EA can close on the opposite reversal signal or when momentum fades and the pullback from the best price reaches the configured ATR trail (default **0.25 ATR**, with a **5-point** minimum profit lock). The existing **3-pip hard-loss guard** remains active and may close a position earlier; TP stays off.
+- APK settings are stored per broker symbol and synchronized through Gateway. The final APK/EA package has **not** been built or compiled yet; wait for explicit build authorization before generating deliverables.
+
 Build checkpoint: native MT5 multi-market chart and tick synchronization revisions are queued for validation on this branch. The APK CI build must pass before its artifact is distributed; the EA source must be compiled separately with MetaEditor for an `.ex5` binary.
