@@ -19,6 +19,7 @@ input double RangeOffsetFraction = 0.20; // retained for compatibility; endpoint
 input double ReversalATRFactor = 0.25;
 input int    MinProfitLockPoints = 5;
 input int    TickSamplesForAnalysis = 12;
+input double MomentumStrongPoints = 4.0; // minimum tick displacement in points
 input int    DeviationPoints = 20;
 
 string P = "RYSAP_";
@@ -31,6 +32,7 @@ int atrHandle = INVALID_HANDLE;
 double tickPrices[32];
 int tickWriteIndex = 0, tickSampleCount = 0;
 string lastSignalText = "WAITING FOR TICK DATA";
+string lastForecastText = "NEXT CANDLE: WAITING FOR DATA";
 string edit1Name, edit2Name;
 string lotButtonName;
 string timerCircleName, timerTextName;
@@ -165,10 +167,13 @@ void RunStrategy()
    // Predict wick endpoints from separate historical upper/lower-wick distributions.
    double op = iOpen(_Symbol, PERIOD_M5, 0), cl = iClose(_Symbol, PERIOD_M5, 0);
    if(op <= 0 || cl <= 0) return;
-   double bodyHigh = MathMax(op, cl), bodyLow = MathMin(op, cl);
-   double predictedUpper = NormalizePrice(MathMax(hi, bodyHigh + predictedUpperWick));
-   double predictedLower = NormalizePrice(MathMin(lo, bodyLow - predictedLowerWick));
-   datetime expiry = bar + PeriodSeconds(PERIOD_M5);
+   // Current candle OHLC is the live signal; projected wick endpoints refer to the next M5 candle.
+   double nextCandleAnchor = cl;
+   double predictedUpper = NormalizePrice(nextCandleAnchor + predictedUpperWick);
+   double predictedLower = NormalizePrice(nextCandleAnchor - predictedLowerWick);
+   lastForecastText = "NEXT M5 WICKS: BUY " + DoubleToString(predictedLower, _Digits) +
+                      " | SELL " + DoubleToString(predictedUpper, _Digits);
+   datetime expiry = bar + 2 * PeriodSeconds(PERIOD_M5);
    if(expiry <= TimeCurrent() + 2) return;
    bool allowBuy = false, allowSell = false;
    int buyScore = 0, sellScore = 0;
@@ -528,18 +533,20 @@ double TickPriceAgo(int ago)
 void DetectExhaustion(MqlTick &t, bool &allowBuy, bool &allowSell, int &buyScore, int &sellScore)
 {
    allowBuy = false; allowSell = false; buyScore = 0; sellScore = 0;
-   int required = (int)MathMax(8, MathMin(24, TickSamplesForAnalysis));
+   int required = (int)MathMax(12, MathMin(24, TickSamplesForAnalysis));
    if(tickSampleCount < required)
    {
-      lastSignalText = "COLLECTING TICKS";
+      lastSignalText = "ACTUAL M5: COLLECTING TICKS";
       return;
    }
    double recentNet = TickPriceAgo(0) - TickPriceAgo(3);
    double priorNet = TickPriceAgo(4) - TickPriceAgo(7);
    double olderNet = TickPriceAgo(7) - TickPriceAgo(MathMin(required - 1, 11));
-   double threshold = 2.0 * _Point;
-   bool tickTurnUp = (olderNet < -threshold && recentNet > 0.0 && priorNet <= threshold);
-   bool tickTurnDown = (olderNet > threshold && recentNet < 0.0 && priorNet >= -threshold);
+   double threshold = MathMax(2.0 * _Point, MomentumStrongPoints * _Point);
+   bool momentumUpStrong = (recentNet >= threshold && priorNet > 0.0);
+   bool momentumDownStrong = (recentNet <= -threshold && priorNet < 0.0);
+   bool tickTurnUp = (olderNet < -threshold && recentNet > 0.0 && priorNet <= 0.0);
+   bool tickTurnDown = (olderNet > threshold && recentNet < 0.0 && priorNet >= 0.0);
    bool tickSlowing = (MathAbs(recentNet) < MathAbs(olderNet) * 0.55);
    double hi = iHigh(_Symbol, PERIOD_M5, 0), lo = iLow(_Symbol, PERIOD_M5, 0);
    double op = iOpen(_Symbol, PERIOD_M5, 0), cl = iClose(_Symbol, PERIOD_M5, 0);
@@ -549,11 +556,17 @@ void DetectExhaustion(MqlTick &t, bool &allowBuy, bool &allowSell, int &buyScore
    double lowerWick = MathMax(0.0, MathMin(op, cl) - lo);
    bool lowerWickExhaustion = (lowerWick > upperWick && lowerWick / range >= 0.30);
    bool upperWickExhaustion = (upperWick > lowerWick && upperWick / range >= 0.30);
+   // A reversal signal requires tick direction to turn plus wick rejection or tick deceleration.
    allowBuy = tickTurnUp && (lowerWickExhaustion || tickSlowing);
    allowSell = tickTurnDown && (upperWickExhaustion || tickSlowing);
    if(allowBuy && allowSell) { allowBuy = false; allowSell = false; }
    buyScore = (tickTurnUp ? 1 : 0) + (tickSlowing ? 1 : 0) + (lowerWickExhaustion ? 1 : 0);
    sellScore = (tickTurnDown ? 1 : 0) + (tickSlowing ? 1 : 0) + (upperWickExhaustion ? 1 : 0);
+   string momentum = momentumUpStrong ? "MOMENTUM UP STRONG" :
+                     momentumDownStrong ? "MOMENTUM DOWN STRONG" :
+                     tickSlowing ? "TICK SLOWING" : "MOMENTUM NOT STRONG";
+   lastSignalText = "ACTUAL M5: BUY " + IntegerToString(buyScore) + "/3 | SELL " +
+                    IntegerToString(sellScore) + "/3 | " + momentum;
 }
 void ManageOpenPositions(MqlTick &t)
 {
@@ -579,15 +592,22 @@ void ManageOpenPositions(MqlTick &t)
       bool allowBuy = false, allowSell = false; int buyScore = 0, sellScore = 0;
       DetectExhaustion(t, allowBuy, allowSell, buyScore, sellScore);
       bool oppositeReversal = (side == POSITION_TYPE_BUY ? allowSell : allowBuy);
+      double recentNet = TickPriceAgo(0) - TickPriceAgo(3);
+      double priorNet = TickPriceAgo(4) - TickPriceAgo(7);
+      double threshold = MathMax(2.0 * _Point, MomentumStrongPoints * _Point);
+      bool momentumStillStrong = (side == POSITION_TYPE_BUY ?
+                                  (recentNet >= threshold && priorNet > 0.0) :
+                                  (recentNet <= -threshold && priorNet < 0.0));
       if(profit > 0.0 && oppositeReversal)
       {
          if(!trade.PositionClose(ticket)) Print("Signal reversal close failed: ", trade.ResultRetcodeDescription());
          else GlobalVariableDel(key);
          continue;
       }
-      if(profit > 0.0 && lockedMove >= MinProfitLockPoints * _Point && retrace >= trailDistance)
+      if(profit > 0.0 && !momentumStillStrong &&
+         lockedMove >= MinProfitLockPoints * _Point && retrace >= trailDistance)
       {
-         if(!trade.PositionClose(ticket)) Print("Reversal close failed: ", trade.ResultRetcodeDescription());
+         if(!trade.PositionClose(ticket)) Print("Profit-lock close failed: ", trade.ResultRetcodeDescription());
          else GlobalVariableDel(key);
       }
    }
@@ -607,8 +627,11 @@ void Panel()
       "\nSL Entry 1 / BUY: " + IntegerToString(slEntry1Points) + " points" +
       "\nSL Entry 2 / SELL: " + IntegerToString(slEntry2Points) + " points" +
       "\nTP: OFF" +
-      "\nEntry: predicted wick endpoints" +
-      "\nExhaustion: " + lastSignalText;
+      "\nEntry: predicted next-candle wick endpoints" +
+      "\nActual signal: " + lastSignalText +
+      "\nForecast: " + lastForecastText +
+      "\nMax entries/candle: " + IntegerToString(MaxEntriesPerM5Candle) +
+      "\nExhaustion: tick momentum + slowing + wick rejection";
    ObjectSetString(0, P + "INFO", OBJPROP_TEXT, txt);
    if(ObjectFind(0, lotButtonName) >= 0) ObjectSetString(0, lotButtonName, OBJPROP_TEXT, "LOT: " + DoubleToString(lotSize, 2));
    UpdateM5Timer();
