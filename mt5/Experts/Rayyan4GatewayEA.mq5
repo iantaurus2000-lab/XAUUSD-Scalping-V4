@@ -111,6 +111,7 @@ double powerLastAsk[3];
 long powerLastTickMs[3];
 string powerLastStatus[3];
 string powerLastDetail[3];
+string powerSignalDetail[3];
 
 void managePowerfullAllMarkets(bool pollConfig);
 void managePowerfullSymbol(int index);
@@ -1644,7 +1645,7 @@ bool powerDetectSignals(int index,const MqlTick &tick,bool &allowBuy,bool &allow
    const int required=12;
    if(index<0||index>=ArraySize(powerSymbols)||powerTickSampleCount[index]<required){
       if(index>=0&&index<ArraySize(powerSymbols))
-         powerLastDetail[index]="WAIT_TICK_SAMPLES count="+IntegerToString(powerTickSampleCount[index])+" required=12";
+         powerSignalDetail[index]="WAIT_TICK_SAMPLES count="+IntegerToString(powerTickSampleCount[index])+" required=12";
       return false;
    }
    double recentNet=powerTickPriceAgo(index,0)-powerTickPriceAgo(index,3);
@@ -1670,7 +1671,7 @@ bool powerDetectSignals(int index,const MqlTick &tick,bool &allowBuy,bool &allow
    if(allowBuy&&allowSell){allowBuy=false;allowSell=false;}
    buyScore=(tickTurnUp?1:0)+(tickSlowing?1:0)+(lowerExhaustion?1:0);
    sellScore=(tickTurnDown?1:0)+(tickSlowing?1:0)+(upperExhaustion?1:0);
-   powerLastDetail[index]="tick reversal score BUY="+IntegerToString(buyScore)+"/3 SELL="+
+   powerSignalDetail[index]="tick reversal score BUY="+IntegerToString(buyScore)+"/3 SELL="+
       IntegerToString(sellScore)+"/3; tick samples="+IntegerToString(powerTickSampleCount[index]);
    return true;
 }
@@ -2056,6 +2057,6 @@ void managePowerfullSymbol(int index){
    }else if(placed){
       powerPublishState(index,"PENDING_PLACED",signalDetail+"; pending submitted at projected wick endpoint",barTime);
    }else{
-      powerPublishState(index,"WAIT_REVERSAL_SIGNAL",powerLastDetail[index]+"; pending only on final M5 seconds",barTime);
+      powerPublishState(index,"WAIT_REVERSAL_SIGNAL",powerSignalDetail[index]+"; pending only on final M5 seconds",barTime);
    }
 }
