@@ -480,13 +480,18 @@ double TickPriceAgo(int ago)
 void DetectExhaustion(MqlTick &t, bool &allowBuy, bool &allowSell, int &buyScore, int &sellScore)
 {
    allowBuy = false; allowSell = false; buyScore = 0; sellScore = 0;
-   double rsi[3], bandsUpper[1], bandsLower[1], adx[2], plusDI[2], minusDI[2], atrBuf[1];
-   if(CopyBuffer(rsiHandle, 0, 0, 3, rsi) < 3 ||
+   double rsiNow[1], rsiPrev[1], bandsUpper[1], bandsLower[1];
+   double adxNow[1], adxPrev[1], plusNow[1], plusPrev[1], minusNow[1], minusPrev[1], atrBuf[1];
+   if(CopyBuffer(rsiHandle, 0, 0, 1, rsiNow) < 1 ||
+      CopyBuffer(rsiHandle, 0, 1, 1, rsiPrev) < 1 ||
       CopyBuffer(bandsHandle, 1, 0, 1, bandsUpper) < 1 ||
       CopyBuffer(bandsHandle, 2, 0, 1, bandsLower) < 1 ||
-      CopyBuffer(adxHandle, 0, 0, 2, adx) < 2 ||
-      CopyBuffer(adxHandle, 1, 0, 2, plusDI) < 2 ||
-      CopyBuffer(adxHandle, 2, 0, 2, minusDI) < 2 ||
+      CopyBuffer(adxHandle, 0, 0, 1, adxNow) < 1 ||
+      CopyBuffer(adxHandle, 0, 1, 1, adxPrev) < 1 ||
+      CopyBuffer(adxHandle, 1, 0, 1, plusNow) < 1 ||
+      CopyBuffer(adxHandle, 1, 1, 1, plusPrev) < 1 ||
+      CopyBuffer(adxHandle, 2, 0, 1, minusNow) < 1 ||
+      CopyBuffer(adxHandle, 2, 1, 1, minusPrev) < 1 ||
       CopyBuffer(atrHandle, 0, 1, 1, atrBuf) < 1) { lastSignalText = "INDICATORS LOADING"; return; }
 
    double hi = iHigh(_Symbol, PERIOD_M5, 0), lo = iLow(_Symbol, PERIOD_M5, 0);
@@ -511,10 +516,10 @@ void DetectExhaustion(MqlTick &t, bool &allowBuy, bool &allowSell, int &buyScore
 
    bool lowerExtreme = (lo <= bandsLower[0] + MathMax(atr * 0.12, 2 * _Point)) || (lowerWick / range >= 0.35);
    bool upperExtreme = (hi >= bandsUpper[0] - MathMax(atr * 0.12, 2 * _Point)) || (upperWick / range >= 0.35);
-   bool rsiBuy = (rsi[0] <= 45.0 && rsi[0] > rsi[1]) || (rsi[1] < 30.0 && rsi[0] > rsi[1]);
-   bool rsiSell = (rsi[0] >= 55.0 && rsi[0] < rsi[1]) || (rsi[1] > 70.0 && rsi[0] < rsi[1]);
-   bool directionBuy = (plusDI[0] > plusDI[1]) || (adx[0] < adx[1] && plusDI[0] >= minusDI[0]);
-   bool directionSell = (minusDI[0] > minusDI[1]) || (adx[0] < adx[1] && minusDI[0] >= plusDI[0]);
+   bool rsiBuy = (rsiNow[0] <= 45.0 && rsiNow[0] > rsiPrev[0]) || (rsiPrev[0] < 30.0 && rsiNow[0] > rsiPrev[0]);
+   bool rsiSell = (rsiNow[0] >= 55.0 && rsiNow[0] < rsiPrev[0]) || (rsiPrev[0] > 70.0 && rsiNow[0] < rsiPrev[0]);
+   bool directionBuy = (plusNow[0] > plusPrev[0]) || (adxNow[0] < adxPrev[0] && plusNow[0] >= minusNow[0]);
+   bool directionSell = (minusNow[0] > minusPrev[0]) || (adxNow[0] < adxPrev[0] && minusNow[0] >= plusNow[0]);
 
    if(lowerExtreme) buyScore++;
    if(rsiBuy) buyScore++;
