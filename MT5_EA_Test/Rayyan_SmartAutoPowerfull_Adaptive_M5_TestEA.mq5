@@ -1,10 +1,10 @@
 //+------------------------------------------------------------------+
-//| Rayyan Smart Auto-Powerfull - MT5 standalone demo EA              |
-//| Independent EA test. Does not change the mobile APK.              |
+//| Rayyan Smart Auto-Powerfull - Standalone MT5 Test EA              |
+//| Independent MT5 test file. Does not modify the mobile APK.        |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "1.10"
-#property description "Rayyan M5 projected-range pending EA; START/STOP and SL only"
+#property version "1.00"
+#property description "Standalone M5 adaptive pending-order demo-test EA"
 
 #include <Trade/Trade.mqh>
 CTrade trade;
@@ -12,277 +12,171 @@ CTrade trade;
 input bool   DemoAccountOnly = true;
 input ulong  MagicNumber = 26102601;
 input double InitialLot = 0.01;
-input int    InitialSLPoints = 300;
+input double LotStep = 0.01;
+input int    StopLossPoints = 300;
 input int    TakeProfitPoints = 450;
-input int    ProjectionLookback = 6;
-input double BuyLevelPercent = 0.1;
-input double SellLevelPercent = 98.9;
-input int    MinDistancePoints = 30;
-input int    DeviationPoints = 20;
 input int    MaxEntriesPerM5Candle = 2;
+input int    MinDistancePoints = 30;
+input double RangeOffsetFraction = 0.20;
+input double ATROffsetFraction = 0.05;
+input int    DeviationPoints = 20;
 
 string P = "RYSAP_";
 bool running = false;
-double lotSize = 0.01;
-int slPoints = 300;
+double lotSize;
+int slPoints, tpPoints;
 datetime currentBar = 0;
-datetime lastPendingBar = 0;
+int atrHandle = INVALID_HANDLE;
 
 int OnInit()
 {
    lotSize = NormalizeLot(InitialLot);
-   slPoints = MathMax(1, InitialSLPoints);
+   slPoints = MathMax(1, StopLossPoints);
+   tpPoints = MathMax(1, TakeProfitPoints);
    trade.SetExpertMagicNumber(MagicNumber);
    trade.SetDeviationInPoints(DeviationPoints);
    trade.SetTypeFillingBySymbol(_Symbol);
+   atrHandle = iATR(_Symbol, PERIOD_M5, 14);
+   if(atrHandle == INVALID_HANDLE) return INIT_FAILED;
 
    ChartSetInteger(0, CHART_COLOR_CANDLE_BULL, clrLimeGreen);
    ChartSetInteger(0, CHART_COLOR_CANDLE_BEAR, clrRed);
    ChartSetInteger(0, CHART_COLOR_CHART_UP, clrLimeGreen);
    ChartSetInteger(0, CHART_COLOR_CHART_DOWN, clrRed);
 
-   MakeButton("START", "START", 10, 20, 76, 26, clrDarkGreen);
-   MakeButton("STOP",  "STOP",  92, 20, 76, 26, clrFireBrick);
-   MakeButton("SL",    "SL",    174,20, 76, 26, clrDarkSlateGray);
+   MakeButton("START","START",10,20,70,24,clrDarkGreen);
+   MakeButton("STOP","STOP",84,20,70,24,clrFireBrick);
+   MakeButton("LM","LOT -",10,50,65,22,clrDimGray);
+   MakeButton("LP","LOT +",80,50,65,22,clrDimGray);
+   MakeButton("SM","SL -50",10,77,65,22,clrDimGray);
+   MakeButton("SP","SL +50",80,77,65,22,clrDimGray);
+   MakeButton("TM","TP -50",10,104,65,22,clrDimGray);
+   MakeButton("TP","TP +50",80,104,65,22,clrDimGray);
 
-   ObjectCreate(0, P+"INFO", OBJ_LABEL, 0, 0, 0);
-   ObjectSetInteger(0, P+"INFO", OBJPROP_CORNER, CORNER_LEFT_UPPER);
-   ObjectSetInteger(0, P+"INFO", OBJPROP_XDISTANCE, 10);
-   ObjectSetInteger(0, P+"INFO", OBJPROP_YDISTANCE, 54);
-   ObjectSetInteger(0, P+"INFO", OBJPROP_COLOR, clrWhite);
-   ObjectSetInteger(0, P+"INFO", OBJPROP_FONTSIZE, 9);
+   ObjectCreate(0,P+"INFO",OBJ_LABEL,0,0,0);
+   ObjectSetInteger(0,P+"INFO",OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,P+"INFO",OBJPROP_XDISTANCE,10);
+   ObjectSetInteger(0,P+"INFO",OBJPROP_YDISTANCE,132);
+   ObjectSetInteger(0,P+"INFO",OBJPROP_COLOR,clrWhite);
+   ObjectSetInteger(0,P+"INFO",OBJPROP_FONTSIZE,9);
 
-   currentBar = iTime(_Symbol, PERIOD_M5, 0);
+   currentBar = iTime(_Symbol,PERIOD_M5,0);
    EventSetTimer(1);
    Panel();
-   Print("Rayyan SAP v1.10 initialized. Only chart buttons: START, STOP, SL. Demo-only=", DemoAccountOnly);
+   Print("Rayyan standalone EA initialized. Press START to enable; analysis fixed at M5.");
    return INIT_SUCCEEDED;
 }
 
 void OnDeinit(const int reason)
 {
    EventKillTimer();
-   for(int i=ObjectsTotal(0)-1; i>=0; i--)
+   if(atrHandle != INVALID_HANDLE) IndicatorRelease(atrHandle);
+   for(int i=ObjectsTotal(0)-1;i>=0;i--)
    {
       string n=ObjectName(0,i);
       if(StringFind(n,P)==0) ObjectDelete(0,n);
    }
 }
 
-void OnTick() { RunStrategy(); }
-void OnTimer() { Panel(); if(running) RunStrategy(); }
+void OnTick(){ RunStrategy(); }
+void OnTimer(){ Panel(); if(running) RunStrategy(); }
 
-void OnChartEvent(const int id, const long &lp, const double &dp, const string &sp)
+void OnChartEvent(const int id,const long &lp,const double &dp,const string &sp)
 {
-   if(id != CHARTEVENT_OBJECT_CLICK) return;
-   if(sp == P+"START")
-   {
-      running = true;
-      // Force calculation at next tick; do not duplicate existing pending orders.
-      Print("START pressed.");
-   }
-   else if(sp == P+"STOP")
-   {
-      running = false;
-      // STOP cancels this EA's pending orders; open positions retain their SL/TP.
-      CancelPendings();
-      Print("STOP pressed; this EA's pending orders cancelled. Open positions are not force-closed.");
-   }
-   else if(sp == P+"SL")
-   {
-      // One SL button only: cycle loss distance in 50-point steps, 50..1000.
-      slPoints += 50;
-      if(slPoints > 1000) slPoints = 50;
-      // Update SL on this EA's pending orders; never alter TP.
-      UpdatePendingStopsOnly();
-      Print("SL distance changed to ", slPoints, " points.");
-   }
+   if(id!=CHARTEVENT_OBJECT_CLICK) return;
+   if(sp==P+"START") running=true;
+   else if(sp==P+"STOP") running=false;
+   else if(sp==P+"LM") lotSize=NormalizeLot(lotSize-LotStep);
+   else if(sp==P+"LP") lotSize=NormalizeLot(lotSize+LotStep);
+   else if(sp==P+"SM") slPoints=(int)MathMax(1,slPoints-50);
+   else if(sp==P+"SP") slPoints+=50;
+   else if(sp==P+"TM") tpPoints=(int)MathMax(1,tpPoints-50);
+   else if(sp==P+"TP") tpPoints+=50;
    Panel();
 }
 
 void RunStrategy()
 {
    if(!running) return;
-   if(DemoAccountOnly && (ENUM_ACCOUNT_TRADE_MODE)AccountInfoInteger(ACCOUNT_TRADE_MODE) != ACCOUNT_TRADE_MODE_DEMO)
+   if(DemoAccountOnly && (ENUM_ACCOUNT_TRADE_MODE)AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO)
       return;
    if(!TerminalInfoInteger(TERMINAL_CONNECTED) || !TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) ||
-      !MQLInfoInteger(MQL_TRADE_ALLOWED) || !AccountInfoInteger(ACCOUNT_TRADE_ALLOWED))
-      return;
+      !MQLInfoInteger(MQL_TRADE_ALLOWED) || !AccountInfoInteger(ACCOUNT_TRADE_ALLOWED)) return;
 
-   MqlTick tick;
-   if(!SymbolInfoTick(_Symbol, tick) || tick.ask <= 0 || tick.bid <= 0) return;
+   MqlTick t;
+   if(!SymbolInfoTick(_Symbol,t) || t.ask<=0 || t.bid<=0) return;
+   datetime bar=iTime(_Symbol,PERIOD_M5,0);
+   if(bar<=0) return;
+   currentBar=bar;
 
-   datetime bar = iTime(_Symbol, PERIOD_M5, 0);
-   if(bar <= 0) return;
-
-   // If a position is open, remove opposite pending orders to avoid double exposure.
    if(OurPosition())
    {
       CancelPendings();
-      ManageOpenPosition(tick);
-      currentBar = bar;
       return;
    }
-
-   if(EntriesThisBar(bar) >= MaxEntriesPerM5Candle)
+   if(EntriesThisBar(bar)>=MaxEntriesPerM5Candle)
    {
       CancelPendings();
-      currentBar = bar;
       return;
    }
 
-   // Build the next candle's projected range from the current open and the
-   // average true range of completed M5 candles only (no moving intrabar target).
-   // Recalculate and place orders once per new M5 candle, then keep them fixed
-   // until fill, cancellation or expiration at the end of that candle.
-   if(bar != currentBar)
-   {
-      currentBar = bar;
-      lastPendingBar = 0;
-   }
-   if(lastPendingBar == bar) return;
+   double hi=iHigh(_Symbol,PERIOD_M5,0), lo=iLow(_Symbol,PERIOD_M5,0);
+   if(hi<=0 || lo<=0 || hi<lo) return;
+   double atrBuf[1], atr=0;
+   if(CopyBuffer(atrHandle,0,0,1,atrBuf)==1) atr=atrBuf[0];
+   double offset=MathMax((hi-lo)*RangeOffsetFraction,atr*ATROffsetFraction);
+   offset=MathMax(offset,MinDistancePoints*_Point);
+   int stopLevel=(int)SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL);
+   double gap=MathMax(MinDistancePoints,stopLevel+1)*_Point;
+   double buy=NormalizePrice(MathMin(lo+offset,t.ask-gap));
+   double sell=NormalizePrice(MathMax(hi-offset,t.bid+gap));
+   datetime expiry=bar+PeriodSeconds(PERIOD_M5);
+   if(expiry<=TimeCurrent()+2) return;
 
-   double avgRange = AverageCompletedRange(ProjectionLookback);
-   if(avgRange <= 0) return;
-
-   double open = iOpen(_Symbol, PERIOD_M5, 0);
-   if(open <= 0) return;
-
-   double projectedLow  = open - avgRange * 0.5;
-   double projectedHigh = open + avgRange * 0.5;
-   double projectedRange = projectedHigh - projectedLow;
-   if(projectedRange <= 0) return;
-
-   double buy = NormalizePrice(projectedLow + projectedRange * BuyLevelPercent / 100.0);
-   double sell = NormalizePrice(projectedLow + projectedRange * SellLevelPercent / 100.0);
-
-   double minGap = MathMax(MinDistancePoints,
-                    (int)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) + 1) * _Point;
-
-   // Buy Limit must be below Ask; Sell Limit must be above Bid.
-   if(buy >= tick.ask - minGap) buy = NormalizePrice(tick.ask - minGap);
-   if(sell <= tick.bid + minGap) sell = NormalizePrice(tick.bid + minGap);
-
-   datetime expiry = bar + PeriodSeconds(PERIOD_M5);
-   if(expiry <= TimeCurrent() + 2) return;
-
-   // Clear stale pending orders from an older candle before placing new ones.
-   CancelPendings();
-   bool buyOK = PlaceLimit(ORDER_TYPE_BUY_LIMIT, buy, expiry);
-   bool sellOK = PlaceLimit(ORDER_TYPE_SELL_LIMIT, sell, expiry);
-   if(buyOK || sellOK) lastPendingBar = bar;
-
-   Print("M5 projection: open=", DoubleToString(open,_Digits),
-         " projectedLow=", DoubleToString(projectedLow,_Digits),
-         " projectedHigh=", DoubleToString(projectedHigh,_Digits),
-         " BuyLimit=", DoubleToString(buy,_Digits),
-         " SellLimit=", DoubleToString(sell,_Digits),
-         " rangeAvg=", DoubleToString(avgRange,_Digits));
+   UpdateLimit(ORDER_TYPE_BUY_LIMIT,buy,expiry);
+   UpdateLimit(ORDER_TYPE_SELL_LIMIT,sell,expiry);
 }
 
-double AverageCompletedRange(int lookback)
+void UpdateLimit(ENUM_ORDER_TYPE type,double price,datetime expiry)
 {
-   lookback = MathMax(2, MathMin(lookback, 50));
-   if(Bars(_Symbol, PERIOD_M5) < lookback + 2) return 0;
-   double sum = 0;
-   int used = 0;
-   for(int shift=1; shift<=lookback; shift++)
+   ulong ticket=FindPending(type);
+   double sl,tp;
+   if(type==ORDER_TYPE_BUY_LIMIT)
    {
-      double hi = iHigh(_Symbol, PERIOD_M5, shift);
-      double lo = iLow(_Symbol, PERIOD_M5, shift);
-      double prevClose = iClose(_Symbol, PERIOD_M5, shift+1);
-      if(hi<=0 || lo<=0 || prevClose<=0 || hi<lo) continue;
-      double tr = MathMax(hi-lo, MathMax(MathAbs(hi-prevClose), MathAbs(lo-prevClose)));
-      sum += tr;
-      used++;
-   }
-   return used > 0 ? sum / used : 0;
-}
-
-bool PlaceLimit(ENUM_ORDER_TYPE type, double price, datetime expiry)
-{
-   double sl = 0, tp = 0;
-   if(type == ORDER_TYPE_BUY_LIMIT)
-   {
-      sl = NormalizePrice(price - slPoints * _Point);
-      if(TakeProfitPoints > 0) tp = NormalizePrice(price + TakeProfitPoints * _Point);
+      sl=NormalizePrice(price-slPoints*_Point);
+      tp=NormalizePrice(price+tpPoints*_Point);
    }
    else
    {
-      sl = NormalizePrice(price + slPoints * _Point);
-      if(TakeProfitPoints > 0) tp = NormalizePrice(price - TakeProfitPoints * _Point);
+      sl=NormalizePrice(price+slPoints*_Point);
+      tp=NormalizePrice(price-tpPoints*_Point);
    }
 
-   bool ok = false;
-   if(type == ORDER_TYPE_BUY_LIMIT)
-      ok = trade.BuyLimit(lotSize, price, _Symbol, sl, tp, ORDER_TIME_SPECIFIED, expiry, "Rayyan SAP M5");
-   else
-      ok = trade.SellLimit(lotSize, price, _Symbol, sl, tp, ORDER_TIME_SPECIFIED, expiry, "Rayyan SAP M5");
-
-   if(!ok)
-      Print("Pending failed ", EnumToString(type), " price=", DoubleToString(price,_Digits),
-            " retcode=", trade.ResultRetcode(), " ", trade.ResultRetcodeDescription());
-   else
-      Print("Pending placed ", EnumToString(type), " price=", DoubleToString(price,_Digits),
-            " SL=", DoubleToString(sl,_Digits), " TP=", DoubleToString(tp,_Digits),
-            " expires=", TimeToString(expiry));
-   return ok;
-}
-
-void ManageOpenPosition(const MqlTick &tick)
-{
-   // Tick-by-tick protection: close if the latest completed M5 candle's direction
-   // conflicts with the open position and the position is not in loss.
-   // The broker-side SL/TP remain the primary hard protection.
-   for(int i=PositionsTotal()-1; i>=0; i--)
+   if(ticket!=0)
    {
-      ulong ticket = PositionGetTicket(i);
-      if(ticket==0) continue;
-      if(PositionGetString(POSITION_SYMBOL)!=_Symbol ||
-         (ulong)PositionGetInteger(POSITION_MAGIC)!=MagicNumber) continue;
-
-      ENUM_POSITION_TYPE type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
-      double profit=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
-      double prevOpen=iOpen(_Symbol, PERIOD_M5, 1);
-      double prevClose=iClose(_Symbol, PERIOD_M5, 1);
-      bool reversed = (type==POSITION_TYPE_BUY && prevClose<prevOpen) ||
-                      (type==POSITION_TYPE_SELL && prevClose>prevOpen);
-      if(reversed && profit>0.0)
-      {
-         if(!trade.PositionClose(ticket))
-            Print("Momentum close failed: ", trade.ResultRetcodeDescription());
-         else
-            Print("Position closed on opposite completed M5 candle; profit=", DoubleToString(profit,2));
-      }
+      if(!OrderSelect(ticket)) return;
+      double old=OrderGetDouble(ORDER_PRICE_OPEN);
+      datetime oldExp=(datetime)OrderGetInteger(ORDER_TIME_EXPIRATION);
+      if(MathAbs(old-price)>=20*_Point || oldExp!=expiry)
+         if(!trade.OrderModify(ticket,price,sl,tp,ORDER_TIME_SPECIFIED,expiry,0))
+            Print("OrderModify failed: ",trade.ResultRetcodeDescription());
       return;
    }
-}
 
-void UpdatePendingStopsOnly()
-{
-   for(int i=OrdersTotal()-1; i>=0; i--)
-   {
-      ulong ticket=OrderGetTicket(i);
-      if(ticket==0) continue;
-      if(OrderGetString(ORDER_SYMBOL)!=_Symbol ||
-         (ulong)OrderGetInteger(ORDER_MAGIC)!=MagicNumber) continue;
-      ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
-      if(type!=ORDER_TYPE_BUY_LIMIT && type!=ORDER_TYPE_SELL_LIMIT) continue;
+   bool ok=false;
+   if(type==ORDER_TYPE_BUY_LIMIT)
+      ok=trade.BuyLimit(lotSize,price,_Symbol,sl,tp,ORDER_TIME_SPECIFIED,expiry,"Rayyan SAP M5");
+   else
+      ok=trade.SellLimit(lotSize,price,_Symbol,sl,tp,ORDER_TIME_SPECIFIED,expiry,"Rayyan SAP M5");
 
-      double price=OrderGetDouble(ORDER_PRICE_OPEN);
-      double tp=OrderGetDouble(ORDER_TP);
-      datetime expiry=(datetime)OrderGetInteger(ORDER_TIME_EXPIRATION);
-      double sl=(type==ORDER_TYPE_BUY_LIMIT)
-         ? NormalizePrice(price-slPoints*_Point)
-         : NormalizePrice(price+slPoints*_Point);
-      if(!trade.OrderModify(ticket, price, sl, tp, ORDER_TIME_SPECIFIED, expiry, 0))
-         Print("SL update failed: ", trade.ResultRetcodeDescription());
-   }
+   if(!ok) Print("Pending placement failed: ",trade.ResultRetcode()," ",trade.ResultRetcodeDescription());
+   else Print("Pending placed: ",EnumToString(type)," price=",DoubleToString(price,_Digits),
+              " lot=",DoubleToString(lotSize,2)," SLpts=",slPoints," TPpts=",tpPoints);
 }
 
 bool OurPosition()
 {
-   for(int i=PositionsTotal()-1; i>=0; i--)
+   for(int i=PositionsTotal()-1;i>=0;i--)
    {
       ulong ticket=PositionGetTicket(i);
       if(ticket==0) continue;
@@ -292,32 +186,44 @@ bool OurPosition()
    return false;
 }
 
-void CancelPendings()
+ulong FindPending(ENUM_ORDER_TYPE type)
 {
-   for(int i=OrdersTotal()-1; i>=0; i--)
+   for(int i=OrdersTotal()-1;i>=0;i--)
    {
       ulong ticket=OrderGetTicket(i);
       if(ticket==0) continue;
       if(OrderGetString(ORDER_SYMBOL)!=_Symbol ||
          (ulong)OrderGetInteger(ORDER_MAGIC)!=MagicNumber) continue;
-      ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
-      if(type==ORDER_TYPE_BUY_LIMIT || type==ORDER_TYPE_SELL_LIMIT)
-         if(!trade.OrderDelete(ticket))
-            Print("Pending cancel failed: ", trade.ResultRetcodeDescription());
+      if((ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE)==type) return ticket;
+   }
+   return 0;
+}
+
+void CancelPendings()
+{
+   for(int i=OrdersTotal()-1;i>=0;i--)
+   {
+      ulong ticket=OrderGetTicket(i);
+      if(ticket==0) continue;
+      if(OrderGetString(ORDER_SYMBOL)!=_Symbol ||
+         (ulong)OrderGetInteger(ORDER_MAGIC)!=MagicNumber) continue;
+      ENUM_ORDER_TYPE ty=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      if(ty==ORDER_TYPE_BUY_LIMIT || ty==ORDER_TYPE_SELL_LIMIT)
+         if(!trade.OrderDelete(ticket)) Print("OrderDelete failed: ",trade.ResultRetcodeDescription());
    }
 }
 
 int EntriesThisBar(datetime bar)
 {
-   if(!HistorySelect(bar, TimeCurrent())) return 0;
+   if(!HistorySelect(bar,TimeCurrent())) return 0;
    int count=0;
-   for(int i=0; i<HistoryDealsTotal(); i++)
+   for(int i=0;i<HistoryDealsTotal();i++)
    {
       ulong d=HistoryDealGetTicket(i);
       if(d==0) continue;
-      if(HistoryDealGetString(d, DEAL_SYMBOL)!=_Symbol ||
-         (ulong)HistoryDealGetInteger(d, DEAL_MAGIC)!=MagicNumber) continue;
-      ENUM_DEAL_ENTRY e=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(d, DEAL_ENTRY);
+      if(HistoryDealGetString(d,DEAL_SYMBOL)!=_Symbol ||
+         (ulong)HistoryDealGetInteger(d,DEAL_MAGIC)!=MagicNumber) continue;
+      ENUM_DEAL_ENTRY e=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(d,DEAL_ENTRY);
       if(e==DEAL_ENTRY_IN || e==DEAL_ENTRY_INOUT) count++;
    }
    return count;
@@ -330,26 +236,26 @@ bool IsDemo()
 
 double NormalizeLot(double v)
 {
-   double minv=SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
-   double maxv=SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
-   double step=SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   double minv=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN);
+   double maxv=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX);
+   double step=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
    if(step<=0) step=0.01;
-   v=MathMax(minv, MathMin(maxv, v));
+   v=MathMax(minv,MathMin(maxv,v));
    v=MathFloor(v/step+1e-8)*step;
-   return NormalizeDouble(v, 4);
+   return NormalizeDouble(v,4);
 }
 
 double NormalizePrice(double p)
 {
-   double ts=SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   double ts=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
    if(ts<=0) ts=_Point;
-   return NormalizeDouble(MathRound(p/ts)*ts, _Digits);
+   return NormalizeDouble(MathRound(p/ts)*ts,_Digits);
 }
 
-void MakeButton(string id, string caption, int x, int y, int w, int h, color bg)
+void MakeButton(string id,string caption,int x,int y,int w,int h,color bg)
 {
    string n=P+id;
-   ObjectCreate(0, n, OBJ_BUTTON, 0, 0, 0);
+   ObjectCreate(0,n,OBJ_BUTTON,0,0,0);
    ObjectSetInteger(0,n,OBJPROP_CORNER,CORNER_LEFT_UPPER);
    ObjectSetInteger(0,n,OBJPROP_XDISTANCE,x);
    ObjectSetInteger(0,n,OBJPROP_YDISTANCE,y);
@@ -367,13 +273,12 @@ void MakeButton(string id, string caption, int x, int y, int w, int h, color bg)
 void Panel()
 {
    if(ObjectFind(0,P+"INFO")<0) return;
-   string status=running ? "RUNNING" : "STOPPED";
-   if(DemoAccountOnly && !IsDemo()) status += " / DEMO REQUIRED";
-   ObjectSetString(0,P+"SL",OBJPROP_TEXT,"SL "+IntegerToString(slPoints));
-   string txt="RAYYAN SMART AUTO-POWERFULL M5\nStatus: "+status+
-      "\nSymbol: "+_Symbol+"  Lot: "+DoubleToString(lotSize,2)+
-      "\nSL loss distance: "+IntegerToString(slPoints)+" points"+
-      "\nTP: "+IntegerToString(TakeProfitPoints)+" points"+
-      "\nPending: projected M5 range (0.1% / 98.9%)";
+   string st=running ? "RUNNING" : "STOPPED";
+   if(DemoAccountOnly && !IsDemo()) st+=" / DEMO REQUIRED";
+   string txt="SMART AUTO-POWERFULL (M5)\nStatus: "+st+
+      "\nSymbol: "+_Symbol+"\nLot: "+DoubleToString(lotSize,2)+
+      "\nSL: "+IntegerToString(slPoints)+" points"+
+      "\nTP: "+IntegerToString(tpPoints)+" points"+
+      "\nMax entries/candle: "+IntegerToString(MaxEntriesPerM5Candle);
    ObjectSetString(0,P+"INFO",OBJPROP_TEXT,txt);
 }
