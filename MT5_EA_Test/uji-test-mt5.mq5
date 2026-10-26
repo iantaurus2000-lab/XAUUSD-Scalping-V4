@@ -18,6 +18,8 @@ input int    DistributionLookback = 20;
 input double RangeOffsetFraction = 0.20; // retained for compatibility; endpoint entries are used
 input double ReversalATRFactor = 0.25;
 input int    MinProfitLockPoints = 5;
+input int    ExhaustionMinScore = 3; // out of 4 independent clues
+input int    TickSamplesForAnalysis = 12;
 input int    DeviationPoints = 20;
 
 string P = "RYSAP_";
@@ -27,6 +29,10 @@ int slEntry1Points = 0; // BUY pending SL; 0 = disabled
 int slEntry2Points = 0; // SELL pending SL; 0 = disabled
 datetime currentBar = 0;
 int atrHandle = INVALID_HANDLE;
+int rsiHandle = INVALID_HANDLE, bandsHandle = INVALID_HANDLE, adxHandle = INVALID_HANDLE;
+double tickPrices[32];
+int tickWriteIndex = 0, tickSampleCount = 0;
+string lastSignalText = "WAITING FOR TICK DATA";
 string edit1Name, edit2Name;
 string lotButtonName;
 string timerCircleName, timerTextName;
@@ -38,7 +44,10 @@ int OnInit()
    trade.SetDeviationInPoints(DeviationPoints);
    trade.SetTypeFillingBySymbol(_Symbol);
    atrHandle = iATR(_Symbol, PERIOD_M5, 14);
-   if(atrHandle == INVALID_HANDLE) return INIT_FAILED;
+   rsiHandle = iRSI(_Symbol, PERIOD_M5, 14, PRICE_CLOSE);
+   bandsHandle = iBands(_Symbol, PERIOD_M5, 20, 0, 2.0, PRICE_CLOSE);
+   adxHandle = iADX(_Symbol, PERIOD_M5, 14);
+   if(atrHandle == INVALID_HANDLE || rsiHandle == INVALID_HANDLE || bandsHandle == INVALID_HANDLE || adxHandle == INVALID_HANDLE) return INIT_FAILED;
 
    MakeButton("TOGGLE", "START", 10, 20, 90, 26, clrDarkGreen);
    MakeButton("LM", "LOT -", 10, 53, 58, 22, clrDimGray);
@@ -77,6 +86,9 @@ void OnDeinit(const int reason)
 {
    EventKillTimer();
    if(atrHandle != INVALID_HANDLE) IndicatorRelease(atrHandle);
+   if(rsiHandle != INVALID_HANDLE) IndicatorRelease(rsiHandle);
+   if(bandsHandle != INVALID_HANDLE) IndicatorRelease(bandsHandle);
+   if(adxHandle != INVALID_HANDLE) IndicatorRelease(adxHandle);
    for(int i=ObjectsTotal(0)-1; i>=0; i--)
    {
       string n = ObjectName(0, i);
@@ -84,7 +96,12 @@ void OnDeinit(const int reason)
    }
 }
 
-void OnTick() { RunStrategy(); }
+void OnTick()
+{
+   MqlTick tick;
+   if(SymbolInfoTick(_Symbol, tick) && tick.bid > 0 && tick.ask > 0) RecordTickSample((tick.bid + tick.ask) * 0.5);
+   RunStrategy();
+}
 void OnTimer() { Panel(); if(running) RunStrategy(); }
 
 void OnChartEvent(const int id, const long &lp, const double &dp, const string &sp)
@@ -139,6 +156,7 @@ void RunStrategy()
    if(bar <= 0) return;
    currentBar = bar;
 
+   if(OurPosition()) { CancelPendings(); return; }
    if(EntriesThisBar(bar) >= MaxEntriesPerM5Candle) { CancelPendings(); return; }
 
    double hi = iHigh(_Symbol, PERIOD_M5, 0);
@@ -147,7 +165,6 @@ void RunStrategy()
 
    double projectedRange = ProjectedRange();
    if(projectedRange <= 0) return;
-   double offset = MathMax(projectedRange * RangeOffsetFraction, MinDistancePoints * _Point);
    int stopLevel = (int)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
    double gap = MathMax(MinDistancePoints, stopLevel + 1) * _Point;
 
@@ -156,8 +173,14 @@ void RunStrategy()
    double predictedLower = NormalizePrice(MathMin(lo, hi - projectedRange));
    datetime expiry = bar + PeriodSeconds(PERIOD_M5);
    if(expiry <= TimeCurrent() + 2) return;
-   UpdatePendingAtEndpoint(true, predictedLower, expiry, t, gap);
-   UpdatePendingAtEndpoint(false, predictedUpper, expiry, t, gap);
+   bool allowBuy = false, allowSell = false;
+   int buyScore = 0, sellScore = 0;
+   DetectExhaustion(t, allowBuy, allowSell, buyScore, sellScore);
+   lastSignalText = "BUY " + IntegerToString(buyScore) + "/4 | SELL " + IntegerToString(sellScore) + "/4";
+   if(allowBuy) UpdatePendingAtEndpoint(true, predictedLower, expiry, t, gap);
+   else CancelPendingSide(true);
+   if(allowSell) UpdatePendingAtEndpoint(false, predictedUpper, expiry, t, gap);
+   else CancelPendingSide(false);
 }
 
 double ProjectedRange()
@@ -285,6 +308,20 @@ ulong FindPending(ENUM_ORDER_TYPE type)
       if(existingPending && existingBuy == wantBuy) return ticket;
    }
    return 0;
+}
+
+void CancelPendingSide(bool buySide)
+{
+   for(int i = OrdersTotal()-1; i >= 0; i--)
+   {
+      ulong ticket = OrderGetTicket(i);
+      if(ticket == 0) continue;
+      if(OrderGetString(ORDER_SYMBOL) != _Symbol || (ulong)OrderGetInteger(ORDER_MAGIC) != MagicNumber) continue;
+      ENUM_ORDER_TYPE ty = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      bool pending = (ty == ORDER_TYPE_BUY_LIMIT || ty == ORDER_TYPE_BUY_STOP || ty == ORDER_TYPE_SELL_LIMIT || ty == ORDER_TYPE_SELL_STOP);
+      bool isBuy = (ty == ORDER_TYPE_BUY_LIMIT || ty == ORDER_TYPE_BUY_STOP);
+      if(pending && isBuy == buySide && !trade.OrderDelete(ticket)) Print("Cancel side pending failed: ", trade.ResultRetcodeDescription());
+   }
 }
 
 void CancelPendings()
@@ -425,6 +462,75 @@ void CloseAllOurTrades()
    CancelPendings();
 }
 
+void RecordTickSample(double mid)
+{
+   tickPrices[tickWriteIndex] = mid;
+   tickWriteIndex = (tickWriteIndex + 1) % 32;
+   if(tickSampleCount < 32) tickSampleCount++;
+}
+
+double TickPriceAgo(int ago)
+{
+   if(ago < 0 || ago >= tickSampleCount) return 0.0;
+   int idx = tickWriteIndex - 1 - ago;
+   while(idx < 0) idx += 32;
+   return tickPrices[idx];
+}
+
+void DetectExhaustion(MqlTick &t, bool &allowBuy, bool &allowSell, int &buyScore, int &sellScore)
+{
+   allowBuy = false; allowSell = false; buyScore = 0; sellScore = 0;
+   double rsi[3], bandsUpper[1], bandsLower[1], adx[2], plusDI[2], minusDI[2], atrBuf[1];
+   if(CopyBuffer(rsiHandle, 0, 0, 3, rsi) < 3 ||
+      CopyBuffer(bandsHandle, 1, 0, 1, bandsUpper) < 1 ||
+      CopyBuffer(bandsHandle, 2, 0, 1, bandsLower) < 1 ||
+      CopyBuffer(adxHandle, 0, 0, 2, adx) < 2 ||
+      CopyBuffer(adxHandle, 1, 0, 2, plusDI) < 2 ||
+      CopyBuffer(adxHandle, 2, 0, 2, minusDI) < 2 ||
+      CopyBuffer(atrHandle, 0, 1, 1, atrBuf) < 1) { lastSignalText = "INDICATORS LOADING"; return; }
+
+   double hi = iHigh(_Symbol, PERIOD_M5, 0), lo = iLow(_Symbol, PERIOD_M5, 0);
+   double op = iOpen(_Symbol, PERIOD_M5, 0), cl = iClose(_Symbol, PERIOD_M5, 0);
+   double range = MathMax(hi - lo, _Point);
+   double lowerWick = MathMax(0.0, MathMin(op, cl) - lo);
+   double upperWick = MathMax(0.0, hi - MathMax(op, cl));
+   double atr = atrBuf[0];
+
+   bool tickTurnUp = false, tickTurnDown = false, tickSlowing = false;
+   int required = (int)MathMax(8, MathMin(24, TickSamplesForAnalysis));
+   if(tickSampleCount >= required)
+   {
+      double recentNet = TickPriceAgo(0) - TickPriceAgo(3);
+      double priorNet = TickPriceAgo(4) - TickPriceAgo(7);
+      double olderNet = TickPriceAgo(7) - TickPriceAgo(MathMin(required - 1, 11));
+      double turnThreshold = MathMax(2.0 * _Point, atr * 0.005);
+      tickTurnUp = (olderNet < -turnThreshold && recentNet > 0 && priorNet <= turnThreshold);
+      tickTurnDown = (olderNet > turnThreshold && recentNet < 0 && priorNet >= -turnThreshold);
+      tickSlowing = (MathAbs(recentNet) < MathAbs(olderNet) * 0.55);
+   }
+
+   bool lowerExtreme = (lo <= bandsLower[0] + MathMax(atr * 0.12, 2 * _Point)) || (lowerWick / range >= 0.35);
+   bool upperExtreme = (hi >= bandsUpper[0] - MathMax(atr * 0.12, 2 * _Point)) || (upperWick / range >= 0.35);
+   bool rsiBuy = (rsi[0] <= 45.0 && rsi[0] > rsi[1]) || (rsi[1] < 30.0 && rsi[0] > rsi[1]);
+   bool rsiSell = (rsi[0] >= 55.0 && rsi[0] < rsi[1]) || (rsi[1] > 70.0 && rsi[0] < rsi[1]);
+   bool directionBuy = (plusDI[0] > plusDI[1]) || (adx[0] < adx[1] && plusDI[0] >= minusDI[0]);
+   bool directionSell = (minusDI[0] > minusDI[1]) || (adx[0] < adx[1] && minusDI[0] >= plusDI[0]);
+
+   if(lowerExtreme) buyScore++;
+   if(rsiBuy) buyScore++;
+   if(tickTurnUp) buyScore++;
+   if(directionBuy && tickSlowing) buyScore++;
+   if(upperExtreme) sellScore++;
+   if(rsiSell) sellScore++;
+   if(tickTurnDown) sellScore++;
+   if(directionSell && tickSlowing) sellScore++;
+
+   // A real tick turn is mandatory; other evidence must reach the configurable confluence score.
+   allowBuy = tickTurnUp && buyScore >= (int)MathMax(2, MathMin(4, ExhaustionMinScore));
+   allowSell = tickTurnDown && sellScore >= (int)MathMax(2, MathMin(4, ExhaustionMinScore));
+   if(allowBuy && allowSell) { allowBuy = false; allowSell = false; }
+}
+
 void ManageOpenPositions(MqlTick &t)
 {
    double atrBuf[1], atr = 0.0;
@@ -446,6 +552,15 @@ void ManageOpenPositions(MqlTick &t)
       { extreme = favorable; GlobalVariableSet(key, extreme); }
       double retrace = (side == POSITION_TYPE_BUY ? extreme - favorable : favorable - extreme);
       double lockedMove = (side == POSITION_TYPE_BUY ? favorable - entry : entry - favorable);
+      bool allowBuy = false, allowSell = false; int buyScore = 0, sellScore = 0;
+      DetectExhaustion(t, allowBuy, allowSell, buyScore, sellScore);
+      bool oppositeReversal = (side == POSITION_TYPE_BUY ? allowSell : allowBuy);
+      if(profit > 0.0 && oppositeReversal)
+      {
+         if(!trade.PositionClose(ticket)) Print("Signal reversal close failed: ", trade.ResultRetcodeDescription());
+         else GlobalVariableDel(key);
+         continue;
+      }
       if(profit > 0.0 && lockedMove >= MinProfitLockPoints * _Point && retrace >= trailDistance)
       {
          if(!trade.PositionClose(ticket)) Print("Reversal close failed: ", trade.ResultRetcodeDescription());
@@ -468,7 +583,8 @@ void Panel()
       "\nSL Entry 1 / BUY: " + IntegerToString(slEntry1Points) + " points" +
       "\nSL Entry 2 / SELL: " + IntegerToString(slEntry2Points) + " points" +
       "\nTP: OFF" +
-      "\nEntry: predicted wick endpoints";
+      "\nEntry: predicted wick endpoints" +
+      "\nExhaustion: " + lastSignalText;
    ObjectSetString(0, P + "INFO", OBJPROP_TEXT, txt);
    if(ObjectFind(0, lotButtonName) >= 0) ObjectSetString(0, lotButtonName, OBJPROP_TEXT, "LOT: " + DoubleToString(lotSize, 2));
    UpdateM5Timer();
