@@ -1812,8 +1812,10 @@ bool powerClosePosition(ulong ticket,string reason){
       string suffix=IntegerToString((long)ticket);
       string key="PW_HMODE_"+suffix;
       string barKey="PW_HBAR_"+suffix;
+      string peakKey="PW_PEAK_"+suffix;
       if(GlobalVariableCheck(key))GlobalVariableDel(key);
       if(GlobalVariableCheck(barKey))GlobalVariableDel(barKey);
+      if(GlobalVariableCheck(peakKey))GlobalVariableDel(peakKey);
       return true;
    }
    Print("POWERFULL CLOSE FAILED symbol=",symbol," ticket=",ticket," reason=",reason,
@@ -1823,81 +1825,74 @@ bool powerClosePosition(ulong ticket,string reason){
 
 void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double candleOpen,
                           bool hasPreviousTick,double previousBid){
+   if(index<0||index>=ArraySize(powerSymbols))return;
    string symbol=powerSymbols[index];
    double pip=powerCfg[index].pipSize;
    double stopPips=powerCfg[index].stopPips;
-   if(pip<=0.0||stopPips<=0.0)return;
-   long barEndMs=((long)barTime+300)*1000;
-   long remainingMs=barEndMs-tick.time_msc;
-   bool last100ms=(remainingMs>=0&&remainingMs<=100);
+   double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+   if(pip<=0.0||point<=0.0)return;
+
+   bool allowBuy=false,allowSell=false;
+   int buyScore=0,sellScore=0;
+   powerDetectSignals(index,tick,allowBuy,allowSell,buyScore,sellScore);
+   double recentNet=powerTickPriceAgo(index,0)-powerTickPriceAgo(index,3);
+   double priorNet=powerTickPriceAgo(index,4)-powerTickPriceAgo(index,7);
+   double threshold=MathMax(2.0*point,4.0*point);
+   double atr=powerAtrPrice(index);
+   if(atr<=0.0)atr=powerForecastRangePips[index]*pip;
+   double minLock=powerCfg[index].minProfitLockPoints*point;
+   double trailDistance=MathMax(minLock,atr*powerCfg[index].reversalATRFactor);
+   int requiredHoldBars=(powerCfg[index].crossCandleHold?powerCfg[index].minHoldCandles:0);
+
    for(int i=PositionsTotal()-1;i>=0;i--){
       ulong ticket=PositionGetTicket(i);
       if(ticket==0)continue;
       if(PositionGetString(POSITION_SYMBOL)!=symbol)continue;
       if((long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
       if(!PositionSelectByTicket(ticket))continue;
+
       ENUM_POSITION_TYPE side=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
       double entry=PositionGetDouble(POSITION_PRICE_OPEN);
       double executable=(side==POSITION_TYPE_BUY?tick.bid:tick.ask);
       double movementPips=(side==POSITION_TYPE_BUY?(executable-entry)/pip:(entry-executable)/pip);
       double net=powerProjectedNet(ticket);
-      if(movementPips<=-stopPips){
-         powerClosePosition(ticket,"HARD_LOSS_GUARD_3PIP");
+      // Keep the existing server/EA hard-loss guard; only profitable exits are delayed.
+      if(stopPips>0.0&&movementPips<=-stopPips){
+         powerClosePosition(ticket,"HARD_LOSS_GUARD");
          continue;
-      }
-      bool alignedMomentum=hasPreviousTick&&
-         (side==POSITION_TYPE_BUY
-            ?(tick.bid>candleOpen+pip*0.10&&tick.bid>previousBid)
-            :(tick.bid<candleOpen-pip*0.10&&tick.bid<previousBid));
-      string suffix=IntegerToString((long)ticket);
-      string holdKey="PW_HMODE_"+suffix;
-      string holdBarKey="PW_HBAR_"+suffix;
-      double holdMode=GlobalVariableCheck(holdKey)?GlobalVariableGet(holdKey):0.0;
-      datetime holdBar=GlobalVariableCheck(holdBarKey)?(datetime)GlobalVariableGet(holdBarKey):0;
-      if(!powerCfg[index].crossCandleHold){
-         if(GlobalVariableCheck(holdKey))GlobalVariableDel(holdKey);
-         if(GlobalVariableCheck(holdBarKey))GlobalVariableDel(holdBarKey);
-         holdMode=0.0;
-         holdBar=0;
       }
 
-      // Only the final 100 ms + aligned momentum can arm a cross-candle hold.
-      if(powerCfg[index].crossCandleHold&&last100ms&&net>0.0&&alignedMomentum){
-         GlobalVariableSet(holdKey,1.0);
-         GlobalVariableSet(holdBarKey,(double)barTime);
+      datetime openedAt=(datetime)PositionGetInteger(POSITION_TIME);
+      int barsHeld=iBarShift(symbol,PERIOD_M5,openedAt,false);
+      if(barsHeld<0)barsHeld=0;
+
+      string peakKey="PW_PEAK_"+IntegerToString((long)ticket);
+      double favorable=(side==POSITION_TYPE_BUY?tick.bid:tick.ask);
+      if(!GlobalVariableCheck(peakKey))GlobalVariableSet(peakKey,favorable);
+      double peak=GlobalVariableGet(peakKey);
+      if((side==POSITION_TYPE_BUY&&favorable>peak)||(side==POSITION_TYPE_SELL&&favorable<peak)){
+         peak=favorable;
+         GlobalVariableSet(peakKey,peak);
+      }
+      double retrace=(side==POSITION_TYPE_BUY?peak-favorable:favorable-peak);
+      double lockedMove=(side==POSITION_TYPE_BUY?favorable-entry:entry-favorable);
+      bool oppositeReversal=(side==POSITION_TYPE_BUY?allowSell:allowBuy);
+      bool momentumStillStrong=(side==POSITION_TYPE_BUY?
+         (recentNet>=threshold&&priorNet>0.0):
+         (recentNet<=-threshold&&priorNet<0.0));
+
+      if(net>0.0&&barsHeld>=requiredHoldBars&&powerCfg[index].quickProfitClose&&oppositeReversal){
+         powerClosePosition(ticket,"PROFIT_EXIT_CONFIRMED_OPPOSITE_REVERSAL");
          continue;
       }
-      if(powerCfg[index].crossCandleHold&&holdMode>=1.0&&holdBar>0){
-         if(holdMode==1.0&&barTime>holdBar){
-            if(alignedMomentum){
-               GlobalVariableSet(holdKey,2.0);
-               GlobalVariableSet(holdBarKey,(double)barTime);
-               continue;
-            }
-            if(tick.time_msc>((long)barTime*1000+1000)&&net>0.0)
-               powerClosePosition(ticket,"NEXT_M5_MOMENTUM_NOT_CONFIRMED");
-            else if(net<=0.0)
-               powerClosePosition(ticket,"CROSS_CANDLE_PROFIT_GUARD");
-            continue;
-         }
-         // Keep an armed position through the remainder of its original candle.
-         // The hard-loss guard above remains active during this hold.
-         if(holdMode==1.0&&barTime==holdBar)continue;
-         if(holdMode>=2.0&&barTime==holdBar){
-            bool reversed=hasPreviousTick&&
-               (side==POSITION_TYPE_BUY
-                  ?tick.bid<previousBid-pip*0.10
-                  :tick.bid>previousBid+pip*0.10);
-            if(net<=0.0)powerClosePosition(ticket,"CROSS_CANDLE_PROFIT_GUARD");
-            else if(reversed)powerClosePosition(ticket,"CROSS_CANDLE_MOMENTUM_REVERSED");
-            continue;
-         }
+      if(net>0.0&&barsHeld>=requiredHoldBars&&!momentumStillStrong&&
+         lockedMove>=minLock&&retrace>=trailDistance){
+         powerClosePosition(ticket,"PROFIT_TRAIL_AFTER_MOMENTUM_FADE");
+         continue;
       }
-      if(powerCfg[index].quickProfitClose&&net>0.0)
-         powerClosePosition(ticket,"DYNAMIC_NET_PROFIT");
+      // Otherwise retain profitable positions across M5 candles until reversal/trailing criteria.
    }
 }
-
 void powerPublishState(int index,string status,string detail,datetime barTime){
    if(!powerAllowGatewayCalls)return; // never perform a synchronous HTTP request inside OnTick
    uint nowMs=GetTickCount();
