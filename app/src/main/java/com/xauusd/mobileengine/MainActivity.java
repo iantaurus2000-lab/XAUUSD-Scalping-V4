@@ -1700,8 +1700,8 @@ public class MainActivity extends Activity {
             addPanelRow(rows,"ENTRY LIMIT","Entry hanya setelah konfirmasi internal EXCELLENT dan geometri LIMIT valid.",Color.WHITE);
             addPanelRow(rows,"SL / TARGET","SL dan TP dihitung dari setup/ATR; validasi spread dan arah tetap berjalan.",Color.WHITE);
         }else if("POWERFULL".equals(activeMode)){
-            addPanelRow(rows,"MESIN AKTIF","POWERFULL • model distribusi historis M5 dijalankan EA MT5; bukan signal engine Android.",Color.CYAN);
-            addPanelRow(rows,"ENTRY / PENDING","Atur BUY/SELL LIMIT, lot, ukuran pip, dan persentil di detail POWERFULL.",Color.WHITE);
+            addPanelRow(rows,"MESIN AKTIF","POWERFULL • rata-rata rentang 3–5 candle M5 selesai; proyeksi Low–High sederhana di EA MT5.",Color.CYAN);
+            addPanelRow(rows,"ENTRY / PENDING","BUY 0,1% dan SELL 98,9% dari rentang wick-to-wick; atur sisi, lot, dan ukuran pip di detail POWERFULL.",Color.WHITE);
             addPanelRow(rows,"STATUS","Periksa heartbeat EA, kualitas model, jumlah sampel, dan status order.",Color.WHITE);
         }else{
             addPanelRow(rows,"MESIN AKTIF","OFF • tidak ada strategi otomatis yang dipilih untuk market ini.",Color.rgb(255,205,95));
@@ -1920,14 +1920,11 @@ public class MainActivity extends Activity {
         styleDialogInput(pipSize);
         fields.addView(pipSize,new LinearLayout.LayoutParams(-1,uiDp(48)));
 
-        Spinner percentile=new Spinner(this);
-        String[] options={"P50 • median historis","P60 • rentang agak lebar","P70 • default seimbang","P80 • rentang lebar","P90 • ekstrem historis"};
-        ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,options);
-        percentile.setAdapter(adapter);
-        percentile.setBackground(roundBg(Color.rgb(7,30,47),10));
-        int savedPercentile=gp.getInt("powerfull_percentile_"+symbol,70);
-        percentile.setSelection(savedPercentile==50?0:savedPercentile==60?1:savedPercentile==80?3:savedPercentile==90?4:2);
-        fields.addView(percentile,new LinearLayout.LayoutParams(-1,uiDp(48)));
+        TextView forecastNote=tv("SMART AUTO-POWERFULL memprediksi rentang candle M5 berikutnya dari rata-rata rentang 3–5 candle M5 yang sudah selesai. BUY LIMIT = 0,1% dan SELL LIMIT = 98,9% dari rentang proyeksi wick-ke-wick.",10);
+        forecastNote.setTextColor(Color.CYAN);
+        forecastNote.setGravity(Gravity.TOP|Gravity.START);
+        forecastNote.setPadding(uiDp(6),uiDp(6),uiDp(6),uiDp(6));
+        fields.addView(forecastNote,new LinearLayout.LayoutParams(-1,uiDp(78)));
 
         TextView pipNote=tv("Pip berbeda antar CFD/simbol. Isi nilai perubahan HARGA untuk 1 pip; contoh jika 1 pip = 0,10 harga, isi 0,10. Nilai 3 pip adalah batas risiko yang diinginkan, bukan jaminan kerugian maksimum saat gap/slippage.",10);
         pipNote.setTextColor(Color.rgb(255,205,95));
@@ -1979,8 +1976,8 @@ public class MainActivity extends Activity {
                 long age=at>0L?Math.max(0L,(System.currentTimeMillis()-at)/1000L):-1L;
                 String ageText=age<0L?"belum ada heartbeat":(age>8L?"STALE "+age+"s":"segar "+age+"s");
                 String summary="EA: "+current+" • "+ageText
-                    +"\nSample M5: "+samples
-                    +"\nRiwayat tersedia: "+days+" hari dari 365"
+                    +"\nCandle M5 dipakai: "+samples
+                    +"\nMetode: rata-rata rentang candle selesai"
                     +"\nPrediksi rentang: "+(range.isEmpty()?"--":range+" pip")
                     +"\nProyeksi Low–High: "+(low.isEmpty()?"--":low)+" – "+(high.isEmpty()?"--":high)
                     +(detail.isEmpty()?"":"\n"+detail);
@@ -1995,8 +1992,6 @@ public class MainActivity extends Activity {
                 double volume=Double.parseDouble(lot.getText().toString().trim().replace(',', '.'));
                 String pipText=pipSize.getText().toString().trim().replace(',','.');
                 double pip=pipText.isEmpty()?0.0:Double.parseDouble(pipText);
-                int[] quantiles={50,60,70,80,90};
-                int q=quantiles[Math.max(0,Math.min(quantiles.length-1,percentile.getSelectedItemPosition()))];
                 double minLot=minLotForSymbol(symbol);
                 if(!Double.isFinite(volume)||volume<minLot){
                     Toast.makeText(this,"Lot minimum "+symbol+" = "+lotText(minLot),Toast.LENGTH_LONG).show();
@@ -2029,8 +2024,7 @@ public class MainActivity extends Activity {
                     .putBoolean("powerfull_quick_profit_"+symbol,quickProfitSwitch.isChecked())
                     .putBoolean("powerfull_cross_candle_"+symbol,crossCandleSwitch.isChecked())
                     .putFloat("powerfull_lot_"+symbol,(float)volume)
-                    .putFloat("powerfull_pip_size_"+symbol,(float)pip)
-                    .putInt("powerfull_percentile_"+symbol,q);
+                    .putFloat("powerfull_pip_size_"+symbol,(float)pip);
                 powerEditor.apply();
                 applyStrategyIndicatorProfile();
                 queueNativeIndicatorState();
@@ -2038,10 +2032,10 @@ public class MainActivity extends Activity {
                     +" buyLimit="+buyLimitSwitch.isChecked()+" sellLimit="+sellLimitSwitch.isChecked()
                     +" reforecast="+reforecastSwitch.isChecked()+" quickProfit="+quickProfitSwitch.isChecked()
                     +" crossCandleHold="+crossCandleSwitch.isChecked()
-                    +" lot="+lotText(volume)+" pipSize="+String.format(Locale.US,"%.8f",pip)+" quantile=P"+q
-                    +" stopLossPips=3 (mandatory) • legacy auto preferences unchanged");
+                    +" lot="+lotText(volume)+" pipSize="+String.format(Locale.US,"%.8f",pip)
+                    +" forecast=mean of completed M5 ranges • stopLossPips=3 (mandatory) • legacy auto preferences unchanged");
                 Toast.makeText(this,enabled.isChecked()
-                    ?"POWERFULL tersimpan • menunggu validasi model, tick, spread, dan SL MT5"
+                    ?"POWERFULL tersimpan • menunggu data candle M5 dan eksekusi pending order MT5"
                     :"POWERFULL nonaktif • posisi terbuka yang ada tetap dikelola sampai selesai",
                     Toast.LENGTH_LONG).show();
                 dialog.dismiss();
