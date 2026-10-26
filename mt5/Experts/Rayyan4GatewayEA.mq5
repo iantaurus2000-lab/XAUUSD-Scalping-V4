@@ -1710,7 +1710,9 @@ bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick
       powerPublishState(index,"BLOCKED_SYMBOL_SPEC","SYMBOL_POINT/TICK_SIZE invalid",barTime);
       return false;
    }
-   double gap=MathMax(brokerMin,tickSize)+tickSize;
+   // Match the tested EA's default minimum entry distance (30 points),
+   // while respecting any stricter broker stop level.
+   double gap=MathMax(30.0,stopPoints+1.0)*point;
    ENUM_ORDER_TYPE type;
    double entry=target;
    if(buySide){
