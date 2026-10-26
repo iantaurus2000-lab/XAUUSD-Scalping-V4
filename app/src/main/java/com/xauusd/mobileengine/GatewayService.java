@@ -364,14 +364,23 @@ public final class GatewayService extends Service {
         boolean crossCandle=p.getBoolean("powerfull_cross_candle_"+suffix,true);
         double lot=p.getFloat("powerfull_lot_"+suffix,0.0f);
         double pip=p.getFloat("powerfull_pip_size_"+suffix,0.0f);
-        int percentile=p.getInt("powerfull_percentile_"+suffix,70); // retained for old APK/EA protocol compatibility
-        double stopPips=3.0;
+        int percentile=75; // match the MT5 test EA's default 75th-percentile wick projection
+        double stopPips=3.0; // existing POWERFULL hard-loss guard is retained
+        int pendingSeconds=p.getInt("powerfull_pending_seconds_"+suffix,3);
+        double maxPendingATR=p.getFloat("powerfull_max_pending_atr_"+suffix,1.5f);
+        int minHoldCandles=p.getInt("powerfull_min_hold_candles_"+suffix,2);
+        double reversalATRFactor=p.getFloat("powerfull_reversal_atr_factor_"+suffix,0.25f);
+        int minProfitLockPoints=5;
         double minimumLot=("BTCUSDm".equals(symbol)||"ETHUSDm".equals(symbol))?0.10:0.01;
         boolean valid=Double.isFinite(lot)&&lot>=minimumLot
-            &&Double.isFinite(pip)&&pip>0.0;
+            &&Double.isFinite(pip)&&pip>0.0
+            &&pendingSeconds>=1&&pendingSeconds<=10
+            &&Double.isFinite(maxPendingATR)&&maxPendingATR>=0.5&&maxPendingATR<=5.0
+            &&minHoldCandles>=0&&minHoldCandles<=12
+            &&Double.isFinite(reversalATRFactor)&&reversalATRFactor>=0.05&&reversalATRFactor<=2.0;
         boolean hasEntrySide=buyLimit||sellLimit;
         boolean enabled=requested&&valid&&hasEntrySide&&!strategyConflict;
-        String reason=enabled?"READY":(!requested?"DISABLED":(strategyConflict?"STRATEGY_CONFLICT":(!valid?"CONFIG_INVALID":"NO_ENTRY_SIDE")));
+        String reason=enabled?"READY":(!requested?"DISABLED":(strategyConflict?"STRATEGY_CONFLICT":(!valid?"CONFIG_INVALID":(!hasEntrySide?"NO_ENTRY_SIDE":"CONFIG_INVALID"))));
         return "symbol="+symbol
             +";enabled="+(enabled?"1":"0")
             +";buyLimit="+(buyLimit?"1":"0")
@@ -383,6 +392,11 @@ public final class GatewayService extends Service {
             +";pip="+String.format(Locale.US,"%.8f",pip)
             +";percentile="+percentile
             +";stopPips="+String.format(Locale.US,"%.2f",stopPips)
+            +";pendingSeconds="+pendingSeconds
+            +";maxPendingATR="+String.format(Locale.US,"%.2f",maxPendingATR)
+            +";minHoldCandles="+minHoldCandles
+            +";reversalATRFactor="+String.format(Locale.US,"%.2f",reversalATRFactor)
+            +";minProfitLockPoints="+minProfitLockPoints
             +";reason="+reason;
     }
 
