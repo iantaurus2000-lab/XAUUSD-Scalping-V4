@@ -10,15 +10,15 @@
 - Legacy `RAYYAN_MAGIC = 4104407`, the Fibo/wick signal engine, and its order queue remain separate.
 - This feature branch is not the base/build branch. Do not run the existing build workflow until explicitly instructed.
 
-## Forecast model
+## Simple next-candle forecast
 
-- Symbols: `XAUUSDm`, `BTCUSDm`, and `ETHUSDm`.
-- Timeframe: M5; source is MT5 `CopyRates`, not an external price feed.
-- Each symbol uses its own configured price movement per pip. A pip setting is the price delta represented by one pip, not the MT5 point by assumption.
-- The model filters completed M5 bars to the last 365 calendar days, sorts High-Low range sizes, selects configured P50/P60/P70/P80/P90 quantile, and scales by the ratio between the last 14-bar average and the year-window average (bounded 0.50–2.00).
-- At least 2,000 valid candles and 350 days of history are required. If history is shorter, the model fails closed and reports the actual loaded day coverage.
-- Projected High/Low use the new candle's Open as anchor and a historical average upper-range share, clamped between 35% and 65%.
-- No third-party indicator is used. This is a transparent baseline/heuristic model, not a trained or statistically validated predictor. Percentile (P50-P90) describes historical range distribution; it is not the probability that price will touch an entry level. Forward performance remains unverified until tick-based out-of-sample and demo tests are performed.
+- Symbols: `XAUUSDm`, `BTCUSDm`, and `ETHUSDm`; timeframe M5, using MT5 `CopyRates`.
+- Forecast range = arithmetic mean of the last 3–5 completed M5 candle ranges (`High - Low`). Only 3 valid completed candles are required; no 2,000-bar minimum, 350-day history gate, quantile, or distribution scaling.
+- The next candle's projected range is centered symmetrically around its observed M5 Open. This is a deliberately simple heuristic, not a reliable guarantee of the future high/low.
+- BUY LIMIT = 0.1% above projected Low; SELL LIMIT = 98.9% of the full projected wick-to-wick range above projected Low. Prices are rounded to the symbol's tradable tick size.
+- The historical percentile setting is no longer shown in Android and is ignored by the forecast; the old preference is tolerated for compatibility.
+- Temporary gateway heartbeat delays do not cancel the last valid config. At startup, entries remain OFF until at least one valid per-symbol config is received.
+- This model is not statistically validated. Forward performance remains unverified until tick-based out-of-sample and demo tests are performed.
 
 ## Independent feature controls
 
@@ -35,12 +35,12 @@ The switches are per symbol (`XAUUSDm`, `BTCUSDm`, and `ETHUSDm`); saving one sy
 
 ## Entry and order lifecycle
 
-- At the start of a new M5 candle, attempt a BUY LIMIT at 1% of forecast range above projected Low and a SELL LIMIT at 99% of forecast range above projected Low.
-- The initial BUY LIMIT + SELL LIMIT pair must be submitted immediately within the first 1-2 seconds of each new M5 candle (EA hard deadline: 2 seconds, aiming for the first available tick near 1 second). If that window is missed, do not make a late initial entry; wait for the next M5 candle. Forecast replacements are a separate path and require the old pending-order count to be confirmed zero before replacement.
-- Pending orders use specified expiration at the M5 candle close. A broker which does not support specified expiration is not eligible for this strategy until a safe expiry mechanism is agreed.
-- A separate magic number scopes all Powerfull order queries/deletes. If one side of a pair is rejected, the EA attempts to roll back the other still-pending side and prevents duplicate seeding in that bar.
-- A live Powerfull position blocks a new pair for that symbol while the position is open; no unlimited stacking.
-- When current M5 range materially exceeds the forecast, or the realized range falls materially below square-root-time pace after at least 60 seconds, a bounded reforecast can cancel/re-price pending orders. At most two re-plans are attempted per candle. This is a heuristic, not proof that a target range is impossible.
+- When a new M5 candle is detected, attempt the enabled BUY/SELL LIMIT orders using the simple forecast above. The arbitrary first-2-seconds deadline is removed; a late attempt can still fail if price has already crossed a limit level or the broker's minimum-distance rules no longer permit it.
+- The strategy no longer re-forecasts or replaces pending orders based on intrabar range/distribution calculations. Pending orders keep their original levels and expire at the end of that M5 candle.
+- Broker-compatible specified expiration, valid LIMIT direction, tick/point/volume specifications, demo-account mode, hedging mode, trading permissions, stop distance, and trade return-code checks remain. These are execution/safety requirements, not a guarantee that the broker will accept an order.
+- The extra spread threshold that previously blocked entries has been removed. The broker may still reject an order because of its own rules, price movement, unavailable trading, or execution conditions.
+- A separate magic number scopes all POWERFULL order queries/deletes. If one side of a pair is rejected, the EA attempts to roll back the other still-pending side and prevents duplicate seeding in that bar.
+- A live POWERFULL position blocks a new pair for that symbol while the position is open; no unlimited stacking.
 
 ## Position management and risk
 
@@ -48,18 +48,18 @@ The switches are per symbol (`XAUUSDm`, `BTCUSDm`, and `ETHUSDm`); saving one sy
 - Because price can gap, a broker can reject close/modify requests, or slippage can occur, the realised loss is not guaranteed to cap at exactly 3 pips.
 - Exit logic estimates net floating profit with swap and an estimate of exit commission and attempts to close when estimated net is positive. Realised net profit can still differ due to slippage, fees, quote movement and broker execution.
 - In the final 100 ms of an M5 bar, a profitable position may arm a cross-bar hold if tick direction is aligned. The next bar must confirm momentum; if not confirmed, the position is exited when the short confirmation window passes. If the terminal receives no tick in the final 100 ms, no hold is armed.
-- Fresh-tick, terminal permission, demo-account, symbol specification, spread, stop-level, lot step, entry geometry, pending expiry, and order return-code checks are required before creating a pair.
+- A valid current tick, terminal permission, demo-account, symbol specification, stop-level, lot step, basic LIMIT direction, pending expiry, and order return-code checks remain before creating a pair. The former extra spread threshold is removed.
 
 ## Manual acceptance checklist — NOT RUN
 
 1. Verify Android menu shows SMART AUTO-POWERFULL separately from legacy Smart Auto Entry.
-2. Verify save/load of each market's enabled, lot, pip-size and percentile keys; ensure old auto preferences do not change.
+2. Verify save/load of each market's enabled, lot and pip-size settings; percentile is no longer part of the UI/model.
 3. Verify the three EA config requests are round-robin and status fields are scoped by symbol.
-4. Verify fresh M5 history reports actual days/samples; missing history blocks entry.
+4. Verify the simple forecast uses 3–5 completed M5 bars and reports the actual sample count.
 5. In MT5 Strategy Tester/demo, confirm only `POWERFULL_MAGIC` orders are touched by cancel/re-price code.
-6. Test the initial pair inside the first 1-2 seconds of a new M5 candle; confirm per-side ON/OFF, pending expiry at M5 close, and server SL on each enabled order.
+6. Test entry after new M5 detection without a 2-second deadline; confirm per-side ON/OFF, pending expiry at M5 close, and server SL on each enabled order.
 7. Force a rejected second order and verify rollback/partial-uncertain status without duplicate pair.
-8. Exercise both upward and under-pace reforecast; verify old pending count is zero before replacement.
+8. Verify pending levels remain fixed for the candle and no intrabar reforecast/replacement is attempted.
 9. Test each market's actual pip/tick/point/volume/stops/expiry specifications before enabling it.
 10. Test each feature toggle independently, including profitable tick close, mandatory ~3-pip software guard plus server SL, late-candle hold, next-bar confirmation, momentum reversal, terminal disconnect, stale quote and order rejection.
 11. Verify legacy `/next` + `/ack` orders and the original Fibo/wick pathway behave as before.
