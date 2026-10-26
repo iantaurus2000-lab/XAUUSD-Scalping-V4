@@ -107,6 +107,13 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path build\ea | Out-Null
+          # MetaEditor resolves standard headers relative to its terminal data tree.
+          # Also stage the official Include tree beside the repository sources so external-path compilation resolves headers.
+          $includeSource = Get-ChildItem @('C:\Program Files\MetaTrader 5\MQL5\Include', 'C:\Program Files (x86)\MetaTrader 5\MQL5\Include', (Join-Path $env:APPDATA 'MetaQuotes\Terminal')) -Filter 'Trade.mqh' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $includeSource) { throw 'Could not locate official MQL5 Include\Trade\Trade.mqh.' }
+          $includeRoot = $includeSource.Directory.Parent.FullName
+          New-Item -ItemType Directory -Force -Path 'Include' | Out-Null
+          Copy-Item (Join-Path $includeRoot '*') 'Include' -Recurse -Force
           $sources = @(
             @{ Source = 'mt5/Experts/Rayyan4GatewayEA.mq5'; Name = 'Rayyan4GatewayEA' },
             @{ Source = 'MT5_EA_Test/uji-test-mt5.mq5'; Name = 'uji-test-mt5' }
