@@ -1974,6 +1974,12 @@ void managePowerfullSymbol(int index){
 
    // Only timer cycles perform model/config/order work; OnTick manages positions.
    if(powerFastTickOnly)return;
+   // On EA startup, do not interpret the zero-initialized config as an explicit OFF.
+   // Wait for the first per-symbol APK/Gateway config before deleting any pending order.
+   if(powerConfigReceivedMs[index]==0){
+      powerPublishState(index,"CONFIG_WAIT","Waiting for the first SMART AUTO-POWERFULL config; existing pending orders preserved",barTime);
+      return;
+   }
    if(!powerCfg[index].enabled){
       powerCancelPendingForSymbol(symbol);
       powerPublishState(index,"OFF",powerCfg[index].reason==""?"POWERFULL disabled":powerCfg[index].reason,barTime);
@@ -2017,7 +2023,7 @@ void managePowerfullSymbol(int index){
       return;
    }
    // Keep the most recent forecast for order targets. Existing orders are not repriced.
-   if(newBar||powerForecastRangePips[index]<=0.0)
+   if(powerForecastRangePips[index]<=0.0)
       powerForecastRangePips[index]=powerBaseRangePips[index];
    powerProjectBounds(index,tick.bid);
 
