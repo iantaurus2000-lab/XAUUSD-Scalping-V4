@@ -45,8 +45,6 @@ datetime lastIndicatorBar=0, lastIndicatorDiag=0;
 
 #define POWERFULL_MAGIC 4104451
 #define POWERFULL_HISTORY_LIMIT 105120
-#define POWERFULL_MIN_HISTORY 2000
-#define POWERFULL_MIN_HISTORY_DAYS 350
 #define POWERFULL_CONFIG_TIMEOUT_MS 300
 #define POWERFULL_STATUS_TIMEOUT_MS 100
 #define POWERFULL_GATEWAY_MIN_GAP_MS 500
@@ -1281,6 +1279,8 @@ void managePowerfullAllMarkets(bool pollConfig){
 }
 
 bool powerBuildModel(int index){
+   // Simple forecast: average up to five COMPLETED M5 wick-to-wick ranges.
+   // No long-history minimum, percentile, or historical-distribution scaling.
    powerModelGood[index]=false;
    string symbol=powerSymbols[index];
    double pip=powerCfg[index].pipSize;
@@ -1288,84 +1288,41 @@ bool powerBuildModel(int index){
    MqlRates rates[];
    ArraySetAsSeries(rates,true);
    ResetLastError();
-   int copied=CopyRates(symbol,PERIOD_M5,1,POWERFULL_HISTORY_LIMIT,rates);
-   if(copied<POWERFULL_MIN_HISTORY){
-      powerModelGood[index]=false;
+   int copied=CopyRates(symbol,PERIOD_M5,1,5,rates);
+   if(copied<3){
       powerHistorySamples[index]=MathMax(0,copied);
-      powerHistoryDays[index]=(copied>0&&ArraySize(rates)>=copied&&rates[copied-1].time>0)
-         ?(int)((TimeCurrent()-rates[copied-1].time)/86400):0;
-      Print("POWERFULL HISTORY SHORT symbol=",symbol," copied=",copied,
-            " minimum=",POWERFULL_MIN_HISTORY," days=",powerHistoryDays[index],
-            " err=",GetLastError());
+      powerHistoryDays[index]=0;
+      Print("POWERFULL FORECAST WAIT symbol=",symbol," completedM5=",copied," required=3 err=",GetLastError());
       return false;
    }
-   datetime cutoff=TimeCurrent()-365*24*60*60;
-   double ranges[];
-   ArrayResize(ranges,copied);
-   int n=0;
-   double rangeSum=0.0,upperSum=0.0,recentSum=0.0;
-   int recentCount=0;
-   datetime oldest=0;
+   double rangeSum=0.0;
+   int validBars=0;
    for(int i=0;i<copied;i++){
-      if(rates[i].time<cutoff)continue;
       double span=rates[i].high-rates[i].low;
-      if(!MathIsValidNumber(span)||span<=0.0||rates[i].open<=0.0)continue;
-      double rangePips=span/pip;
-      if(!MathIsValidNumber(rangePips)||rangePips<=0.0)continue;
-      ranges[n++]=rangePips;
-      rangeSum+=rangePips;
-      upperSum+=(rates[i].high-rates[i].open)/span;
-      if(oldest==0||rates[i].time<oldest)oldest=rates[i].time;
-      if(i<14){recentSum+=rangePips;recentCount++;}
+      if(rates[i].time<=0||!MathIsValidNumber(span)||span<=0.0)continue;
+      if(rates[i].low<=0.0||rates[i].high<rates[i].low)continue;
+      rangeSum+=span/pip;
+      validBars++;
    }
-   powerHistorySamples[index]=n;
-   powerHistoryDays[index]=oldest>0?(int)((TimeCurrent()-oldest)/86400):0;
-   if(n<POWERFULL_MIN_HISTORY||recentCount<5){
-      powerModelGood[index]=false;
-      Print("POWERFULL HISTORY WINDOW TOO SHORT symbol=",symbol," bars=",n,
-            " recent=",recentCount," days=",powerHistoryDays[index]);
-      return false;
-   }
-   if(powerHistoryDays[index]<POWERFULL_MIN_HISTORY_DAYS){
-      powerModelGood[index]=false;
-      Print("POWERFULL HISTORY COVERAGE SHORT symbol=",symbol,
-            " days=",powerHistoryDays[index]," requiredDays=",POWERFULL_MIN_HISTORY_DAYS,
-            " samples=",n," | increase MT5 Max bars/load more M5 history");
-      return false;
-   }
-   ArrayResize(ranges,n);
-   ArraySort(ranges);
-   int percentile=powerCfg[index].percentile;
-   if(percentile<50||percentile>90)percentile=70;
-   int q=(int)MathFloor((percentile/100.0)*(n-1));
-   if(q<0)q=0;
-   if(q>=n)q=n-1;
-   double quantileRange=ranges[q];
-   double historicalMean=rangeSum/n;
-   double recentMean=recentSum/recentCount;
-   double scale=historicalMean>0.0?recentMean/historicalMean:1.0;
-   scale=MathMax(0.50,MathMin(2.00,scale));
-   double forecast=quantileRange*scale;
-   double upperShare=MathMax(0.35,MathMin(0.65,upperSum/n));
+   powerHistorySamples[index]=validBars;
+   powerHistoryDays[index]=0;
+   if(validBars<3)return false;
+   double forecast=rangeSum/validBars;
    if(!MathIsValidNumber(forecast)||forecast<=0.0)return false;
    powerBaseRangePips[index]=forecast;
    powerForecastRangePips[index]=forecast;
-   powerUpperShare[index]=upperShare;
+   powerUpperShare[index]=0.50;
    powerModelGood[index]=true;
    powerModelBuiltAtMs[index]=GetTickCount();
-   Print("POWERFULL MODEL symbol=",symbol," samples=",n," historyDays=",powerHistoryDays[index],
-         " P",percentile,"=",DoubleToString(quantileRange,2)," pip scale=",DoubleToString(scale,2),
-         " rangeForecast=",DoubleToString(forecast,2));
+   Print("POWERFULL SIMPLE FORECAST symbol=",symbol," bars=",validBars," avgRange=",DoubleToString(forecast,2)," pip; method=mean of completed M5 candles");
    return true;
 }
 
 void powerProjectBounds(int index,double candleOpen){
-   double pip=powerCfg[index].pipSize;
-   double span=powerForecastRangePips[index]*pip;
-   double upper=span*powerUpperShare[index];
-   double lower=span-upper;
-   powerProjectedLow[index]=candleOpen-lower;
-   powerProjectedHigh[index]=candleOpen+upper;
+   double span=powerForecastRangePips[index]*powerCfg[index].pipSize;
+   double half=span*0.50;
+   powerProjectedLow[index]=candleOpen-half;
+   powerProjectedHigh[index]=candleOpen+half;
 }
 
 string powerShortSymbol(string symbol){
@@ -1563,15 +1520,8 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
          "POWERFULL requires MT5 hedging mode with opposite positions allowed; legacy order paths remain untouched",barTime);
       return false;
    }
-   long elapsedMs=tick.time_msc-(long)barTime*1000;
-   // Initial dual-LIMIT pair must be submitted immediately, within the first
-   // 2 seconds of the new M5 candle (target: about 1 second when ticks arrive).
-   // Forecast replacements remain a separate path and require confirmed cleanup.
-   if(!powerReplacementPending[index]&&(elapsedMs<0||elapsedMs>2000)){
-      powerLastSeedBar[index]=barTime;
-      powerPublishState(index,"MISSED_ENTRY_WINDOW","Initial dual LIMIT not sent within first 1-2 seconds of M5; wait for the next candle",barTime);
-      return false;
-   }
+   // No arbitrary 2-second deadline: attempt when the new candle is observed.
+   // Minimal limit-direction geometry checks below still prevent invalid orders.
    if(!TerminalInfoInteger(TERMINAL_CONNECTED)||!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)
       ||!MQLInfoInteger(MQL_TRADE_ALLOWED)||!AccountInfoInteger(ACCOUNT_TRADE_ALLOWED)){
       powerPublishState(index,"BLOCKED_TRADING_DISABLED","Terminal/account trading permission unavailable",barTime);
@@ -1600,18 +1550,12 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
       powerPublishState(index,"BLOCKED_SL_TOO_CLOSE","Broker stop level exceeds configured 3-pip loss guard",barTime);
       return false;
    }
-   double spreadPips=(tick.ask-tick.bid)/pip;
-   double spreadCap=MathMin(stopPips*0.50,powerForecastRangePips[index]*0.02);
-   if(!MathIsValidNumber(spreadPips)||spreadPips<0.0||spreadPips>spreadCap){
-      powerPublishState(index,"BLOCKED_SPREAD","spread="+DoubleToString(spreadPips,2)+
-                        " pip; limit="+DoubleToString(spreadCap,2)+" pip",barTime);
-      return false;
-   }
    double low=powerProjectedLow[index];
    double high=powerProjectedHigh[index];
    double span=powerForecastRangePips[index]*pip;
-   double buyEntry=powerFloorToTick(symbol,low+span*0.01);
-   double sellEntry=powerCeilToTick(symbol,low+span*0.99);
+   // Percentages span the full projected wick-to-wick range.
+   double buyEntry=powerFloorToTick(symbol,low+span*0.001);  // 0.1% above Low
+   double sellEntry=powerCeilToTick(symbol,low+span*0.989); // 98.9% from Low
    bool buyGeometryOk=!powerCfg[index].buyLimitEnabled||
       (buyEntry>0.0&&buyEntry<tick.ask-minDistance-tickSize);
    bool sellGeometryOk=!powerCfg[index].sellLimitEnabled||
@@ -1698,8 +1642,8 @@ bool powerPlacePair(int index,datetime barTime,const MqlTick &tick){
    if(powerCfg[index].sellLimitEnabled)sideText+=(sideText==""?"":" + ")+ "SELL LIMIT";
    Print("POWERFULL ENTRY PLACED symbol=",symbol," side=",sideText,
          " bar=",TimeToString(barTime,TIME_DATE|TIME_MINUTES),
-         " samples=",powerHistorySamples[index]," days=",powerHistoryDays[index],
-         " quantile=P",powerCfg[index].percentile," range=",DoubleToString(powerForecastRangePips[index],2),
+         " forecastBars=",powerHistorySamples[index],
+         " method=MEAN_M5_RANGE range=",DoubleToString(powerForecastRangePips[index],2),
          " low=",DoubleToString(low,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
          " high=",DoubleToString(high,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
          " buyTicket=",buyTicket," buy=",buyEntry," sellTicket=",sellTicket," sell=",sellEntry,
@@ -1906,12 +1850,7 @@ void managePowerfullSymbol(int index){
    // OnTick handles open positions only. Model loading, HTTP, cancellations and new
    // entry submission stay on the throttled timer path so the legacy order queue is isolated.
    if(powerFastTickOnly)return;
-   bool configFresh=powerConfigFresh(index);
-   if(!configFresh){
-      powerCancelPendingForSymbol(symbol);
-      powerPublishState(index,"CONFIG_STALE","No fresh /power_config heartbeat; new entries locked",barTime);
-      return;
-   }
+   // Continue using the last valid config during temporary gateway delays.
    if(!powerCfg[index].enabled){
       powerCancelPendingForSymbol(symbol);
       powerPublishState(index,"OFF",powerCfg[index].reason==""?"POWERFULL disabled":powerCfg[index].reason,barTime);
@@ -1929,17 +1868,14 @@ void managePowerfullSymbol(int index){
       powerProjectedLow[index]=0.0;
       powerProjectedHigh[index]=0.0;
    }
-   bool modelDue=!powerModelGood[index]||powerModelBuiltAtMs[index]==0||
+   bool modelDue=newBar||!powerModelGood[index]||powerModelBuiltAtMs[index]==0||
       (uint)(nowMs-powerModelBuiltAtMs[index])>=15*60*1000;
    if(modelDue&&(powerLastModelAttemptMs[index]==0||
       (uint)(nowMs-powerLastModelAttemptMs[index])>=30000)){
       powerLastModelAttemptMs[index]=nowMs;
       if(!powerBuildModel(index)){
          powerCancelPendingForSymbol(symbol);
-         powerPublishState(index,"HISTORY_NOT_READY","Need >= "+IntegerToString(POWERFULL_MIN_HISTORY_DAYS)+
-                           " days and >= "+IntegerToString(POWERFULL_MIN_HISTORY)+
-                           " valid M5 bars within last 365 days; loadedDays="+
-                           IntegerToString(powerHistoryDays[index])+" samples="+
+         powerPublishState(index,"FORECAST_WAIT","Need at least 3 completed M5 candles; loaded="+
                            IntegerToString(powerHistorySamples[index]),barTime);
          return;
       }
