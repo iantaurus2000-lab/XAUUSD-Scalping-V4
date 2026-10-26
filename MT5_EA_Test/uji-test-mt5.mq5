@@ -125,8 +125,6 @@ void ReadSLField(int which)
 
 void RunStrategy()
 {
-   if(!running) return;
-   if(DemoAccountOnly && !IsDemo()) return;
    if(!TerminalInfoInteger(TERMINAL_CONNECTED) ||
       !TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) ||
       !MQLInfoInteger(MQL_TRADE_ALLOWED) ||
@@ -134,11 +132,13 @@ void RunStrategy()
 
    MqlTick t;
    if(!SymbolInfoTick(_Symbol, t) || t.ask <= 0 || t.bid <= 0) return;
+   ManageOpenPositions(t);
+   if(!running) { CancelPendings(); return; }
+   if(DemoAccountOnly && !IsDemo()) return;
    datetime bar = iTime(_Symbol, PERIOD_M5, 0);
    if(bar <= 0) return;
    currentBar = bar;
 
-   ManageOpenPositions(t);
    if(EntriesThisBar(bar) >= MaxEntriesPerM5Candle) { CancelPendings(); return; }
 
    double hi = iHigh(_Symbol, PERIOD_M5, 0);
@@ -220,6 +220,15 @@ void UpdateLimit(ENUM_ORDER_TYPE type, double price, datetime expiry)
    if(ticket != 0)
    {
       if(!OrderSelect(ticket)) return;
+      ENUM_ORDER_TYPE existingType = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      if(existingType != type)
+      {
+         if(!trade.OrderDelete(ticket)) { Print("Pending type switch delete failed: ", trade.ResultRetcodeDescription()); return; }
+         ticket = 0;
+      }
+      if(ticket == 0) { /* create the correctly typed pending order below */ }
+      else
+      {
       double old = OrderGetDouble(ORDER_PRICE_OPEN);
       datetime oldExp = (datetime)OrderGetInteger(ORDER_TIME_EXPIRATION);
       if(MathAbs(old - price) >= 2 * _Point || oldExp != expiry ||
@@ -229,6 +238,7 @@ void UpdateLimit(ENUM_ORDER_TYPE type, double price, datetime expiry)
             Print("OrderModify failed: ", trade.ResultRetcodeDescription());
       }
       return;
+      }
    }
 
    bool ok = false;
@@ -263,13 +273,16 @@ bool OurPosition()
 
 ulong FindPending(ENUM_ORDER_TYPE type)
 {
+   bool wantBuy = (type == ORDER_TYPE_BUY_LIMIT || type == ORDER_TYPE_BUY_STOP);
    for(int i = OrdersTotal()-1; i >= 0; i--)
    {
       ulong ticket = OrderGetTicket(i);
       if(ticket == 0) continue;
-      if(OrderGetString(ORDER_SYMBOL) != _Symbol ||
-         (ulong)OrderGetInteger(ORDER_MAGIC) != MagicNumber) continue;
-      if((ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE) == type) return ticket;
+      if(OrderGetString(ORDER_SYMBOL) != _Symbol || (ulong)OrderGetInteger(ORDER_MAGIC) != MagicNumber) continue;
+      ENUM_ORDER_TYPE existing = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      bool existingBuy = (existing == ORDER_TYPE_BUY_LIMIT || existing == ORDER_TYPE_BUY_STOP);
+      bool existingPending = (existing == ORDER_TYPE_BUY_LIMIT || existing == ORDER_TYPE_BUY_STOP || existing == ORDER_TYPE_SELL_LIMIT || existing == ORDER_TYPE_SELL_STOP);
+      if(existingPending && existingBuy == wantBuy) return ticket;
    }
    return 0;
 }
@@ -387,6 +400,10 @@ double EstimateMoney(double points)
 void UpdateM5Timer()
 {
    if(ObjectFind(0, timerTextName) < 0) return;
+   long chartHeight = ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS, 0);
+   int circleY = (int)MathMax(120, chartHeight - 125);
+   ObjectSetInteger(0, timerCircleName, OBJPROP_YDISTANCE, circleY);
+   ObjectSetInteger(0, timerTextName, OBJPROP_YDISTANCE, circleY + 33);
    datetime bar = iTime(_Symbol, PERIOD_M5, 0);
    int remain = (int)(bar + PeriodSeconds(PERIOD_M5) - TimeCurrent());
    remain = (int)MathMax(0, MathMin(PeriodSeconds(PERIOD_M5), remain));
