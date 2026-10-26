@@ -1700,9 +1700,9 @@ public class MainActivity extends Activity {
             addPanelRow(rows,"ENTRY LIMIT","Entry hanya setelah konfirmasi internal EXCELLENT dan geometri LIMIT valid.",Color.WHITE);
             addPanelRow(rows,"SL / TARGET","SL dan TP dihitung dari setup/ATR; validasi spread dan arah tetap berjalan.",Color.WHITE);
         }else if("POWERFULL".equals(activeMode)){
-            addPanelRow(rows,"MESIN AKTIF","POWERFULL • rata-rata rentang 3–5 candle M5 selesai; proyeksi Low–High sederhana di EA MT5.",Color.CYAN);
-            addPanelRow(rows,"ENTRY / PENDING","BUY 0,1% dan SELL 98,9% dari rentang wick-to-wick; atur sisi, lot, dan ukuran pip di detail POWERFULL.",Color.WHITE);
-            addPanelRow(rows,"STATUS","Periksa heartbeat EA, kualitas model, jumlah sampel, dan status order.",Color.WHITE);
+            addPanelRow(rows,"MESIN AKTIF","POWERFULL • persentil upper/lower wick M5 + ATR + sinyal exhaustion tick pada EA MT5.",Color.CYAN);
+            addPanelRow(rows,"ENTRY / PENDING","Pending per sisi dipasang pada detik akhir M5; pending jauh dibatalkan berdasarkan ATR. Entry mengikuti sinyal reversal tick/wick.",Color.WHITE);
+            addPanelRow(rows,"STATUS","Posisi profit menunggu minimal candle hold, lalu exit saat reversal berlawanan atau trailing profit terpenuhi.",Color.WHITE);
         }else{
             addPanelRow(rows,"MESIN AKTIF","OFF • tidak ada strategi otomatis yang dipilih untuk market ini.",Color.rgb(255,205,95));
             addPanelRow(rows,"AKTIFKAN","Buka Strategy Control lalu pilih tepat satu: STANDAR, EXCELLENT, atau POWERFULL.",Color.WHITE);
@@ -1785,7 +1785,7 @@ public class MainActivity extends Activity {
         root.setPadding(uiDp(18),uiDp(14),uiDp(18),uiDp(12));root.setBackground(roundBg(Color.rgb(3,18,30),16));
         TextView title=tv("STRATEGY CONTROL • "+symbol,17);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
         root.addView(title,new LinearLayout.LayoutParams(-1,uiDp(34)));
-        TextView note=tv("Pilih MAKSIMAL SATU strategi per market. STANDAR: EMA50/EMA200 + Fibo/SR. EXCELLENT: EMA20/50 M5 + RSI/ATR + wick/sweep M1 untuk logika internal. POWERFULL: model distribusi EA tanpa indikator klasik. Semua OFF = chart bersih. Auto-entry Android memerlukan M1, quote segar dan EA online; tidak bergantung pada Smart Auto master/MODE READY.",11);
+        TextView note=tv("Pilih MAKSIMAL SATU strategi per market. STANDAR: EMA50/EMA200 + Fibo/SR. EXCELLENT: EMA20/50 M5 + RSI/ATR + wick/sweep M1 untuk logika internal. POWERFULL: distribusi wick M5 + ATR dan tick reversal pada EA. Semua OFF = chart bersih. Auto-entry Android memerlukan M1, quote segar dan EA online; tidak bergantung pada Smart Auto master/MODE READY.",11);
         note.setTextColor(Color.LTGRAY);note.setPadding(0,0,0,uiDp(8));root.addView(note,new LinearLayout.LayoutParams(-1,-2));
         root.addView(standard,new LinearLayout.LayoutParams(-1,uiDp(48)));
         root.addView(excellent,new LinearLayout.LayoutParams(-1,uiDp(48)));
@@ -1868,14 +1868,14 @@ public class MainActivity extends Activity {
         heading.setTextColor(Color.rgb(0,225,175));
         heading.setTypeface(null,Typeface.BOLD);
         root.addView(heading,new LinearLayout.LayoutParams(-1,uiDp(34)));
-        TextView market=tv("MARKET "+symbol+" • STRATEGI TERPISAH",12);
+        TextView market=tv("MARKET "+symbol+" • KONFIGURASI TERPISAH",12);
         market.setTextColor(Color.CYAN);
         root.addView(market,new LinearLayout.LayoutParams(-1,uiDp(26)));
-        TextView explanation=tv("Model distribusi M5 dari riwayat MT5 (tanpa indikator pihak ketiga) • entry 1%/99% • proteksi SL 3 pip selalu aktif.",11);
+        TextView explanation=tv("Logika EA uji: distribusi upper/lower wick M5 + ATR + pembalikan tick. TP nonaktif; pengambilan profit menggunakan sinyal reversal dan trailing profit.",11);
         explanation.setTextColor(Color.LTGRAY);
         explanation.setGravity(Gravity.TOP|Gravity.START);
         explanation.setPadding(0,uiDp(2),0,uiDp(8));
-        root.addView(explanation,new LinearLayout.LayoutParams(-1,uiDp(52)));
+        root.addView(explanation,new LinearLayout.LayoutParams(-1,uiDp(58)));
 
         LinearLayout fields=new LinearLayout(this);
         fields.setOrientation(LinearLayout.VERTICAL);
@@ -1887,18 +1887,18 @@ public class MainActivity extends Activity {
         enabled.setPadding(uiDp(6),uiDp(4),uiDp(6),uiDp(4));
         fields.addView(enabled,new LinearLayout.LayoutParams(-1,uiDp(50)));
 
-        TextView featureTitle=tv("SAKELAR FITUR TERPISAH",11);
+        TextView featureTitle=tv("SISI ENTRY & PENGELOLAAN PROFIT",11);
         featureTitle.setTextColor(Color.CYAN);
         featureTitle.setTypeface(null,Typeface.BOLD);
         featureTitle.setPadding(uiDp(6),uiDp(8),uiDp(6),uiDp(2));
         fields.addView(featureTitle,new LinearLayout.LayoutParams(-1,uiDp(30)));
-        Switch buyLimitSwitch=addPowerfullToggle(fields,"BUY LIMIT entry",
+        Switch buyLimitSwitch=addPowerfullToggle(fields,"BUY pending saat sinyal reversal valid",
             gp.getBoolean("powerfull_buy_limit_"+symbol,true));
-        Switch sellLimitSwitch=addPowerfullToggle(fields,"SELL LIMIT entry",
+        Switch sellLimitSwitch=addPowerfullToggle(fields,"SELL pending saat sinyal reversal valid",
             gp.getBoolean("powerfull_sell_limit_"+symbol,true));
-        Switch quickProfitSwitch=addPowerfullToggle(fields,"Tutup cepat saat profit bersih positif",
+        Switch quickProfitSwitch=addPowerfullToggle(fields,"Tutup profit saat reversal terkonfirmasi",
             gp.getBoolean("powerfull_quick_profit_"+symbol,true));
-        Switch crossCandleSwitch=addPowerfullToggle(fields,"Hold lintas candle jika momentum valid",
+        Switch crossCandleSwitch=addPowerfullToggle(fields,"Tahan posisi melewati candle M5",
             gp.getBoolean("powerfull_cross_candle_"+symbol,true));
 
         EditText lot=new EditText(this);
@@ -1912,30 +1912,62 @@ public class MainActivity extends Activity {
         EditText pipSize=new EditText(this);
         pipSize.setSingleLine(true);
         pipSize.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        pipSize.setHint("Ukuran harga untuk 1 pip (wajib dikonfirmasi)");
+        pipSize.setHint("Perubahan harga untuk 1 pip (wajib)");
         float savedPip=gp.getFloat("powerfull_pip_size_"+symbol,0.0f);
-        if(savedPip>0.0f)pipSize.setText(String.format(Locale.US,"%.8f",savedPip).replaceAll("0+$","").replaceAll("\\.$",""));
+        if(savedPip>0.0f)pipSize.setText(String.format(Locale.US,"%.8f",savedPip));
         styleDialogInput(pipSize);
         fields.addView(pipSize,new LinearLayout.LayoutParams(-1,uiDp(48)));
 
-        TextView forecastNote=tv("SMART AUTO-POWERFULL memprediksi rentang candle M5 berikutnya dari rata-rata rentang 3–5 candle M5 yang sudah selesai. BUY LIMIT = 0,1% dan SELL LIMIT = 98,9% dari rentang proyeksi wick-ke-wick.",10);
+        EditText pendingSeconds=new EditText(this);
+        pendingSeconds.setSingleLine(true);
+        pendingSeconds.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        pendingSeconds.setHint("Pasang pending pada detik terakhir candle M5 (1–10)");
+        pendingSeconds.setText(Integer.toString(gp.getInt("powerfull_pending_seconds_"+symbol,3)));
+        styleDialogInput(pendingSeconds);
+        fields.addView(pendingSeconds,new LinearLayout.LayoutParams(-1,uiDp(48)));
+
+        EditText maxPendingAtr=new EditText(this);
+        maxPendingAtr.setSingleLine(true);
+        maxPendingAtr.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        maxPendingAtr.setHint("Batalkan pending jika jarak > ATR (0,5–5,0)");
+        maxPendingAtr.setText(String.format(Locale.US,"%.2f",gp.getFloat("powerfull_max_pending_atr_"+symbol,1.5f)));
+        styleDialogInput(maxPendingAtr);
+        fields.addView(maxPendingAtr,new LinearLayout.LayoutParams(-1,uiDp(48)));
+
+        EditText minHoldCandles=new EditText(this);
+        minHoldCandles.setSingleLine(true);
+        minHoldCandles.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        minHoldCandles.setHint("Minimal candle M5 sebelum exit profit (0–12)");
+        minHoldCandles.setText(Integer.toString(gp.getInt("powerfull_min_hold_candles_"+symbol,2)));
+        styleDialogInput(minHoldCandles);
+        fields.addView(minHoldCandles,new LinearLayout.LayoutParams(-1,uiDp(48)));
+
+        EditText reversalAtrFactor=new EditText(this);
+        reversalAtrFactor.setSingleLine(true);
+        reversalAtrFactor.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        reversalAtrFactor.setHint("Jarak trailing profit: faktor ATR (0,05–2,00)");
+        reversalAtrFactor.setText(String.format(Locale.US,"%.2f",gp.getFloat("powerfull_reversal_atr_factor_"+symbol,0.25f)));
+        styleDialogInput(reversalAtrFactor);
+        fields.addView(reversalAtrFactor,new LinearLayout.LayoutParams(-1,uiDp(48)));
+
+        TextView forecastNote=tv("Prediksi sisi wick BUY/SELL dihitung terpisah dari candle M5 selesai (persentil 75% + ATR). Sinyal pending membutuhkan perubahan arah tick dan penolakan wick atau perlambatan tick. Pending baru dikirim pada detik terakhir candle; pending lama dipertahankan kecuali terlalu jauh (> ATR yang dipilih) atau sisi dimatikan.",10);
         forecastNote.setTextColor(Color.CYAN);
         forecastNote.setGravity(Gravity.TOP|Gravity.START);
         forecastNote.setPadding(uiDp(6),uiDp(6),uiDp(6),uiDp(6));
-        fields.addView(forecastNote,new LinearLayout.LayoutParams(-1,uiDp(78)));
+        fields.addView(forecastNote,new LinearLayout.LayoutParams(-1,uiDp(104)));
 
-        TextView pipNote=tv("Pip berbeda antar CFD/simbol. Isi nilai perubahan HARGA untuk 1 pip; contoh jika 1 pip = 0,10 harga, isi 0,10. Nilai 3 pip adalah batas risiko yang diinginkan, bukan jaminan kerugian maksimum saat gap/slippage.",10);
+        TextView pipNote=tv("Ukuran pip berbeda per simbol. SL server POWERFULL yang sudah ada tetap 3 pip; TP tetap OFF. Exit profit menunggu jumlah candle minimum, lalu memeriksa reversal berlawanan atau retracement dari harga terbaik dengan ATR. Stop-loss dan slippage tetap dapat menutup posisi lebih awal.",10);
         pipNote.setTextColor(Color.rgb(255,205,95));
         pipNote.setGravity(Gravity.TOP|Gravity.START);
         pipNote.setPadding(uiDp(6),uiDp(6),uiDp(6),uiDp(6));
-        fields.addView(pipNote,new LinearLayout.LayoutParams(-1,uiDp(78)));
+        fields.addView(pipNote,new LinearLayout.LayoutParams(-1,uiDp(92)));
 
         TextView status=tv("Menunggu status EA POWERFULL…",11);
         status.setTextColor(Color.CYAN);
         status.setGravity(Gravity.TOP|Gravity.START);
         status.setPadding(uiDp(7),uiDp(7),uiDp(7),uiDp(7));
         status.setBackground(roundBg(Color.rgb(7,30,47),10));
-        fields.addView(status,new LinearLayout.LayoutParams(-1,uiDp(124)));
+        fields.addView(status,new LinearLayout.LayoutParams(-1,uiDp(142)));
 
         ScrollView scroll=new ScrollView(this);
         scroll.setFillViewport(false);
@@ -1965,7 +1997,6 @@ public class MainActivity extends Activity {
             try{
                 String current=gp.getString("powerfull_status_"+symbol,"MENUNGGU_EA");
                 String samples=gp.getString("powerfull_samples_"+symbol,"0");
-                String days=gp.getString("powerfull_days_"+symbol,"0");
                 String range=gp.getString("powerfull_range_pips_"+symbol,"");
                 String low=gp.getString("powerfull_low_"+symbol,"");
                 String high=gp.getString("powerfull_high_"+symbol,"");
@@ -1975,9 +2006,11 @@ public class MainActivity extends Activity {
                 String ageText=age<0L?"belum ada heartbeat":(age>8L?"STALE "+age+"s":"segar "+age+"s");
                 String summary="EA: "+current+" • "+ageText
                     +"\nCandle M5 dipakai: "+samples
-                    +"\nMetode: rata-rata rentang candle selesai"
-                    +"\nPrediksi rentang: "+(range.isEmpty()?"--":range+" pip")
+                    +"\nMetode: distribusi wick M5 + ATR + tick reversal"
+                    +"\nRentang proyeksi: "+(range.isEmpty()?"--":range+" pip")
                     +"\nProyeksi Low–High: "+(low.isEmpty()?"--":low)+" – "+(high.isEmpty()?"--":high)
+                    +"\nPending: final "+pendingSeconds.getText()+"s • batas "+maxPendingAtr.getText()+" ATR"
+                    +"\nHold profit minimum: "+minHoldCandles.getText()+" candle M5"
                     +(detail.isEmpty()?"":"\n"+detail);
                 status.setText(summary);
             }catch(Throwable ignored){}
@@ -1990,6 +2023,10 @@ public class MainActivity extends Activity {
                 double volume=Double.parseDouble(lot.getText().toString().trim().replace(',', '.'));
                 String pipText=pipSize.getText().toString().trim().replace(',','.');
                 double pip=pipText.isEmpty()?0.0:Double.parseDouble(pipText);
+                int seconds=Integer.parseInt(pendingSeconds.getText().toString().trim());
+                double maxAtr=Double.parseDouble(maxPendingAtr.getText().toString().trim().replace(',','.'));
+                int holdCandles=Integer.parseInt(minHoldCandles.getText().toString().trim());
+                double trailAtr=Double.parseDouble(reversalAtrFactor.getText().toString().trim().replace(',','.'));
                 double minLot=minLotForSymbol(symbol);
                 if(!Double.isFinite(volume)||volume<minLot){
                     Toast.makeText(this,"Lot minimum "+symbol+" = "+lotText(minLot),Toast.LENGTH_LONG).show();
@@ -1999,12 +2036,28 @@ public class MainActivity extends Activity {
                     Toast.makeText(this,"Ukuran pip tidak valid",Toast.LENGTH_LONG).show();
                     return;
                 }
+                if(seconds<1||seconds>10){
+                    Toast.makeText(this,"Detik pemasangan pending harus 1–10",Toast.LENGTH_LONG).show();
+                    return;
+                }
+                if(!Double.isFinite(maxAtr)||maxAtr<0.5||maxAtr>5.0){
+                    Toast.makeText(this,"Jarak pending ATR harus 0,5–5,0",Toast.LENGTH_LONG).show();
+                    return;
+                }
+                if(holdCandles<0||holdCandles>12){
+                    Toast.makeText(this,"Minimal candle hold harus 0–12",Toast.LENGTH_LONG).show();
+                    return;
+                }
+                if(!Double.isFinite(trailAtr)||trailAtr<0.05||trailAtr>2.0){
+                    Toast.makeText(this,"Faktor trailing ATR harus 0,05–2,00",Toast.LENGTH_LONG).show();
+                    return;
+                }
                 if(enabled.isChecked()&&pip<=0.0){
                     Toast.makeText(this,"Isi ukuran harga untuk 1 pip sebelum POWERFULL diaktifkan",Toast.LENGTH_LONG).show();
                     return;
                 }
                 if(enabled.isChecked()&&!buyLimitSwitch.isChecked()&&!sellLimitSwitch.isChecked()){
-                    Toast.makeText(this,"Aktifkan minimal BUY LIMIT atau SELL LIMIT",Toast.LENGTH_LONG).show();
+                    Toast.makeText(this,"Aktifkan minimal sisi BUY atau SELL",Toast.LENGTH_LONG).show();
                     return;
                 }
                 double point=preferenceDouble(gp,"broker_quote_point_"+symbol,0.0);
@@ -2021,30 +2074,35 @@ public class MainActivity extends Activity {
                     .putBoolean("powerfull_quick_profit_"+symbol,quickProfitSwitch.isChecked())
                     .putBoolean("powerfull_cross_candle_"+symbol,crossCandleSwitch.isChecked())
                     .putFloat("powerfull_lot_"+symbol,(float)volume)
-                    .putFloat("powerfull_pip_size_"+symbol,(float)pip);
+                    .putFloat("powerfull_pip_size_"+symbol,(float)pip)
+                    .putInt("powerfull_pending_seconds_"+symbol,seconds)
+                    .putFloat("powerfull_max_pending_atr_"+symbol,(float)maxAtr)
+                    .putInt("powerfull_min_hold_candles_"+symbol,holdCandles)
+                    .putFloat("powerfull_reversal_atr_factor_"+symbol,(float)trailAtr);
                 powerEditor.apply();
                 applyStrategyIndicatorProfile();
                 queueNativeIndicatorState();
                 AppLog.add(this,"SMART AUTO-POWERFULL","settings saved symbol="+symbol+" enabled="+enabled.isChecked()
-                    +" buyLimit="+buyLimitSwitch.isChecked()+" sellLimit="+sellLimitSwitch.isChecked()
-                    +" quickProfit="+quickProfitSwitch.isChecked()
+                    +" buyPending="+buyLimitSwitch.isChecked()+" sellPending="+sellLimitSwitch.isChecked()
+                    +" reversalExit="+quickProfitSwitch.isChecked()
                     +" crossCandleHold="+crossCandleSwitch.isChecked()
                     +" lot="+lotText(volume)+" pipSize="+String.format(Locale.US,"%.8f",pip)
-                    +" forecast=mean of completed M5 ranges • stopLossPips=3 (mandatory) • legacy auto preferences unchanged");
+                    +" pendingFinalSeconds="+seconds+" maxPendingATR="+String.format(Locale.US,"%.2f",maxAtr)
+                    +" minHoldCandles="+holdCandles+" reversalATRFactor="+String.format(Locale.US,"%.2f",trailAtr)
+                    +" forecast=75th percentile separate upper/lower M5 wicks + ATR • TP=OFF • legacy STANDAR/EXCELLENT unchanged");
                 Toast.makeText(this,enabled.isChecked()
-                    ?"POWERFULL tersimpan • menunggu data candle M5 dan eksekusi pending order MT5"
-                    :"POWERFULL nonaktif • posisi terbuka yang ada tetap dikelola sampai selesai",
+                    ?"POWERFULL tersimpan • pending di detik akhir M5, pembatalan berdasarkan jarak ATR"
+                    :"POWERFULL nonaktif • pending dibatalkan; posisi terbuka tetap dikelola",
                     Toast.LENGTH_LONG).show();
                 dialog.dismiss();
             }catch(Exception ex){
                 AppLog.add(this,"SMART AUTO-POWERFULL","settings error "+ex.getClass().getSimpleName()+": "+ex.getMessage());
-                Toast.makeText(this,"Periksa nilai lot dan ukuran pip",Toast.LENGTH_LONG).show();
+                Toast.makeText(this,"Periksa lot, pip, detik pending, ATR, dan candle hold",Toast.LENGTH_LONG).show();
             }
         });
         showSizedDialog(dialog,0.86f,450);
         statusRefresh[0].run();
     }
-
     private int uiDp(float value){return Math.round(value*getResources().getDisplayMetrics().density);}
 
     private void addPanelRow(LinearLayout parent,String label,String value,int valueColor){
@@ -2854,7 +2912,7 @@ public class MainActivity extends Activity {
             :("EXCELLENT".equals(strategyMode)
                 ?"EXCELLENT aktif • EMA20/50 M5 + RSI/ATR + wick/sweep M1"
                 :("POWERFULL".equals(strategyMode)
-                    ?"POWERFULL aktif • model distribusi M5 dikelola EA"
+                    ?"POWERFULL aktif • wick M5, tick reversal, pending akhir candle, dan trailing profit dikelola EA"
                     :"Strategi OFF • auto-entry strategi tidak berjalan"));
         TextView panelNote=tv(strategyDescription+" • TP1/TP2 dan level order divalidasi",12);
         panelNote.setTextColor(Color.LTGRAY);
