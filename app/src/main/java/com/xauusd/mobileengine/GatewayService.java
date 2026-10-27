@@ -444,6 +444,10 @@ public final class GatewayService extends Service {
         String days=query(path,"days");
         String pending=query(path,"pending");
         String positions=query(path,"positions");
+        String orderKind=query(path,"orderKind");
+        String orderSide=query(path,"orderSide");
+        String orderTicket=query(path,"orderTicket");
+        String orderEntry=query(path,"orderEntry");
         String detail=query(path,"detail");
         try{
             if(!range.isEmpty()&&!Double.isFinite(Double.parseDouble(range)))return "POWER STATE ERROR RANGE";
@@ -454,6 +458,8 @@ public final class GatewayService extends Service {
             if(!days.isEmpty()&&Integer.parseInt(days)<0)return "POWER STATE ERROR DAYS";
             if(!pending.isEmpty()&&Integer.parseInt(pending)<0)return "POWER STATE ERROR PENDING";
             if(!positions.isEmpty()&&Integer.parseInt(positions)<0)return "POWER STATE ERROR POSITIONS";
+            if(!orderEntry.isEmpty()&&!Double.isFinite(Double.parseDouble(orderEntry)))return "POWER STATE ERROR ORDER ENTRY";
+            if(!orderKind.isEmpty()&&!"NONE".equals(orderKind)&&!"PENDING".equals(orderKind)&&!"POSITION".equals(orderKind))return "POWER STATE ERROR ORDER KIND";
         }catch(Exception bad){return "POWER STATE ERROR FORMAT";}
         SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         p.edit()
@@ -466,6 +472,10 @@ public final class GatewayService extends Service {
             .putString("powerfull_days_"+symbol,days)
             .putString("powerfull_pending_"+symbol,pending)
             .putString("powerfull_positions_"+symbol,positions)
+            .putString("powerfull_order_kind_"+symbol,orderKind==null?"NONE":orderKind)
+            .putString("powerfull_order_side_"+symbol,orderSide==null?"":orderSide)
+            .putString("powerfull_order_ticket_"+symbol,orderTicket==null?"":orderTicket)
+            .putString("powerfull_order_entry_"+symbol,orderEntry==null?"0":orderEntry)
             .putString("powerfull_detail_"+symbol,detail)
             .putLong("powerfull_state_at_"+symbol,System.currentTimeMillis())
             .apply();
