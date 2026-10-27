@@ -1918,9 +1918,17 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       double executable=(side==POSITION_TYPE_BUY?tick.bid:tick.ask);
       double movementPips=(side==POSITION_TYPE_BUY?(executable-entry)/pip:(entry-executable)/pip);
       double net=powerProjectedNet(ticket);
-      // Keep the existing server/EA hard-loss guard; only profitable exits are delayed.
-      if(stopPips>0.0&&movementPips<=-stopPips){
-         powerClosePosition(ticket,"HARD_LOSS_GUARD");
+      // Use the same active stop distance that was submitted to the broker.
+      // When APK supplies BUY/SELL point stops, never let the legacy 3-pip fallback
+      // close the position before the configured point-based SL is reached.
+      int configuredSLPoints=(side==POSITION_TYPE_BUY
+         ?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
+      double hardStopDistance=(powerCfg[index].usePointStops
+         ?(double)configuredSLPoints*point:stopPips*pip);
+      double adverseDistance=(side==POSITION_TYPE_BUY?entry-executable:executable-entry);
+      if(hardStopDistance>0.0&&adverseDistance+point*0.1>=hardStopDistance){
+         powerClosePosition(ticket,"HARD_LOSS_GUARD configuredDistance="+
+            DoubleToString(hardStopDistance/point,1)+" points");
          continue;
       }
 
@@ -1969,6 +1977,42 @@ void powerPublishState(int index,string status,string detail,datetime barTime){
    powerLastStatus[index]=status;
    powerLastDetail[index]=detail;
    string symbol=powerSymbols[index];
+   // Publish the actual broker-confirmed POWERFULL order/position so the APK
+   // can draw its own entry line. The legacy /state channel intentionally excludes
+   // POWERFULL_MAGIC and must remain independent.
+   string orderKind="NONE",orderSide="",orderTicket="",orderEntry="0";
+   for(int i=PositionsTotal()-1;i>=0;i--){
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0)continue;
+      if(PositionGetString(POSITION_SYMBOL)!=symbol ||
+         (long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
+      ENUM_POSITION_TYPE side=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      orderKind="POSITION";
+      orderSide=(side==POSITION_TYPE_BUY?"BUY":"SELL");
+      orderTicket=(string)ticket;
+      orderEntry=DoubleToString(PositionGetDouble(POSITION_PRICE_OPEN),
+                                (int)SymbolInfoInteger(symbol,SYMBOL_DIGITS));
+      break;
+   }
+   if(orderKind=="NONE"){
+      for(int i=OrdersTotal()-1;i>=0;i--){
+         ulong ticket=OrderGetTicket(i);
+         if(ticket==0)continue;
+         if(OrderGetString(ORDER_SYMBOL)!=symbol ||
+            (long)OrderGetInteger(ORDER_MAGIC)!=POWERFULL_MAGIC)continue;
+         ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+         if(type!=ORDER_TYPE_BUY_LIMIT&&type!=ORDER_TYPE_SELL_LIMIT&&
+            type!=ORDER_TYPE_BUY_STOP&&type!=ORDER_TYPE_SELL_STOP)continue;
+         orderKind="PENDING";
+         orderSide=(type==ORDER_TYPE_BUY_LIMIT?"BUY_LIMIT":
+                    type==ORDER_TYPE_SELL_LIMIT?"SELL_LIMIT":
+                    type==ORDER_TYPE_BUY_STOP?"BUY_STOP":"SELL_STOP");
+         orderTicket=(string)ticket;
+         orderEntry=DoubleToString(OrderGetDouble(ORDER_PRICE_OPEN),
+                                   (int)SymbolInfoInteger(symbol,SYMBOL_DIGITS));
+         break;
+      }
+   }
    string path="/power_state?symbol="+urlEncode(symbol)
       +"&status="+urlEncode(status)
       +"&range="+DoubleToString(powerForecastRangePips[index],4)
@@ -1976,9 +2020,13 @@ void powerPublishState(int index,string status,string detail,datetime barTime){
       +"&high="+DoubleToString(powerProjectedHigh[index],(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))
       +"&bar="+IntegerToString((long)barTime)
       +"&samples="+IntegerToString(powerHistorySamples[index])
-       +"&days="+IntegerToString(powerHistoryDays[index])
+      +"&days="+IntegerToString(powerHistoryDays[index])
       +"&pending="+IntegerToString(powerPendingCount(symbol))
       +"&positions="+IntegerToString(powerPositionCount(symbol))
+      +"&orderKind="+urlEncode(orderKind)
+      +"&orderSide="+urlEncode(orderSide)
+      +"&orderTicket="+urlEncode(orderTicket)
+      +"&orderEntry="+urlEncode(orderEntry)
       +"&detail="+urlEncode(detail);
    int code=-1; string body="",diagnostic="";
    bool stateSent=powerGatewayGet(path,code,body,diagnostic,POWERFULL_STATUS_TIMEOUT_MS);
