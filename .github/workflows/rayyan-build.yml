@@ -150,12 +150,19 @@ jobs:
           $dataRoot = Join-Path $env:APPDATA 'MetaQuotes\Terminal'
           $dataCandidates = @(Get-ChildItem $dataRoot -Directory -ErrorAction SilentlyContinue |
             Where-Object { Test-Path (Join-Path $_.FullName 'MQL5') })
-          if ($dataCandidates.Count -eq 0) {
-            throw "No MT5 terminal data folder found under $dataRoot after initializing MT5."
-          }
           $sourceInclude = Join-Path $mql5Root 'Include'
           if (-not (Test-Path (Join-Path $sourceInclude 'Trade\Trade.mqh'))) {
             throw "Standard Include tree is missing from MT5 installation: $sourceInclude"
+          }
+
+          # A fresh hosted runner may not have created a terminal data profile yet.
+          # MetaEditor identifies the default MT5 profile by this terminal hash;
+          # create its MQL5 tree explicitly rather than failing before compilation.
+          if ($dataCandidates.Count -eq 0) {
+            $defaultDataFolder = Join-Path $dataRoot 'D0E8209F77C8CF37AD8BF550E51FF075'
+            New-Item -ItemType Directory -Force -Path (Join-Path $defaultDataFolder 'MQL5') | Out-Null
+            $dataCandidates = @(Get-Item $defaultDataFolder)
+            Write-Host "Created fresh MetaEditor data profile: $defaultDataFolder"
           }
           foreach ($dataFolder in $dataCandidates) {
             $targetInclude = Join-Path $dataFolder.FullName 'MQL5\Include'
