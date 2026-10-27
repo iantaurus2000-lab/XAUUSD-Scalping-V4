@@ -525,7 +525,9 @@ public class MainActivity extends Activity {
         String symbol=mt5SymbolForMarket(market);
         long received=gp.getLong("mt5_bars_at_"+symbol+"_"+tf,0L);
         long age=System.currentTimeMillis()-received;
-        if(received<=0L||age<0L||age>10000L)return null;
+        // MT5 uploads six timeframes for three markets over the LAN; tolerate a short
+        // upload delay while keeping chart data bounded to a recent broker snapshot.
+        if(received<=0L||age<0L||age>20000L)return null;
         String raw=gp.getString("mt5_bars_"+symbol+"_"+tf,"");
         if(raw.isEmpty())return null;
         ArrayList<Candle> parsed=new ArrayList<>();
