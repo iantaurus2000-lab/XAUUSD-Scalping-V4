@@ -87,26 +87,35 @@ jobs:
           Write-Host "Runner UTC after sync: $([DateTime]::UtcNow.ToString('o'))"
 
           $installer = Join-Path $env:RUNNER_TEMP 'mt5setup.exe'
-          $installerUri = 'https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe'
+          # Use official MetaQuotes/MetaTrader download endpoints only. TLS validation stays enabled.
+          $installerUris = @(
+            'https://download.mql5.com/cdn/web/metaquotes.ltd/mt5/mt5setup.exe?utm_source=www.metatrader5.com&utm_campaign=download',
+            'https://download.terminal.free/cdn/web/metaquotes.ltd/mt5/mt5setup.exe',
+            'https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe'
+          )
           $downloaded = $false
-          for ($attempt = 1; $attempt -le 4; $attempt++) {
-            try {
-              Write-Host "Downloading official MetaTrader 5 installer (attempt $attempt/4)"
-              Invoke-WebRequest -Uri $installerUri -OutFile $installer -TimeoutSec 90
-              if ((Test-Path $installer) -and (Get-Item $installer).Length -gt 1000000) {
-                $downloaded = $true
-                break
+          $lastDownloadError = ''
+          foreach ($installerUri in $installerUris) {
+            for ($attempt = 1; $attempt -le 2; $attempt++) {
+              try {
+                Write-Host "Downloading official MT5 installer from $($installerUri.Split('?')[0]) (attempt $attempt/2)"
+                Invoke-WebRequest -Uri $installerUri -OutFile $installer -TimeoutSec 90
+                if ((Test-Path $installer) -and (Get-Item $installer).Length -gt 1000000) {
+                  $downloaded = $true
+                  break
+                }
+                throw 'Installer download was unexpectedly small or missing.'
+              } catch {
+                $lastDownloadError = $_.Exception.Message
+                Remove-Item $installer -Force -ErrorAction SilentlyContinue
+                if ($attempt -lt 2) { Start-Sleep -Seconds 5 }
               }
-              throw "Installer download was unexpectedly small or missing."
-            } catch {
-              Remove-Item $installer -Force -ErrorAction SilentlyContinue
-              if ($attempt -eq 4) {
-                throw "Official MT5 installer download failed after 4 secure attempts. TLS certificate validation was not bypassed. Last error: $($_.Exception.Message)"
-              }
-              Start-Sleep -Seconds (5 * $attempt)
             }
+            if ($downloaded) { break }
           }
-          if (-not $downloaded) { throw 'Official MT5 installer was not downloaded.' }
+          if (-not $downloaded) {
+            throw "Official MT5 installer download failed from all trusted endpoints. TLS certificate validation was not bypassed. Last error: $lastDownloadError"
+          }
           Start-Process -FilePath $installer -ArgumentList '/auto' -Wait
           $candidates = @('C:\Program Files\MetaTrader 5\metaeditor64.exe', 'C:\Program Files (x86)\MetaTrader 5\metaeditor64.exe')
           $editor = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
