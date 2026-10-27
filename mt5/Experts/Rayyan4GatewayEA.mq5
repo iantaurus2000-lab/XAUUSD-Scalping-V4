@@ -1391,16 +1391,17 @@ bool powerBuildModel(int index){
    MqlRates rates[];
    ArraySetAsSeries(rates,true);
    ResetLastError();
-   int copied=CopyRates(symbol,PERIOD_M5,1,21,rates);
+   int requestedBars=(int)MathMax(3,MathMin(powerCfg[index].distributionLookback,200));
+   int copied=CopyRates(symbol,PERIOD_M5,1,requestedBars,rates);
    if(copied<3){
       powerHistorySamples[index]=MathMax(0,copied);
       powerHistoryDays[index]=0;
       Print("POWERFULL WICK FORECAST WAIT symbol=",symbol," completedM5=",copied," required=3 err=",GetLastError());
       return false;
    }
-   double ranges[20],upperWicks[20],lowerWicks[20];
+   double ranges[200],upperWicks[200],lowerWicks[200];
    int used=0;
-   for(int i=0;i<copied&&used<20;i++){
+   for(int i=0;i<copied&&used<200;i++){
       double h=rates[i].high,l=rates[i].low,o=rates[i].open,cl=rates[i].close;
       if(rates[i].time<=0||h<=0.0||l<=0.0||h<l||o<=0.0||cl<=0.0)continue;
       ranges[used]=h-l;
@@ -1419,7 +1420,8 @@ bool powerBuildModel(int index){
          if(lowerWicks[b]<lowerWicks[a]){double v=lowerWicks[a];lowerWicks[a]=lowerWicks[b];lowerWicks[b]=v;}
       }
    }
-   int q=(int)MathMin(used-1,MathFloor((used-1)*0.75));
+   double percentile=MathMax(50.0,MathMin(90.0,(double)powerCfg[index].percentile))/100.0;
+   int q=(int)MathMin(used-1,MathFloor((used-1)*percentile));
    double avgRange=0.0;
    for(int k=0;k<used;k++)avgRange+=ranges[k];
    avgRange/=used;
@@ -1445,7 +1447,7 @@ bool powerBuildModel(int index){
          " rangePips=",DoubleToString(powerForecastRangePips[index],2),
          " upperWickPips=",DoubleToString(powerUpperWickPips[index],2),
          " lowerWickPips=",DoubleToString(powerLowerWickPips[index],2),
-         " percentile=75 ATRblend=ON");
+         " percentile=",DoubleToString(percentile*100.0,0)," ATRblend=ON");
    return true;
 }
 
@@ -1694,7 +1696,8 @@ double powerAtrPrice(int index){
 bool powerDetectSignals(int index,const MqlTick &tick,bool &allowBuy,bool &allowSell,
                         int &buyScore,int &sellScore){
    allowBuy=false;allowSell=false;buyScore=0;sellScore=0;
-   const int required=12;
+   int required=(index>=0&&index<ArraySize(powerSymbols)?powerCfg[index].tickSamplesForAnalysis:12);
+   required=(int)MathMax(12,MathMin(24,required));
    if(index<0||index>=ArraySize(powerSymbols)||powerTickSampleCount[index]<required){
       if(index>=0&&index<ArraySize(powerSymbols))
          powerSignalDetail[index]="WAIT_TICK_SAMPLES count="+IntegerToString(powerTickSampleCount[index])+" required=12";
@@ -1706,7 +1709,7 @@ bool powerDetectSignals(int index,const MqlTick &tick,bool &allowBuy,bool &allow
    string symbol=powerSymbols[index];
    double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
    if(point<=0.0)return false;
-   double threshold=MathMax(2.0*point,4.0*point);
+   double threshold=MathMax(2.0*point,powerCfg[index].momentumStrongPoints*point);
    bool tickTurnUp=(olderNet < -threshold && recentNet>0.0 && priorNet<=0.0);
    bool tickTurnDown=(olderNet > threshold && recentNet<0.0 && priorNet>=0.0);
    bool tickSlowing=(MathAbs(recentNet)<MathAbs(olderNet)*0.55);
@@ -1760,7 +1763,7 @@ bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick
    }
    // Match the tested EA's default minimum entry distance (30 points),
    // while respecting any stricter broker stop level.
-   double gap=MathMax(30.0,stopPoints+1.0)*point;
+   double gap=MathMax((double)powerCfg[index].minDistancePoints,stopPoints+1.0)*point;
    ENUM_ORDER_TYPE type;
    double entry=target;
    if(buySide){
@@ -1778,8 +1781,9 @@ bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick
       powerPublishState(index,"BLOCKED_ENTRY_GEOMETRY","Projected wick endpoint is not a valid broker pending price",barTime);
       return false;
    }
-   double stopDistance=stopPips*pip;
-   if(stopPips>0.0&&stopDistance+1e-10<brokerMin+tickSize){
+   int configuredSLPoints=(buySide?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
+   double stopDistance=(powerCfg[index].usePointStops?(double)configuredSLPoints*point:stopPips*pip);
+   if(stopDistance>0.0&&stopDistance+1e-10<brokerMin+tickSize){
       powerPublishState(index,"BLOCKED_SL_TOO_CLOSE","Broker stop level exceeds configured POWERFULL loss guard",barTime);
       return false;
    }
@@ -1797,9 +1801,10 @@ bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick
       return false;
    }
    double sl=0.0;
-   if(stopPips>0.0)sl=(buySide?powerFloorToTick(symbol,entry-stopDistance):powerCeilToTick(symbol,entry+stopDistance));
+   if(stopDistance>0.0)sl=(buySide?powerFloorToTick(symbol,entry-stopDistance):powerCeilToTick(symbol,entry+stopDistance));
    string comment="PWR-"+powerShortSymbol(symbol)+"-"+IntegerToString((long)barTime)+(buySide?"-B":"-S");
    powerTrade.SetExpertMagicNumber(POWERFULL_MAGIC);
+   powerTrade.SetDeviationInPoints(powerCfg[index].deviationPoints);
    powerTrade.SetTypeFillingBySymbol(symbol);
    powerTrade.SetAsyncMode(false);
    ResetLastError();
