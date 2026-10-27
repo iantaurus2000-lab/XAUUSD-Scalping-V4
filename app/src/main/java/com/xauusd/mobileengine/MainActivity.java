@@ -428,7 +428,7 @@ public class MainActivity extends Activity {
             long powerAt=gp.getLong("powerfull_state_at_"+symbol,0L);
             boolean fresh=powerAt>0L&&now>=powerAt&&now-powerAt<=8000L;
             String powerState=gp.getString("powerfull_status_"+symbol,"MENUNGGU_EA");
-            status.setText("● POWERFULL EA • +(fresh?powerState:"STATUS EA STALE")+" • "+market+" • M5");
+            status.setText("● POWERFULL EA • "+(fresh?powerState:"STATUS EA STALE")+" • "+market+" • M5");
             return;
         }
         if(!"STANDAR".equals(strategy)&&!"EXCELLENT".equals(strategy)){
