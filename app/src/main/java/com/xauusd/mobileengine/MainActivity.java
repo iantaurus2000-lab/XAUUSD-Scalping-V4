@@ -1889,6 +1889,7 @@ public class MainActivity extends Activity {
             }
             gp.edit().putBoolean("powerfull_enabled_"+symbol,enabled.isChecked())
                 .putBoolean("powerfull_buy_limit_"+symbol,true).putBoolean("powerfull_sell_limit_"+symbol,true)
+                .putBoolean("powerfull_quick_profit_"+symbol,true).putBoolean("powerfull_cross_candle_"+symbol,true)
                 .putBoolean(strategyEnabledKey("STANDAR",symbol),enabled.isChecked()?false:gp.getBoolean(strategyEnabledKey("STANDAR",symbol),false))
                 .putBoolean(strategyEnabledKey("EXCELLENT",symbol),enabled.isChecked()?false:gp.getBoolean(strategyEnabledKey("EXCELLENT",symbol),false)).apply();
             applyStrategyIndicatorProfile();queueNativeIndicatorState();
@@ -1992,6 +1993,7 @@ public class MainActivity extends Activity {
                     .putInt("powerfull_sl_sell_points_"+symbol,vSlSell)
                     .putFloat("powerfull_pip_size_"+symbol,(float)pip)
                     .putBoolean("powerfull_buy_limit_"+symbol,true).putBoolean("powerfull_sell_limit_"+symbol,true)
+                    .putBoolean("powerfull_quick_profit_"+symbol,true).putBoolean("powerfull_cross_candle_"+symbol,true)
                     .apply();
                 AppLog.add(this,"UJI TEST EA","parameters saved symbol="+symbol+" lot="+vLot+" distance="+vDistance+" lookback="+vLookback+" ticks="+vTicks+" SLbuy="+vSlBuy+" SLsell="+vSlSell);
                 Toast.makeText(this,"Parameter EA uji test disimpan",Toast.LENGTH_SHORT).show();d.dismiss();
