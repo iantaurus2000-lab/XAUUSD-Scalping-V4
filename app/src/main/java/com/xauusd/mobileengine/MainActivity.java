@@ -2378,6 +2378,9 @@ public class MainActivity extends Activity {
             if(tp2View!=null)tp2View.setText("TP2\n--");
         }
         boolean standard="STANDAR".equals(mode),excellent="EXCELLENT".equals(mode);
+        boolean powerful="POWERFULL".equals(mode);
+        // POWERFULL is EA-owned: suppress legacy APK signal/indicator overlays so
+        // old EMA/RSI/Fibo/wick signals cannot be mistaken for the tested M5 EA.
         chart.setShowEMA50(standard&&ind("ema50",true));
         chart.setShowEMA200(standard&&ind("ema200",true));
         chart.setShowSR(standard&&ind("sr",true));
@@ -2385,6 +2388,11 @@ public class MainActivity extends Activity {
         chart.setShowRSI(excellent&&ind("rsi",true));
         chart.setShowATR(excellent&&ind("atr",true));
         chart.setShowMACD(false);
+        chart.setShowSignals(!powerful&&ind("signals",true));
+        chart.setShowWickBos(!powerful&&ind("wickbos",true));
+        chart.setShowTradeLevels(!powerful&&ind("orders",true));
+        chart.setShowPosition(!powerful&&ind("position",true));
+        chart.setShowBidAsk(ind("bidask",true));
     }
 
     void loadIndicatorSettings(){
