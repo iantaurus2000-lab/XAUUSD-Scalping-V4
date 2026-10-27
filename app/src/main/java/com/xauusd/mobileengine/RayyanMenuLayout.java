@@ -80,7 +80,7 @@ public final class RayyanMenuLayout {
             new Item("⇄", "Gateway / Queue / ACK", "Status EA, antrean, dan konfirmasi MT5", "gateway"),
             new Item("▤", "Orders / History", "Log dan riwayat aktivitas aplikasi", "orders"),
             new Item("✦", "Smart Auto Entry", "Pengaturan Auto Entry dan LIMIT demo", "mt5"),
-            new Item("⚡", "SMART AUTO-POWERFULL", "Wick M5 + tick reversal • pending akhir candle • profit dinamis", "powerfull")
+            new Item("⚡", "SMART AUTO-POWERFULL", "Proyeksi rentang 3–5 candle M5 • entry saat candle baru", "powerfull")
         ), actions);
 
         addSection(host, content, "ALAT & PENGATURAN");
@@ -113,7 +113,7 @@ public final class RayyanMenuLayout {
             new Item("▦", "Indicators / Tampilan", "Atur indikator yang terlihat di chart", "settings_indicators"),
             new Item("◈", "Pilih Market", "XAUUSD, BTCUSD, atau ETHUSD", "settings_market"),
             new Item("✦", "Strategy Control", "Pilih satu mesin aktif: STANDAR / EXCELLENT / POWERFULL", "strategy_control"),
-            new Item("⚡", "SMART AUTO-POWERFULL", "Konfigurasi model distribusi M5 EA", "powerfull")
+            new Item("⚡", "SMART AUTO-POWERFULL", "Konfigurasi proyeksi sederhana M5 EA", "powerfull")
         ), actions);
         addSection(host, content, "KONEKSI & NOTIFIKASI");
         addItems(host, content, Arrays.asList(
