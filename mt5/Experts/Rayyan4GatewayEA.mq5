@@ -166,6 +166,12 @@ int OnInit(){
    }
    if(hEma50==INVALID_HANDLE || hEma200==INVALID_HANDLE)
       Print("RAYYAN4 INDICATOR WARNING EMA handles=",hEma50,",",hEma200);
+   // Match Android CandleChartView exactly: bull RGB(34,197,94), bear RGB(239,68,68).
+   ChartSetInteger(0,CHART_MODE,CHART_CANDLES);
+   ChartSetInteger(0,CHART_COLOR_CANDLE_BULL,C'34,197,94');
+   ChartSetInteger(0,CHART_COLOR_CANDLE_BEAR,C'239,68,68');
+   ChartSetInteger(0,CHART_COLOR_CHART_UP,C'34,197,94');
+   ChartSetInteger(0,CHART_COLOR_CHART_DOWN,C'239,68,68');
    ChartSetInteger(0,CHART_AUTOSCROLL,true);
    ChartSetInteger(0,CHART_SHIFT,false);
    ChartSetInteger(0,CHART_SCALE,4);
