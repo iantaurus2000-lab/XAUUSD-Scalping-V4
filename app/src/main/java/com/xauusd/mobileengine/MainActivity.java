@@ -1847,15 +1847,157 @@ public class MainActivity extends Activity {
      * It writes only powerfull_* per-symbol preferences and never toggles "auto" or
      * "operation_mode" used by the existing Fibo/wick entry manager.
      */
-    private Switch addPowerfullToggle(LinearLayout parent,String label,boolean defaultValue){
-        Switch toggle=new Switch(this);
-        toggle.setText(label);
-        toggle.setTextSize(12);
-        toggle.setTextColor(Color.WHITE);
-        toggle.setChecked(defaultValue);
-        toggle.setPadding(uiDp(6),uiDp(2),uiDp(6),uiDp(2));
-        parent.addView(toggle,new LinearLayout.LayoutParams(-1,uiDp(42)));
-        return toggle;
+    private void showPowerfullDialog(){
+        final String symbol=mt5SymbolForMarket(selectedMarket);
+        final SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(14));
+        root.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("UJI TEST EA • ADAPTIVE M5",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        root.addView(title,new LinearLayout.LayoutParams(-1,uiDp(38)));
+        TextView market=tv("MARKET "+symbol+" • SINYAL SEPENUHNYA DARI EA MT5",11);market.setTextColor(Color.LTGRAY);
+        root.addView(market,new LinearLayout.LayoutParams(-1,uiDp(32)));
+        TextView note=tv("APK tidak menghitung atau menggambar signal POWERFULL. APK hanya mengirim ON/OFF dan parameter ke EA. EA demo-only, M5 wick distribution + ATR + tick reversal; TP OFF.",12);
+        note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
+        root.addView(note,new LinearLayout.LayoutParams(-1,uiDp(76)));
+        Switch enabled=new Switch(this);enabled.setText("POWERFULL EA • ON / OFF");enabled.setTextSize(15);enabled.setTextColor(Color.WHITE);
+        enabled.setChecked(gp.getBoolean("powerfull_enabled_"+symbol,false));
+        root.addView(enabled,new LinearLayout.LayoutParams(-1,uiDp(54)));
+        Button settings=btn("SUBMENU • PARAMETER EA UJI TEST");settings.setTextSize(12);
+        settings.setBackground(roundBg(Color.rgb(8,70,103),10));
+        root.addView(settings,new LinearLayout.LayoutParams(-1,uiDp(48)));
+        TextView state=tv("EA: "+gp.getString("powerfull_status_"+symbol,"MENUNGGU_EA"),12);
+        state.setTextColor(Color.CYAN);state.setPadding(uiDp(8),uiDp(8),uiDp(8),uiDp(8));
+        state.setBackground(roundBg(Color.rgb(7,30,47),10));
+        root.addView(state,new LinearLayout.LayoutParams(-1,uiDp(48)));
+        LinearLayout actions=new LinearLayout(this);actions.setOrientation(LinearLayout.HORIZONTAL);
+        Button close=btn("TUTUP");close.setBackground(roundBg(Color.rgb(53,65,77),10));
+        Button save=btn("SIMPAN ON/OFF");save.setBackground(roundBg(Color.rgb(0,105,83),10));
+        actions.addView(save,new LinearLayout.LayoutParams(0,uiDp(46),1f));
+        actions.addView(close,new LinearLayout.LayoutParams(0,uiDp(46),1f));
+        root.addView(actions,new LinearLayout.LayoutParams(-1,uiDp(52)));
+        AlertDialog dialog=new AlertDialog.Builder(this).setView(root).create();
+        close.setOnClickListener(v->dialog.dismiss());
+        settings.setOnClickListener(v->showPowerfullSettingsDialog());
+        save.setOnClickListener(v->{
+            if(enabled.isChecked()){
+                double lot=gp.getFloat("powerfull_lot_"+symbol,0f);
+                if(lot<minLotForSymbol(symbol)){
+                    Toast.makeText(this,"Isi dan simpan Initial Lot di submenu terlebih dahulu.",Toast.LENGTH_LONG).show();
+                    return;
+                }
+            }
+            gp.edit().putBoolean("powerfull_enabled_"+symbol,enabled.isChecked())
+                .putBoolean("powerfull_buy_limit_"+symbol,true).putBoolean("powerfull_sell_limit_"+symbol,true)
+                .putBoolean(strategyEnabledKey("STANDAR",symbol),enabled.isChecked()?false:gp.getBoolean(strategyEnabledKey("STANDAR",symbol),false))
+                .putBoolean(strategyEnabledKey("EXCELLENT",symbol),enabled.isChecked()?false:gp.getBoolean(strategyEnabledKey("EXCELLENT",symbol),false)).apply();
+            applyStrategyIndicatorProfile();queueNativeIndicatorState();
+            AppLog.add(this,"UJI TEST EA","POWERFULL "+(enabled.isChecked()?"ON":"OFF")+" symbol="+symbol);
+            Toast.makeText(this,"POWERFULL EA "+(enabled.isChecked()?"ON":"OFF"),Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
+        });
+        showSizedDialog(dialog,0.62f,420);
+    }
+
+    private EditText addEaParameter(LinearLayout parent,String label,String value,boolean decimal){
+        TextView caption=tv(label,11);caption.setTextColor(Color.LTGRAY);
+        parent.addView(caption,new LinearLayout.LayoutParams(-1,uiDp(24)));
+        EditText field=new EditText(this);field.setSingleLine(true);
+        field.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|(decimal?android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL:0));
+        field.setText(value);field.setTextSize(13);styleDialogInput(field);
+        parent.addView(field,new LinearLayout.LayoutParams(-1,uiDp(42)));
+        return field;
+    }
+
+    private void showPowerfullSettingsDialog(){
+        final String symbol=mt5SymbolForMarket(selectedMarket);
+        final SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        LinearLayout fields=new LinearLayout(this);fields.setOrientation(LinearLayout.VERTICAL);
+        fields.setPadding(uiDp(16),uiDp(12),uiDp(16),uiDp(12));
+        fields.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("SUBMENU • PARAMETER EA UJI TEST",16);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        fields.addView(title,new LinearLayout.LayoutParams(-1,uiDp(42)));
+        TextView note=tv("Parameter meniru input uji-test-mt5.mq5. Magic Number tetap dikelola EA gateway; akun real diblokir.",11);
+        note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
+        fields.addView(note,new LinearLayout.LayoutParams(-1,uiDp(48)));
+        EditText lot=addEaParameter(fields,"Initial Lot",String.format(Locale.US,"%.2f",gp.getFloat("powerfull_lot_"+symbol,(float)Math.max(minLotForSymbol(symbol),lotForMarket()))),true);
+        EditText lotStep=addEaParameter(fields,"Lot Step",String.format(Locale.US,"%.2f",gp.getFloat("powerfull_lot_step_"+symbol,0.01f)),true);
+        EditText minDistance=addEaParameter(fields,"Min Distance Points",Integer.toString(gp.getInt("powerfull_min_distance_points_"+symbol,30)),false);
+        EditText lookback=addEaParameter(fields,"Distribution Lookback (1–200)",Integer.toString(gp.getInt("powerfull_distribution_lookback_"+symbol,20)),false);
+        EditText offset=addEaParameter(fields,"Range Offset Fraction",String.format(Locale.US,"%.2f",gp.getFloat("powerfull_range_offset_fraction_"+symbol,0.20f)),true);
+        EditText reversal=addEaParameter(fields,"Reversal ATR Factor",String.format(Locale.US,"%.2f",gp.getFloat("powerfull_reversal_atr_factor_"+symbol,0.25f)),true);
+        EditText profitLock=addEaParameter(fields,"Min Profit Lock Points",Integer.toString(gp.getInt("powerfull_min_profit_lock_points_"+symbol,5)),false);
+        EditText ticks=addEaParameter(fields,"Tick Samples For Analysis (12–24)",Integer.toString(gp.getInt("powerfull_tick_samples_"+symbol,12)),false);
+        EditText momentum=addEaParameter(fields,"Momentum Strong Points",String.format(Locale.US,"%.2f",gp.getFloat("powerfull_momentum_points_"+symbol,4.0f)),true);
+        EditText deviation=addEaParameter(fields,"Deviation Points",Integer.toString(gp.getInt("powerfull_deviation_points_"+symbol,20)),false);
+        EditText seconds=addEaParameter(fields,"Pending Placement Seconds Before Close (1–10)",Integer.toString(gp.getInt("powerfull_pending_seconds_"+symbol,3)),false);
+        EditText maxAtr=addEaParameter(fields,"Max Pending Distance ATR (0.5–5)",String.format(Locale.US,"%.2f",gp.getFloat("powerfull_max_pending_atr_"+symbol,1.5f)),true);
+        EditText hold=addEaParameter(fields,"Min Hold Candles Before Profit Close (0–12)",Integer.toString(gp.getInt("powerfull_min_hold_candles_"+symbol,2)),false);
+        EditText slBuy=addEaParameter(fields,"SL Entry 1 / BUY Points (0=OFF)",Integer.toString(gp.getInt("powerfull_sl_buy_points_"+symbol,0)),false);
+        EditText slSell=addEaParameter(fields,"SL Entry 2 / SELL Points (0=OFF)",Integer.toString(gp.getInt("powerfull_sl_sell_points_"+symbol,0)),false);
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(false);scroll.addView(fields);
+        LinearLayout wrapper=new LinearLayout(this);wrapper.setOrientation(LinearLayout.VERTICAL);
+        wrapper.addView(scroll,new LinearLayout.LayoutParams(-1,0,1f));
+        LinearLayout buttons=new LinearLayout(this);buttons.setPadding(uiDp(12),uiDp(6),uiDp(12),uiDp(6));
+        Button save=btn("SIMPAN PARAMETER"),close=btn("BATAL");
+        save.setBackground(roundBg(Color.rgb(0,105,83),10));close.setBackground(roundBg(Color.rgb(53,65,77),10));
+        buttons.addView(save,new LinearLayout.LayoutParams(0,uiDp(46),1f));buttons.addView(close,new LinearLayout.LayoutParams(0,uiDp(46),1f));
+        wrapper.addView(buttons,new LinearLayout.LayoutParams(-1,uiDp(58)));
+        AlertDialog d=new AlertDialog.Builder(this).setView(wrapper).create();
+        close.setOnClickListener(v->d.dismiss());
+        save.setOnClickListener(v->{
+            try{
+                double vLot=Double.parseDouble(lot.getText().toString().trim().replace(',','.'));
+                double vStep=Double.parseDouble(lotStep.getText().toString().trim().replace(',','.'));
+                int vDistance=Integer.parseInt(minDistance.getText().toString().trim());
+                int vLookback=Integer.parseInt(lookback.getText().toString().trim());
+                double vOffset=Double.parseDouble(offset.getText().toString().trim().replace(',','.'));
+                double vReversal=Double.parseDouble(reversal.getText().toString().trim().replace(',','.'));
+                int vLock=Integer.parseInt(profitLock.getText().toString().trim());
+                int vTicks=Integer.parseInt(ticks.getText().toString().trim());
+                double vMomentum=Double.parseDouble(momentum.getText().toString().trim().replace(',','.'));
+                int vDeviation=Integer.parseInt(deviation.getText().toString().trim());
+                int vSeconds=Integer.parseInt(seconds.getText().toString().trim());
+                double vAtr=Double.parseDouble(maxAtr.getText().toString().trim().replace(',','.'));
+                int vHold=Integer.parseInt(hold.getText().toString().trim());
+                int vSlBuy=Integer.parseInt(slBuy.getText().toString().trim());
+                int vSlSell=Integer.parseInt(slSell.getText().toString().trim());
+                if(!Double.isFinite(vLot)||vLot<minLotForSymbol(symbol)||!Double.isFinite(vStep)||vStep<=0
+                    ||vDistance<0||vDistance>100000||vLookback<1||vLookback>200
+                    ||!Double.isFinite(vOffset)||vOffset<0||vOffset>1
+                    ||!Double.isFinite(vReversal)||vReversal<0.05||vReversal>2.0
+                    ||vLock<0||vLock>100000||vTicks<12||vTicks>24
+                    ||!Double.isFinite(vMomentum)||vMomentum<0||vMomentum>100000
+                    ||vDeviation<0||vDeviation>10000||vSeconds<1||vSeconds>10
+                    ||!Double.isFinite(vAtr)||vAtr<0.5||vAtr>5.0||vHold<0||vHold>12
+                    ||vSlBuy<0||vSlSell<0||vSlBuy>100000000||vSlSell>100000000){
+                    Toast.makeText(this,"Ada parameter di luar rentang yang diizinkan.",Toast.LENGTH_LONG).show();return;
+                }
+                double point=preferenceDouble(gp,"broker_quote_point_"+symbol,0.0);
+                double pip=gp.getFloat("powerfull_pip_size_"+symbol,(float)(point>0?point:0.01));
+                gp.edit().putFloat("powerfull_lot_"+symbol,(float)vLot)
+                    .putFloat("powerfull_lot_step_"+symbol,(float)vStep)
+                    .putInt("powerfull_min_distance_points_"+symbol,vDistance)
+                    .putInt("powerfull_distribution_lookback_"+symbol,vLookback)
+                    .putFloat("powerfull_range_offset_fraction_"+symbol,(float)vOffset)
+                    .putFloat("powerfull_reversal_atr_factor_"+symbol,(float)vReversal)
+                    .putInt("powerfull_min_profit_lock_points_"+symbol,vLock)
+                    .putInt("powerfull_tick_samples_"+symbol,vTicks)
+                    .putFloat("powerfull_momentum_points_"+symbol,(float)vMomentum)
+                    .putInt("powerfull_deviation_points_"+symbol,vDeviation)
+                    .putInt("powerfull_pending_seconds_"+symbol,vSeconds)
+                    .putFloat("powerfull_max_pending_atr_"+symbol,(float)vAtr)
+                    .putInt("powerfull_min_hold_candles_"+symbol,vHold)
+                    .putInt("powerfull_sl_buy_points_"+symbol,vSlBuy)
+                    .putInt("powerfull_sl_sell_points_"+symbol,vSlSell)
+                    .putFloat("powerfull_pip_size_"+symbol,(float)pip)
+                    .putBoolean("powerfull_buy_limit_"+symbol,true).putBoolean("powerfull_sell_limit_"+symbol,true)
+                    .apply();
+                AppLog.add(this,"UJI TEST EA","parameters saved symbol="+symbol+" lot="+vLot+" distance="+vDistance+" lookback="+vLookback+" ticks="+vTicks+" SLbuy="+vSlBuy+" SLsell="+vSlSell);
+                Toast.makeText(this,"Parameter EA uji test disimpan",Toast.LENGTH_SHORT).show();d.dismiss();
+            }catch(Exception e){Toast.makeText(this,"Periksa kembali semua parameter angka.",Toast.LENGTH_LONG).show();}
+        });
+        showSizedDialog(d,0.90f,460);
     }
 
     private void showPowerfullDialog(){
