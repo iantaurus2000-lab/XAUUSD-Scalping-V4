@@ -133,25 +133,28 @@ jobs:
           $dataRoot = Join-Path $env:APPDATA 'MetaQuotes\Terminal'
           $tradeInclude = Get-ChildItem @('C:\Program Files\MetaTrader 5', 'C:\Program Files (x86)\MetaTrader 5', $dataRoot) -Filter 'Trade.mqh' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $tradeInclude) { throw 'MT5 standard library Trade.mqh is missing; cannot compile EA safely.' }
+          # Resolve the actual MT5 installation root from its standard library.
           $includeSource = $tradeInclude.Directory.Parent.FullName
-          $dataDirs = Get-ChildItem $dataRoot -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path (Join-Path $_.FullName 'MQL5') }
-          foreach ($dataDir in $dataDirs) {
-            $targetInclude = Join-Path $dataDir.FullName 'MQL5\Include'
-            New-Item -ItemType Directory -Path $targetInclude -Force | Out-Null
-            Copy-Item (Join-Path $includeSource '*') $targetInclude -Recurse -Force
+          $mql5Root = $tradeInclude.Directory.Parent.Parent.FullName
+          $mt5Root = Split-Path $mql5Root -Parent
+          if (-not (Test-Path (Join-Path $mt5Root 'terminal64.exe'))) {
+            throw "Could not resolve MT5 installation root from Trade.mqh: $($tradeInclude.FullName)"
+          }
+          if (-not (Test-Path (Join-Path $mql5Root 'Experts'))) {
+            New-Item -ItemType Directory -Path (Join-Path $mql5Root 'Experts') -Force | Out-Null
           }
           "METAEDITOR=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MT5ROOT=$mt5Root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Compile both EAs
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path build\ea | Out-Null
-          $dataRoot = Join-Path $env:APPDATA 'MetaQuotes\Terminal'
-          $terminalData = Get-ChildItem $dataRoot -Directory -ErrorAction SilentlyContinue |
-            Where-Object { Test-Path (Join-Path $_.FullName 'MQL5\Include\Trade\Trade.mqh') } |
-            Select-Object -First 1
-          if (-not $terminalData) { throw 'No MT5 terminal data folder with MQL5\Include\Trade\Trade.mqh was found.' }
-          $experts = Join-Path $terminalData.FullName 'MQL5\Experts'
+          $mt5Root = $env:MT5ROOT
+          if (-not $mt5Root -or -not (Test-Path (Join-Path $mt5Root 'MQL5\Include\Trade\Trade.mqh'))) {
+            throw "MT5 installation root or standard Trade.mqh not found: $mt5Root"
+          }
+          $experts = Join-Path $mt5Root 'MQL5\Experts'
           New-Item -ItemType Directory -Force -Path $experts | Out-Null
           $sources = @(
             @{ Source = 'mt5/Experts/Rayyan4GatewayEA.mq5'; Name = 'Rayyan4GatewayEA' },
