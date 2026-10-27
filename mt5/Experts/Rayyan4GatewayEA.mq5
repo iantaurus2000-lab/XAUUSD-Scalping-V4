@@ -65,16 +65,10 @@ struct PowerfullConfig {
    double stopPips;
    double lotStep;
    int minDistancePoints;
-   int distributionLookback;
-   double rangeOffsetFraction;
-   int tickSamplesForAnalysis;
-   double momentumStrongPoints;
    int deviationPoints;
    int slEntry1Points;
    int slEntry2Points;
    bool usePointStops;
-   int percentile;
-   int pendingPlacementSeconds;
    double maxPendingDistanceATR;
    int minHoldCandles;
    double reversalATRFactor;
@@ -1264,11 +1258,9 @@ bool powerRefreshConfig(int index){
    }
    string symbol=powerSymbols[index];
    double oldPipSize=powerCfg[index].pipSize;
-   int oldPercentile=powerCfg[index].percentile;
    double lot=StringToDouble(field(body,"lot"));
    double pip=StringToDouble(field(body,"pip"));
    double stop=StringToDouble(field(body,"stopPips"));
-   int percentile=(int)StringToInteger(field(body,"percentile"));
    string reason=field(body,"reason");
    bool requested=(field(body,"enabled")=="1");
    string buyFlag=field(body,"buyLimit");
@@ -1276,17 +1268,12 @@ bool powerRefreshConfig(int index){
    string reforecastFlag=field(body,"reforecast");
    string quickProfitFlag=field(body,"quickProfit");
    string crossCandleFlag=field(body,"crossCandleHold");
-   string pendingSecondsText=field(body,"pendingSeconds");
    string maxPendingAtrText=field(body,"maxPendingATR");
    string minHoldText=field(body,"minHoldCandles");
    string reversalAtrText=field(body,"reversalATRFactor");
    string minProfitLockText=field(body,"minProfitLockPoints");
    string lotStepText=field(body,"lotStep");
    string minDistanceText=field(body,"minDistancePoints");
-   string lookbackText=field(body,"distributionLookback");
-   string offsetText=field(body,"rangeOffsetFraction");
-   string tickSamplesText=field(body,"tickSamplesForAnalysis");
-   string momentumText=field(body,"momentumStrongPoints");
    string deviationText=field(body,"deviationPoints");
    string slEntry1Text=field(body,"slEntry1Points");
    string slEntry2Text=field(body,"slEntry2Points");
@@ -1295,17 +1282,12 @@ bool powerRefreshConfig(int index){
    bool reforecastEnabled=(reforecastFlag==""||reforecastFlag=="1");
    bool quickProfitEnabled=(quickProfitFlag==""||quickProfitFlag=="1");
    bool crossCandleEnabled=(crossCandleFlag==""||crossCandleFlag=="1");
-   int pendingSeconds=(pendingSecondsText==""?3:(int)StringToInteger(pendingSecondsText));
    double maxPendingAtr=(maxPendingAtrText==""?1.5:StringToDouble(maxPendingAtrText));
    int minHold=(minHoldText==""?2:(int)StringToInteger(minHoldText));
    double reversalAtr=(reversalAtrText==""?0.25:StringToDouble(reversalAtrText));
    int minProfitLock=(minProfitLockText==""?5:(int)StringToInteger(minProfitLockText));
    double lotStep=(lotStepText==""?0.01:StringToDouble(lotStepText));
    int minDistance=(minDistanceText==""?30:(int)StringToInteger(minDistanceText));
-   int lookback=(lookbackText==""?20:(int)StringToInteger(lookbackText));
-   double rangeOffset=(offsetText==""?0.20:StringToDouble(offsetText));
-   int tickSamples=(tickSamplesText==""?12:(int)StringToInteger(tickSamplesText));
-   double momentum=(momentumText==""?4.0:StringToDouble(momentumText));
    int deviation=(deviationText==""?20:(int)StringToInteger(deviationText));
    int slEntry1=(slEntry1Text==""?-1:(int)StringToInteger(slEntry1Text));
    int slEntry2=(slEntry2Text==""?-1:(int)StringToInteger(slEntry2Text));
@@ -1315,16 +1297,10 @@ bool powerRefreshConfig(int index){
    bool valid=MathIsValidNumber(lot)&&lot+1e-8>=minLot
       &&MathIsValidNumber(pip)&&pip>0.0
       &&MathIsValidNumber(stop)&&stop>=0.0
-      &&(percentile==50||percentile==60||percentile==70||percentile==75||percentile==80||percentile==90)
       &&MathIsValidNumber(lotStep)&&lotStep>0.0
       &&minDistance>=0&&minDistance<=100000
-      &&lookback>=1&&lookback<=200
-      &&MathIsValidNumber(rangeOffset)&&rangeOffset>=0.0&&rangeOffset<=1.0
-      &&tickSamples>=12&&tickSamples<=24
-      &&MathIsValidNumber(momentum)&&momentum>=0.0
       &&deviation>=0&&deviation<=10000
       &&(!usePointStops||(slEntry1>=0&&slEntry2>=0))
-      &&pendingSeconds>=1&&pendingSeconds<=10
       &&MathIsValidNumber(maxPendingAtr)&&maxPendingAtr>=0.5&&maxPendingAtr<=5.0
       &&minHold>=0&&minHold<=12
       &&MathIsValidNumber(reversalAtr)&&reversalAtr>=0.05&&reversalAtr<=2.0
@@ -1334,17 +1310,12 @@ bool powerRefreshConfig(int index){
    powerCfg[index].autoReforecast=reforecastEnabled;
    powerCfg[index].quickProfitClose=quickProfitEnabled;
    powerCfg[index].crossCandleHold=crossCandleEnabled;
-   powerCfg[index].pendingPlacementSeconds=pendingSeconds;
    powerCfg[index].maxPendingDistanceATR=maxPendingAtr;
    powerCfg[index].minHoldCandles=minHold;
    powerCfg[index].reversalATRFactor=reversalAtr;
    powerCfg[index].minProfitLockPoints=minProfitLock;
    powerCfg[index].lotStep=lotStep;
    powerCfg[index].minDistancePoints=minDistance;
-   powerCfg[index].distributionLookback=lookback;
-   powerCfg[index].rangeOffsetFraction=rangeOffset;
-   powerCfg[index].tickSamplesForAnalysis=tickSamples;
-   powerCfg[index].momentumStrongPoints=momentum;
    powerCfg[index].deviationPoints=deviation;
    powerCfg[index].slEntry1Points=(slEntry1<0?0:slEntry1);
    powerCfg[index].slEntry2Points=(slEntry2<0?0:slEntry2);
@@ -1353,10 +1324,9 @@ bool powerRefreshConfig(int index){
    powerCfg[index].lot=lot;
    powerCfg[index].pipSize=pip;
    powerCfg[index].stopPips=stop;
-   powerCfg[index].percentile=percentile;
    powerCfg[index].reason=(reason!=""?reason:(!requested?"DISABLED":(valid?"READY":"CONFIG_INVALID")));
    powerConfigReceivedMs[index]=GetTickCount();
-   if(valid&&(MathAbs(pip-oldPipSize)>1e-12||percentile!=oldPercentile)){
+   if(valid&&MathAbs(pip-oldPipSize)>1e-12){
       powerModelGood[index]=false;
       powerModelBuiltAtMs[index]=0;
       powerLastModelAttemptMs[index]=0;
@@ -1818,11 +1788,10 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
    double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
    if(pip<=0.0||point<=0.0)return;
 
-   bool allowBuy=false,allowSell=false;
-   int buyScore=0,sellScore=0;
-   powerDetectSignals(index,tick,allowBuy,allowSell,buyScore,sellScore);
    double recentNet=powerTickPriceAgo(index,0)-powerTickPriceAgo(index,3);
    double priorNet=powerTickPriceAgo(index,4)-powerTickPriceAgo(index,7);
+   bool allowBuy=(recentNet>0.0&&priorNet<=0.0);
+   bool allowSell=(recentNet<0.0&&priorNet>=0.0);
    double threshold=MathMax(2.0*point,4.0*point);
    double atr=powerAtrPrice(index);
    if(atr<=0.0)atr=powerForecastRangePips[index]*pip;
