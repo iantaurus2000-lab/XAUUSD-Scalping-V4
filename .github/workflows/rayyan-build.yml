@@ -11,8 +11,6 @@ on:
       - 'settings.gradle'
       - '.github/workflows/rayyan-build.yml'
       - 'mt5/Experts/Rayyan4GatewayEA.mq5'
-      - 'MT5_EA_Test/uji-test-mt5.mq5'
-      - 'mt5/Experts/uji-test-mt5.mq5'
       - 'app/rayyan4-debug.keystore.b64'
   workflow_dispatch:
 
@@ -60,7 +58,6 @@ jobs:
           name: Rayyan-POWERFULL-MQ5-source
           path: |
             mt5/Experts/Rayyan4GatewayEA.mq5
-            MT5_EA_Test/uji-test-mt5.mq5
           if-no-files-found: error
           retention-days: 14
 
@@ -184,8 +181,7 @@ jobs:
           $experts = Join-Path $mt5Root 'MQL5\Experts'
           New-Item -ItemType Directory -Force -Path $experts | Out-Null
           $sources = @(
-            @{ Source = 'mt5/Experts/Rayyan4GatewayEA.mq5'; Name = 'Rayyan4GatewayEA' },
-            @{ Source = 'mt5/Experts/uji-test-mt5.mq5'; Name = 'uji-test-mt5' }
+            @{ Source = 'mt5/Experts/Rayyan4GatewayEA.mq5'; Name = 'Rayyan4GatewayEA' }
           )
           foreach ($item in $sources) {
             $source = (Resolve-Path $item.Source).Path
