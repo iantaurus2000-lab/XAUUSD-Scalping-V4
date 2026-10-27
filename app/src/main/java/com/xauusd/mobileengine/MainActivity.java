@@ -463,6 +463,26 @@ public class MainActivity extends Activity {
     private void syncBrokerEntryLine(){
         if(chart==null)return;
         SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        // POWERFULL has its own magic number and /power_state channel; it must not
+        // be looked up through the legacy RAYYAN4 /state snapshot.
+        String selectedSymbol=mt5SymbolForMarket(selectedMarket);
+        if("POWERFULL".equals(activeStrategyForSymbol(selectedSymbol))){
+            long powerAt=gp.getLong("powerfull_state_at_"+selectedSymbol,0L);
+            long nowPower=System.currentTimeMillis();
+            if(powerAt<=0L||nowPower<powerAt||nowPower-powerAt>8000L)return;
+            String kind=gp.getString("powerfull_order_kind_"+selectedSymbol,"NONE");
+            if(!"PENDING".equals(kind)&&!"POSITION".equals(kind)){
+                chart.setBrokerOrderLevel(0.0,"OPEN ENTRY");
+                return;
+            }
+            double entry=preferenceDouble(gp,"powerfull_order_entry_"+selectedSymbol,0.0);
+            String side=gp.getString("powerfull_order_side_"+selectedSymbol,"");
+            if(entry>0.0){
+                String label=("PENDING".equals(kind)?"PENDING ":"OPEN ")+side;
+                chart.setBrokerOrderLevel(entry,label);
+            }
+            return;
+        }
         long now=System.currentTimeMillis(),at=gp.getLong("ea_order_state_at",0L);
         // A stale heartbeat is not proof of closure: preserve the last confirmed line
         // until MT5 sends a fresh state. This avoids both ghost-line clearing on outages
