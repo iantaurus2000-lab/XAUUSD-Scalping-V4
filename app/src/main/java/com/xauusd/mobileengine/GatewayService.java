@@ -367,18 +367,12 @@ public final class GatewayService extends Service {
         double brokerPoint=0.0; try { brokerPoint=Double.parseDouble(p.getString("broker_quote_point_"+suffix,"0")); } catch(Exception ignored) {}
         // Pip is an internal display/conversion unit; the test EA itself is point-based.
         double pip=p.getFloat("powerfull_pip_size_"+suffix,(float)(brokerPoint>0.0?brokerPoint:0.01));
-        int percentile=75;
         double stopPips=3.0; // fallback only for older APK clients
-        int pendingSeconds=p.getInt("powerfull_pending_seconds_"+suffix,3);
         double maxPendingATR=p.getFloat("powerfull_max_pending_atr_"+suffix,1.5f);
         int minHoldCandles=p.getInt("powerfull_min_hold_candles_"+suffix,2);
         double reversalATRFactor=p.getFloat("powerfull_reversal_atr_factor_"+suffix,0.25f);
         int minProfitLockPoints=p.getInt("powerfull_min_profit_lock_points_"+suffix,5);
         int minDistancePoints=p.getInt("powerfull_min_distance_points_"+suffix,30);
-        int distributionLookback=p.getInt("powerfull_distribution_lookback_"+suffix,20);
-        double rangeOffsetFraction=p.getFloat("powerfull_range_offset_fraction_"+suffix,0.20f);
-        int tickSamples=p.getInt("powerfull_tick_samples_"+suffix,12);
-        double momentumPoints=p.getFloat("powerfull_momentum_points_"+suffix,4.0f);
         int deviationPoints=p.getInt("powerfull_deviation_points_"+suffix,20);
         int slBuyPoints=p.getInt("powerfull_sl_buy_points_"+suffix,0);
         int slSellPoints=p.getInt("powerfull_sl_sell_points_"+suffix,0);
@@ -387,13 +381,8 @@ public final class GatewayService extends Service {
             &&Double.isFinite(lotStep)&&lotStep>0.0
             &&Double.isFinite(pip)&&pip>0.0
             &&minDistancePoints>=0&&minDistancePoints<=100000
-            &&distributionLookback>=1&&distributionLookback<=200
-            &&Double.isFinite(rangeOffsetFraction)&&rangeOffsetFraction>=0.0&&rangeOffsetFraction<=1.0
-            &&tickSamples>=12&&tickSamples<=24
-            &&Double.isFinite(momentumPoints)&&momentumPoints>=0.0
             &&deviationPoints>=0&&deviationPoints<=10000
             &&slBuyPoints>=0&&slSellPoints>=0
-            &&pendingSeconds>=1&&pendingSeconds<=10
             &&Double.isFinite(maxPendingATR)&&maxPendingATR>=0.5&&maxPendingATR<=5.0
             &&minHoldCandles>=0&&minHoldCandles<=12
             &&minProfitLockPoints>=0&&minProfitLockPoints<=100000
@@ -411,17 +400,11 @@ public final class GatewayService extends Service {
             +";lot="+String.format(Locale.US,"%.4f",lot)
             +";lotStep="+String.format(Locale.US,"%.4f",lotStep)
             +";pip="+String.format(Locale.US,"%.8f",pip)
-            +";percentile="+percentile
             +";stopPips="+String.format(Locale.US,"%.2f",stopPips)
             +";minDistancePoints="+minDistancePoints
-            +";distributionLookback="+distributionLookback
-            +";rangeOffsetFraction="+String.format(Locale.US,"%.4f",rangeOffsetFraction)
-            +";tickSamplesForAnalysis="+tickSamples
-            +";momentumStrongPoints="+String.format(Locale.US,"%.4f",momentumPoints)
             +";deviationPoints="+deviationPoints
             +";slEntry1Points="+slBuyPoints
             +";slEntry2Points="+slSellPoints
-            +";pendingSeconds="+pendingSeconds
             +";maxPendingATR="+String.format(Locale.US,"%.2f",maxPendingATR)
             +";minHoldCandles="+minHoldCandles
             +";reversalATRFactor="+String.format(Locale.US,"%.2f",reversalATRFactor)
