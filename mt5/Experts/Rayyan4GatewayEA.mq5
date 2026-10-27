@@ -63,6 +63,16 @@ struct PowerfullConfig {
    double lot;
    double pipSize;
    double stopPips;
+   double lotStep;
+   int minDistancePoints;
+   int distributionLookback;
+   double rangeOffsetFraction;
+   int tickSamplesForAnalysis;
+   double momentumStrongPoints;
+   int deviationPoints;
+   int slEntry1Points;
+   int slEntry2Points;
+   bool usePointStops;
    int percentile;
    int pendingPlacementSeconds;
    double maxPendingDistanceATR;
@@ -1267,7 +1277,15 @@ bool powerRefreshConfig(int index){
    string minHoldText=field(body,"minHoldCandles");
    string reversalAtrText=field(body,"reversalATRFactor");
    string minProfitLockText=field(body,"minProfitLockPoints");
-   // Optional new fields default to the tested values when an older APK is still connected.
+   string lotStepText=field(body,"lotStep");
+   string minDistanceText=field(body,"minDistancePoints");
+   string lookbackText=field(body,"distributionLookback");
+   string offsetText=field(body,"rangeOffsetFraction");
+   string tickSamplesText=field(body,"tickSamplesForAnalysis");
+   string momentumText=field(body,"momentumStrongPoints");
+   string deviationText=field(body,"deviationPoints");
+   string slEntry1Text=field(body,"slEntry1Points");
+   string slEntry2Text=field(body,"slEntry2Points");
    bool buyEnabled=(buyFlag==""||buyFlag=="1");
    bool sellEnabled=(sellFlag==""||sellFlag=="1");
    bool reforecastEnabled=(reforecastFlag==""||reforecastFlag=="1");
@@ -1278,17 +1296,35 @@ bool powerRefreshConfig(int index){
    int minHold=(minHoldText==""?2:(int)StringToInteger(minHoldText));
    double reversalAtr=(reversalAtrText==""?0.25:StringToDouble(reversalAtrText));
    int minProfitLock=(minProfitLockText==""?5:(int)StringToInteger(minProfitLockText));
+   double lotStep=(lotStepText==""?0.01:StringToDouble(lotStepText));
+   int minDistance=(minDistanceText==""?30:(int)StringToInteger(minDistanceText));
+   int lookback=(lookbackText==""?20:(int)StringToInteger(lookbackText));
+   double rangeOffset=(offsetText==""?0.20:StringToDouble(offsetText));
+   int tickSamples=(tickSamplesText==""?12:(int)StringToInteger(tickSamplesText));
+   double momentum=(momentumText==""?4.0:StringToDouble(momentumText));
+   int deviation=(deviationText==""?20:(int)StringToInteger(deviationText));
+   int slEntry1=(slEntry1Text==""?-1:(int)StringToInteger(slEntry1Text));
+   int slEntry2=(slEntry2Text==""?-1:(int)StringToInteger(slEntry2Text));
+   bool usePointStops=(slEntry1Text!=""&&slEntry2Text!="");
    double minLot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
    if(minLot<=0.0)minLot=(symbol=="XAUUSDm"?0.01:0.10);
    bool valid=MathIsValidNumber(lot)&&lot+1e-8>=minLot
       &&MathIsValidNumber(pip)&&pip>0.0
-      &&MathIsValidNumber(stop)&&stop>0.0
+      &&MathIsValidNumber(stop)&&stop>=0.0
       &&(percentile==50||percentile==60||percentile==70||percentile==75||percentile==80||percentile==90)
+      &&MathIsValidNumber(lotStep)&&lotStep>0.0
+      &&minDistance>=0&&minDistance<=100000
+      &&lookback>=1&&lookback<=200
+      &&MathIsValidNumber(rangeOffset)&&rangeOffset>=0.0&&rangeOffset<=1.0
+      &&tickSamples>=12&&tickSamples<=24
+      &&MathIsValidNumber(momentum)&&momentum>=0.0
+      &&deviation>=0&&deviation<=10000
+      &&(!usePointStops||(slEntry1>=0&&slEntry2>=0))
       &&pendingSeconds>=1&&pendingSeconds<=10
       &&MathIsValidNumber(maxPendingAtr)&&maxPendingAtr>=0.5&&maxPendingAtr<=5.0
       &&minHold>=0&&minHold<=12
       &&MathIsValidNumber(reversalAtr)&&reversalAtr>=0.05&&reversalAtr<=2.0
-      &&minProfitLock>=1&&minProfitLock<=100000;
+      &&minProfitLock>=0&&minProfitLock<=100000;
    powerCfg[index].buyLimitEnabled=buyEnabled;
    powerCfg[index].sellLimitEnabled=sellEnabled;
    powerCfg[index].autoReforecast=reforecastEnabled;
@@ -1299,6 +1335,16 @@ bool powerRefreshConfig(int index){
    powerCfg[index].minHoldCandles=minHold;
    powerCfg[index].reversalATRFactor=reversalAtr;
    powerCfg[index].minProfitLockPoints=minProfitLock;
+   powerCfg[index].lotStep=lotStep;
+   powerCfg[index].minDistancePoints=minDistance;
+   powerCfg[index].distributionLookback=lookback;
+   powerCfg[index].rangeOffsetFraction=rangeOffset;
+   powerCfg[index].tickSamplesForAnalysis=tickSamples;
+   powerCfg[index].momentumStrongPoints=momentum;
+   powerCfg[index].deviationPoints=deviation;
+   powerCfg[index].slEntry1Points=(slEntry1<0?0:slEntry1);
+   powerCfg[index].slEntry2Points=(slEntry2<0?0:slEntry2);
+   powerCfg[index].usePointStops=usePointStops;
    powerCfg[index].enabled=requested&&valid&&(buyEnabled||sellEnabled);
    powerCfg[index].lot=lot;
    powerCfg[index].pipSize=pip;
