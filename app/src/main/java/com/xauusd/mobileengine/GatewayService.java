@@ -364,7 +364,7 @@ public final class GatewayService extends Service {
         boolean crossCandle=p.getBoolean("powerfull_cross_candle_"+suffix,true);
         double lot=p.getFloat("powerfull_lot_"+suffix,0.0f);
         double lotStep=p.getFloat("powerfull_lot_step_"+suffix,0.01f);
-        double brokerPoint=p.getFloat("broker_quote_point_"+suffix,0.0f);
+        double brokerPoint=0.0; try { brokerPoint=Double.parseDouble(p.getString("broker_quote_point_"+suffix,"0")); } catch(Exception ignored) {}
         // Pip is an internal display/conversion unit; the test EA itself is point-based.
         double pip=p.getFloat("powerfull_pip_size_"+suffix,(float)(brokerPoint>0.0?brokerPoint:0.01));
         int percentile=75;
