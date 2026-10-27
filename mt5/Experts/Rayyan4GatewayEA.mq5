@@ -846,7 +846,13 @@ void publishNativeChartBars(){
          if(appendBarsForTimeframe(sym,frames[j],names[j],count,batch))series++;
       }
    }
-   if(series==0 || StringLen(batch)==0) return;
+   if(series==0 || StringLen(batch)==0){
+      if(TimeCurrent()-lastDiag>=30){
+         lastDiag=TimeCurrent();
+         Print("RAYYAN NATIVE BARS WAIT: CopyRates has not supplied enough history; check Market Watch symbols/history");
+      }
+      return;
+   }
    string base=GatewayUrl;
    while(StringLen(base)>0 && StringSubstr(base,StringLen(base)-1,1)=="/")
       base=StringSubstr(base,0,StringLen(base)-1);
@@ -858,7 +864,7 @@ void publishNativeChartBars(){
    ArrayResize(requestData,bytes-1);
    ResetLastError();
    int code=WebRequest("POST",base+"/bars/upload",
-      "Content-Type: text/plain; charset=utf-8\r\n",1000,
+      "Content-Type: text/plain; charset=utf-8\r\n",5000,
       requestData,responseData,responseHeaders);
    string response=CharArrayToString(responseData,0,WHOLE_ARRAY,CP_UTF8);
    if(code!=200 || StringFind(response,"BARS OK")!=0){
