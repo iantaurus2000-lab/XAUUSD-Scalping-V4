@@ -76,8 +76,37 @@ jobs:
       - name: Install MetaTrader 5 / MetaEditor
         shell: pwsh
         run: |
+          # Correct possible hosted-runner clock drift before validating the vendor TLS certificate.
+          Write-Host "Runner UTC before sync: $([DateTime]::UtcNow.ToString('o'))"
+          try {
+            Start-Service w32time -ErrorAction SilentlyContinue
+            w32tm /resync /force | Out-Host
+          } catch {
+            Write-Warning "Time resynchronization was unavailable: $($_.Exception.Message)"
+          }
+          Write-Host "Runner UTC after sync: $([DateTime]::UtcNow.ToString('o'))"
+
           $installer = Join-Path $env:RUNNER_TEMP 'mt5setup.exe'
-          Invoke-WebRequest -Uri 'https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe' -OutFile $installer
+          $installerUri = 'https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe'
+          $downloaded = $false
+          for ($attempt = 1; $attempt -le 4; $attempt++) {
+            try {
+              Write-Host "Downloading official MetaTrader 5 installer (attempt $attempt/4)"
+              Invoke-WebRequest -Uri $installerUri -OutFile $installer -TimeoutSec 90
+              if ((Test-Path $installer) -and (Get-Item $installer).Length -gt 1000000) {
+                $downloaded = $true
+                break
+              }
+              throw "Installer download was unexpectedly small or missing."
+            } catch {
+              Remove-Item $installer -Force -ErrorAction SilentlyContinue
+              if ($attempt -eq 4) {
+                throw "Official MT5 installer download failed after 4 secure attempts. TLS certificate validation was not bypassed. Last error: $($_.Exception.Message)"
+              }
+              Start-Sleep -Seconds (5 * $attempt)
+            }
+          }
+          if (-not $downloaded) { throw 'Official MT5 installer was not downloaded.' }
           Start-Process -FilePath $installer -ArgumentList '/auto' -Wait
           $candidates = @('C:\Program Files\MetaTrader 5\metaeditor64.exe', 'C:\Program Files (x86)\MetaTrader 5\metaeditor64.exe')
           $editor = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
