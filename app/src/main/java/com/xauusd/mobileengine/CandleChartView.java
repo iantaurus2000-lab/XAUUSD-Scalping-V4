@@ -31,6 +31,7 @@ public class CandleChartView extends View {
     private double[] fibonacciLevels = new double[]{-0.27,0,.236,.382,.5,.618,.786,1};
     private String signalSide="BUY";
     private double positionEntry;
+    private String positionEntryLabel="OPEN ENTRY";
     private boolean signalActive=false;
     private final Handler countdownHandler = new Handler(Looper.getMainLooper());
     private final Runnable countdownTick = new Runnable() {
@@ -138,8 +139,13 @@ public class CandleChartView extends View {
             &&e>0&&s>0&&t1>0&&t2>0;
         invalidate();
     }
-    /** Fixed entry price captured when READY/Manual/Smart Auto is recorded. */
-    public void setPositionEntryLevel(double entry){positionEntry=entry>0?entry:0;invalidate();}
+    /** Broker-confirmed entry level; label distinguishes a pending order from an open position. */
+    public void setPositionEntryLevel(double entry){setBrokerOrderLevel(entry,"OPEN ENTRY");}
+    public void setBrokerOrderLevel(double entry,String label){
+        positionEntry=entry>0?entry:0;
+        positionEntryLabel=(label==null||label.trim().isEmpty()?"OPEN ENTRY":label);
+        invalidate();
+    }
     public double getPositionEntryLevel(){return positionEntry;}
     public void setShowEMA50(boolean v){showEMA50=v;invalidate();}
     public void setShowEMA200(boolean v){showEMA200=v;invalidate();}
@@ -317,7 +323,7 @@ public class CandleChartView extends View {
                 p.setPathEffect(new DashPathEffect(new float[]{9,5},0));
                 ln(c,L,y,R,y,Color.rgb(0,210,255),2);
                 p.setPathEffect(null);
-                box(c,"OPEN ENTRY "+f(positionEntry),y,Color.rgb(0,170,220),Color.BLACK);
+                box(c,positionEntryLabel+" "+f(positionEntry),y,Color.rgb(0,170,220),Color.BLACK);
             }
         }
 
