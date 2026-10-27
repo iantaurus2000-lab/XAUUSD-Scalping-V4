@@ -1822,7 +1822,10 @@ public class MainActivity extends Activity {
                 return;
             }
             if(on){
-                gp.edit().putBoolean(powerKey,true).putBoolean(standardKey,false).putBoolean(excellentKey,false).apply();
+                gp.edit().putBoolean(powerKey,true).putBoolean(standardKey,false).putBoolean(excellentKey,false)
+                    .putBoolean("powerfull_buy_limit_"+symbol,true).putBoolean("powerfull_sell_limit_"+symbol,true)
+                    .putBoolean("powerfull_reforecast_"+symbol,true).putBoolean("powerfull_quick_profit_"+symbol,true)
+                    .putBoolean("powerfull_cross_candle_"+symbol,true).apply();
                 standard.setChecked(false);excellent.setChecked(false);
             }else gp.edit().putBoolean(powerKey,false).apply();
             applyStrategyIndicatorProfile();queueNativeIndicatorState();
@@ -1885,6 +1888,7 @@ public class MainActivity extends Activity {
             gp.edit().putBoolean("powerfull_enabled_"+symbol,enabled.isChecked())
                 .putBoolean("powerfull_buy_limit_"+symbol,true).putBoolean("powerfull_sell_limit_"+symbol,true)
                 .putBoolean("powerfull_quick_profit_"+symbol,true).putBoolean("powerfull_cross_candle_"+symbol,true)
+                .putBoolean("powerfull_reforecast_"+symbol,true)
                 .putBoolean(strategyEnabledKey("STANDAR",symbol),enabled.isChecked()?false:gp.getBoolean(strategyEnabledKey("STANDAR",symbol),false))
                 .putBoolean(strategyEnabledKey("EXCELLENT",symbol),enabled.isChecked()?false:gp.getBoolean(strategyEnabledKey("EXCELLENT",symbol),false)).apply();
             applyStrategyIndicatorProfile();queueNativeIndicatorState();
