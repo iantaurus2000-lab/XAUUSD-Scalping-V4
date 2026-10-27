@@ -143,6 +143,26 @@ jobs:
           if (-not (Test-Path (Join-Path $mql5Root 'Experts'))) {
             New-Item -ItemType Directory -Path (Join-Path $mql5Root 'Experts') -Force | Out-Null
           }
+
+          # MetaEditor resolves <Trade/Trade.mqh> from the terminal data folder,
+          # not necessarily from the installation folder. Seed that data folder
+          # with the vendor's complete standard Include tree before compiling.
+          $dataRoot = Join-Path $env:APPDATA 'MetaQuotes\Terminal'
+          $dataCandidates = @(Get-ChildItem $dataRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object { Test-Path (Join-Path $_.FullName 'MQL5') })
+          if ($dataCandidates.Count -eq 0) {
+            throw "No MT5 terminal data folder found under $dataRoot after initializing MT5."
+          }
+          $sourceInclude = Join-Path $mql5Root 'Include'
+          if (-not (Test-Path (Join-Path $sourceInclude 'Trade\Trade.mqh'))) {
+            throw "Standard Include tree is missing from MT5 installation: $sourceInclude"
+          }
+          foreach ($dataFolder in $dataCandidates) {
+            $targetInclude = Join-Path $dataFolder.FullName 'MQL5\Include'
+            New-Item -ItemType Directory -Force -Path $targetInclude | Out-Null
+            Copy-Item (Join-Path $sourceInclude '*') $targetInclude -Recurse -Force
+            Write-Host "Seeded MetaEditor include tree: $targetInclude"
+          }
           "METAEDITOR=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "MT5ROOT=$mt5Root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
