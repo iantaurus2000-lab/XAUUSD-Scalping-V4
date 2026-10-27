@@ -475,10 +475,10 @@ double EstimateMoney(double points)
 void ApplyCandleColors()
 {
    ChartSetInteger(0, CHART_MODE, CHART_CANDLES);
-   ChartSetInteger(0, CHART_COLOR_CANDLE_BULL, clrGreen);
-   ChartSetInteger(0, CHART_COLOR_CANDLE_BEAR, clrRed);
-   ChartSetInteger(0, CHART_COLOR_CHART_UP, clrGreen);
-   ChartSetInteger(0, CHART_COLOR_CHART_DOWN, clrRed);
+   ChartSetInteger(0, CHART_COLOR_CANDLE_BULL, C'34,197,94');
+   ChartSetInteger(0, CHART_COLOR_CANDLE_BEAR, C'239,68,68');
+   ChartSetInteger(0, CHART_COLOR_CHART_UP, C'34,197,94');
+   ChartSetInteger(0, CHART_COLOR_CHART_DOWN, C'239,68,68');
 }
 
 void UpdateM5Timer()
