@@ -1947,8 +1947,8 @@ public class MainActivity extends Activity {
         EditText profitLock=addEaParameter(fields,"Min Profit Lock Points",Integer.toString(gp.getInt("powerfull_min_profit_lock_points_"+symbol,5)),false);
         EditText deviation=addEaParameter(fields,"Deviation Points",Integer.toString(gp.getInt("powerfull_deviation_points_"+symbol,20)),false);
         EditText hold=addEaParameter(fields,"Min Hold Candles Before Profit Close (0–12)",Integer.toString(gp.getInt("powerfull_min_hold_candles_"+symbol,2)),false);
-        EditText slBuy=addEaParameter(fields,"SL BUY Points (0=OFF)",Integer.toString(gp.getInt("powerfull_sl_buy_points_"+symbol,0)),false);
-        EditText slSell=addEaParameter(fields,"SL SELL Points (0=OFF)",Integer.toString(gp.getInt("powerfull_sl_sell_points_"+symbol,0)),false);
+        EditText slBuy=addEaParameter(fields,"SL BUY Points (0=BLOCK MOMENTUM)",Integer.toString(gp.getInt("powerfull_sl_buy_points_"+symbol,0)),false);
+        EditText slSell=addEaParameter(fields,"SL SELL Points (0=BLOCK MOMENTUM)",Integer.toString(gp.getInt("powerfull_sl_sell_points_"+symbol,0)),false);
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(false);scroll.addView(fields);
         LinearLayout wrapper=new LinearLayout(this);wrapper.setOrientation(LinearLayout.VERTICAL);
         wrapper.addView(scroll,new LinearLayout.LayoutParams(-1,0,1f));
