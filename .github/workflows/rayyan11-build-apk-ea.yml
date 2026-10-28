@@ -1,6 +1,8 @@
 name: RAYYAN SMART AUTO-POWERFULL APK + EA Build
 on:
   workflow_dispatch:
+  push:
+    branches: [RAYYAN]
 jobs:
   android-apk:
     runs-on: ubuntu-24.04
