@@ -88,6 +88,11 @@ uint powerLastManageMs[3];
 uint powerMomentumCandidateMs[3];
 int powerMomentumCandidateSide[3];
 datetime powerMomentumCandidateBar[3];
+datetime powerMomentumLastEntryBar[3];
+uint powerStatsCalcMs[3];
+int powerStatsWins[3];
+int powerStatsLosses[3];
+int powerStatsClosed[3];
 uint powerLastCancelAttemptMs[3];
 uint powerLastDistanceCancelAttemptMs[3];
 uint powerConfigReceivedMs[3];
@@ -139,7 +144,7 @@ bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick
 void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double candleOpen,
                           bool hasPreviousTick,double previousBid);
 void powerTryLiquidMomentum(int index,const MqlTick &tick,datetime barTime,double candleOpen,double candleHigh,double candleLow);
-void powerClosedDealStats(int &wins,int &losses,int &closed);
+void powerClosedDealStats(string symbol,int &wins,int &losses,int &closed);
 double powerAtrPrice(int index);
 void powerRecordTick(int index,double mid);
 double powerTickPriceAgo(int index,int ago);
@@ -1757,6 +1762,10 @@ bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick
 void powerTryLiquidMomentum(int index,const MqlTick &tick,datetime barTime,double candleOpen,double candleHigh,double candleLow){
    string symbol=powerSymbols[index];
    uint now=GetTickCount();
+   if(powerMomentumLastEntryBar[index]==barTime){
+      powerPublishState(index,"MOMENTUM_CYCLE_LOCK","One market entry already accepted in this M5 candle; waiting for next candle/position lifecycle",barTime);
+      return;
+   }
    int positions=powerPositionCount(symbol);
    if(positions>0){
       powerMomentumCandidateMs[index]=0;
@@ -1871,6 +1880,7 @@ void powerTryLiquidMomentum(int index,const MqlTick &tick,datetime barTime,doubl
       Print("POWERFULL LIQUID MOMENTUM ENTRY OK symbol=",symbol," side=",(side>0?"BUY":"SELL"),
          " lot=",DoubleToString(lot,2)," ATRthreshold=",DoubleToString(threshold/point,1),
          " SLpoints=",slPoints," retcode=",rc);
+      powerMomentumLastEntryBar[index]=barTime;
       powerPublishState(index,"MOMENTUM_ENTRY_SENT","Market "+(side>0?"BUY":"SELL")+
          " accepted; threshold=0.5 ATR; confirm=1s; SL="+IntegerToString(slPoints)+" points",barTime);
    }else{
@@ -1880,7 +1890,11 @@ void powerTryLiquidMomentum(int index,const MqlTick &tick,datetime barTime,doubl
    }
 }
 
-void powerClosedDealStats(int &wins,int &losses,int &closed){
+void powerClosedDealStats(string symbol,int &wins,int &losses,int &closed){
+   int idx=-1;for(int k=0;k<ArraySize(powerSymbols);k++)if(powerSymbols[k]==symbol){idx=k;break;}
+   if(idx>=0&&powerStatsCalcMs[idx]>0&&(uint)(GetTickCount()-powerStatsCalcMs[idx])<30000){
+      wins=powerStatsWins[idx];losses=powerStatsLosses[idx];closed=powerStatsClosed[idx];return;
+   }
    wins=0;losses=0;closed=0;
    datetime to=TimeCurrent();
    datetime from=to-30*86400;
@@ -1889,6 +1903,7 @@ void powerClosedDealStats(int &wins,int &losses,int &closed){
       ulong deal=HistoryDealGetTicket(i);
       if(deal==0)continue;
       if((long)HistoryDealGetInteger(deal,DEAL_MAGIC)!=POWERFULL_MAGIC)continue;
+      if(HistoryDealGetString(deal,DEAL_SYMBOL)!=symbol)continue;
       ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
       if(entry!=DEAL_ENTRY_OUT&&entry!=DEAL_ENTRY_OUT_BY)continue;
       double net=HistoryDealGetDouble(deal,DEAL_PROFIT)+HistoryDealGetDouble(deal,DEAL_SWAP)+
@@ -1897,6 +1912,7 @@ void powerClosedDealStats(int &wins,int &losses,int &closed){
       else if(net<0.0)losses++;
    }
    closed=wins+losses;
+   if(idx>=0){powerStatsWins[idx]=wins;powerStatsLosses[idx]=losses;powerStatsClosed[idx]=closed;powerStatsCalcMs[idx]=GetTickCount();}
 }
 
 double powerProjectedNet(ulong ticket){
@@ -2086,7 +2102,7 @@ void powerPublishState(int index,string status,string detail,datetime barTime){
       +"&orderEntry="+urlEncode(orderEntry)
       +"&detail="+urlEncode(detail);
    int closedWins=0,closedLosses=0,closedDeals=0;
-   powerClosedDealStats(closedWins,closedLosses,closedDeals);
+   powerClosedDealStats(symbol,closedWins,closedLosses,closedDeals);
    path+="&wins="+IntegerToString(closedWins)+"&losses="+IntegerToString(closedLosses)+
          "&closedDeals="+IntegerToString(closedDeals);
    int code=-1; string body="",diagnostic="";
