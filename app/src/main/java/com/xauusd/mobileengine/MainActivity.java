@@ -1722,8 +1722,8 @@ public class MainActivity extends Activity {
             addPanelRow(rows,"ENTRY LIMIT","Entry hanya setelah konfirmasi internal EXCELLENT dan geometri LIMIT valid.",Color.WHITE);
             addPanelRow(rows,"SL / TARGET","SL dan TP dihitung dari setup/ATR; validasi spread dan arah tetap berjalan.",Color.WHITE);
         }else if("POWERFULL".equals(activeMode)){
-            addPanelRow(rows,"MESIN AKTIF","POWERFULL • proyeksi rentang rata-rata 3–5 candle M5 selesai; entry saat candle baru.",Color.CYAN);
-            addPanelRow(rows,"ENTRY / PENDING","Pending per sisi dipasang pada detik akhir M5; pending jauh dibatalkan berdasarkan ATR. Entry mengikuti sinyal reversal tick/wick.",Color.WHITE);
+            addPanelRow(rows,"MESIN AKTIF","POWERFULL • proyeksi rentang rata-rata 3–5 candle M5 selesai; entry dievaluasi tanpa filter detik akhir candle.",Color.CYAN);
+            addPanelRow(rows,"ENTRY / PENDING","Pending dievaluasi sepanjang candle; saat posisi terbuka pending lain dibatalkan dan entry baru dikunci sampai siklus selesai.",Color.WHITE);
             addPanelRow(rows,"STATUS","Posisi dikelola lintas candle; sinyal reversal saja tidak menutup order. Profit diamankan setelah hold minimum, profit terlindungi, dan retracement/pelemahan terkonfirmasi.",Color.WHITE);
         }else{
             addPanelRow(rows,"MESIN AKTIF","OFF • tidak ada strategi otomatis yang dipilih untuk market ini.",Color.rgb(255,205,95));
