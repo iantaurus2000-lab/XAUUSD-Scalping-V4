@@ -8,8 +8,8 @@ android {
         applicationId 'com.xauusd.mobileengine'
         minSdk 26
         targetSdk 35
-        versionCode 14
-        versionName '1.14.0-RAYYAN12-POWERFULL-CONTROLS'
+        versionCode 15
+        versionName '1.15.0-RAYYAN-LIQUID-MOMENTUM'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
