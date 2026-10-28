@@ -1722,8 +1722,8 @@ public class MainActivity extends Activity {
             addPanelRow(rows,"ENTRY LIMIT","Entry hanya setelah konfirmasi internal EXCELLENT dan geometri LIMIT valid.",Color.WHITE);
             addPanelRow(rows,"SL / TARGET","SL dan TP dihitung dari setup/ATR; validasi spread dan arah tetap berjalan.",Color.WHITE);
         }else if("POWERFULL".equals(activeMode)){
-            addPanelRow(rows,"MESIN AKTIF","POWERFULL • proyeksi rentang rata-rata 3–5 candle M5 selesai; entry dievaluasi tanpa filter detik akhir candle.",Color.CYAN);
-            addPanelRow(rows,"ENTRY / PENDING","Pending dievaluasi sepanjang candle; saat posisi terbuka pending lain dibatalkan dan entry baru dikunci sampai siklus selesai.",Color.WHITE);
+            addPanelRow(rows,"MESIN AKTIF","POWERFULL • LIQUID CANDLE MOMENTUM: 0,5×ATR, konfirmasi 1 detik, market BUY/SELL; SL points wajib.",Color.CYAN);
+            addPanelRow(rows,"ENTRY / PENDING","Momentum dievaluasi tiap tick; pending dibatalkan sebelum market entry. Posisi aktif mengunci entry baru sampai siklus selesai.",Color.WHITE);
             addPanelRow(rows,"STATUS","Posisi dikelola lintas candle; sinyal reversal saja tidak menutup order. Profit diamankan setelah hold minimum, profit terlindungi, dan retracement/pelemahan terkonfirmasi.",Color.WHITE);
         }else{
             addPanelRow(rows,"MESIN AKTIF","OFF • tidak ada strategi otomatis yang dipilih untuk market ini.",Color.rgb(255,205,95));
@@ -2831,7 +2831,7 @@ public class MainActivity extends Activity {
             :("EXCELLENT".equals(strategyMode)
                 ?"EXCELLENT aktif • EMA20/50 M5 + RSI/ATR + wick/sweep M1"
                 :("POWERFULL".equals(strategyMode)
-                    ?"POWERFULL aktif • proyeksi rentang M5 dan LIMIT saat candle baru dikelola EA"
+                    ?"POWERFULL aktif • LIQUID CANDLE MOMENTUM 0,5×ATR, konfirmasi 1 detik, BUY/SELL market; SL points wajib"
                     :"Strategi OFF • auto-entry strategi tidak berjalan"));
         TextView panelNote=tv(strategyDescription+" • TP1/TP2 dan level order divalidasi",12);
         panelNote.setTextColor(Color.LTGRAY);
