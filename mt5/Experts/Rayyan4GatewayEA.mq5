@@ -69,6 +69,9 @@ struct PowerfullConfig {
    int slEntry1Points;
    int slEntry2Points;
    bool usePointStops;
+   bool liquidMomentumEnabled;
+   double liquidMomentumATR;
+   int liquidMomentumConfirmMs;
    double maxPendingDistanceATR;
    int minHoldCandles;
    double reversalATRFactor;
@@ -82,6 +85,9 @@ uint powerLastModelAttemptMs[3];
 uint powerModelBuiltAtMs[3];
 uint powerLastSeedAttemptMs[3];
 uint powerLastManageMs[3];
+uint powerMomentumCandidateMs[3];
+int powerMomentumCandidateSide[3];
+datetime powerMomentumCandidateBar[3];
 uint powerLastCancelAttemptMs[3];
 uint powerLastDistanceCancelAttemptMs[3];
 uint powerConfigReceivedMs[3];
@@ -132,6 +138,8 @@ bool powerHasPendingSide(string symbol,bool buySide);
 bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick &tick,double target);
 void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double candleOpen,
                           bool hasPreviousTick,double previousBid);
+void powerTryLiquidMomentum(int index,const MqlTick &tick,datetime barTime,double candleOpen,double candleHigh,double candleLow);
+void powerClosedDealStats(int &wins,int &losses,int &closed);
 double powerAtrPrice(int index);
 void powerRecordTick(int index,double mid);
 double powerTickPriceAgo(int index,int ago);
@@ -1277,6 +1285,12 @@ bool powerRefreshConfig(int index){
    string deviationText=field(body,"deviationPoints");
    string slEntry1Text=field(body,"slEntry1Points");
    string slEntry2Text=field(body,"slEntry2Points");
+   string momentumFlag=field(body,"liquidMomentum");
+   string momentumAtrText=field(body,"liquidMomentumATR");
+   string momentumConfirmText=field(body,"liquidMomentumConfirmMs");
+   bool liquidMomentumEnabled=(momentumFlag==""||momentumFlag=="1");
+   double liquidMomentumAtr=(momentumAtrText==""?0.5:StringToDouble(momentumAtrText));
+   int liquidMomentumConfirmMs=(momentumConfirmText==""?1000:(int)StringToInteger(momentumConfirmText));
    bool buyEnabled=(buyFlag==""||buyFlag=="1");
    bool sellEnabled=(sellFlag==""||sellFlag=="1");
    bool reforecastEnabled=(reforecastFlag==""||reforecastFlag=="1");
@@ -1304,7 +1318,9 @@ bool powerRefreshConfig(int index){
       &&MathIsValidNumber(maxPendingAtr)&&maxPendingAtr>=0.5&&maxPendingAtr<=5.0
       &&minHold>=0&&minHold<=12
       &&MathIsValidNumber(reversalAtr)&&reversalAtr>=0.05&&reversalAtr<=2.0
-      &&minProfitLock>=0&&minProfitLock<=100000;
+      &&minProfitLock>=0&&minProfitLock<=100000
+      &&MathIsValidNumber(liquidMomentumAtr)&&liquidMomentumAtr>=0.1&&liquidMomentumAtr<=2.0
+      &&liquidMomentumConfirmMs>=250&&liquidMomentumConfirmMs<=5000;
    powerCfg[index].buyLimitEnabled=buyEnabled;
    powerCfg[index].sellLimitEnabled=sellEnabled;
    powerCfg[index].autoReforecast=reforecastEnabled;
@@ -1320,6 +1336,9 @@ bool powerRefreshConfig(int index){
    powerCfg[index].slEntry1Points=(slEntry1<0?0:slEntry1);
    powerCfg[index].slEntry2Points=(slEntry2<0?0:slEntry2);
    powerCfg[index].usePointStops=usePointStops;
+   powerCfg[index].liquidMomentumEnabled=liquidMomentumEnabled;
+   powerCfg[index].liquidMomentumATR=liquidMomentumAtr;
+   powerCfg[index].liquidMomentumConfirmMs=liquidMomentumConfirmMs;
    powerCfg[index].enabled=requested&&valid&&(buyEnabled||sellEnabled);
    powerCfg[index].lot=lot;
    powerCfg[index].pipSize=pip;
@@ -1735,6 +1754,151 @@ bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick
    powerPublishState(index,"PENDING_PLACED",EnumToString(type)+" at projected range level; expires at M5 close",barTime);
    return true;
 }
+void powerTryLiquidMomentum(int index,const MqlTick &tick,datetime barTime,double candleOpen,double candleHigh,double candleLow){
+   string symbol=powerSymbols[index];
+   uint now=GetTickCount();
+   int positions=powerPositionCount(symbol);
+   if(positions>0){
+      powerMomentumCandidateMs[index]=0;
+      powerMomentumCandidateSide[index]=0;
+      powerCancelPendingForSymbol(symbol);
+      powerPublishState(index,"POSITION_ACTIVE","Momentum entry locked: existing position owns lifecycle; positions="+IntegerToString(positions),barTime);
+      return;
+   }
+   int pending=powerPendingCount(symbol);
+   if(pending>0){
+      powerMomentumCandidateMs[index]=0;
+      powerMomentumCandidateSide[index]=0;
+      powerCancelPendingForSymbol(symbol);
+      pending=powerPendingCount(symbol);
+      if(pending>0){
+         powerPublishState(index,"MOMENTUM_WAIT_CANCEL","Waiting for broker confirmation that legacy POWERFULL pendings are cancelled",barTime);
+         return;
+      }
+   }
+   if(AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
+      powerPublishState(index,"BLOCKED_NOT_DEMO","LIQUID CANDLE MOMENTUM is demo-only",barTime);
+      return;
+   }
+   if(!powerCfg[index].usePointStops){
+      powerMomentumCandidateMs[index]=0;
+      powerMomentumCandidateSide[index]=0;
+      powerPublishState(index,"BLOCKED_SL_POINTS","Set BUY and SELL SL points in POWERFULL settings before momentum entry; no fallback SL",barTime);
+      return;
+   }
+   double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+   double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+   double atr=powerAtrPrice(index);
+   if(point<=0.0||tickSize<=0.0||atr<=0.0){
+      powerPublishState(index,"MOMENTUM_WAIT_DATA","Waiting for valid ATR/point/tick-size data",barTime);
+      return;
+   }
+   double mid=(tick.bid+tick.ask)*0.5;
+   double candleRange=candleHigh-candleLow;
+   double threshold=atr*powerCfg[index].liquidMomentumATR;
+   int side=(mid>candleOpen?1:(mid<candleOpen?-1:0));
+   bool qualifies=(side!=0&&candleRange>=threshold);
+   if(!qualifies){
+      powerMomentumCandidateMs[index]=0;
+      powerMomentumCandidateSide[index]=0;
+      powerMomentumCandidateBar[index]=barTime;
+      powerPublishState(index,"MOMENTUM_SCAN","Live candle range="+DoubleToString(candleRange/point,1)+
+         " points; threshold="+DoubleToString(threshold/point,1)+" points; waiting for threshold",barTime);
+      return;
+   }
+   if(powerMomentumCandidateBar[index]!=barTime||powerMomentumCandidateSide[index]!=side||powerMomentumCandidateMs[index]==0){
+      powerMomentumCandidateBar[index]=barTime;
+      powerMomentumCandidateSide[index]=side;
+      powerMomentumCandidateMs[index]=now;
+      powerPublishState(index,"MOMENTUM_CONFIRM","Direction "+(side>0?"BUY":"SELL")+
+         " detected; confirming for "+IntegerToString(powerCfg[index].liquidMomentumConfirmMs)+" ms",barTime);
+      return;
+   }
+   if((uint)(now-powerMomentumCandidateMs[index])<(uint)powerCfg[index].liquidMomentumConfirmMs)return;
+   if(side!=powerMomentumCandidateSide[index]||!qualifies){
+      powerMomentumCandidateMs[index]=0;
+      powerMomentumCandidateSide[index]=0;
+      return;
+   }
+   int slPoints=(side>0?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
+   long stopLevel=SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL);
+   double slDistance=(double)slPoints*point;
+   double minStop=(double)stopLevel*point;
+   if(slPoints<=0||slDistance+1e-10<minStop+tickSize){
+      powerMomentumCandidateMs[index]=0;
+      powerMomentumCandidateSide[index]=0;
+      powerPublishState(index,"BLOCKED_SL_POINTS","SL "+IntegerToString(slPoints)+
+         " points is zero or below broker stop distance; entry blocked",barTime);
+      return;
+   }
+   double spreadPoints=(tick.ask-tick.bid)/point;
+   if(spreadPoints>(double)MathMax(20,powerCfg[index].minDistancePoints*2)){
+      powerMomentumCandidateMs[index]=0;
+      powerMomentumCandidateSide[index]=0;
+      powerPublishState(index,"BLOCKED_SPREAD","Spread="+DoubleToString(spreadPoints,1)+" points exceeds safety threshold",barTime);
+      return;
+   }
+   double lot=powerCfg[index].lot;
+   double minLot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
+   double maxLot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MAX);
+   double lotStep=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+   if(lotStep<=0.0||lot<minLot-1e-8||lot>maxLot+1e-8){
+      powerMomentumCandidateMs[index]=0;
+      powerMomentumCandidateSide[index]=0;
+      powerPublishState(index,"BLOCKED_LOT","Configured lot is outside broker volume limits",barTime);
+      return;
+   }
+   if(powerPositionCount(symbol)>0||powerPendingCount(symbol)>0){
+      powerMomentumCandidateMs[index]=0;
+      powerMomentumCandidateSide[index]=0;
+      powerCancelPendingForSymbol(symbol);
+      powerPublishState(index,"MOMENTUM_RECHECK_BLOCK","Position/order appeared during confirmation; no market entry sent",barTime);
+      return;
+   }
+   double entry=(side>0?tick.ask:tick.bid);
+   double sl=powerRoundToTick(symbol,side>0?entry-slDistance:entry+slDistance);
+   powerTrade.SetExpertMagicNumber(POWERFULL_MAGIC);
+   powerTrade.SetDeviationInPoints(powerCfg[index].deviationPoints);
+   powerTrade.SetTypeFillingBySymbol(symbol);
+   ResetLastError();
+   bool sent=(side>0
+      ?powerTrade.Buy(lot,symbol,0.0,sl,0.0,"POWERFULL-LIQUID-BUY")
+      :powerTrade.Sell(lot,symbol,0.0,sl,0.0,"POWERFULL-LIQUID-SELL"));
+   uint rc=powerTrade.ResultRetcode();
+   powerMomentumCandidateMs[index]=0;
+   powerMomentumCandidateSide[index]=0;
+   if(sent&&(rc==TRADE_RETCODE_DONE||rc==TRADE_RETCODE_PLACED||rc==TRADE_RETCODE_DONE_PARTIAL)){
+      Print("POWERFULL LIQUID MOMENTUM ENTRY OK symbol=",symbol," side=",(side>0?"BUY":"SELL"),
+         " lot=",DoubleToString(lot,2)," ATRthreshold=",DoubleToString(threshold/point,1),
+         " SLpoints=",slPoints," retcode=",rc);
+      powerPublishState(index,"MOMENTUM_ENTRY_SENT","Market "+(side>0?"BUY":"SELL")+
+         " accepted; threshold=0.5 ATR; confirm=1s; SL="+IntegerToString(slPoints)+" points",barTime);
+   }else{
+      Print("POWERFULL LIQUID MOMENTUM ENTRY FAILED symbol=",symbol," side=",(side>0?"BUY":"SELL"),
+         " retcode=",rc," desc=",powerTrade.ResultRetcodeDescription()," err=",GetLastError());
+      powerPublishState(index,"MOMENTUM_ENTRY_FAILED","Broker rejected market entry: "+powerTrade.ResultRetcodeDescription(),barTime);
+   }
+}
+
+void powerClosedDealStats(int &wins,int &losses,int &closed){
+   wins=0;losses=0;closed=0;
+   datetime to=TimeCurrent();
+   datetime from=to-30*86400;
+   if(!HistorySelect(from,to))return;
+   for(int i=HistoryDealsTotal()-1;i>=0;i--){
+      ulong deal=HistoryDealGetTicket(i);
+      if(deal==0)continue;
+      if((long)HistoryDealGetInteger(deal,DEAL_MAGIC)!=POWERFULL_MAGIC)continue;
+      ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
+      if(entry!=DEAL_ENTRY_OUT&&entry!=DEAL_ENTRY_OUT_BY)continue;
+      double net=HistoryDealGetDouble(deal,DEAL_PROFIT)+HistoryDealGetDouble(deal,DEAL_SWAP)+
+                 HistoryDealGetDouble(deal,DEAL_COMMISSION)+HistoryDealGetDouble(deal,DEAL_FEE);
+      if(net>0.0)wins++;
+      else if(net<0.0)losses++;
+   }
+   closed=wins+losses;
+}
+
 double powerProjectedNet(ulong ticket){
    if(ticket==0||!PositionSelectByTicket(ticket))return 0.0;
    double commissionTotal=0.0,expectedExitCosts=0.0;
@@ -1921,6 +2085,10 @@ void powerPublishState(int index,string status,string detail,datetime barTime){
       +"&orderTicket="+urlEncode(orderTicket)
       +"&orderEntry="+urlEncode(orderEntry)
       +"&detail="+urlEncode(detail);
+   int closedWins=0,closedLosses=0,closedDeals=0;
+   powerClosedDealStats(closedWins,closedLosses,closedDeals);
+   path+="&wins="+IntegerToString(closedWins)+"&losses="+IntegerToString(closedLosses)+
+         "&closedDeals="+IntegerToString(closedDeals);
    int code=-1; string body="",diagnostic="";
    bool stateSent=powerGatewayGet(path,code,body,diagnostic,POWERFULL_STATUS_TIMEOUT_MS);
    powerLastGatewayRequestMs=GetTickCount();
@@ -1974,6 +2142,13 @@ void managePowerfullSymbol(int index){
    powerLastAsk[index]=tick.ask;
    powerLastTickMs[index]=tick.time_msc;
 
+   // LIQUID CANDLE MOMENTUM owns POWERFULL entries while enabled. It shares
+   // the same symbol/magic/position manager, but never competes with wick pendings.
+   if(powerConfigReceivedMs[index]>0&&powerCfg[index].enabled&&powerCfg[index].liquidMomentumEnabled){
+      powerTryLiquidMomentum(index,tick,barTime,candleOpen,candleHigh,candleLow);
+      return;
+   }
+
    // Only timer cycles perform model/config/order work; OnTick manages positions.
    if(powerFastTickOnly)return;
    // On EA startup, do not interpret the zero-initialized config as an explicit OFF.
@@ -1987,6 +2162,10 @@ void managePowerfullSymbol(int index){
       powerPublishState(index,"OFF",powerCfg[index].reason==""?"POWERFULL disabled":powerCfg[index].reason,barTime);
       return;
    }
+
+   // The live momentum engine replaces wick LIMIT seeding when enabled. Its fast
+   // tick path above handles entry and lifecycle locking; do not seed competing orders.
+   if(powerCfg[index].liquidMomentumEnabled)return;
 
    // Cancel explicitly disabled sides or pending orders that have drifted far from price.
    // A new M5 candle or temporary signal change alone never deletes a pending order.
