@@ -146,7 +146,14 @@ void RunStrategy()
 
    MqlTick t;
    if(!SymbolInfoTick(_Symbol, t) || t.ask <= 0 || t.bid <= 0) return;
+   // Active positions own the full management cycle: cancel remaining
+   // pending orders and do not create a new entry until all positions close.
    ManageOpenPositions(t);
+   if(OurPosition())
+   {
+      CancelPendings();
+      return;
+   }
    if(!running) { CancelPendings(); return; }
    if(DemoAccountOnly && !IsDemo()) return;
    datetime bar = iTime(_Symbol, PERIOD_M5, 0);
@@ -596,16 +603,17 @@ void ManageOpenPositions(MqlTick &t)
       bool momentumStillStrong = (side == POSITION_TYPE_BUY ?
                                   (recentNet >= threshold && priorNet > 0.0) :
                                   (recentNet <= -threshold && priorNet < 0.0));
-      if(barsHeld >= requiredHoldBars && profit > 0.0 && oppositeReversal)
+      // A reversal signal alone must NOT close a profitable position.
+      // Let the trend run across candles; exit only after minimum hold, protected
+      // profit, meaningful retracement, and a weakening/reversal cue agree.
+      bool profitProtected = (lockedMove >= MinProfitLockPoints * _Point);
+      bool meaningfulRetrace = (retrace >= trailDistance);
+      bool reversalExitConfirmed = (oppositeReversal && !momentumStillStrong);
+      if(barsHeld >= requiredHoldBars && profit > 0.0 &&
+         profitProtected && meaningfulRetrace &&
+         (reversalExitConfirmed || !momentumStillStrong))
       {
-         if(!trade.PositionClose(ticket)) Print("Signal reversal close failed: ", trade.ResultRetcodeDescription());
-         else GlobalVariableDel(key);
-         continue;
-      }
-      if(barsHeld >= requiredHoldBars && profit > 0.0 && !momentumStillStrong &&
-         lockedMove >= MinProfitLockPoints * _Point && retrace >= trailDistance)
-      {
-         if(!trade.PositionClose(ticket)) Print("Profit-lock close failed: ", trade.ResultRetcodeDescription());
+         if(!trade.PositionClose(ticket)) Print("Confirmed profit-protection close failed: ", trade.ResultRetcodeDescription());
          else GlobalVariableDel(key);
       }
    }
