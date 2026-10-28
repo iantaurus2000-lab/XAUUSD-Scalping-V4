@@ -1724,7 +1724,7 @@ public class MainActivity extends Activity {
         }else if("POWERFULL".equals(activeMode)){
             addPanelRow(rows,"MESIN AKTIF","POWERFULL • proyeksi rentang rata-rata 3–5 candle M5 selesai; entry saat candle baru.",Color.CYAN);
             addPanelRow(rows,"ENTRY / PENDING","Pending per sisi dipasang pada detik akhir M5; pending jauh dibatalkan berdasarkan ATR. Entry mengikuti sinyal reversal tick/wick.",Color.WHITE);
-            addPanelRow(rows,"STATUS","Posisi profit menunggu minimal candle hold, lalu exit saat reversal berlawanan atau trailing profit terpenuhi.",Color.WHITE);
+            addPanelRow(rows,"STATUS","Posisi dikelola lintas candle; sinyal reversal saja tidak menutup order. Profit diamankan setelah hold minimum, profit terlindungi, dan retracement/pelemahan terkonfirmasi.",Color.WHITE);
         }else{
             addPanelRow(rows,"MESIN AKTIF","OFF • tidak ada strategi otomatis yang dipilih untuk market ini.",Color.rgb(255,205,95));
             addPanelRow(rows,"AKTIFKAN","Buka Strategy Control lalu pilih tepat satu: STANDAR, EXCELLENT, atau POWERFULL.",Color.WHITE);
@@ -1802,12 +1802,12 @@ public class MainActivity extends Activity {
         }
         Switch standard=new Switch(this);standard.setText("STANDAR • Fibo/Wick LIMIT");standard.setTextColor(Color.WHITE);
         Switch excellent=new Switch(this);excellent.setText("EXCELLENT • konfirmasi tambahan");excellent.setTextColor(Color.WHITE);
-        Switch powerful=new Switch(this);powerful.setText("POWERFULL • proyeksi sederhana M5 di EA");powerful.setTextColor(Color.WHITE);
+        Switch powerful=new Switch(this);powerful.setText("POWERFULL • sinyal dan manajemen posisi dijalankan EA MT5");powerful.setTextColor(Color.WHITE);
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(uiDp(18),uiDp(14),uiDp(18),uiDp(12));root.setBackground(roundBg(Color.rgb(3,18,30),16));
         TextView title=tv("STRATEGY CONTROL • "+symbol,17);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
         root.addView(title,new LinearLayout.LayoutParams(-1,uiDp(34)));
-        TextView note=tv("Pilih maksimal satu strategi per market. POWERFULL memakai rata-rata rentang 3–5 candle M5 selesai, proyeksi simetris dari Open M5, dan mencoba BUY/SELL LIMIT saat candle baru terdeteksi. Tanpa filter 3 detik terakhir atau minimal sampel tick.",11);
+        TextView note=tv("Pilih maksimal satu strategi per market. POWERFULL dikelola EA MT5. Saat posisi terbuka, pending lain dibatalkan dan entry baru diblokir. Posisi rugi tidak ditutup hanya karena reversal; posisi profit dibiarkan berkembang lintas candle dan ditutup setelah profit terlindungi serta retracement/pelemahan terkonfirmasi. SL tetap menjadi proteksi risiko.",11);
         note.setTextColor(Color.LTGRAY);note.setPadding(0,0,0,uiDp(8));root.addView(note,new LinearLayout.LayoutParams(-1,-2));
         root.addView(standard,new LinearLayout.LayoutParams(-1,uiDp(48)));
         root.addView(excellent,new LinearLayout.LayoutParams(-1,uiDp(48)));
