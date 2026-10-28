@@ -2024,10 +2024,8 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
          (recentNet>=threshold&&priorNet>0.0):
          (recentNet<=-threshold&&priorNet<0.0));
 
-      if(net>0.0&&barsHeld>=requiredHoldBars&&powerCfg[index].quickProfitClose&&oppositeReversal){
-         powerClosePosition(ticket,"PROFIT_EXIT_CONFIRMED_OPPOSITE_REVERSAL");
-         continue;
-      }
+      // A reversal signal alone never closes a profitable position. The confirmed
+      // weakening + protected profit + meaningful retracement rule below owns exits.
       if(net>0.0&&barsHeld>=requiredHoldBars&&!momentumStillStrong&&
          lockedMove>=minLock&&retrace>=trailDistance){
          powerClosePosition(ticket,"PROFIT_TRAIL_AFTER_MOMENTUM_FADE");
