@@ -160,11 +160,8 @@ void RunStrategy()
    if(bar <= 0) return;
    currentBar = bar;
    CancelDistantPendings(t);
-   int secondsLeft = (int)(bar + PeriodSeconds(PERIOD_M5) - TimeCurrent());
-   secondsLeft = (int)MathMax(0, MathMin(PeriodSeconds(PERIOD_M5), secondsLeft));
-   // New pending orders are submitted only in the final seconds of the live M5 candle.
-   if(secondsLeft > (int)MathMax(0, PendingPlacementSecondsBeforeClose)) return;
-
+   // No final-seconds gate: evaluate valid entries throughout the candle.
+   // Pending orders are frozen per side and open positions lock out new entries.
    double hi = iHigh(_Symbol, PERIOD_M5, 0);
    double lo = iLow(_Symbol, PERIOD_M5, 0);
    if(hi <= 0 || lo <= 0 || hi < lo) return;
@@ -297,10 +294,23 @@ void UpdateLimit(ENUM_ORDER_TYPE type, double price)
    bool buySide = (type == ORDER_TYPE_BUY_LIMIT || type == ORDER_TYPE_BUY_STOP);
    int slPts = (buySide ? slEntry1Points : slEntry2Points);
    double sl = 0.0;
+   double slDistance = 0.0;
    if(slPts > 0)
+      slDistance = slPts * _Point;
+   else
    {
-      if(buySide) sl = NormalizePrice(price - slPts * _Point);
-      else sl = NormalizePrice(price + slPts * _Point);
+      // Keep broker-side SL active even when the manual SL field is left at 0.
+      double atrBuf[1];
+      if(CopyBuffer(atrHandle, 0, 1, 1, atrBuf) == 1 && atrBuf[0] > 0.0)
+         slDistance = MathMax(MinDistancePoints * _Point, atrBuf[0] * ReversalATRFactor);
+      else
+         slDistance = MathMax((double)MinDistancePoints,
+                              (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) + 1.0) * _Point;
+   }
+   if(slDistance > 0.0)
+   {
+      if(buySide) sl = NormalizePrice(price - slDistance);
+      else sl = NormalizePrice(price + slDistance);
    }
 
    // Freeze the first pending order on each side; do not move/delete it on later ticks.
@@ -610,8 +620,7 @@ void ManageOpenPositions(MqlTick &t)
       bool meaningfulRetrace = (retrace >= trailDistance);
       bool reversalExitConfirmed = (oppositeReversal && !momentumStillStrong);
       if(barsHeld >= requiredHoldBars && profit > 0.0 &&
-         profitProtected && meaningfulRetrace &&
-         (reversalExitConfirmed || !momentumStillStrong))
+         profitProtected && meaningfulRetrace && reversalExitConfirmed)
       {
          if(!trade.PositionClose(ticket)) Print("Confirmed profit-protection close failed: ", trade.ResultRetcodeDescription());
          else GlobalVariableDel(key);
