@@ -405,6 +405,7 @@ public final class GatewayService extends Service {
             +";deviationPoints="+deviationPoints
             +";slEntry1Points="+slBuyPoints
             +";slEntry2Points="+slSellPoints
+            +";liquidMomentum=1;liquidMomentumATR=0.50;liquidMomentumConfirmMs=1000"
             +";maxPendingATR="+String.format(Locale.US,"%.2f",maxPendingATR)
             +";minHoldCandles="+minHoldCandles
             +";reversalATRFactor="+String.format(Locale.US,"%.2f",reversalATRFactor)
@@ -432,6 +433,9 @@ public final class GatewayService extends Service {
         String orderTicket=query(path,"orderTicket");
         String orderEntry=query(path,"orderEntry");
         String detail=query(path,"detail");
+        String wins=query(path,"wins");
+        String losses=query(path,"losses");
+        String closedDeals=query(path,"closedDeals");
         try{
             if(!range.isEmpty()&&!Double.isFinite(Double.parseDouble(range)))return "POWER STATE ERROR RANGE";
             if(!low.isEmpty()&&!Double.isFinite(Double.parseDouble(low)))return "POWER STATE ERROR LOW";
@@ -442,6 +446,9 @@ public final class GatewayService extends Service {
             if(!pending.isEmpty()&&Integer.parseInt(pending)<0)return "POWER STATE ERROR PENDING";
             if(!positions.isEmpty()&&Integer.parseInt(positions)<0)return "POWER STATE ERROR POSITIONS";
             if(!orderEntry.isEmpty()&&!Double.isFinite(Double.parseDouble(orderEntry)))return "POWER STATE ERROR ORDER ENTRY";
+            if(!wins.isEmpty()&&Integer.parseInt(wins)<0)return "POWER STATE ERROR WINS";
+            if(!losses.isEmpty()&&Integer.parseInt(losses)<0)return "POWER STATE ERROR LOSSES";
+            if(!closedDeals.isEmpty()&&Integer.parseInt(closedDeals)<0)return "POWER STATE ERROR CLOSED DEALS";
             if(!orderKind.isEmpty()&&!"NONE".equals(orderKind)&&!"PENDING".equals(orderKind)&&!"POSITION".equals(orderKind))return "POWER STATE ERROR ORDER KIND";
         }catch(Exception bad){return "POWER STATE ERROR FORMAT";}
         SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
@@ -460,9 +467,17 @@ public final class GatewayService extends Service {
             .putString("powerfull_order_ticket_"+symbol,orderTicket==null?"":orderTicket)
             .putString("powerfull_order_entry_"+symbol,orderEntry==null?"0":orderEntry)
             .putString("powerfull_detail_"+symbol,detail)
+            .putInt("powerfull_wins_"+symbol,parseNonNegativeInt(wins))
+            .putInt("powerfull_losses_"+symbol,parseNonNegativeInt(losses))
+            .putInt("powerfull_closed_deals_"+symbol,parseNonNegativeInt(closedDeals))
             .putLong("powerfull_state_at_"+symbol,System.currentTimeMillis())
             .apply();
         return "POWER STATE OK";
+    }
+
+    private int parseNonNegativeInt(String value){
+        try{return Math.max(0,Integer.parseInt(value==null||value.isEmpty()?"0":value));}
+        catch(Exception ignored){return 0;}
     }
 
     private String first(String l){
