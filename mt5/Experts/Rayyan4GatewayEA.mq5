@@ -99,6 +99,9 @@ double powerMomentumCandidateExtreme[3];
 datetime powerMomentumLayerBar[3];
 double powerMomentumLastSellHigh[3];
 double powerMomentumLastBuyLow[3];
+// D1 keeps its own live-tick candle extremes; it does not wait for APK/chart uploads.
+datetime powerD1FallbackBar[3];
+double powerD1FallbackOpen[3],powerD1FallbackHigh[3],powerD1FallbackLow[3];
 datetime powerMomentumLastEntryBar[3];
 uint powerStatsCalcMs[3];
 int powerStatsWins[3];
@@ -2166,12 +2169,34 @@ void managePowerfullSymbol(int index){
                         " ms; server SL stays active and new actions wait for a fresh tick",0);
       return;
    }
+   // Prefer MT5's current M5 candle, but never let missing OHLC history or APK chart
+   // freshness block D1. Maintain a fallback candle directly from this symbol's live ticks.
+   datetime tickTime=(datetime)(tick.time_msc/1000);
    datetime barTime=iTime(symbol,PERIOD_M5,0);
+   if(barTime<=0)barTime=(datetime)(((long)tickTime/300)*300);
    double candleOpen=iOpen(symbol,PERIOD_M5,0);
    double candleHigh=iHigh(symbol,PERIOD_M5,0);
    double candleLow=iLow(symbol,PERIOD_M5,0);
+   if(powerD1FallbackBar[index]!=barTime||powerD1FallbackOpen[index]<=0.0){
+      powerD1FallbackBar[index]=barTime;
+      powerD1FallbackOpen[index]=(candleOpen>0.0?candleOpen:tick.bid);
+      powerD1FallbackHigh[index]=MathMax(tick.bid,(candleHigh>0.0?candleHigh:tick.bid));
+      powerD1FallbackLow[index]=MathMin(tick.bid,(candleLow>0.0?candleLow:tick.bid));
+   }else{
+      powerD1FallbackHigh[index]=MathMax(powerD1FallbackHigh[index],tick.bid);
+      powerD1FallbackLow[index]=MathMin(powerD1FallbackLow[index],tick.bid);
+      if(candleHigh>0.0)powerD1FallbackHigh[index]=MathMax(powerD1FallbackHigh[index],candleHigh);
+      if(candleLow>0.0)powerD1FallbackLow[index]=MathMin(powerD1FallbackLow[index],candleLow);
+      if(candleOpen>0.0)powerD1FallbackOpen[index]=candleOpen;
+   }
+   if(candleOpen<=0.0)candleOpen=powerD1FallbackOpen[index];
+   if(candleHigh<=0.0||candleHigh<candleLow)candleHigh=powerD1FallbackHigh[index];
+   else candleHigh=MathMax(candleHigh,powerD1FallbackHigh[index]);
+   if(candleLow<=0.0||candleLow>candleHigh)candleLow=powerD1FallbackLow[index];
+   else candleLow=MathMin(candleLow,powerD1FallbackLow[index]);
    if(barTime<=0||candleOpen<=0.0||candleHigh<candleLow||candleLow<=0.0){
-      powerPublishState(index,"M5_DATA_WAIT","current MT5 M5 OHLC is not ready",barTime);
+      // Only impossible live-price data stops entry; a missing chart snapshot does not.
+      powerPublishState(index,"D1_TICK_CANDLE_WAIT","Waiting for a valid live tick to seed the current candle",barTime);
       return;
    }
 
