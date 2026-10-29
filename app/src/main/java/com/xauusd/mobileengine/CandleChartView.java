@@ -262,9 +262,14 @@ public class CandleChartView extends View {
 
         double lo=1e99,hi=-1e99;
         for(Candle z:cs){lo=Math.min(lo,z.l);hi=Math.max(hi,z.h);}
-        // Keep the real MT5 Bid/Ask inside the visible scale between OHLC uploads.
+        // Keep live broker quotes and broker-confirmed entry inside the visible price scale.
+        // Otherwise a valid pending/open entry outside the last 50 candles is silently clipped.
         if(bid>0){lo=Math.min(lo,bid);hi=Math.max(hi,bid);}
         if(ask>0){lo=Math.min(lo,ask);hi=Math.max(hi,ask);}
+        if(showPosition&&positionEntry>0){
+            lo=Math.min(lo,positionEntry);
+            hi=Math.max(hi,positionEntry);
+        }
         double pad=Math.max((hi-lo)*.10,.40);lo-=pad;hi+=pad;
 
         Candle last=cs.get(cs.size()-1);
