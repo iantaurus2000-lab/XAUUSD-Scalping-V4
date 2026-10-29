@@ -224,10 +224,12 @@ void OnTick(){
 }
 
 void OnTimer(){
-   // Fast quote path: publish changed Exness ticks without waiting for the 1s OHLC batch.
+   // Fast quote path: publish changed MT5 ticks without waiting for the OHLC batch.
    // The publisher throttles requests and sends only symbols whose tick changed.
    uint nowMs=GetTickCount();
    publishMarketQuotes();
+   // Countdown is display-only: refresh independently from trade/gateway housekeeping.
+   updateChartCountdown();
    // Legacy gateway/chart work still runs only at PollSeconds cadence.
    uint legacyInterval=(uint)MathMax(1,PollSeconds)*1000;
    if(powerLastLegacyTimerMs==0 || (uint)(nowMs-powerLastLegacyTimerMs)>=legacyInterval){
@@ -238,9 +240,9 @@ void OnTimer(){
       publishMarketQuotes();
       publishNativeChartBars();
       processIndicatorQueue();
-      updateChartCountdown();
       // Screenshot mirroring disabled: native CopyRates OHLC is the chart source.
    }
+   // POWERFULL still evaluates fresh ticks in OnTick; this timer only handles housekeeping/config.
    managePowerfullAllMarkets(true);
 }
 
@@ -540,7 +542,10 @@ void updateChartCountdown(){
    datetime bar=iTime(_Symbol,_Period,0);
    int periodSeconds=PeriodSeconds(_Period);
    if(bar<=0 || periodSeconds<=0) return;
-   int remain=(int)MathMax(0,periodSeconds-(TimeCurrent()-bar));
+   // TimeTradeServer is terminal-estimated between ticks; the display timer does not gate entries.
+   datetime serverNow=TimeTradeServer();
+   if(serverNow<=0)serverNow=TimeCurrent();
+   int remain=(int)MathMax(0,periodSeconds-(serverNow-bar));
    string label=StringFormat("%s  %02d:%02d",EnumToString(_Period),remain/60,remain%60);
    const string name="RAYYAN_MT5_BAR_TIMER";
    if(ObjectFind(0,name)<0){
