@@ -255,7 +255,7 @@ void OnDeinit(const int r){
    }
 }
 void OnTick(){
-   manageTP2RetraceProtection();
+   if(!StandaloneD1Mode) manageTP2RetraceProtection(); // Standalone mode manages D1 positions only.
    // Opportunistic fast path; no gateway config request is issued from this event.
    managePowerfullAllMarkets(false);
 }
