@@ -11,6 +11,7 @@ on:
       - 'settings.gradle'
       - '.github/workflows/rayyan-build.yml'
       - 'mt5/Experts/Rayyan4GatewayEA.mq5'
+      - 'mt5/Experts/RayyanD1Standalone.mq5'
       - 'app/rayyan4-debug.keystore.b64'
   workflow_dispatch:
 
@@ -183,7 +184,8 @@ jobs:
           $experts = Join-Path $mt5Root 'MQL5\Experts'
           New-Item -ItemType Directory -Force -Path $experts | Out-Null
           $sources = @(
-            @{ Source = 'mt5/Experts/Rayyan4GatewayEA.mq5'; Name = 'Rayyan4GatewayEA' }
+            @{ Source = 'mt5/Experts/Rayyan4GatewayEA.mq5'; Name = 'Rayyan4GatewayEA' },
+            @{ Source = 'mt5/Experts/RayyanD1Standalone.mq5'; Name = 'RayyanD1Standalone' }
           )
           foreach ($item in $sources) {
             $source = (Resolve-Path $item.Source).Path
