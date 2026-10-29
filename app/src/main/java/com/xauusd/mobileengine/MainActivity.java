@@ -1731,8 +1731,8 @@ public class MainActivity extends Activity {
             addPanelRow(rows,"ENTRY LIMIT","Entry hanya setelah konfirmasi internal EXCELLENT dan geometri LIMIT valid.",Color.WHITE);
             addPanelRow(rows,"SL / TARGET","SL dan TP dihitung dari setup/ATR; validasi spread dan arah tetap berjalan.",Color.WHITE);
         }else if("POWERFULL".equals(activeMode)){
-            addPanelRow(rows,"MESIN AKTIF","POWERFULL • LIQUID CANDLE MOMENTUM: 0,5×ATR, konfirmasi 1 detik, market BUY/SELL; SL points wajib.",Color.CYAN);
-            addPanelRow(rows,"ENTRY / PENDING","Momentum dievaluasi tiap tick; pending dibatalkan sebelum market entry. Posisi aktif mengunci entry baru sampai siklus selesai.",Color.WHITE);
+            addPanelRow(rows,"MESIN AKTIF","POWERFULL • D1 Human Price Extreme: entry dari tick MT5 pada ekstrem High/Low M5; SL points wajib.",Color.CYAN);
+            addPanelRow(rows,"ENTRY / PENDING","D1 memvalidasi pembalikan tick pada ekstrem candle; tidak memakai forecast Pending LIMIT. Posisi aktif mengunci entry baru sampai siklus selesai.",Color.WHITE);
             addPanelRow(rows,"STATUS","Posisi dikelola lintas candle; sinyal reversal saja tidak menutup order. Profit diamankan setelah hold minimum, profit terlindungi, dan retracement/pelemahan terkonfirmasi.",Color.WHITE);
         }else{
             addPanelRow(rows,"MESIN AKTIF","OFF • tidak ada strategi otomatis yang dipilih untuk market ini.",Color.rgb(255,205,95));
@@ -1884,18 +1884,12 @@ public class MainActivity extends Activity {
         root.addView(title,new LinearLayout.LayoutParams(-1,uiDp(38)));
         TextView market=tv("MARKET "+symbol+" • SINYAL SEPENUHNYA DARI EA MT5",11);market.setTextColor(Color.LTGRAY);
         root.addView(market,new LinearLayout.LayoutParams(-1,uiDp(32)));
-        TextView note=tv("Pilih Momentum dan Pending LIMIT secara terpisah atau bersama. Momentum: ambang default 0.25×ATR + konfirmasi 1 detik. Pending LIMIT memakai rata-rata rentang 3–5 candle M5 selesai dan kedaluwarsa saat candle M5 berakhir.",12);
+        TextView note=tv("D1 membaca tick MT5 langsung dan mencari pembalikan dekat High/Low M5. Tidak ada filter ATR Liquid Momentum atau mode Pending LIMIT terpisah.",12);
         note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
         root.addView(note,new LinearLayout.LayoutParams(-1,uiDp(76)));
         Switch enabled=new Switch(this);enabled.setText("POWERFULL EA • MASTER ON / OFF");enabled.setTextSize(15);enabled.setTextColor(Color.WHITE);
         enabled.setChecked(gp.getBoolean("powerfull_enabled_"+symbol,false));
         root.addView(enabled,new LinearLayout.LayoutParams(-1,uiDp(48)));
-        Switch momentumEnabled=new Switch(this);momentumEnabled.setText("LIQUID CANDLE MOMENTUM • ON / OFF");momentumEnabled.setTextColor(Color.WHITE);
-        momentumEnabled.setChecked(gp.getBoolean("powerfull_liquid_momentum_enabled_"+symbol,true));
-        root.addView(momentumEnabled,new LinearLayout.LayoutParams(-1,uiDp(44)));
-        Switch pendingLimitEnabled=new Switch(this);pendingLimitEnabled.setText("PENDING LIMIT FORECAST • ON / OFF");pendingLimitEnabled.setTextColor(Color.WHITE);
-        pendingLimitEnabled.setChecked(gp.getBoolean("powerfull_pending_limit_enabled_"+symbol,true));
-        root.addView(pendingLimitEnabled,new LinearLayout.LayoutParams(-1,uiDp(44)));
         Button settings=btn("SUBMENU • PARAMETER EA UJI TEST");settings.setTextSize(12);
         settings.setBackground(roundBg(Color.rgb(8,70,103),10));
         root.addView(settings,new LinearLayout.LayoutParams(-1,uiDp(48)));
@@ -1921,8 +1915,6 @@ public class MainActivity extends Activity {
                 }
             }
             gp.edit().putBoolean("powerfull_enabled_"+symbol,enabled.isChecked())
-                .putBoolean("powerfull_liquid_momentum_enabled_"+symbol,momentumEnabled.isChecked())
-                .putBoolean("powerfull_pending_limit_enabled_"+symbol,pendingLimitEnabled.isChecked())
                 .putBoolean("powerfull_buy_limit_"+symbol,true).putBoolean("powerfull_sell_limit_"+symbol,true)
                 .putBoolean("powerfull_quick_profit_"+symbol,true).putBoolean("powerfull_cross_candle_"+symbol,true)
                 .putBoolean("powerfull_reforecast_"+symbol,true)
@@ -1959,7 +1951,7 @@ public class MainActivity extends Activity {
         fields.addView(note,new LinearLayout.LayoutParams(-1,uiDp(58)));
         EditText lot=addEaParameter(fields,"Initial Lot",String.format(Locale.US,"%.2f",gp.getFloat("powerfull_lot_"+symbol,(float)Math.max(minLotForSymbol(symbol),lotForMarket()))),true);
         EditText profitLock=addEaParameter(fields,"Profit Lock Minimum Points",Integer.toString(gp.getInt("powerfull_min_profit_lock_points_"+symbol,5)),false);
-        EditText confirmMs=addEaParameter(fields,"Tick Turn Confirmation (ms)",Integer.toString(gp.getInt("powerfull_liquid_momentum_confirm_ms_"+symbol,500)),false);
+        EditText confirmMs=addEaParameter(fields,"D1 Tick Turn Confirmation (ms)",Integer.toString(gp.getInt("powerfull_d1_turn_confirm_ms_"+symbol,500)),false);
         EditText maxLayers=addEaParameter(fields,"Maximum Layers (1–3)",Integer.toString(gp.getInt("powerfull_max_layers_"+symbol,3)),false);
         EditText slBuy=addEaParameter(fields,"SL BUY Points (wajib > 0)",Integer.toString(gp.getInt("powerfull_sl_buy_points_"+symbol,0)),false);
         EditText slSell=addEaParameter(fields,"SL SELL Points (wajib > 0)",Integer.toString(gp.getInt("powerfull_sl_sell_points_"+symbol,0)),false);
@@ -1991,13 +1983,11 @@ public class MainActivity extends Activity {
                 double pip=gp.getFloat("powerfull_pip_size_"+symbol,(float)(point>0?point:0.01));
                 gp.edit().putFloat("powerfull_lot_"+symbol,(float)vLot)
                     .putInt("powerfull_min_profit_lock_points_"+symbol,vLock)
-                    .putInt("powerfull_liquid_momentum_confirm_ms_"+symbol,vConfirmMs)
+                    .putInt("powerfull_d1_turn_confirm_ms_"+symbol,vConfirmMs)
                     .putInt("powerfull_max_layers_"+symbol,vMaxLayers)
                     .putInt("powerfull_sl_buy_points_"+symbol,vSlBuy)
                     .putInt("powerfull_sl_sell_points_"+symbol,vSlSell)
                     .putFloat("powerfull_pip_size_"+symbol,(float)pip)
-                    .putBoolean("powerfull_liquid_momentum_enabled_"+symbol,true)
-                    .putBoolean("powerfull_pending_limit_enabled_"+symbol,false)
                     .putBoolean("powerfull_buy_limit_"+symbol,true).putBoolean("powerfull_sell_limit_"+symbol,true)
                     .putBoolean("powerfull_quick_profit_"+symbol,true).putBoolean("powerfull_cross_candle_"+symbol,true)
                     .remove("powerfull_tick_samples_"+symbol)
@@ -2841,7 +2831,7 @@ public class MainActivity extends Activity {
             :("EXCELLENT".equals(strategyMode)
                 ?"EXCELLENT aktif • EMA20/50 M5 + RSI/ATR + wick/sweep M1"
                 :("POWERFULL".equals(strategyMode)
-                    ?"POWERFULL aktif • LIQUID CANDLE MOMENTUM 0,5×ATR, konfirmasi 1 detik, BUY/SELL market; SL points wajib"
+                    ?"POWERFULL aktif • D1 Human Price Extreme, entry BUY/SELL pada pembalikan tick di ekstrem M5; SL points wajib"
                     :"Strategi OFF • auto-entry strategi tidak berjalan"));
         TextView panelNote=tv(strategyDescription+" • TP1/TP2 dan level order divalidasi",12);
         panelNote.setTextColor(Color.LTGRAY);
