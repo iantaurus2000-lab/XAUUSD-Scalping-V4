@@ -1949,16 +1949,11 @@ public class MainActivity extends Activity {
         note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
         fields.addView(note,new LinearLayout.LayoutParams(-1,uiDp(58)));
         EditText lot=addEaParameter(fields,"Initial Lot",String.format(Locale.US,"%.2f",gp.getFloat("powerfull_lot_"+symbol,(float)Math.max(minLotForSymbol(symbol),lotForMarket()))),true);
-        EditText lotStep=addEaParameter(fields,"Lot Step",String.format(Locale.US,"%.2f",gp.getFloat("powerfull_lot_step_"+symbol,0.01f)),true);
-        EditText minDistance=addEaParameter(fields,"Broker Min Distance Points",Integer.toString(gp.getInt("powerfull_min_distance_points_"+symbol,30)),false);
-        EditText reversal=addEaParameter(fields,"Profit Guard ATR Factor",String.format(Locale.US,"%.2f",gp.getFloat("powerfull_reversal_atr_factor_"+symbol,0.25f)),true);
-        EditText profitLock=addEaParameter(fields,"Min Profit Lock Points",Integer.toString(gp.getInt("powerfull_min_profit_lock_points_"+symbol,5)),false);
-        EditText deviation=addEaParameter(fields,"Deviation Points",Integer.toString(gp.getInt("powerfull_deviation_points_"+symbol,20)),false);
-        EditText hold=addEaParameter(fields,"Min Hold Candles Before Profit Close (0–12)",Integer.toString(gp.getInt("powerfull_min_hold_candles_"+symbol,2)),false);
-        EditText confirmMs=addEaParameter(fields,"Tick Rejection Confirm (ms 250–5000)",Integer.toString(gp.getInt("powerfull_liquid_momentum_confirm_ms_"+symbol,500)),false);
-        EditText maxLayers=addEaParameter(fields,"D1 Maximum Layers (1–3)",Integer.toString(gp.getInt("powerfull_max_layers_"+symbol,3)),false);
-        EditText slBuy=addEaParameter(fields,"SL BUY Points (0=BLOCK MOMENTUM)",Integer.toString(gp.getInt("powerfull_sl_buy_points_"+symbol,0)),false);
-        EditText slSell=addEaParameter(fields,"SL SELL Points (0=BLOCK MOMENTUM)",Integer.toString(gp.getInt("powerfull_sl_sell_points_"+symbol,0)),false);
+        EditText profitLock=addEaParameter(fields,"Profit Lock Minimum Points",Integer.toString(gp.getInt("powerfull_min_profit_lock_points_"+symbol,5)),false);
+        EditText confirmMs=addEaParameter(fields,"Tick Turn Confirmation (ms)",Integer.toString(gp.getInt("powerfull_liquid_momentum_confirm_ms_"+symbol,500)),false);
+        EditText maxLayers=addEaParameter(fields,"Maximum Layers (1–3)",Integer.toString(gp.getInt("powerfull_max_layers_"+symbol,3)),false);
+        EditText slBuy=addEaParameter(fields,"SL BUY Points (wajib > 0)",Integer.toString(gp.getInt("powerfull_sl_buy_points_"+symbol,0)),false);
+        EditText slSell=addEaParameter(fields,"SL SELL Points (wajib > 0)",Integer.toString(gp.getInt("powerfull_sl_sell_points_"+symbol,0)),false);
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(false);scroll.addView(fields);
         LinearLayout wrapper=new LinearLayout(this);wrapper.setOrientation(LinearLayout.VERTICAL);
         wrapper.addView(scroll,new LinearLayout.LayoutParams(-1,0,1f));
@@ -1972,37 +1967,28 @@ public class MainActivity extends Activity {
         save.setOnClickListener(v->{
             try{
                 double vLot=Double.parseDouble(lot.getText().toString().trim().replace(',','.'));
-                double vStep=Double.parseDouble(lotStep.getText().toString().trim().replace(',','.'));
-                int vDistance=Integer.parseInt(minDistance.getText().toString().trim());
-                double vReversal=Double.parseDouble(reversal.getText().toString().trim().replace(',','.'));
                 int vLock=Integer.parseInt(profitLock.getText().toString().trim());
-                int vDeviation=Integer.parseInt(deviation.getText().toString().trim());
-                int vHold=Integer.parseInt(hold.getText().toString().trim());
                 int vConfirmMs=Integer.parseInt(confirmMs.getText().toString().trim());
                 int vMaxLayers=Integer.parseInt(maxLayers.getText().toString().trim());
                 int vSlBuy=Integer.parseInt(slBuy.getText().toString().trim());
                 int vSlSell=Integer.parseInt(slSell.getText().toString().trim());
-                if(!Double.isFinite(vLot)||vLot<minLotForSymbol(symbol)||!Double.isFinite(vStep)||vStep<=0
-                    ||vDistance<0||vDistance>100000||!Double.isFinite(vReversal)||vReversal<0.05||vReversal>2.0
-                    ||vLock<0||vLock>100000||vDeviation<0||vDeviation>10000||vHold<0||vHold>12
-                    ||vConfirmMs<250||vConfirmMs>5000||vMaxLayers<1||vMaxLayers>3
-                    ||vSlBuy<0||vSlSell<0||vSlBuy>100000000||vSlSell>100000000){
-                    Toast.makeText(this,"Ada parameter di luar rentang yang diizinkan.",Toast.LENGTH_LONG).show();return;
+                if(!Double.isFinite(vLot)||vLot<minLotForSymbol(symbol)
+                    ||vLock<0||vLock>100000||vConfirmMs<250||vConfirmMs>5000
+                    ||vMaxLayers<1||vMaxLayers>3||vSlBuy<=0||vSlSell<=0
+                    ||vSlBuy>100000000||vSlSell>100000000){
+                    Toast.makeText(this,"Periksa Lot, konfirmasi tick 250–5000 ms, layer 1–3, dan SL BUY/SELL wajib lebih dari 0.",Toast.LENGTH_LONG).show();return;
                 }
                 double point=preferenceDouble(gp,"broker_quote_point_"+symbol,0.0);
                 double pip=gp.getFloat("powerfull_pip_size_"+symbol,(float)(point>0?point:0.01));
                 gp.edit().putFloat("powerfull_lot_"+symbol,(float)vLot)
-                    .putFloat("powerfull_lot_step_"+symbol,(float)vStep)
-                    .putInt("powerfull_min_distance_points_"+symbol,vDistance)
-                    .putFloat("powerfull_reversal_atr_factor_"+symbol,(float)vReversal)
                     .putInt("powerfull_min_profit_lock_points_"+symbol,vLock)
-                    .putInt("powerfull_deviation_points_"+symbol,vDeviation)
-                    .putInt("powerfull_min_hold_candles_"+symbol,vHold)
                     .putInt("powerfull_liquid_momentum_confirm_ms_"+symbol,vConfirmMs)
                     .putInt("powerfull_max_layers_"+symbol,vMaxLayers)
                     .putInt("powerfull_sl_buy_points_"+symbol,vSlBuy)
                     .putInt("powerfull_sl_sell_points_"+symbol,vSlSell)
                     .putFloat("powerfull_pip_size_"+symbol,(float)pip)
+                    .putBoolean("powerfull_liquid_momentum_enabled_"+symbol,true)
+                    .putBoolean("powerfull_pending_limit_enabled_"+symbol,false)
                     .putBoolean("powerfull_buy_limit_"+symbol,true).putBoolean("powerfull_sell_limit_"+symbol,true)
                     .putBoolean("powerfull_quick_profit_"+symbol,true).putBoolean("powerfull_cross_candle_"+symbol,true)
                     .remove("powerfull_tick_samples_"+symbol)
