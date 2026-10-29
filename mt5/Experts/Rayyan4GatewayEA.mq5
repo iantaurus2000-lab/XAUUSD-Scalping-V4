@@ -1838,6 +1838,10 @@ bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick
 }
 void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,double candleOpen,double candleHigh,double candleLow){
    string symbol=powerSymbols[index];
+   if(DemoOnly&&AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
+      powerPublishState(index,"BLOCKED_DEMO_ONLY","D1 trading is restricted to a demo account while DemoOnly=true",barTime);
+      return;
+   }
    uint now=GetTickCount();
    double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
    double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
