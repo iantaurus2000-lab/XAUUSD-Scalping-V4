@@ -4,7 +4,7 @@ CTrade trade;
 CTrade powerTrade; // isolated order manager: legacy CTrade state/magic remains untouched
 #define RAYYAN_MAGIC 4104407
 
-input string GatewayUrl="http://192.168.2.101:8787";
+input string GatewayUrl="http://192.168.2.104:8787";
 input string AllowedSymbol="XAUUSDm";
 input bool DemoOnly=true;
 input int PollSeconds=1;
@@ -850,7 +850,7 @@ void publishMarketQuotes(){
 // must not depend on which symbol/timeframe happens to be open in the MT5 desktop.
 void publishNativeChartBars(){
    uint now=GetTickCount();
-   if(now-lastNativeBarsTick<2000) return;
+   if(now-lastNativeBarsTick<1000) return;
    lastNativeBarsTick=now;
    string symbols[3]={"XAUUSDm","BTCUSDm","ETHUSDm"};
    ENUM_TIMEFRAMES frames[6]={PERIOD_M1,PERIOD_M5,PERIOD_M15,PERIOD_H1,PERIOD_H4,PERIOD_D1};
@@ -864,7 +864,7 @@ void publishNativeChartBars(){
          continue;
       }
       for(int j=0;j<ArraySize(frames);j++){
-         int count=(j<2?200:50);
+         int count=50;
          if(appendBarsForTimeframe(sym,frames[j],names[j],count,batch))series++;
       }
    }
