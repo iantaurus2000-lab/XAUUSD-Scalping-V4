@@ -1884,7 +1884,7 @@ public class MainActivity extends Activity {
         root.addView(title,new LinearLayout.LayoutParams(-1,uiDp(38)));
         TextView market=tv("MARKET "+symbol+" • SINYAL SEPENUHNYA DARI EA MT5",11);market.setTextColor(Color.LTGRAY);
         root.addView(market,new LinearLayout.LayoutParams(-1,uiDp(32)));
-        TextView note=tv("D1 membaca tick MT5 langsung dan mencari pembalikan dekat High/Low M5. Tidak ada filter ATR Liquid Momentum atau mode Pending LIMIT terpisah.",12);
+        TextView note=tv("D1 membaca tick MT5 langsung dan mencari pembalikan dekat High/Low M5. Entry tidak bergantung pada forecast candle sebelumnya.",12);
         note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
         root.addView(note,new LinearLayout.LayoutParams(-1,uiDp(76)));
         Switch enabled=new Switch(this);enabled.setText("POWERFULL EA • MASTER ON / OFF");enabled.setTextSize(15);enabled.setTextColor(Color.WHITE);
