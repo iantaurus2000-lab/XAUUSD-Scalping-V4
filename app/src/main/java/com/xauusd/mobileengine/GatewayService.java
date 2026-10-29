@@ -357,55 +357,36 @@ public final class GatewayService extends Service {
         boolean standardOn=p.getBoolean("rayyan_strategy_enabled_STANDAR_"+suffix,false);
         boolean excellentOn=p.getBoolean("rayyan_strategy_enabled_EXCELLENT_"+suffix,false);
         boolean strategyConflict=requested&&(standardOn||excellentOn);
-        boolean buyLimit=p.getBoolean("powerfull_buy_limit_"+suffix,true);
-        boolean sellLimit=p.getBoolean("powerfull_sell_limit_"+suffix,true);
-        boolean pendingLimit=p.getBoolean("powerfull_pending_limit_enabled_"+suffix,true);
-        boolean liquidMomentum=p.getBoolean("powerfull_liquid_momentum_enabled_"+suffix,true);
-        double liquidMomentumATR=0.25; // Internal compatibility value; D1 entry is tick/extreme-based, not ATR-gated.
-        int liquidMomentumConfirmMs=p.getInt("powerfull_liquid_momentum_confirm_ms_"+suffix,500);
+        int d1TurnConfirmMs=p.getInt("powerfull_d1_turn_confirm_ms_"+suffix,500);
         int maxLayers=p.getInt("powerfull_max_layers_"+suffix,3);
         boolean reforecast=p.getBoolean("powerfull_reforecast_"+suffix,true);
         boolean quickProfit=p.getBoolean("powerfull_quick_profit_"+suffix,true);
         boolean crossCandle=p.getBoolean("powerfull_cross_candle_"+suffix,true);
         double lot=p.getFloat("powerfull_lot_"+suffix,0.0f);
-        double lotStep=0.01; // Fixed internal layer sizing; not a user-facing D1 signal filter.
+        double lotStep=0.01;
         double brokerPoint=0.0; try { brokerPoint=Double.parseDouble(p.getString("broker_quote_point_"+suffix,"0")); } catch(Exception ignored) {}
-        // Pip is an internal display/conversion unit; the test EA itself is point-based.
         double pip=p.getFloat("powerfull_pip_size_"+suffix,(float)(brokerPoint>0.0?brokerPoint:0.01));
-        double stopPips=3.0; // fallback only for older APK clients
-        double maxPendingATR=1.5; // Internal compatibility default; D1 uses market entries, not pending-distance forecasts.
-        int minHoldCandles=0; // D1 profit management must not wait a fixed candle count.
-        double reversalATRFactor=0.25; // Internal fallback only; not user-configurable in D1.
+        double stopPips=3.0;
+        double maxPendingATR=1.5;
+        int minHoldCandles=0;
+        double reversalATRFactor=0.25;
         int minProfitLockPoints=p.getInt("powerfull_min_profit_lock_points_"+suffix,5);
-        int minDistancePoints=30; // Broker safety floor; internal, not a predictive filter.
-        int deviationPoints=20; // Execution tolerance; internal.
+        int minDistancePoints=30;
+        int deviationPoints=20;
         int slBuyPoints=p.getInt("powerfull_sl_buy_points_"+suffix,0);
         int slSellPoints=p.getInt("powerfull_sl_sell_points_"+suffix,0);
         double minimumLot=("BTCUSDm".equals(symbol)||"ETHUSDm".equals(symbol))?0.10:0.01;
         boolean valid=Double.isFinite(lot)&&lot>=minimumLot
-            &&Double.isFinite(lotStep)&&lotStep>0.0
-            &&Double.isFinite(pip)&&pip>0.0
-            &&minDistancePoints>=0&&minDistancePoints<=100000
-            &&deviationPoints>=0&&deviationPoints<=10000
-            &&slBuyPoints>=0&&slSellPoints>=0
-            &&Double.isFinite(maxPendingATR)&&maxPendingATR>=0.5&&maxPendingATR<=5.0
-            &&minHoldCandles>=0&&minHoldCandles<=12
-            &&minProfitLockPoints>=0&&minProfitLockPoints<=100000
-            &&Double.isFinite(reversalATRFactor)&&reversalATRFactor>=0.05&&reversalATRFactor<=2.0
-            &&Double.isFinite(liquidMomentumATR)&&liquidMomentumATR>=0.10&&liquidMomentumATR<=2.0
-            &&liquidMomentumConfirmMs>=250&&liquidMomentumConfirmMs<=5000
-            &&maxLayers>=1&&maxLayers<=3;
-        boolean hasEntryMode=liquidMomentum||(pendingLimit&&(buyLimit||sellLimit));
-        boolean enabled=requested&&valid&&hasEntryMode&&!strategyConflict;
-        String reason=enabled?"READY":(!requested?"DISABLED":(strategyConflict?"STRATEGY_CONFLICT":(!valid?"CONFIG_INVALID":(!hasEntryMode?"NO_ENTRY_MODE":"CONFIG_INVALID"))));
+            &&Double.isFinite(lotStep)&&lotStep>0.0&&Double.isFinite(pip)&&pip>0.0
+            &&minDistancePoints>=0&&minDistancePoints<=100000&&deviationPoints>=0&&deviationPoints<=10000
+            &&slBuyPoints>=0&&slSellPoints>=0&&d1TurnConfirmMs>=250&&d1TurnConfirmMs<=5000
+            &&maxLayers>=1&&maxLayers<=3&&minProfitLockPoints>=0&&minProfitLockPoints<=100000;
+        boolean enabled=requested&&valid&&!strategyConflict;
+        String reason=enabled?"READY":(!requested?"DISABLED":(strategyConflict?"STRATEGY_CONFLICT":(!valid?"CONFIG_INVALID":"CONFIG_INVALID")));
         return "symbol="+symbol
             +";enabled="+(enabled?"1":"0")
-            +";buyLimit="+(buyLimit?"1":"0")
-            +";sellLimit="+(sellLimit?"1":"0")
-            +";pendingLimit="+(pendingLimit?"1":"0")
-            +";liquidMomentum="+(liquidMomentum?"1":"0")
-            +";liquidMomentumATR="+String.format(Locale.US,"%.2f",liquidMomentumATR)
-            +";liquidMomentumConfirmMs="+liquidMomentumConfirmMs
+            +";buyLimit=1;sellLimit=1;pendingLimit=0"
+            +";d1TurnConfirmMs="+d1TurnConfirmMs
             +";maxLayers="+maxLayers
             +";reforecast="+(reforecast?"1":"0")
             +";quickProfit="+(quickProfit?"1":"0")
