@@ -2263,7 +2263,7 @@ void managePowerfullSymbol(int index){
 
    // Both entry engines may run together or independently. Momentum is evaluated
    // on each fresh tick; pending LIMIT planning remains timer-only.
-   bool d1Active=(powerConfigReceivedMs[index]>0&&powerCfg[index].enabled)
+   bool d1Active=(powerConfigReceivedMs[index]>0&&powerCfg[index].enabled);
    if(d1Active)
       powerTryD1ExtremeEntry(index,tick,barTime,candleOpen,candleHigh,candleLow);
 
@@ -2299,8 +2299,8 @@ void managePowerfullSymbol(int index){
          powerPublishState(index,"LIMIT_OFF_WAIT_CANCEL","Pending LIMIT mode is OFF; waiting for broker cancellation",barTime);
          return;
       }
-      powerPublishState(index,d1Active?"MOMENTUM_ACTIVE":"NO_ENTRY_MODE",
-         d1Active?"Liquid Candle Momentum ON; Pending LIMIT OFF":"Momentum and Pending LIMIT are both OFF",barTime);
+      powerPublishState(index,d1Active?"D1_ACTIVE":"NO_D1_ENTRY_MODE",
+         d1Active?"D1 Human Price Extreme active":"D1 entry engine is OFF",barTime);
       return;
    }
 
