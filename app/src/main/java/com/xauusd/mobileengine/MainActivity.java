@@ -1945,7 +1945,7 @@ public class MainActivity extends Activity {
         fields.setBackground(roundBg(Color.rgb(3,18,30),16));
         TextView title=tv("SMART AUTO-POWERFULL • PENGATURAN",16);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
         fields.addView(title,new LinearLayout.LayoutParams(-1,uiDp(42)));
-        TextView note=tv("Momentum memakai ambang default 0.25×ATR dan konfirmasi 1 detik. Pending LIMIT memakai rata-rata rentang 3–5 candle M5 selesai dan dicoba saat candle M5 baru.",11);
+        TextView note=tv("D1 Human Price Extreme: SELL dekat High / BUY dekat Low dari tick MT5 aktual. Layer 1–3 fleksibel; profit diamankan berdasarkan tick, spread, dan retrace. Tidak memakai riwayat candle sebelumnya untuk entry.",11);
         note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
         fields.addView(note,new LinearLayout.LayoutParams(-1,uiDp(58)));
         EditText lot=addEaParameter(fields,"Initial Lot",String.format(Locale.US,"%.2f",gp.getFloat("powerfull_lot_"+symbol,(float)Math.max(minLotForSymbol(symbol),lotForMarket()))),true);
@@ -1955,7 +1955,8 @@ public class MainActivity extends Activity {
         EditText profitLock=addEaParameter(fields,"Min Profit Lock Points",Integer.toString(gp.getInt("powerfull_min_profit_lock_points_"+symbol,5)),false);
         EditText deviation=addEaParameter(fields,"Deviation Points",Integer.toString(gp.getInt("powerfull_deviation_points_"+symbol,20)),false);
         EditText hold=addEaParameter(fields,"Min Hold Candles Before Profit Close (0–12)",Integer.toString(gp.getInt("powerfull_min_hold_candles_"+symbol,2)),false);
-        EditText momentumAtr=addEaParameter(fields,"Liquid Momentum ATR Threshold (0.10–2.00)",String.format(Locale.US,"%.2f",gp.getFloat("powerfull_liquid_momentum_atr_"+symbol,0.25f)),true);
+        EditText confirmMs=addEaParameter(fields,"Tick Rejection Confirm (ms 250–5000)",Integer.toString(gp.getInt("powerfull_liquid_momentum_confirm_ms_"+symbol,500)),false);
+        EditText maxLayers=addEaParameter(fields,"D1 Maximum Layers (1–3)",Integer.toString(gp.getInt("powerfull_max_layers_"+symbol,3)),false);
         EditText slBuy=addEaParameter(fields,"SL BUY Points (0=BLOCK MOMENTUM)",Integer.toString(gp.getInt("powerfull_sl_buy_points_"+symbol,0)),false);
         EditText slSell=addEaParameter(fields,"SL SELL Points (0=BLOCK MOMENTUM)",Integer.toString(gp.getInt("powerfull_sl_sell_points_"+symbol,0)),false);
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(false);scroll.addView(fields);
@@ -1977,13 +1978,14 @@ public class MainActivity extends Activity {
                 int vLock=Integer.parseInt(profitLock.getText().toString().trim());
                 int vDeviation=Integer.parseInt(deviation.getText().toString().trim());
                 int vHold=Integer.parseInt(hold.getText().toString().trim());
-                double vMomentumAtr=Double.parseDouble(momentumAtr.getText().toString().trim().replace(',','.'));
+                int vConfirmMs=Integer.parseInt(confirmMs.getText().toString().trim());
+                int vMaxLayers=Integer.parseInt(maxLayers.getText().toString().trim());
                 int vSlBuy=Integer.parseInt(slBuy.getText().toString().trim());
                 int vSlSell=Integer.parseInt(slSell.getText().toString().trim());
                 if(!Double.isFinite(vLot)||vLot<minLotForSymbol(symbol)||!Double.isFinite(vStep)||vStep<=0
                     ||vDistance<0||vDistance>100000||!Double.isFinite(vReversal)||vReversal<0.05||vReversal>2.0
                     ||vLock<0||vLock>100000||vDeviation<0||vDeviation>10000||vHold<0||vHold>12
-                    ||!Double.isFinite(vMomentumAtr)||vMomentumAtr<0.10||vMomentumAtr>2.00
+                    ||vConfirmMs<250||vConfirmMs>5000||vMaxLayers<1||vMaxLayers>3
                     ||vSlBuy<0||vSlSell<0||vSlBuy>100000000||vSlSell>100000000){
                     Toast.makeText(this,"Ada parameter di luar rentang yang diizinkan.",Toast.LENGTH_LONG).show();return;
                 }
@@ -1996,7 +1998,8 @@ public class MainActivity extends Activity {
                     .putInt("powerfull_min_profit_lock_points_"+symbol,vLock)
                     .putInt("powerfull_deviation_points_"+symbol,vDeviation)
                     .putInt("powerfull_min_hold_candles_"+symbol,vHold)
-                    .putFloat("powerfull_liquid_momentum_atr_"+symbol,(float)vMomentumAtr)
+                    .putInt("powerfull_liquid_momentum_confirm_ms_"+symbol,vConfirmMs)
+                    .putInt("powerfull_max_layers_"+symbol,vMaxLayers)
                     .putInt("powerfull_sl_buy_points_"+symbol,vSlBuy)
                     .putInt("powerfull_sl_sell_points_"+symbol,vSlSell)
                     .putFloat("powerfull_pip_size_"+symbol,(float)pip)
@@ -2008,7 +2011,7 @@ public class MainActivity extends Activity {
                     .remove("powerfull_range_offset_fraction_"+symbol)
                     .remove("powerfull_momentum_points_"+symbol)
                     .apply();
-                AppLog.add(this,"POWERFULL","C1 parameters saved symbol="+symbol+" lot="+vLot+" minDistance="+vDistance+" momentumATR="+vMomentumAtr+" SLbuy="+vSlBuy+" SLsell="+vSlSell);
+                AppLog.add(this,"POWERFULL","D1 parameters saved symbol="+symbol+" lot="+vLot+" maxLayers="+vMaxLayers+" confirmMs="+vConfirmMs+" SLbuy="+vSlBuy+" SLsell="+vSlSell);
                 Toast.makeText(this,"Parameter POWERFULL disimpan",Toast.LENGTH_SHORT).show();d.dismiss();
             }catch(Exception e){Toast.makeText(this,"Periksa kembali semua parameter angka.",Toast.LENGTH_LONG).show();}
         });
