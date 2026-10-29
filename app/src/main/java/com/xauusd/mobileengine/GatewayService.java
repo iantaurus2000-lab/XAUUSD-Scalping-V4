@@ -395,7 +395,7 @@ public final class GatewayService extends Service {
             &&liquidMomentumConfirmMs>=250&&liquidMomentumConfirmMs<=5000;
         boolean hasEntryMode=liquidMomentum||(pendingLimit&&(buyLimit||sellLimit));
         boolean enabled=requested&&valid&&hasEntryMode&&!strategyConflict;
-        String reason=enabled?"READY":(!requested?"DISABLED":(strategyConflict?"STRATEGY_CONFLICT":(!valid?"CONFIG_INVALID":(!hasEntrySide?"NO_ENTRY_SIDE":"CONFIG_INVALID"))));
+        String reason=enabled?"READY":(!requested?"DISABLED":(strategyConflict?"STRATEGY_CONFLICT":(!valid?"CONFIG_INVALID":(!hasEntryMode?"NO_ENTRY_MODE":"CONFIG_INVALID"))));
         return "symbol="+symbol
             +";enabled="+(enabled?"1":"0")
             +";buyLimit="+(buyLimit?"1":"0")
