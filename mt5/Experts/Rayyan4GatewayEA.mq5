@@ -2074,8 +2074,19 @@ void managePowerfullSymbol(int index){
       return;
    }
 
-   // If Pending LIMIT is OFF, cancel POWERFULL pending orders and preserve
-   // the momentum engine when its independent switch is ON.
+   // D1 is the primary POWERFULL entry engine. Do not run the legacy candle-history
+   // forecast alongside it; cancel old POWERFULL pendings and continue using live MT5 ticks.
+   if(momentumActive){
+      if(!powerCancelPendingForSymbol(symbol)||powerPendingCount(symbol)>0){
+         powerPublishState(index,"D1_WAIT_LEGACY_CANCEL","D1 is active; waiting for old POWERFULL pending orders to cancel",barTime);
+         return;
+      }
+      powerPublishState(index,"D1_ACTIVE","Human Price Extreme reads live MT5 ticks and current M5 High/Low; no prior-candle forecast; max layers="+
+         IntegerToString(powerCfg[index].maxLayers),barTime);
+      return;
+   }
+
+   // If D1 is OFF, the optional legacy Pending LIMIT mode remains available.
    if(!powerCfg[index].pendingLimitEnabled){
       if(!powerCancelPendingForSymbol(symbol)||powerPendingCount(symbol)>0){
          powerPublishState(index,"LIMIT_OFF_WAIT_CANCEL","Pending LIMIT mode is OFF; waiting for broker cancellation",barTime);
