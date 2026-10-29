@@ -5,6 +5,7 @@ on:
     branches: [RAYYAN]
 jobs:
   android-apk:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -31,6 +32,7 @@ jobs:
           retention-days: 30
 
   mt5-ea:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4

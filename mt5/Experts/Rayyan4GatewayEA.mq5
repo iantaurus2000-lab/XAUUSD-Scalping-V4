@@ -69,6 +69,7 @@ struct PowerfullConfig {
    int slEntry1Points;
    int slEntry2Points;
    bool usePointStops;
+   bool pendingLimitEnabled;
    bool liquidMomentumEnabled;
    double liquidMomentumATR;
    int liquidMomentumConfirmMs;
@@ -1290,11 +1291,13 @@ bool powerRefreshConfig(int index){
    string deviationText=field(body,"deviationPoints");
    string slEntry1Text=field(body,"slEntry1Points");
    string slEntry2Text=field(body,"slEntry2Points");
+   string pendingLimitFlag=field(body,"pendingLimit");
    string momentumFlag=field(body,"liquidMomentum");
    string momentumAtrText=field(body,"liquidMomentumATR");
    string momentumConfirmText=field(body,"liquidMomentumConfirmMs");
+   bool pendingLimitEnabled=(pendingLimitFlag==""||pendingLimitFlag=="1");
    bool liquidMomentumEnabled=(momentumFlag==""||momentumFlag=="1");
-   double liquidMomentumAtr=(momentumAtrText==""?0.5:StringToDouble(momentumAtrText));
+   double liquidMomentumAtr=(momentumAtrText==""?0.25:StringToDouble(momentumAtrText));
    int liquidMomentumConfirmMs=(momentumConfirmText==""?1000:(int)StringToInteger(momentumConfirmText));
    bool buyEnabled=(buyFlag==""||buyFlag=="1");
    bool sellEnabled=(sellFlag==""||sellFlag=="1");
@@ -1341,10 +1344,11 @@ bool powerRefreshConfig(int index){
    powerCfg[index].slEntry1Points=(slEntry1<0?0:slEntry1);
    powerCfg[index].slEntry2Points=(slEntry2<0?0:slEntry2);
    powerCfg[index].usePointStops=usePointStops;
+   powerCfg[index].pendingLimitEnabled=pendingLimitEnabled;
    powerCfg[index].liquidMomentumEnabled=liquidMomentumEnabled;
    powerCfg[index].liquidMomentumATR=liquidMomentumAtr;
    powerCfg[index].liquidMomentumConfirmMs=liquidMomentumConfirmMs;
-   powerCfg[index].enabled=requested&&valid&&(buyEnabled||sellEnabled);
+   powerCfg[index].enabled=requested&&valid&&(liquidMomentumEnabled||(pendingLimitEnabled&&(buyEnabled||sellEnabled)));
    powerCfg[index].lot=lot;
    powerCfg[index].pipSize=pip;
    powerCfg[index].stopPips=stop;
@@ -1770,21 +1774,11 @@ void powerTryLiquidMomentum(int index,const MqlTick &tick,datetime barTime,doubl
    if(positions>0){
       powerMomentumCandidateMs[index]=0;
       powerMomentumCandidateSide[index]=0;
-      powerCancelPendingForSymbol(symbol);
-      powerPublishState(index,"POSITION_ACTIVE","Momentum entry locked: existing position owns lifecycle; positions="+IntegerToString(positions),barTime);
+      powerPublishState(index,"POSITION_ACTIVE","Momentum market entry paused while a POWERFULL position is active; Pending LIMIT remains independent",barTime);
       return;
    }
+   // Existing pending LIMIT orders do not disable the independent momentum engine.
    int pending=powerPendingCount(symbol);
-   if(pending>0){
-      powerMomentumCandidateMs[index]=0;
-      powerMomentumCandidateSide[index]=0;
-      powerCancelPendingForSymbol(symbol);
-      pending=powerPendingCount(symbol);
-      if(pending>0){
-         powerPublishState(index,"MOMENTUM_WAIT_CANCEL","Waiting for broker confirmation that legacy POWERFULL pendings are cancelled",barTime);
-         return;
-      }
-   }
    if(AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
       powerPublishState(index,"BLOCKED_NOT_DEMO","LIQUID CANDLE MOMENTUM is demo-only",barTime);
       return;
@@ -2156,12 +2150,11 @@ void managePowerfullSymbol(int index){
    powerLastAsk[index]=tick.ask;
    powerLastTickMs[index]=tick.time_msc;
 
-   // LIQUID CANDLE MOMENTUM owns POWERFULL entries while enabled. It shares
-   // the same symbol/magic/position manager, but never competes with wick pendings.
-   if(powerConfigReceivedMs[index]>0&&powerCfg[index].enabled&&powerCfg[index].liquidMomentumEnabled){
+   // Both entry engines may run together or independently. Momentum is evaluated
+   // on each fresh tick; pending LIMIT planning remains timer-only.
+   bool momentumActive=(powerConfigReceivedMs[index]>0&&powerCfg[index].enabled&&powerCfg[index].liquidMomentumEnabled);
+   if(momentumActive)
       powerTryLiquidMomentum(index,tick,barTime,candleOpen,candleHigh,candleLow);
-      return;
-   }
 
    // Only timer cycles perform model/config/order work; OnTick manages positions.
    if(powerFastTickOnly)return;
@@ -2177,9 +2170,17 @@ void managePowerfullSymbol(int index){
       return;
    }
 
-   // The live momentum engine replaces wick LIMIT seeding when enabled. Its fast
-   // tick path above handles entry and lifecycle locking; do not seed competing orders.
-   if(powerCfg[index].liquidMomentumEnabled)return;
+   // If Pending LIMIT is OFF, cancel POWERFULL pending orders and preserve
+   // the momentum engine when its independent switch is ON.
+   if(!powerCfg[index].pendingLimitEnabled){
+      if(!powerCancelPendingForSymbol(symbol)||powerPendingCount(symbol)>0){
+         powerPublishState(index,"LIMIT_OFF_WAIT_CANCEL","Pending LIMIT mode is OFF; waiting for broker cancellation",barTime);
+         return;
+      }
+      powerPublishState(index,momentumActive?"MOMENTUM_ACTIVE":"NO_ENTRY_MODE",
+         momentumActive?"Liquid Candle Momentum ON; Pending LIMIT OFF":"Momentum and Pending LIMIT are both OFF",barTime);
+      return;
+   }
 
    // Cancel explicitly disabled sides or pending orders that have drifted far from price.
    // A new M5 candle or temporary signal change alone never deletes a pending order.

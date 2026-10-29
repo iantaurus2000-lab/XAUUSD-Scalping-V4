@@ -1878,9 +1878,15 @@ public class MainActivity extends Activity {
         TextView note=tv("APK hanya mengirim ON/OFF dan parameter ke EA. POWERFULL demo-only: proyeksi sederhana rentang 3–5 candle M5 selesai, entry saat candle baru, LIMIT kedaluwarsa saat candle M5 berakhir.",12);
         note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
         root.addView(note,new LinearLayout.LayoutParams(-1,uiDp(76)));
-        Switch enabled=new Switch(this);enabled.setText("POWERFULL EA • ON / OFF");enabled.setTextSize(15);enabled.setTextColor(Color.WHITE);
+        Switch enabled=new Switch(this);enabled.setText("POWERFULL EA • MASTER ON / OFF");enabled.setTextSize(15);enabled.setTextColor(Color.WHITE);
         enabled.setChecked(gp.getBoolean("powerfull_enabled_"+symbol,false));
-        root.addView(enabled,new LinearLayout.LayoutParams(-1,uiDp(54)));
+        root.addView(enabled,new LinearLayout.LayoutParams(-1,uiDp(48)));
+        Switch momentumEnabled=new Switch(this);momentumEnabled.setText("LIQUID CANDLE MOMENTUM • ON / OFF");momentumEnabled.setTextColor(Color.WHITE);
+        momentumEnabled.setChecked(gp.getBoolean("powerfull_liquid_momentum_enabled_"+symbol,true));
+        root.addView(momentumEnabled,new LinearLayout.LayoutParams(-1,uiDp(44)));
+        Switch pendingLimitEnabled=new Switch(this);pendingLimitEnabled.setText("PENDING LIMIT FORECAST • ON / OFF");pendingLimitEnabled.setTextColor(Color.WHITE);
+        pendingLimitEnabled.setChecked(gp.getBoolean("powerfull_pending_limit_enabled_"+symbol,true));
+        root.addView(pendingLimitEnabled,new LinearLayout.LayoutParams(-1,uiDp(44)));
         Button settings=btn("SUBMENU • PARAMETER EA UJI TEST");settings.setTextSize(12);
         settings.setBackground(roundBg(Color.rgb(8,70,103),10));
         root.addView(settings,new LinearLayout.LayoutParams(-1,uiDp(48)));
@@ -1906,6 +1912,8 @@ public class MainActivity extends Activity {
                 }
             }
             gp.edit().putBoolean("powerfull_enabled_"+symbol,enabled.isChecked())
+                .putBoolean("powerfull_liquid_momentum_enabled_"+symbol,momentumEnabled.isChecked())
+                .putBoolean("powerfull_pending_limit_enabled_"+symbol,pendingLimitEnabled.isChecked())
                 .putBoolean("powerfull_buy_limit_"+symbol,true).putBoolean("powerfull_sell_limit_"+symbol,true)
                 .putBoolean("powerfull_quick_profit_"+symbol,true).putBoolean("powerfull_cross_candle_"+symbol,true)
                 .putBoolean("powerfull_reforecast_"+symbol,true)
@@ -1916,7 +1924,7 @@ public class MainActivity extends Activity {
             Toast.makeText(this,"POWERFULL EA "+(enabled.isChecked()?"ON":"OFF"),Toast.LENGTH_SHORT).show();
             dialog.dismiss();
         });
-        showSizedDialog(dialog,0.62f,420);
+        showSizedDialog(dialog,0.82f,460);
     }
 
     private EditText addEaParameter(LinearLayout parent,String label,String value,boolean decimal){
@@ -1947,6 +1955,7 @@ public class MainActivity extends Activity {
         EditText profitLock=addEaParameter(fields,"Min Profit Lock Points",Integer.toString(gp.getInt("powerfull_min_profit_lock_points_"+symbol,5)),false);
         EditText deviation=addEaParameter(fields,"Deviation Points",Integer.toString(gp.getInt("powerfull_deviation_points_"+symbol,20)),false);
         EditText hold=addEaParameter(fields,"Min Hold Candles Before Profit Close (0–12)",Integer.toString(gp.getInt("powerfull_min_hold_candles_"+symbol,2)),false);
+        EditText momentumAtr=addEaParameter(fields,"Liquid Momentum ATR Threshold (0.10–2.00)",String.format(Locale.US,"%.2f",gp.getFloat("powerfull_liquid_momentum_atr_"+symbol,0.25f)),true);
         EditText slBuy=addEaParameter(fields,"SL BUY Points (0=BLOCK MOMENTUM)",Integer.toString(gp.getInt("powerfull_sl_buy_points_"+symbol,0)),false);
         EditText slSell=addEaParameter(fields,"SL SELL Points (0=BLOCK MOMENTUM)",Integer.toString(gp.getInt("powerfull_sl_sell_points_"+symbol,0)),false);
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(false);scroll.addView(fields);
@@ -1968,11 +1977,13 @@ public class MainActivity extends Activity {
                 int vLock=Integer.parseInt(profitLock.getText().toString().trim());
                 int vDeviation=Integer.parseInt(deviation.getText().toString().trim());
                 int vHold=Integer.parseInt(hold.getText().toString().trim());
+                double vMomentumAtr=Double.parseDouble(momentumAtr.getText().toString().trim().replace(',','.'));
                 int vSlBuy=Integer.parseInt(slBuy.getText().toString().trim());
                 int vSlSell=Integer.parseInt(slSell.getText().toString().trim());
                 if(!Double.isFinite(vLot)||vLot<minLotForSymbol(symbol)||!Double.isFinite(vStep)||vStep<=0
                     ||vDistance<0||vDistance>100000||!Double.isFinite(vReversal)||vReversal<0.05||vReversal>2.0
                     ||vLock<0||vLock>100000||vDeviation<0||vDeviation>10000||vHold<0||vHold>12
+                    ||!Double.isFinite(vMomentumAtr)||vMomentumAtr<0.10||vMomentumAtr>2.00
                     ||vSlBuy<0||vSlSell<0||vSlBuy>100000000||vSlSell>100000000){
                     Toast.makeText(this,"Ada parameter di luar rentang yang diizinkan.",Toast.LENGTH_LONG).show();return;
                 }
@@ -1985,6 +1996,7 @@ public class MainActivity extends Activity {
                     .putInt("powerfull_min_profit_lock_points_"+symbol,vLock)
                     .putInt("powerfull_deviation_points_"+symbol,vDeviation)
                     .putInt("powerfull_min_hold_candles_"+symbol,vHold)
+                    .putFloat("powerfull_liquid_momentum_atr_"+symbol,(float)vMomentumAtr)
                     .putInt("powerfull_sl_buy_points_"+symbol,vSlBuy)
                     .putInt("powerfull_sl_sell_points_"+symbol,vSlSell)
                     .putFloat("powerfull_pip_size_"+symbol,(float)pip)
@@ -1996,7 +2008,7 @@ public class MainActivity extends Activity {
                     .remove("powerfull_range_offset_fraction_"+symbol)
                     .remove("powerfull_momentum_points_"+symbol)
                     .apply();
-                AppLog.add(this,"POWERFULL","simple M5 forecast settings saved symbol="+symbol+" lot="+vLot+" minDistance="+vDistance+" SLbuy="+vSlBuy+" SLsell="+vSlSell);
+                AppLog.add(this,"POWERFULL","C1 parameters saved symbol="+symbol+" lot="+vLot+" minDistance="+vDistance+" momentumATR="+vMomentumAtr+" SLbuy="+vSlBuy+" SLsell="+vSlSell);
                 Toast.makeText(this,"Parameter POWERFULL disimpan",Toast.LENGTH_SHORT).show();d.dismiss();
             }catch(Exception e){Toast.makeText(this,"Periksa kembali semua parameter angka.",Toast.LENGTH_LONG).show();}
         });

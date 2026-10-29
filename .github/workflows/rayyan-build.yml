@@ -19,6 +19,7 @@ permissions:
 
 jobs:
   android-apk:
+    if: github.event_name == 'workflow_dispatch'
     name: Build Android APK
     runs-on: ubuntu-24.04
     steps:
@@ -62,6 +63,7 @@ jobs:
           retention-days: 14
 
   mt5-ea:
+    if: github.event_name == 'workflow_dispatch'
     name: Compile MQL5 EAs with MetaEditor
     runs-on: windows-2022
     steps:

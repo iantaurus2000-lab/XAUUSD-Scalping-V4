@@ -359,6 +359,10 @@ public final class GatewayService extends Service {
         boolean strategyConflict=requested&&(standardOn||excellentOn);
         boolean buyLimit=p.getBoolean("powerfull_buy_limit_"+suffix,true);
         boolean sellLimit=p.getBoolean("powerfull_sell_limit_"+suffix,true);
+        boolean pendingLimit=p.getBoolean("powerfull_pending_limit_enabled_"+suffix,true);
+        boolean liquidMomentum=p.getBoolean("powerfull_liquid_momentum_enabled_"+suffix,true);
+        double liquidMomentumATR=p.getFloat("powerfull_liquid_momentum_atr_"+suffix,0.25f);
+        int liquidMomentumConfirmMs=p.getInt("powerfull_liquid_momentum_confirm_ms_"+suffix,1000);
         boolean reforecast=p.getBoolean("powerfull_reforecast_"+suffix,true);
         boolean quickProfit=p.getBoolean("powerfull_quick_profit_"+suffix,true);
         boolean crossCandle=p.getBoolean("powerfull_cross_candle_"+suffix,true);
@@ -386,14 +390,20 @@ public final class GatewayService extends Service {
             &&Double.isFinite(maxPendingATR)&&maxPendingATR>=0.5&&maxPendingATR<=5.0
             &&minHoldCandles>=0&&minHoldCandles<=12
             &&minProfitLockPoints>=0&&minProfitLockPoints<=100000
-            &&Double.isFinite(reversalATRFactor)&&reversalATRFactor>=0.05&&reversalATRFactor<=2.0;
-        boolean hasEntrySide=buyLimit||sellLimit;
-        boolean enabled=requested&&valid&&hasEntrySide&&!strategyConflict;
+            &&Double.isFinite(reversalATRFactor)&&reversalATRFactor>=0.05&&reversalATRFactor<=2.0
+            &&Double.isFinite(liquidMomentumATR)&&liquidMomentumATR>=0.10&&liquidMomentumATR<=2.0
+            &&liquidMomentumConfirmMs>=250&&liquidMomentumConfirmMs<=5000;
+        boolean hasEntryMode=liquidMomentum||(pendingLimit&&(buyLimit||sellLimit));
+        boolean enabled=requested&&valid&&hasEntryMode&&!strategyConflict;
         String reason=enabled?"READY":(!requested?"DISABLED":(strategyConflict?"STRATEGY_CONFLICT":(!valid?"CONFIG_INVALID":(!hasEntrySide?"NO_ENTRY_SIDE":"CONFIG_INVALID"))));
         return "symbol="+symbol
             +";enabled="+(enabled?"1":"0")
             +";buyLimit="+(buyLimit?"1":"0")
             +";sellLimit="+(sellLimit?"1":"0")
+            +";pendingLimit="+(pendingLimit?"1":"0")
+            +";liquidMomentum="+(liquidMomentum?"1":"0")
+            +";liquidMomentumATR="+String.format(Locale.US,"%.2f",liquidMomentumATR)
+            +";liquidMomentumConfirmMs="+liquidMomentumConfirmMs
             +";reforecast="+(reforecast?"1":"0")
             +";quickProfit="+(quickProfit?"1":"0")
             +";crossCandleHold="+(crossCandle?"1":"0")
@@ -405,7 +415,6 @@ public final class GatewayService extends Service {
             +";deviationPoints="+deviationPoints
             +";slEntry1Points="+slBuyPoints
             +";slEntry2Points="+slSellPoints
-            +";liquidMomentum=1;liquidMomentumATR=0.50;liquidMomentumConfirmMs=1000"
             +";maxPendingATR="+String.format(Locale.US,"%.2f",maxPendingATR)
             +";minHoldCandles="+minHoldCandles
             +";reversalATRFactor="+String.format(Locale.US,"%.2f",reversalATRFactor)
