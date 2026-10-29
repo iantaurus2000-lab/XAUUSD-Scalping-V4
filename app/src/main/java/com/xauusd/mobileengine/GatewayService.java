@@ -379,10 +379,10 @@ public final class GatewayService extends Service {
         boolean valid=Double.isFinite(lot)&&lot>=minimumLot
             &&Double.isFinite(lotStep)&&lotStep>0.0&&Double.isFinite(pip)&&pip>0.0
             &&minDistancePoints>=0&&minDistancePoints<=100000&&deviationPoints>=0&&deviationPoints<=10000
-            &&slBuyPoints>=0&&slSellPoints>=0&&d1TurnConfirmMs>=250&&d1TurnConfirmMs<=5000
+            &&slBuyPoints>0&&slSellPoints>0&&d1TurnConfirmMs>=250&&d1TurnConfirmMs<=5000
             &&maxLayers>=1&&maxLayers<=3&&minProfitLockPoints>=0&&minProfitLockPoints<=100000;
         boolean enabled=requested&&valid&&!strategyConflict;
-        String reason=enabled?"READY":(!requested?"DISABLED":(strategyConflict?"STRATEGY_CONFLICT":(!valid?"CONFIG_INVALID":"CONFIG_INVALID")));
+        String reason=enabled?"READY":(!requested?"DISABLED":(strategyConflict?"STRATEGY_CONFLICT":((slBuyPoints<=0||slSellPoints<=0)?"SL_POINTS_REQUIRED":"CONFIG_INVALID")));
         return "symbol="+symbol
             +";enabled="+(enabled?"1":"0")
             +";buyLimit=1;sellLimit=1;pendingLimit=0"
