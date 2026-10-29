@@ -614,17 +614,26 @@ public class MainActivity extends Activity {
                 Candle[] freshM5=readNativeMt5Bars(activeMarket,"M5",200);
                 runOnUiThread(()->{
                     if(!activeMarket.equals(selectedMarket)||!tfNow.equals(selectedTf))return;
+                    if(fresh!=null){
+                        boolean wasFollowing=chart.isFollow();
+                        chart.setData(fresh);syncChartServerClock();
+                        if(wasFollowing)chart.goLive();
+                    }
+                    // Keep the last usable bars through a transient chart upload/read delay.
+                    // D1 entry runs inside the EA; selected chart timeframe freshness is not
+                    // an entry prerequisite. Signal strategies still validate live quote + M1/M5.
+                    if(freshM1!=null)m1Data=freshM1;
+                    if(freshM5!=null)m5Data=freshM5;
                     if(fresh==null){
-                        m1Data=new Candle[0];m5Data=new Candle[0];
-                        status.setText("● MT5 OHLC STALE • ENTRY LOCKED • "+tfNow);
-                        resetEntryReadyUi("candle timeframe terpilih MT5 terlambat/tidak tersedia");
+                        if(m1Data.length>=30&&m5Data.length>=60&&hasFreshEntryQuotes()){
+                            syncBrokerEntryLine();updateSignal(m1Data,m5Data);
+                            status.setText("● CHART UPDATE DELAYED • ENTRY DATA MT5 LIVE • "+activeMarket+" • "+tfNow);
+                        }else{
+                            status.setText("● CHART UPDATE DELAYED • LAST BARS KEPT • "+activeMarket+" • "+tfNow);
+                            if(!hasFreshEntryQuotes())resetEntryReadyUi("quote atau data M1/M5 belum segar");
+                        }
                         return;
                     }
-                    boolean wasFollowing=chart.isFollow();
-                    chart.setData(fresh);syncChartServerClock();
-                    if(wasFollowing)chart.goLive();
-                    m1Data=freshM1==null?new Candle[0]:freshM1;
-                    m5Data=freshM5==null?new Candle[0]:freshM5;
                     if(m1Data.length>=30&&m5Data.length>=60){
                         syncBrokerEntryLine();updateSignal(m1Data,m5Data);
                         status.setText("● MT5 CHART + SIGNAL LIVE • "+activeMarket+" • "+tfNow);
