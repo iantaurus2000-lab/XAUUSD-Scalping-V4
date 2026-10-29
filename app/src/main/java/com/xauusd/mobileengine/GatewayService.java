@@ -362,7 +362,8 @@ public final class GatewayService extends Service {
         boolean pendingLimit=p.getBoolean("powerfull_pending_limit_enabled_"+suffix,true);
         boolean liquidMomentum=p.getBoolean("powerfull_liquid_momentum_enabled_"+suffix,true);
         double liquidMomentumATR=p.getFloat("powerfull_liquid_momentum_atr_"+suffix,0.25f);
-        int liquidMomentumConfirmMs=p.getInt("powerfull_liquid_momentum_confirm_ms_"+suffix,1000);
+        int liquidMomentumConfirmMs=p.getInt("powerfull_liquid_momentum_confirm_ms_"+suffix,500);
+        int maxLayers=p.getInt("powerfull_max_layers_"+suffix,3);
         boolean reforecast=p.getBoolean("powerfull_reforecast_"+suffix,true);
         boolean quickProfit=p.getBoolean("powerfull_quick_profit_"+suffix,true);
         boolean crossCandle=p.getBoolean("powerfull_cross_candle_"+suffix,true);
@@ -392,7 +393,8 @@ public final class GatewayService extends Service {
             &&minProfitLockPoints>=0&&minProfitLockPoints<=100000
             &&Double.isFinite(reversalATRFactor)&&reversalATRFactor>=0.05&&reversalATRFactor<=2.0
             &&Double.isFinite(liquidMomentumATR)&&liquidMomentumATR>=0.10&&liquidMomentumATR<=2.0
-            &&liquidMomentumConfirmMs>=250&&liquidMomentumConfirmMs<=5000;
+            &&liquidMomentumConfirmMs>=250&&liquidMomentumConfirmMs<=5000
+            &&maxLayers>=1&&maxLayers<=3;
         boolean hasEntryMode=liquidMomentum||(pendingLimit&&(buyLimit||sellLimit));
         boolean enabled=requested&&valid&&hasEntryMode&&!strategyConflict;
         String reason=enabled?"READY":(!requested?"DISABLED":(strategyConflict?"STRATEGY_CONFLICT":(!valid?"CONFIG_INVALID":(!hasEntryMode?"NO_ENTRY_MODE":"CONFIG_INVALID"))));
@@ -404,6 +406,7 @@ public final class GatewayService extends Service {
             +";liquidMomentum="+(liquidMomentum?"1":"0")
             +";liquidMomentumATR="+String.format(Locale.US,"%.2f",liquidMomentumATR)
             +";liquidMomentumConfirmMs="+liquidMomentumConfirmMs
+            +";maxLayers="+maxLayers
             +";reforecast="+(reforecast?"1":"0")
             +";quickProfit="+(quickProfit?"1":"0")
             +";crossCandleHold="+(crossCandle?"1":"0")
