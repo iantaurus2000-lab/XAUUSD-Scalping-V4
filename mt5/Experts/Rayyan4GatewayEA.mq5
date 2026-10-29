@@ -22,6 +22,10 @@ datetime lastDiag=0;
 datetime powerLastDiag=0;
 uint quoteDiagAtMs[3];
 string quoteDiagState[3];
+// Last successfully delivered quote snapshot per symbol. Only changed ticks are sent.
+long quoteLastPublishedTickMs[3];
+double quoteLastPublishedBid[3], quoteLastPublishedAsk[3];
+uint lastQuotePublishAttemptMs=0;
 void manageTP2RetraceProtection();
 void updateChartCountdown();
 void uploadChartSnapshot();
@@ -211,10 +215,11 @@ void OnTick(){
 }
 
 void OnTimer(){
-   // Fast 100 ms housekeeping lets the EA inspect all subscribed symbols near the
-   // M5 boundary. Legacy gateway/chart work still runs only at PollSeconds cadence
-   // and is serviced before any POWERFULL-specific gateway request.
+   // Fast quote path: publish changed Exness ticks without waiting for the 1s OHLC batch.
+   // The publisher throttles requests and sends only symbols whose tick changed.
    uint nowMs=GetTickCount();
+   publishMarketQuotes();
+   // Legacy gateway/chart work still runs only at PollSeconds cadence.
    uint legacyInterval=(uint)MathMax(1,PollSeconds)*1000;
    if(powerLastLegacyTimerMs==0 || (uint)(nowMs-powerLastLegacyTimerMs)>=legacyInterval){
       powerLastLegacyTimerMs=nowMs;
@@ -768,19 +773,20 @@ void publishOrderState(){
 
 void quoteDiagnostic(int index,string symbol,string state,string detail){
    uint nowMs=GetTickCount();
-   if(state!=quoteDiagState[index] || (uint)(nowMs-quoteDiagAtMs[index])>=30000){
-      quoteDiagAtMs[index]=nowMs;
-      quoteDiagState[index]=state;
-      Print("RAYYAN4 QUOTE DIAG symbol=",symbol," state=",state," ",detail);
-   }
-}
+   if(state!=quoteDiagState[index] || (uint)(nowMs-quoteDiagAtMs[index])>void publishMarketQuotes(){
+   // Timer runs every 100ms; this guard avoids excessive synchronous WebRequests.
+   uint nowMs=GetTickCount();
+   if(lastQuotePublishAttemptMs!=0 && (uint)(nowMs-lastQuotePublishAttemptMs)<100) return;
 
-// /next heartbeat is separate from quote freshness. Log silent symbol/tick failures.
-void publishMarketQuotes(){
    string symbols[3]={"XAUUSDm","BTCUSDm","ETHUSDm"};
    bool included[3];
    string details[3];
-   for(int i=0;i<3;i++){included[i]=false;details[i]="";}
+   long candidateTickMs[3];
+   double candidateBid[3],candidateAsk[3];
+   for(int i=0;i<3;i++){
+      included[i]=false; details[i]="";
+      candidateTickMs[i]=0; candidateBid[i]=0; candidateAsk[i]=0;
+   }
    string batch="";
    int count=0;
    for(int i=0;i<ArraySize(symbols);i++){
@@ -806,6 +812,10 @@ void publishMarketQuotes(){
          quoteDiagnostic(i,sym,"INVALID_POINT","SYMBOL_POINT="+DoubleToString(point,10));
          continue;
       }
+      // Avoid uploading unchanged snapshots; preserve tick timestamp and exact broker precision.
+      if(tick.time_msc==quoteLastPublishedTickMs[i]
+         && tick.bid==quoteLastPublishedBid[i] && tick.ask==quoteLastPublishedAsk[i])
+         continue;
       if(StringLen(batch)>0)batch+="\n";
       batch+="symbol="+sym+
          ";bid="+DoubleToString(tick.bid,digits)+
@@ -814,30 +824,48 @@ void publishMarketQuotes(){
          ";digits="+IntegerToString(digits)+
          ";tickms="+(string)tick.time_msc;
       included[i]=true;
+      candidateTickMs[i]=tick.time_msc;
+      candidateBid[i]=tick.bid;
+      candidateAsk[i]=tick.ask;
       details[i]="bid="+DoubleToString(tick.bid,digits)+" ask="+DoubleToString(tick.ask,digits)+
          " digits="+IntegerToString(digits)+" point="+DoubleToString(point,10)+
          " tickms="+(string)tick.time_msc;
       count++;
    }
    if(count==0||StringLen(batch)==0)return;
+
    string base=GatewayUrl;
    while(StringLen(base)>0 && StringSubstr(base,StringLen(base)-1,1)=="/")
       base=StringSubstr(base,0,StringLen(base)-1);
    if(StringFind(base,"http://")!=0 && StringFind(base,"https://")!=0)return;
+
    char requestData[],responseData[];
    string responseHeaders="";
    int bytes=StringToCharArray(batch,requestData,0,WHOLE_ARRAY,CP_UTF8);
    if(bytes<=1)return;
    ArrayResize(requestData,bytes-1);
+   lastQuotePublishAttemptMs=GetTickCount();
    ResetLastError();
    int code=WebRequest("POST",base+"/quote/upload",
-      "Content-Type: text/plain; charset=utf-8\r\n",1000,
+      "Content-Type: text/plain; charset=utf-8\r\n",350,
       requestData,responseData,responseHeaders);
    string response=CharArrayToString(responseData,0,WHOLE_ARRAY,CP_UTF8);
    if(code!=200||StringFind(response,"QUOTE OK")!=0){
       for(int i=0;i<3;i++)if(included[i])
          quoteDiagnostic(i,symbols[i],"PUBLISH_FAILED",
-            "batch transport http="+IntegerToString(code)+" err="+IntegerToString(GetLastError())+
+            "tick batch http="+IntegerToString(code)+" err="+IntegerToString(GetLastError())+
+            " response="+response);
+   }else{
+      for(int i=0;i<3;i++)if(included[i]){
+         quoteLastPublishedTickMs[i]=candidateTickMs[i];
+         quoteLastPublishedBid[i]=candidateBid[i];
+         quoteLastPublishedAsk[i]=candidateAsk[i];
+         quoteDiagnostic(i,symbols[i],"QUOTE_PUBLISHED",details[i]);
+      }
+   }
+}
+
+tch transport http="+IntegerToString(code)+" err="+IntegerToString(GetLastError())+
             " response="+response);
    }else{
       for(int i=0;i<3;i++)if(included[i])
