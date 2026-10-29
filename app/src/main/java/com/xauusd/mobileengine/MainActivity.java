@@ -1875,7 +1875,7 @@ public class MainActivity extends Activity {
         root.addView(title,new LinearLayout.LayoutParams(-1,uiDp(38)));
         TextView market=tv("MARKET "+symbol+" • SINYAL SEPENUHNYA DARI EA MT5",11);market.setTextColor(Color.LTGRAY);
         root.addView(market,new LinearLayout.LayoutParams(-1,uiDp(32)));
-        TextView note=tv("APK hanya mengirim ON/OFF dan parameter ke EA. POWERFULL demo-only: proyeksi sederhana rentang 3–5 candle M5 selesai, entry saat candle baru, LIMIT kedaluwarsa saat candle M5 berakhir.",12);
+        TextView note=tv("Pilih Momentum dan Pending LIMIT secara terpisah atau bersama. Momentum: ambang default 0.25×ATR + konfirmasi 1 detik. Pending LIMIT memakai rata-rata rentang 3–5 candle M5 selesai dan kedaluwarsa saat candle M5 berakhir.",12);
         note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
         root.addView(note,new LinearLayout.LayoutParams(-1,uiDp(76)));
         Switch enabled=new Switch(this);enabled.setText("POWERFULL EA • MASTER ON / OFF");enabled.setTextSize(15);enabled.setTextColor(Color.WHITE);
@@ -1945,7 +1945,7 @@ public class MainActivity extends Activity {
         fields.setBackground(roundBg(Color.rgb(3,18,30),16));
         TextView title=tv("SMART AUTO-POWERFULL • PENGATURAN",16);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
         fields.addView(title,new LinearLayout.LayoutParams(-1,uiDp(42)));
-        TextView note=tv("Forecast: rata-rata rentang 3–5 candle M5 selesai. Entry dicoba saat candle M5 baru terdeteksi. Tidak ada filter 3 detik atau minimal sampel tick.",11);
+        TextView note=tv("Momentum memakai ambang default 0.25×ATR dan konfirmasi 1 detik. Pending LIMIT memakai rata-rata rentang 3–5 candle M5 selesai dan dicoba saat candle M5 baru.",11);
         note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
         fields.addView(note,new LinearLayout.LayoutParams(-1,uiDp(58)));
         EditText lot=addEaParameter(fields,"Initial Lot",String.format(Locale.US,"%.2f",gp.getFloat("powerfull_lot_"+symbol,(float)Math.max(minLotForSymbol(symbol),lotForMarket()))),true);

@@ -1778,7 +1778,6 @@ void powerTryLiquidMomentum(int index,const MqlTick &tick,datetime barTime,doubl
       return;
    }
    // Existing pending LIMIT orders do not disable the independent momentum engine.
-   int pending=powerPendingCount(symbol);
    if(AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
       powerPublishState(index,"BLOCKED_NOT_DEMO","LIQUID CANDLE MOMENTUM is demo-only",barTime);
       return;
@@ -1851,11 +1850,10 @@ void powerTryLiquidMomentum(int index,const MqlTick &tick,datetime barTime,doubl
       powerPublishState(index,"BLOCKED_LOT","Configured lot is outside broker volume limits",barTime);
       return;
    }
-   if(powerPositionCount(symbol)>0||powerPendingCount(symbol)>0){
+   if(powerPositionCount(symbol)>0){
       powerMomentumCandidateMs[index]=0;
       powerMomentumCandidateSide[index]=0;
-      powerCancelPendingForSymbol(symbol);
-      powerPublishState(index,"MOMENTUM_RECHECK_BLOCK","Position/order appeared during confirmation; no market entry sent",barTime);
+      powerPublishState(index,"MOMENTUM_RECHECK_BLOCK","Position appeared during confirmation; existing Pending LIMIT orders are preserved",barTime);
       return;
    }
    double entry=(side>0?tick.ask:tick.bid);
@@ -1876,7 +1874,8 @@ void powerTryLiquidMomentum(int index,const MqlTick &tick,datetime barTime,doubl
          " SLpoints=",slPoints," retcode=",rc);
       powerMomentumLastEntryBar[index]=barTime;
       powerPublishState(index,"MOMENTUM_ENTRY_SENT","Market "+(side>0?"BUY":"SELL")+
-         " accepted; threshold=0.5 ATR; confirm=1s; SL="+IntegerToString(slPoints)+" points",barTime);
+         " accepted; threshold="+DoubleToString(powerCfg[index].liquidMomentumATR,2)+" ATR; confirm="+
+         IntegerToString(powerCfg[index].liquidMomentumConfirmMs)+"ms; SL="+IntegerToString(slPoints)+" points",barTime);
    }else{
       Print("POWERFULL LIQUID MOMENTUM ENTRY FAILED symbol=",symbol," side=",(side>0?"BUY":"SELL"),
          " retcode=",rc," desc=",powerTrade.ResultRetcodeDescription()," err=",GetLastError());
