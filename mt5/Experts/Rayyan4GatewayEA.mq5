@@ -2119,7 +2119,6 @@ void powerPublishState(int index,string status,string detail,datetime barTime){
       }
       return; // never perform a synchronous HTTP request inside OnTick
    }
-   uint nowMs=GetTickCount();
    if(powerLastStatePublishMs[index]!=0&&
       (uint)(nowMs-powerLastStatePublishMs[index])<POWERFULL_STATUS_INTERVAL_MS&&
       status==powerLastStatus[index]&&detail==powerLastDetail[index])return;
