@@ -773,7 +773,15 @@ void publishOrderState(){
 
 void quoteDiagnostic(int index,string symbol,string state,string detail){
    uint nowMs=GetTickCount();
-   if(state!=quoteDiagState[index] || (uint)(nowMs-quoteDiagAtMs[index])>void publishMarketQuotes(){
+   if(state!=quoteDiagState[index] || (uint)(nowMs-quoteDiagAtMs[index])>=30000){
+      quoteDiagAtMs[index]=nowMs;
+      quoteDiagState[index]=state;
+      Print("RAYYAN4 QUOTE DIAG symbol=",symbol," state=",state," ",detail);
+   }
+}
+
+// /next heartbeat is separate from quote freshness. Log silent symbol/tick failures.
+void publishMarketQuotes(){
    // Timer runs every 100ms; this guard avoids excessive synchronous WebRequests.
    uint nowMs=GetTickCount();
    if(lastQuotePublishAttemptMs!=0 && (uint)(nowMs-lastQuotePublishAttemptMs)<100) return;
@@ -812,7 +820,7 @@ void quoteDiagnostic(int index,string symbol,string state,string detail){
          quoteDiagnostic(i,sym,"INVALID_POINT","SYMBOL_POINT="+DoubleToString(point,10));
          continue;
       }
-      // Avoid uploading unchanged snapshots; preserve tick timestamp and exact broker precision.
+      // Avoid uploading unchanged snapshots; preserve broker precision and tick time.
       if(tick.time_msc==quoteLastPublishedTickMs[i]
          && tick.bid==quoteLastPublishedBid[i] && tick.ask==quoteLastPublishedAsk[i])
          continue;
@@ -862,14 +870,6 @@ void quoteDiagnostic(int index,string symbol,string state,string detail){
          quoteLastPublishedAsk[i]=candidateAsk[i];
          quoteDiagnostic(i,symbols[i],"QUOTE_PUBLISHED",details[i]);
       }
-   }
-}
-
-tch transport http="+IntegerToString(code)+" err="+IntegerToString(GetLastError())+
-            " response="+response);
-   }else{
-      for(int i=0;i<3;i++)if(included[i])
-         quoteDiagnostic(i,symbols[i],"QUOTE_PUBLISHED",details[i]);
    }
 }
 
