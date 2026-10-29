@@ -7,6 +7,14 @@ CTrade powerTrade; // isolated order manager: legacy CTrade state/magic remains 
 input string GatewayUrl="http://192.168.2.104:8787";
 input string AllowedSymbol="XAUUSDm";
 input bool DemoOnly=true;
+// Standalone test mode: trades directly from MT5 ticks and never calls the APK Gateway.
+input bool StandaloneD1Mode=false;
+input string StandaloneSymbol="";
+input double StandaloneLot=0.01;
+input int StandaloneSLBuyPoints=0;
+input int StandaloneSLSellPoints=0;
+input int StandaloneD1TurnConfirmMs=500;
+input int StandaloneMaxLayers=1;
 input int PollSeconds=1;
 // After TP1 is reached, close on a confirmed M1 reversal before TP2.
 input bool EnableTP2RetraceProtection=true;
@@ -74,9 +82,7 @@ struct PowerfullConfig {
    int slEntry2Points;
    bool usePointStops;
    bool pendingLimitEnabled;
-   bool liquidMomentumEnabled;
-   double liquidMomentumATR;
-   int liquidMomentumConfirmMs;
+   int d1TurnConfirmMs;
    int maxLayers;
    double maxPendingDistanceATR;
    int minHoldCandles;
@@ -157,7 +163,7 @@ bool powerHasPendingSide(string symbol,bool buySide);
 bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick &tick,double target);
 void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double candleOpen,
                           bool hasPreviousTick,double previousBid);
-void powerTryLiquidMomentum(int index,const MqlTick &tick,datetime barTime,double candleOpen,double candleHigh,double candleLow);
+void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,double candleOpen,double candleHigh,double candleLow);
 void powerClosedDealStats(string symbol,int &wins,int &losses,int &closed);
 double powerAtrPrice(int index);
 void powerRecordTick(int index,double mid);
@@ -177,11 +183,41 @@ int OnInit(){
    cleanupDuplicateEmaLayers();
    hEma50=iMA(_Symbol,_Period,50,0,MODE_EMA,PRICE_CLOSE);
    hEma200=iMA(_Symbol,_Period,200,0,MODE_EMA,PRICE_CLOSE);
-   for(int i=0;i<ArraySize(powerSymbols);i++){
-      if(SymbolSelect(powerSymbols[i],true))
-         powerAtrHandles[i]=iATR(powerSymbols[i],PERIOD_M5,14);
-      if(powerAtrHandles[i]==INVALID_HANDLE)
-         Print("POWERFULL ATR HANDLE WARNING symbol=",powerSymbols[i]," error=",GetLastError());
+   if(StandaloneD1Mode){
+      string directSymbol=(StringLen(StandaloneSymbol)>0?StandaloneSymbol:_Symbol);
+      powerSymbols[0]=directSymbol; powerSymbols[1]=""; powerSymbols[2]="";
+      if(!SymbolSelect(directSymbol,true)){
+         Print("D1 STANDALONE CONFIG ERROR: symbol unavailable: ",directSymbol);
+         return(INIT_FAILED);
+      }
+      powerCfg[0].enabled=(StandaloneLot>0.0&&StandaloneSLBuyPoints>0&&StandaloneSLSellPoints>0
+         &&StandaloneD1TurnConfirmMs>=250&&StandaloneD1TurnConfirmMs<=5000
+         &&StandaloneMaxLayers>=1&&StandaloneMaxLayers<=3);
+      powerCfg[0].lot=StandaloneLot;
+      powerCfg[0].pipSize=SymbolInfoDouble(directSymbol,SYMBOL_POINT);
+      powerCfg[0].lotStep=SymbolInfoDouble(directSymbol,SYMBOL_VOLUME_STEP);
+      powerCfg[0].usePointStops=true;
+      powerCfg[0].slEntry1Points=StandaloneSLBuyPoints;
+      powerCfg[0].slEntry2Points=StandaloneSLSellPoints;
+      powerCfg[0].d1TurnConfirmMs=StandaloneD1TurnConfirmMs;
+      powerCfg[0].maxLayers=StandaloneMaxLayers;
+      powerCfg[0].minProfitLockPoints=5;
+      powerCfg[0].minHoldCandles=0;
+      powerCfg[0].reason=(powerCfg[0].enabled?"STANDALONE_READY":"STANDALONE_CONFIG_INVALID");
+      powerConfigReceivedMs[0]=1;
+      Print("D1 STANDALONE MODE symbol=",directSymbol," lot=",DoubleToString(StandaloneLot,2),
+         " SLbuy=",StandaloneSLBuyPoints," SLsell=",StandaloneSLSellPoints,
+         " confirmMs=",StandaloneD1TurnConfirmMs," maxLayers=",StandaloneMaxLayers,
+         " enabled=",powerCfg[0].enabled,
+         " | BUY/SELL SL points must be positive before enabling Algo Trading");
+   }else{
+      for(int i=0;i<ArraySize(powerSymbols);i++){
+         if(powerSymbols[i]=="")continue;
+         if(SymbolSelect(powerSymbols[i],true))
+            powerAtrHandles[i]=iATR(powerSymbols[i],PERIOD_M5,14);
+         if(powerAtrHandles[i]==INVALID_HANDLE)
+            Print("POWERFULL ATR HANDLE WARNING symbol=",powerSymbols[i]," error=",GetLastError());
+      }
    }
    if(hEma50==INVALID_HANDLE || hEma200==INVALID_HANDLE)
       Print("RAYYAN4 INDICATOR WARNING EMA handles=",hEma50,",",hEma200);
@@ -196,7 +232,8 @@ int OnInit(){
    ChartSetInteger(0,CHART_SCALE,4);
    applyAll();
    if(!EventSetMillisecondTimer(100)) EventSetTimer(MathMax(1,PollSeconds));
-   Print("RAYYAN4 START Gateway=",GatewayUrl," Symbol=",AllowedSymbol,
+   if(StandaloneD1Mode) Print("RAYYAN D1 STANDALONE READY: no Gateway/WebRequest calls will be made.");
+   else Print("RAYYAN4 START Gateway=",GatewayUrl," Symbol=",AllowedSymbol,
          " trade queue=/next indicator queue=/indicator_next");
    return(INIT_SUCCEEDED);
 }
@@ -224,6 +261,7 @@ void OnTick(){
 }
 
 void OnTimer(){
+   if(StandaloneD1Mode){ managePowerfullAllMarkets(false); return; }
    // Fast quote path: publish changed MT5 ticks without waiting for the OHLC batch.
    // The publisher throttles requests and sends only symbols whose tick changed.
    uint nowMs=GetTickCount();
@@ -1334,14 +1372,10 @@ bool powerRefreshConfig(int index){
    string slEntry1Text=field(body,"slEntry1Points");
    string slEntry2Text=field(body,"slEntry2Points");
    string pendingLimitFlag=field(body,"pendingLimit");
-   string momentumFlag=field(body,"liquidMomentum");
-   string momentumAtrText=field(body,"liquidMomentumATR");
-   string momentumConfirmText=field(body,"liquidMomentumConfirmMs");
+   string confirmText=field(body,"d1TurnConfirmMs");
    string maxLayersText=field(body,"maxLayers");
-   bool pendingLimitEnabled=(pendingLimitFlag==""||pendingLimitFlag=="1");
-   bool liquidMomentumEnabled=(momentumFlag==""||momentumFlag=="1");
-   double liquidMomentumAtr=(momentumAtrText==""?0.25:StringToDouble(momentumAtrText));
-   int liquidMomentumConfirmMs=(momentumConfirmText==""?500:(int)StringToInteger(momentumConfirmText));
+   bool pendingLimitEnabled=(pendingLimitFlag=="1");
+   int d1TurnConfirmMs=(confirmText==""?500:(int)StringToInteger(confirmText));
    int maxLayers=(maxLayersText==""?3:(int)StringToInteger(maxLayersText));
    bool buyEnabled=(buyFlag==""||buyFlag=="1");
    bool sellEnabled=(sellFlag==""||sellFlag=="1");
@@ -1371,8 +1405,7 @@ bool powerRefreshConfig(int index){
       &&minHold>=0&&minHold<=12
       &&MathIsValidNumber(reversalAtr)&&reversalAtr>=0.05&&reversalAtr<=2.0
       &&minProfitLock>=0&&minProfitLock<=100000
-      &&MathIsValidNumber(liquidMomentumAtr)&&liquidMomentumAtr>=0.1&&liquidMomentumAtr<=2.0
-      &&liquidMomentumConfirmMs>=250&&liquidMomentumConfirmMs<=5000
+      &&d1TurnConfirmMs>=250&&d1TurnConfirmMs<=5000
       &&maxLayers>=1&&maxLayers<=3;
    powerCfg[index].buyLimitEnabled=buyEnabled;
    powerCfg[index].sellLimitEnabled=sellEnabled;
@@ -1390,11 +1423,9 @@ bool powerRefreshConfig(int index){
    powerCfg[index].slEntry2Points=(slEntry2<0?0:slEntry2);
    powerCfg[index].usePointStops=usePointStops;
    powerCfg[index].pendingLimitEnabled=pendingLimitEnabled;
-   powerCfg[index].liquidMomentumEnabled=liquidMomentumEnabled;
-   powerCfg[index].liquidMomentumATR=liquidMomentumAtr;
-   powerCfg[index].liquidMomentumConfirmMs=liquidMomentumConfirmMs;
+   powerCfg[index].d1TurnConfirmMs=d1TurnConfirmMs;
    powerCfg[index].maxLayers=maxLayers;
-   powerCfg[index].enabled=requested&&valid&&(liquidMomentumEnabled||(pendingLimitEnabled&&(buyEnabled||sellEnabled)));
+   powerCfg[index].enabled=requested&&valid;
    powerCfg[index].lot=lot;
    powerCfg[index].pipSize=pip;
    powerCfg[index].stopPips=stop;
@@ -1805,14 +1836,14 @@ bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick
    powerPublishState(index,"PENDING_PLACED",EnumToString(type)+" at projected range level; expires at M5 close",barTime);
    return true;
 }
-void powerTryLiquidMomentum(int index,const MqlTick &tick,datetime barTime,double candleOpen,double candleHigh,double candleLow){
+void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,double candleOpen,double candleHigh,double candleLow){
    string symbol=powerSymbols[index];
    uint now=GetTickCount();
    double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
    double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
    double spread=tick.ask-tick.bid;
    if(point<=0.0||tickSize<=0.0||spread<0.0){
-      powerPublishState(index,"MOMENTUM_WAIT_DATA","D1 waiting for valid MT5 point/tick-size/quote",barTime);
+      powerPublishState(index,"D1_WAIT_DATA","D1 waiting for valid MT5 point/tick-size/quote",barTime);
       return;
    }
    if(powerMomentumLayerBar[index]!=barTime){
@@ -1831,7 +1862,7 @@ void powerTryLiquidMomentum(int index,const MqlTick &tick,datetime barTime,doubl
       return;
    }
    ENUM_ACCOUNT_MARGIN_MODE marginMode=(ENUM_ACCOUNT_MARGIN_MODE)AccountInfoInteger(ACCOUNT_MARGIN_MODE);
-   if(marginMode!=ACCOUNT_MARGIN_MODE_RETAIL_HEDGING||AccountInfoInteger(ACCOUNT_HEDGE_ALLOWED)==0){
+   if((marginMode!=ACCOUNT_MARGIN_MODE_RETAIL_HEDGING||AccountInfoInteger(ACCOUNT_HEDGE_ALLOWED)==0)&&powerCfg[index].maxLayers>1){
       powerPublishState(index,"BLOCKED_NETTING_ACCOUNT","D1 layered entries require MT5 hedging mode",barTime);
       return;
    }
@@ -1906,13 +1937,13 @@ void powerTryLiquidMomentum(int index,const MqlTick &tick,datetime barTime,doubl
       powerMomentumCandidateExtreme[index]=(side<0?candleHigh:candleLow);
       powerPublishState(index,"D1_EXTREME_CONFIRM",
          (side>0?"BUY near candle Low":"SELL near candle High")+
-         "; confirming live tick turn for "+IntegerToString(powerCfg[index].liquidMomentumConfirmMs)+" ms",barTime);
+         "; confirming live tick turn for "+IntegerToString(powerCfg[index].d1TurnConfirmMs)+" ms",barTime);
       return;
    }
    if(powerMomentumCandidateSide[index]!=side||powerMomentumCandidateBar[index]!=barTime)return;
    if(tick.time_msc<=powerMomentumCandidateTickMs[index])return;
    powerMomentumCandidateTickMs[index]=tick.time_msc;
-   if((uint)(now-powerMomentumCandidateMs[index])<(uint)powerCfg[index].liquidMomentumConfirmMs)return;
+   if((uint)(now-powerMomentumCandidateMs[index])<(uint)powerCfg[index].d1TurnConfirmMs)return;
 
    int slPoints=(side>0?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
    long stopLevel=SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL);
@@ -2071,7 +2102,23 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
 }
 
 void powerPublishState(int index,string status,string detail,datetime barTime){
-   if(!powerAllowGatewayCalls)return; // never perform a synchronous HTTP request inside OnTick
+   uint nowMs=GetTickCount();
+   if(StandaloneD1Mode){
+      if(status!=powerLastStatus[index]||detail!=powerLastDetail[index]||powerLastStatePublishMs[index]==0||
+         (uint)(nowMs-powerLastStatePublishMs[index])>=POWERFULL_STATUS_INTERVAL_MS){
+         Print("D1 STANDALONE ",powerSymbols[index]," status=",status," detail=",detail);
+         powerLastStatus[index]=status; powerLastDetail[index]=detail; powerLastStatePublishMs[index]=nowMs;
+      }
+      return;
+   }
+   if(!powerAllowGatewayCalls){
+      if(StringFind(status,"BLOCKED_")==0&&(status!=powerLastStatus[index]||detail!=powerLastDetail[index])&&
+         (powerLastStatePublishMs[index]==0||(uint)(nowMs-powerLastStatePublishMs[index])>=POWERFULL_STATUS_INTERVAL_MS)){
+         Print("POWERFULL BLOCK ",powerSymbols[index]," status=",status," detail=",detail);
+         powerLastStatus[index]=status; powerLastDetail[index]=detail; powerLastStatePublishMs[index]=nowMs;
+      }
+      return; // never perform a synchronous HTTP request inside OnTick
+   }
    uint nowMs=GetTickCount();
    if(powerLastStatePublishMs[index]!=0&&
       (uint)(nowMs-powerLastStatePublishMs[index])<POWERFULL_STATUS_INTERVAL_MS&&
@@ -2152,7 +2199,7 @@ void powerPublishState(int index,string status,string detail,datetime barTime){
 }
 
 void managePowerfullSymbol(int index){
-   if(index<0||index>=ArraySize(powerSymbols))return;
+   if(index<0||index>=ArraySize(powerSymbols)||powerSymbols[index]=="")return;
    uint nowMs=GetTickCount();
    // Timer housekeeping is throttled; OnTick still manages positions at tick frequency.
    if(!powerFastTickOnly&&powerLastManageMs[index]!=0&&
@@ -2216,9 +2263,9 @@ void managePowerfullSymbol(int index){
 
    // Both entry engines may run together or independently. Momentum is evaluated
    // on each fresh tick; pending LIMIT planning remains timer-only.
-   bool momentumActive=(powerConfigReceivedMs[index]>0&&powerCfg[index].enabled&&powerCfg[index].liquidMomentumEnabled);
-   if(momentumActive)
-      powerTryLiquidMomentum(index,tick,barTime,candleOpen,candleHigh,candleLow);
+   bool d1Active=(powerConfigReceivedMs[index]>0&&powerCfg[index].enabled)
+   if(d1Active)
+      powerTryD1ExtremeEntry(index,tick,barTime,candleOpen,candleHigh,candleLow);
 
    // Only timer cycles perform model/config/order work; OnTick manages positions.
    if(powerFastTickOnly)return;
@@ -2236,7 +2283,7 @@ void managePowerfullSymbol(int index){
 
    // D1 is the primary POWERFULL entry engine. Do not run the legacy candle-history
    // forecast alongside it; cancel old POWERFULL pendings and continue using live MT5 ticks.
-   if(momentumActive){
+   if(d1Active){
       if(!powerCancelPendingForSymbol(symbol)||powerPendingCount(symbol)>0){
          powerPublishState(index,"D1_WAIT_LEGACY_CANCEL","D1 is active; waiting for old POWERFULL pending orders to cancel",barTime);
          return;
@@ -2252,8 +2299,8 @@ void managePowerfullSymbol(int index){
          powerPublishState(index,"LIMIT_OFF_WAIT_CANCEL","Pending LIMIT mode is OFF; waiting for broker cancellation",barTime);
          return;
       }
-      powerPublishState(index,momentumActive?"MOMENTUM_ACTIVE":"NO_ENTRY_MODE",
-         momentumActive?"Liquid Candle Momentum ON; Pending LIMIT OFF":"Momentum and Pending LIMIT are both OFF",barTime);
+      powerPublishState(index,d1Active?"MOMENTUM_ACTIVE":"NO_ENTRY_MODE",
+         d1Active?"Liquid Candle Momentum ON; Pending LIMIT OFF":"Momentum and Pending LIMIT are both OFF",barTime);
       return;
    }
 
