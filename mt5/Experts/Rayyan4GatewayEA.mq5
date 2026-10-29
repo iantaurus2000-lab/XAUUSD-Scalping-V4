@@ -1897,7 +1897,7 @@ void powerTryLiquidMomentum(int index,const MqlTick &tick,datetime barTime,doubl
       powerMomentumCandidateTickMs[index]=tick.time_msc;
       powerMomentumCandidateExtreme[index]=(side<0?candleHigh:candleLow);
       powerPublishState(index,"D1_EXTREME_CONFIRM",
-         string(side>0?"BUY near candle Low":"SELL near candle High")+
+         (side>0?"BUY near candle Low":"SELL near candle High")+
          "; confirming live tick turn for "+IntegerToString(powerCfg[index].liquidMomentumConfirmMs)+" ms",barTime);
       return;
    }
