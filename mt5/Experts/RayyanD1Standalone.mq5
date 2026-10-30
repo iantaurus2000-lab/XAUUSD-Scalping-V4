@@ -105,6 +105,7 @@ double powerD1FallbackOpen[3],powerD1FallbackHigh[3],powerD1FallbackLow[3];
 double powerD1AskHigh[3],powerD1AskLow[3];
 int powerD1BuyTurnCount[3],powerD1SellTurnCount[3];
 datetime powerD1TurnBar[3];
+long powerD1LastCountedTickMs[3];
 datetime powerMomentumLastEntryBar[3];
 // E1/D1: first eligible entry time is gated by candle age; OHLC still resets per M5 bar.
 uint powerD1ScanStartedMs[3];
@@ -1921,21 +1922,26 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
 
    // Do not trigger from one quote change. Require three consecutive movements
    // with Bid AND Ask moving in the intended direction after the extreme.
-   if(powerD1TurnBar[index]!=barTime){
+   bool newTurnBar=(powerD1TurnBar[index]!=barTime);
+   if(newTurnBar){
       powerD1TurnBar[index]=barTime;
       powerD1BuyTurnCount[index]=0;
       powerD1SellTurnCount[index]=0;
-   }
-   if(hasPreviousTick&&previousBid>0.0&&previousAsk>0.0){
-      if(tick.bid>previousBid&&tick.ask>previousAsk){
-         if(powerD1BuyTurnCount[index]<3)powerD1BuyTurnCount[index]++;
-      }else powerD1BuyTurnCount[index]=0;
-      if(tick.bid<previousBid&&tick.ask<previousAsk){
-         if(powerD1SellTurnCount[index]<3)powerD1SellTurnCount[index]++;
-      }else powerD1SellTurnCount[index]=0;
-   }else{
-      powerD1BuyTurnCount[index]=0;
-      powerD1SellTurnCount[index]=0;
+      powerD1LastCountedTickMs[index]=tick.time_msc;
+   }else if(powerD1LastCountedTickMs[index]!=tick.time_msc||
+            tick.bid!=previousBid||tick.ask!=previousAsk){
+      powerD1LastCountedTickMs[index]=tick.time_msc;
+      if(hasPreviousTick&&previousBid>0.0&&previousAsk>0.0){
+         if(tick.bid>previousBid&&tick.ask>previousAsk){
+            if(powerD1BuyTurnCount[index]<3)powerD1BuyTurnCount[index]++;
+         }else powerD1BuyTurnCount[index]=0;
+         if(tick.bid<previousBid&&tick.ask<previousAsk){
+            if(powerD1SellTurnCount[index]<3)powerD1SellTurnCount[index]++;
+         }else powerD1SellTurnCount[index]=0;
+      }else{
+         powerD1BuyTurnCount[index]=0;
+         powerD1SellTurnCount[index]=0;
+      }
    }
    bool buyTickTurn=(powerD1BuyTurnCount[index]>=3);
    bool sellTickTurn=(powerD1SellTurnCount[index]>=3);
@@ -2384,6 +2390,7 @@ void managePowerfullSymbol(int index){
       powerD1BuyTurnCount[index]=0;
       powerD1SellTurnCount[index]=0;
       powerD1TurnBar[index]=barTime;
+      powerD1LastCountedTickMs[index]=tick.time_msc;
    }else{
       powerD1FallbackHigh[index]=MathMax(powerD1FallbackHigh[index],tick.bid);
       powerD1FallbackLow[index]=MathMin(powerD1FallbackLow[index],tick.bid);
