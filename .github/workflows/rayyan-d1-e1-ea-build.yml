@@ -1,0 +1,72 @@
+name: RAYYAN D1 E1 MT5 EA Build
+on:
+  workflow_dispatch:
+  push:
+    branches: [RAYYAN]
+    paths:
+      - 'mt5/Experts/RayyanD1Standalone.mq5'
+      - '.github/workflows/rayyan-d1-e1-ea-build.yml'
+jobs:
+  mt5-ea:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: RAYYAN
+      - name: Install MetaTrader 5 and prepare MetaEditor
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'mt5setup.exe'
+          Invoke-WebRequest -Uri 'https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe' -OutFile $installer
+          Start-Process -FilePath $installer -ArgumentList '/auto' -Wait
+          $candidates = @('C:\Program Files\MetaTrader 5\metaeditor64.exe', 'C:\Program Files (x86)\MetaTrader 5\metaeditor64.exe')
+          $editor = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $editor) {
+            $editor = Get-ChildItem "$env:APPDATA\MetaQuotes\Terminal" -Filter 'metaeditor64.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -First 1
+          }
+          if (-not $editor) { throw 'MetaEditor64.exe was not found.' }
+          $terminalCandidates = @('C:\Program Files\MetaTrader 5\terminal64.exe', 'C:\Program Files (x86)\MetaTrader 5\terminal64.exe')
+          $terminal = $terminalCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($terminal) {
+            $bootstrap = Start-Process -FilePath $terminal -ArgumentList '/portable' -PassThru
+            Start-Sleep -Seconds 8
+            Stop-Process -Id $bootstrap.Id -Force -ErrorAction SilentlyContinue
+          }
+          $dataRoot = Join-Path $env:APPDATA 'MetaQuotes\Terminal'
+          $tradeInclude = Get-ChildItem @('C:\Program Files\MetaTrader 5', 'C:\Program Files (x86)\MetaTrader 5', $dataRoot) -Filter 'Trade.mqh' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $tradeInclude) { throw 'MT5 standard library Trade.mqh is missing.' }
+          $includeSource = $tradeInclude.Directory.Parent.FullName
+          $dataDirs = Get-ChildItem $dataRoot -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path (Join-Path $_.FullName 'MQL5') }
+          foreach ($dataDir in $dataDirs) {
+            $targetInclude = Join-Path $dataDir.FullName 'MQL5\Include'
+            New-Item -ItemType Directory -Path $targetInclude -Force | Out-Null
+            Copy-Item (Join-Path $includeSource '*') $targetInclude -Recurse -Force
+          }
+          "METAEDITOR=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Compile Rayyan D1 Standalone EA
+        shell: pwsh
+        run: |
+          $source = (Resolve-Path 'mt5/Experts/RayyanD1Standalone.mq5').Path
+          $log = Join-Path $env:RUNNER_TEMP 'RayyanD1Standalone-compile.log'
+          $args = "/compile:`"$source`" /log:`"$log`""
+          $process = Start-Process -FilePath $env:METAEDITOR -ArgumentList $args -PassThru -Wait
+          Start-Sleep -Seconds 2
+          if (-not (Test-Path $log)) { throw "MetaEditor produced no compile log (exit $($process.ExitCode))." }
+          Get-Content $log
+          $binary = Join-Path (Split-Path $source) 'RayyanD1Standalone.ex5'
+          if (-not (Test-Path $binary)) {
+            $found = Get-ChildItem "$env:APPDATA\MetaQuotes\Terminal" -Filter 'RayyanD1Standalone.ex5' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { Copy-Item $found.FullName $binary -Force }
+          }
+          if (-not (Test-Path $binary)) { throw 'EA binary was not produced.' }
+          $compileLog = Get-Content $log -Raw
+          if ($compileLog -match '(?im)\b[1-9]\d* errors?\b') { throw 'MetaEditor reported compile errors.' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RAYYAN-D1-E1-MT5-EA
+          path: |
+            mt5/Experts/RayyanD1Standalone.ex5
+            mt5/Experts/RayyanD1Standalone.mq5
+            ${{ runner.temp }}/RayyanD1Standalone-compile.log
+          if-no-files-found: error
+          retention-days: 30
