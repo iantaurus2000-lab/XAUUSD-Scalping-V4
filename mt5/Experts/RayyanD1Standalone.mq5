@@ -13,7 +13,7 @@ input string StandaloneSymbol="";
 input double StandaloneLot=0.01;
 input int StandaloneSLBuyPoints=0;
 input int StandaloneSLSellPoints=0;
-input int StandaloneMaxLayers=1; // configurable 1..5
+input int StandaloneMaxLayers=5; // configurable 1..5; A6 default allows five layers
 // E1: allow the new M5 candle to develop before any first/layer entry.
 input int StandaloneScanWarmupSeconds=30;
 input int PollSeconds=1;
@@ -99,9 +99,12 @@ uint powerLastSeedAttemptMs[3];
 uint powerLastManageMs[3];
 double powerMomentumLastSellHigh[3];
 double powerMomentumLastBuyLow[3];
-// D1 keeps its own live-tick candle extremes; it does not wait for APK/chart uploads.
+// A6 tracks live Ask range separately because standard MT5 OHLC candles are Bid-based.
 datetime powerD1FallbackBar[3];
 double powerD1FallbackOpen[3],powerD1FallbackHigh[3],powerD1FallbackLow[3];
+double powerD1AskHigh[3],powerD1AskLow[3];
+int powerD1BuyTurnCount[3],powerD1SellTurnCount[3];
+datetime powerD1TurnBar[3];
 datetime powerMomentumLastEntryBar[3];
 // E1/D1: first eligible entry time is gated by candle age; OHLC still resets per M5 bar.
 uint powerD1ScanStartedMs[3];
@@ -157,7 +160,9 @@ bool powerHasPendingSide(string symbol,bool buySide);
 bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick &tick,double target);
 void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double candleOpen,
                           bool hasPreviousTick,double previousBid,double previousAsk);
-void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,double candleOpen,double candleHigh,double candleLow,
+void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
+                             double candleOpen,double candleHigh,double candleLow,
+                             double askHigh,double askLow,
                              bool hasPreviousTick,double previousBid,double previousAsk);
 void powerClosedDealStats(string symbol,int &wins,int &losses,int &closed);
 double powerAtrPrice(int index);
@@ -1814,6 +1819,7 @@ bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick
 }
 void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
                              double candleOpen,double candleHigh,double candleLow,
+                             double askHigh,double askLow,
                              bool hasPreviousTick,double previousBid,double previousAsk){
    if(index<0||index>=ArraySize(powerSymbols))return;
    string symbol=powerSymbols[index];
@@ -1890,41 +1896,58 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       return;
    }
 
-   // Layer spacing uses only tradable tick size and active layer count.
-   // No ATR, volatility normalization, or percentage-of-range entry threshold.
-   double layerGap=ts*(4.0+2.0*total);
+   // A6: a new layer follows a genuinely new M5 extreme, not an artificial expanding delay.
+   // One tradable tick beyond the prior layer extreme marks fresh distribution.
    bool sellFresh=(powerMomentumLastSellHigh[index]<=0.0||
-                   candleHigh>=powerMomentumLastSellHigh[index]+layerGap);
+                   candleHigh>=powerMomentumLastSellHigh[index]+ts);
    bool buyFresh=(powerMomentumLastBuyLow[index]<=0.0||
-                  candleLow<=powerMomentumLastBuyLow[index]-layerGap);
+                  candleLow<=powerMomentumLastBuyLow[index]-ts);
 
-   // Read the actual M5 candle body and rejection wicks; no percentage zones.
+   // Standard MT5 OHLC is Bid-based. Ask high/low is tracked live by this EA.
+   // Wait until BOTH executable quotes have moved away from their candle extreme.
    double upperWick=candleHigh-MathMax(candleOpen,tick.bid);
    double lowerWick=MathMin(candleOpen,tick.bid)-candleLow;
    double body=MathAbs(tick.bid-candleOpen);
    double minRejection=ts*3.0;
    double minWick=ts*2.0;
+   double buyBidRecovery=tick.bid-candleLow;
+   double buyAskRecovery=tick.ask-askLow;
+   double sellBidRetreat=candleHigh-tick.bid;
+   double sellAskRetreat=askHigh-tick.ask;
 
-   // BUY: red candle, price lifts from measured Low, lower-wick rejection and
-   // live Bid/Ask turn show selling pressure is easing.
-   // SELL: green candle, price retreats from measured High, upper-wick rejection and
-   // live Bid/Ask turn show buying pressure is easing.
-   bool candleRed=(tick.bid<candleOpen-ts*0.1);
-   bool candleGreen=(tick.bid>candleOpen+ts*0.1);
-   double buyPullback=tick.bid-candleLow;
-   double sellPullback=candleHigh-tick.bid;
-   bool buyTickTurn=(hasPreviousTick&&previousBid>0.0&&previousAsk>0.0&&
-                     tick.bid>previousBid+ts*0.1&&tick.ask>previousAsk+ts*0.1);
-   bool sellTickTurn=(hasPreviousTick&&previousBid>0.0&&previousAsk>0.0&&
-                      tick.bid<previousBid-ts*0.1&&tick.ask<previousAsk-ts*0.1);
+   // Strict candle direction: BUY only below M5 Open; SELL only above M5 Open.
+   bool candleRed=(tick.bid<candleOpen);
+   bool candleGreen=(tick.bid>candleOpen);
 
-   // A rejection must have meaningful range and wick structure; one tick alone is insufficient.
+   // Do not trigger from one quote change. Require three consecutive movements
+   // with Bid AND Ask moving in the intended direction after the extreme.
+   if(powerD1TurnBar[index]!=barTime){
+      powerD1TurnBar[index]=barTime;
+      powerD1BuyTurnCount[index]=0;
+      powerD1SellTurnCount[index]=0;
+   }
+   if(hasPreviousTick&&previousBid>0.0&&previousAsk>0.0){
+      if(tick.bid>previousBid&&tick.ask>previousAsk)
+         powerD1BuyTurnCount[index]=MathMin(3,powerD1BuyTurnCount[index]+1);
+      else powerD1BuyTurnCount[index]=0;
+      if(tick.bid<previousBid&&tick.ask<previousAsk)
+         powerD1SellTurnCount[index]=MathMin(3,powerD1SellTurnCount[index]+1);
+      else powerD1SellTurnCount[index]=0;
+   }else{
+      powerD1BuyTurnCount[index]=0;
+      powerD1SellTurnCount[index]=0;
+   }
+   bool buyTickTurn=(powerD1BuyTurnCount[index]>=3);
+   bool sellTickTurn=(powerD1SellTurnCount[index]>=3);
+
+   // BUY: red candle, fresh Low, lower-wick rejection and Bid+Ask recovery.
+   // SELL: green candle, fresh High, upper-wick rejection and Bid+Ask retreat.
    bool buyReady=(buyFresh&&candleRed&&
-                  buyPullback>=minRejection&&lowerWick>=minWick&&lowerWick>body&&
-                  buyTickTurn&&buyN<cap);
+                  buyBidRecovery>=minRejection&&buyAskRecovery>=minRejection&&
+                  lowerWick>=minWick&&lowerWick>body&&buyTickTurn&&buyN<cap);
    bool sellReady=(sellFresh&&candleGreen&&
-                   sellPullback>=minRejection&&upperWick>=minWick&&upperWick>body&&
-                   sellTickTurn&&sellN<cap);
+                   sellBidRetreat>=minRejection&&sellAskRetreat>=minRejection&&
+                   upperWick>=minWick&&upperWick>body&&sellTickTurn&&sellN<cap);
 
    // Add layers only in the existing basket's direction.
    if(buyN>0)sellReady=false;
@@ -2351,9 +2374,16 @@ void managePowerfullSymbol(int index){
       powerD1FallbackOpen[index]=(candleOpen>0.0?candleOpen:tick.bid);
       powerD1FallbackHigh[index]=MathMax(tick.bid,(candleHigh>0.0?candleHigh:tick.bid));
       powerD1FallbackLow[index]=MathMin(tick.bid,(candleLow>0.0?candleLow:tick.bid));
+      powerD1AskHigh[index]=tick.ask;
+      powerD1AskLow[index]=tick.ask;
+      powerD1BuyTurnCount[index]=0;
+      powerD1SellTurnCount[index]=0;
+      powerD1TurnBar[index]=barTime;
    }else{
       powerD1FallbackHigh[index]=MathMax(powerD1FallbackHigh[index],tick.bid);
       powerD1FallbackLow[index]=MathMin(powerD1FallbackLow[index],tick.bid);
+      powerD1AskHigh[index]=MathMax(powerD1AskHigh[index],tick.ask);
+      powerD1AskLow[index]=MathMin(powerD1AskLow[index],tick.ask);
       if(candleHigh>0.0)powerD1FallbackHigh[index]=MathMax(powerD1FallbackHigh[index],candleHigh);
       if(candleLow>0.0)powerD1FallbackLow[index]=MathMin(powerD1FallbackLow[index],candleLow);
       if(candleOpen>0.0)powerD1FallbackOpen[index]=candleOpen;
@@ -2381,7 +2411,9 @@ void managePowerfullSymbol(int index){
    // on each fresh tick; pending LIMIT planning remains timer-only.
    bool d1Active=(powerConfigReceivedMs[index]>0&&powerCfg[index].enabled);
    if(d1Active)
-      powerTryD1ExtremeEntry(index,tick,barTime,candleOpen,candleHigh,candleLow,hasPreviousTick,previousBid,previousAsk);
+      powerTryD1ExtremeEntry(index,tick,barTime,candleOpen,candleHigh,candleLow,
+                             powerD1AskHigh[index],powerD1AskLow[index],
+                             hasPreviousTick,previousBid,previousAsk);
 
    // Only timer cycles perform model/config/order work; OnTick manages positions.
    if(powerFastTickOnly)return;
