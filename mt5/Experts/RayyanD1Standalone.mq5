@@ -103,7 +103,7 @@ double powerMomentumLastBuyLow[3];
 datetime powerD1FallbackBar[3];
 double powerD1FallbackOpen[3],powerD1FallbackHigh[3],powerD1FallbackLow[3];
 double powerD1AskHigh[3],powerD1AskLow[3];
-// A11: live M5 candle only. No completed-candle reference/history is used.
+// A12: live M5 candle distribution only. No completed-candle reference/history is used.
 long powerD1LastCountedTickMs[3];
 datetime powerMomentumLastEntryBar[3];
 // E1/D1: first eligible entry time is gated by candle age; OHLC still resets per M5 bar.
@@ -1895,9 +1895,10 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       return;
    }
 
-   // #95 principle: measure only the currently forming M5 candle.
-   // BUY: red candle makes/holds a fresh Low, then both Bid and Ask turn upward.
-   // SELL: green candle makes/holds a fresh High, then both Bid and Ask turn downward.
+   // #95 live M5 candle distribution: no fixed tick-distance or historical candle window.
+   // Price is mapped into the current candle's 0..100% range.
+   // Require Open-to-extreme expansion, an outer-edge location, and meaningful
+   // rejection measured as a fraction of this candle's own live range.
    bool sellFresh=(powerMomentumLastSellHigh[index]<=0.0||
                    candleHigh>=powerMomentumLastSellHigh[index]+ts);
    bool buyFresh=(powerMomentumLastBuyLow[index]<=0.0||
@@ -1911,6 +1912,11 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    double sellBidRetreat=candleHigh-tick.bid;
    double sellAskRetreat=askHigh-tick.ask;
 
+   double buyOpenExtension=(candleOpen-candleLow)/range;
+   double sellOpenExtension=(candleHigh-candleOpen)/range;
+   double bidLocation=(tick.bid-candleLow)/range;
+   double askLocation=(tick.ask-candleLow)/range;
+
    bool candleRed=(tick.bid<candleOpen);
    bool candleGreen=(tick.bid>candleOpen);
 
@@ -1919,42 +1925,51 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
                     powerD1LastCountedTickMs[index]!=tick.time_msc);
    if(freshQuote)powerD1LastCountedTickMs[index]=tick.time_msc;
 
-   // One tradable tick away from the current candle extreme is the #95 reversal trigger.
-   // Both executable quotes must confirm the same turn; ticks do not define the extreme.
-   double minReversal=ts;
+   // Bid and Ask must turn together. Rejection distance is range-relative, not 1 tick.
    bool buyBidTurn=(freshQuote&&hasPreviousTick&&
                     tick.bid>previousBid&&tick.ask>previousAsk);
    bool sellBidTurn=(freshQuote&&hasPreviousTick&&
                      tick.bid<previousBid&&tick.ask<previousAsk);
-   bool buyCandleStructure=(candleRed&&lowerWick>=ts&&buyBidRecovery>=minReversal);
-   bool sellCandleStructure=(candleGreen&&upperWick>=ts&&sellBidRetreat>=minReversal);
+   double rejectionNeed=range*0.12;
+   double wickNeed=range*0.15;
+   bool buyExtremeDistribution=(buyOpenExtension>=0.55&&
+                                bidLocation<=0.30&&askLocation<=0.35);
+   bool sellExtremeDistribution=(sellOpenExtension>=0.55&&
+                                 bidLocation>=0.70&&askLocation>=0.65);
+   bool buyCandleStructure=(candleRed&&lowerWick>=wickNeed&&
+                            buyBidRecovery>=rejectionNeed);
+   bool sellCandleStructure=(candleGreen&&upperWick>=wickNeed&&
+                             sellBidRetreat>=rejectionNeed);
 
-   bool buyReady=(buyFresh&&buyCandleStructure&&
-                  buyBidRecovery>=minReversal&&buyAskRecovery>=minReversal&&
+   bool buyReady=(buyFresh&&buyExtremeDistribution&&buyCandleStructure&&
+                  buyBidRecovery>=rejectionNeed&&buyAskRecovery>=rejectionNeed&&
                   buyBidTurn&&buyN<cap);
-   bool sellReady=(sellFresh&&sellCandleStructure&&
-                   sellBidRetreat>=minReversal&&sellAskRetreat>=minReversal&&
+   bool sellReady=(sellFresh&&sellExtremeDistribution&&sellCandleStructure&&
+                   sellBidRetreat>=rejectionNeed&&sellAskRetreat>=rejectionNeed&&
                    sellBidTurn&&sellN<cap);
 
-   double buyScore=(lowerWick/range)+(buyBidRecovery/range)+(buyAskRecovery/range);
-   double sellScore=(upperWick/range)+(sellBidRetreat/range)+(sellAskRetreat/range);
+   double buyScore=buyOpenExtension+lowerWick/range+
+                   buyBidRecovery/range+buyAskRecovery/range;
+   double sellScore=sellOpenExtension+upperWick/range+
+                    sellBidRetreat/range+sellAskRetreat/range;
    if(!buyReady&&!sellReady){
-      powerPublishState(index,"D1_LIVE_CANDLE_READING",
-         "Current M5 only | range="+DoubleToString(range/ts,1)+"t"+
-         " | Bid location="+DoubleToString((tick.bid-candleLow)/range*100.0,1)+"%"+
-         " | body="+DoubleToString(body/ts,1)+"t"+
-         " | lower/upper wick="+DoubleToString(lowerWick/ts,1)+"/"+
-            DoubleToString(upperWick/ts,1)+"t"+
-         " | BUY Bid/Ask recovery="+DoubleToString(buyBidRecovery/ts,1)+"/"+
-            DoubleToString(buyAskRecovery/ts,1)+"t"+
-         " | SELL Bid/Ask retreat="+DoubleToString(sellBidRetreat/ts,1)+"/"+
-            DoubleToString(sellAskRetreat/ts,1)+"t"+
-         " | live reversal BUY/SELL="+(buyBidTurn?"1":"0")+"/"+
+      powerPublishState(index,"D1_LIVE_CANDLE_DISTRIBUTION",
+         "M5 live distribution | range="+DoubleToString(range/ts,1)+"t"+
+         " | Open->Low/High="+DoubleToString(buyOpenExtension*100.0,1)+"/"+
+            DoubleToString(sellOpenExtension*100.0,1)+"%"+
+         " | Bid/Ask location="+DoubleToString(bidLocation*100.0,1)+"/"+
+            DoubleToString(askLocation*100.0,1)+"%"+
+         " | wick L/U="+DoubleToString(lowerWick/range*100.0,1)+"/"+
+            DoubleToString(upperWick/range*100.0,1)+"%"+
+         " | rejection BUY B/A="+DoubleToString(buyBidRecovery/range*100.0,1)+"/"+
+            DoubleToString(buyAskRecovery/range*100.0,1)+"%"+
+         " | SELL B/A="+DoubleToString(sellBidRetreat/range*100.0,1)+"/"+
+            DoubleToString(sellAskRetreat/range*100.0,1)+"%"+
+         " | turn BUY/SELL="+(buyBidTurn?"1":"0")+"/"+
             (sellBidTurn?"1":"0")+
          " | layers="+IntegerToString(total)+"/"+IntegerToString(cap),barTime);
       return;
    }
-
    // Add layers only in the existing basket's direction.
    if(buyN>0)sellReady=false;
    if(sellN>0)buyReady=false;
@@ -2418,7 +2433,7 @@ void managePowerfullSymbol(int index){
          powerPublishState(index,"D1_WAIT_LEGACY_CANCEL","D1 is active; waiting for old POWERFULL pending orders to cancel",barTime);
          return;
       }
-      powerPublishState(index,"D1_ACTIVE","A11 uses current M5 OHLC position + 20 completed-candle range/body/wick distribution; ticks confirm rejection only; max layers="+
+      powerPublishState(index,"D1_ACTIVE","A12 uses current M5 candle range distribution; Bid/Ask confirm the live extreme rejection; max layers="+
          IntegerToString(powerCfg[index].maxLayers),barTime);
       return;
    }
