@@ -32,21 +32,21 @@ jobs:
           }
           if (-not $downloaded) { throw 'Could not download the official MT5 installer.' }
           Start-Process -FilePath $installer -ArgumentList '/auto' -Wait
-          $candidates = @('C:\\Program Files\\MetaTrader 5\\metaeditor64.exe', 'C:\\Program Files (x86)\\MetaTrader 5\\metaeditor64.exe')
+          $candidates = @('C:\Program Files\MetaTrader 5\metaeditor64.exe', 'C:\Program Files (x86)\MetaTrader 5\metaeditor64.exe')
           $editor = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $editor) {
-            $editor = Get-ChildItem "$env:APPDATA\\MetaQuotes\\Terminal" -Filter 'metaeditor64.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -First 1
+            $editor = Get-ChildItem "$env:APPDATA\MetaQuotes\Terminal" -Filter 'metaeditor64.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -First 1
           }
           if (-not $editor) { throw 'MetaEditor64.exe was not found.' }
-          $terminalCandidates = @('C:\\Program Files\\MetaTrader 5\\terminal64.exe', 'C:\\Program Files (x86)\\MetaTrader 5\\terminal64.exe')
+          $terminalCandidates = @('C:\Program Files\MetaTrader 5\terminal64.exe', 'C:\Program Files (x86)\MetaTrader 5\terminal64.exe')
           $terminal = $terminalCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if ($terminal) {
             $bootstrap = Start-Process -FilePath $terminal -ArgumentList '/portable' -PassThru
             Start-Sleep -Seconds 8
             Stop-Process -Id $bootstrap.Id -Force -ErrorAction SilentlyContinue
           }
-          $dataRoot = Join-Path $env:APPDATA 'MetaQuotes\\Terminal'
-          $tradeInclude = Get-ChildItem @('C:\\Program Files\\MetaTrader 5', 'C:\\Program Files (x86)\\MetaTrader 5', $dataRoot) -Filter 'Trade.mqh' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          $dataRoot = Join-Path $env:APPDATA 'MetaQuotes\Terminal'
+          $tradeInclude = Get-ChildItem @('C:\Program Files\MetaTrader 5', 'C:\Program Files (x86)\MetaTrader 5', $dataRoot) -Filter 'Trade.mqh' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $tradeInclude) { throw 'MT5 standard library Trade.mqh is missing.' }
           $mql5Root = $tradeInclude.Directory.Parent.Parent.FullName
           $mt5Root = Split-Path $mql5Root -Parent
@@ -54,7 +54,7 @@ jobs:
             throw "Could not resolve MT5 installation root from Trade.mqh: $($tradeInclude.FullName)"
           }
           $sourceInclude = Join-Path $mql5Root 'Include'
-          if (-not (Test-Path (Join-Path $sourceInclude 'Trade\\Trade.mqh'))) {
+          if (-not (Test-Path (Join-Path $sourceInclude 'Trade\Trade.mqh'))) {
             throw "Standard Include tree is missing: $sourceInclude"
           }
           $dataCandidates = @(Get-ChildItem $dataRoot -Directory -ErrorAction SilentlyContinue |
@@ -65,7 +65,7 @@ jobs:
             $dataCandidates = @(Get-Item $defaultDataFolder)
           }
           foreach ($dataFolder in $dataCandidates) {
-            $targetInclude = Join-Path $dataFolder.FullName 'MQL5\\Include'
+            $targetInclude = Join-Path $dataFolder.FullName 'MQL5\Include'
             New-Item -ItemType Directory -Force -Path $targetInclude | Out-Null
             Copy-Item (Join-Path $sourceInclude '*') $targetInclude -Recurse -Force
             Write-Host "Seeded MetaEditor include tree: $targetInclude"
@@ -77,10 +77,10 @@ jobs:
         run: |
           $source = (Resolve-Path 'mt5/Experts/RayyanD1Standalone.mq5').Path
           $mt5Root = $env:MT5ROOT
-          if (-not $mt5Root -or -not (Test-Path (Join-Path $mt5Root 'MQL5\\Include\\Trade\\Trade.mqh'))) {
+          if (-not $mt5Root -or -not (Test-Path (Join-Path $mt5Root 'MQL5\Include\Trade\Trade.mqh'))) {
             throw "MT5 standard library not found under $mt5Root"
           }
-          $experts = Join-Path $mt5Root 'MQL5\\Experts'
+          $experts = Join-Path $mt5Root 'MQL5\Experts'
           New-Item -ItemType Directory -Force -Path $experts | Out-Null
           $terminalSource = Join-Path $experts 'RayyanD1Standalone.mq5'
           Copy-Item $source $terminalSource -Force
@@ -92,10 +92,10 @@ jobs:
           if (-not (Test-Path $log)) { throw "MetaEditor produced no compile log (exit $($process.ExitCode))." }
           Get-Content $log
           $compileLog = Get-Content $log -Raw
-          if ($compileLog -match '(?im)\\b[1-9]\\d* errors?\\b') { throw 'MetaEditor reported compile errors.' }
+          if ($compileLog -match '(?im)\b[1-9]\d* errors?\b') { throw 'MetaEditor reported compile errors.' }
           $binary = Join-Path $experts 'RayyanD1Standalone.ex5'
           if (-not (Test-Path $binary)) { throw 'EA binary was not produced.' }
-          New-Item -ItemType Directory -Force -Path build\\ea | Out-Null
+          New-Item -ItemType Directory -Force -Path build\ea | Out-Null
           Copy-Item $binary 'build/ea/RayyanD1Standalone.ex5' -Force
           Copy-Item $source 'build/ea/RayyanD1Standalone.mq5' -Force
           Copy-Item $log 'build/ea/RayyanD1Standalone-compile.log' -Force
