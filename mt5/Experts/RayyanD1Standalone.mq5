@@ -109,6 +109,7 @@ long powerD1LastCountedTickMs[3];
 // A11: completed M5 candle distribution baseline; refreshed once per new M5 candle.
 double powerD1MedianRange[3],powerD1MedianBodyRatio[3],powerD1MedianWickRatio[3];
 int powerD1ReferenceSamples[3];
+uint powerD1ReferenceLastAttemptMs[3];
 datetime powerMomentumLastEntryBar[3];
 // E1/D1: first eligible entry time is gated by candle age; OHLC still resets per M5 bar.
 uint powerD1ScanStartedMs[3];
@@ -2092,8 +2093,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    powerTrade.SetAsyncMode(false);
    ResetLastError();
    bool sent=(side>0?
-      powerTrade.Buy(lot,symbol,0.0,sl,0.0,"D1-A6-RED-LOW-BUY"):
-      powerTrade.Sell(lot,symbol,0.0,sl,0.0,"D1-A6-GREEN-HIGH-SELL"));
+      powerTrade.Buy(lot,symbol,0.0,sl,0.0,"D1-A11-RED-LOW-BUY"):
+      powerTrade.Sell(lot,symbol,0.0,sl,0.0,"D1-A11-GREEN-HIGH-SELL"));
    uint rc=powerTrade.ResultRetcode();
 
    if(sent&&(rc==TRADE_RETCODE_DONE||rc==TRADE_RETCODE_PLACED||
@@ -2101,21 +2102,21 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       if(side>0)powerMomentumLastBuyLow[index]=candleLow;
       else powerMomentumLastSellHigh[index]=candleHigh;
       powerMomentumLastEntryBar[index]=barTime;
-      Print("D1 A6 DISTRIBUTION ENTRY OK ",symbol,
+      Print("D1 A11 DISTRIBUTION ENTRY OK ",symbol,
             " side=",(side>0?"BUY_RED_LOW":"SELL_GREEN_HIGH"),
             " layer=",total+1,"/",cap,
             " rangeTicks=",DoubleToString(rangeTicks,1),
             " rejectionScore=",DoubleToString(side>0?buyScore:sellScore,3),
             " SL=",slPts," retcode=",rc);
-      powerPublishState(index,"D1_A6_DISTRIBUTION_ENTRY_SENT",
+      powerPublishState(index,"D1_A11_DISTRIBUTION_ENTRY_SENT",
          string(side>0?"BUY on RED candle near Low":"SELL on GREEN candle near High")+
          " | layer="+IntegerToString(total+1)+"/"+IntegerToString(cap)+
          " | candle range="+DoubleToString(rangeTicks,1)+" ticks",barTime);
    }else{
-      Print("D1 A6 DISTRIBUTION ENTRY FAILED ",symbol,
+      Print("D1 A11 DISTRIBUTION ENTRY FAILED ",symbol,
             " side=",(side>0?"BUY_RED_LOW":"SELL_GREEN_HIGH"),
             " retcode=",rc," desc=",powerTrade.ResultRetcodeDescription());
-      powerPublishState(index,"D1_A6_DISTRIBUTION_ENTRY_FAILED",
+      powerPublishState(index,"D1_A11_DISTRIBUTION_ENTRY_FAILED",
          powerTrade.ResultRetcodeDescription(),barTime);
    }
 }
@@ -2474,6 +2475,7 @@ void managePowerfullSymbol(int index){
       powerD1MedianBodyRatio[index]=0.0;
       powerD1MedianWickRatio[index]=0.0;
       powerD1ReferenceSamples[index]=0;
+      powerD1ReferenceLastAttemptMs[index]=0;
    }else{
       powerD1FallbackHigh[index]=MathMax(powerD1FallbackHigh[index],tick.bid);
       powerD1FallbackLow[index]=MathMin(powerD1FallbackLow[index],tick.bid);
@@ -2494,7 +2496,13 @@ void managePowerfullSymbol(int index){
       return;
    }
    // Build/retry the completed-candle distribution baseline; no per-tick history scan after success.
-   if(powerD1MedianRange[index]<=0.0)powerD1BuildDistributionReference(index);
+   uint distributionNowMs=GetTickCount();
+   if(powerD1MedianRange[index]<=0.0&&
+      (powerD1ReferenceLastAttemptMs[index]==0||
+       (uint)(distributionNowMs-powerD1ReferenceLastAttemptMs[index])>=1000)){
+      powerD1ReferenceLastAttemptMs[index]=distributionNowMs;
+      powerD1BuildDistributionReference(index);
+   }
 
    bool hasPreviousTick=(powerLastTickMs[index]>0);
    double previousBid=powerLastBid[index];
@@ -2533,7 +2541,7 @@ void managePowerfullSymbol(int index){
          powerPublishState(index,"D1_WAIT_LEGACY_CANCEL","D1 is active; waiting for old POWERFULL pending orders to cancel",barTime);
          return;
       }
-      powerPublishState(index,"D1_ACTIVE","Human Price Extreme reads live MT5 ticks and current M5 High/Low; no prior-candle forecast; max layers="+
+      powerPublishState(index,"D1_ACTIVE","A11 uses current M5 OHLC position + 20 completed-candle range/body/wick distribution; ticks confirm rejection only; max layers="+
          IntegerToString(powerCfg[index].maxLayers),barTime);
       return;
    }
