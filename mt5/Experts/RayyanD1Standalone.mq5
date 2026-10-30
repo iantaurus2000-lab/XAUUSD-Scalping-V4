@@ -1884,68 +1884,46 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
 
    double range=candleHigh-candleLow;
    double rangeTicks=range/ts;
-   double atr=powerAtrPrice(index);
-   if(atr<=0.0)atr=range;
-   if(range<=0.0||atr<=0.0){
-      powerPublishState(index,"D1_DISTRIBUTION_BUILDING","Waiting for valid M5 range and ATR",barTime);
-      return;
-   }
-
-   // Normalize the live M5 distribution against volatility, not against a fixed tick count.
-   double rangeAtr=range/atr;
-   double minRange=MathMax(ts*8.0,atr*0.08);
-   if(range<minRange){
+   if(range<=0.0){
       powerPublishState(index,"D1_DISTRIBUTION_BUILDING",
-         "M5 distribution too small: range/ATR="+DoubleToString(rangeAtr,2),barTime);
+         "Waiting for a valid M5 candle range from MT5 OHLC",barTime);
       return;
    }
 
-   // Avoid entries when spread consumes too much of the current candle's usable range.
-   double maxSpread=MathMax(ts*10.0,MathMin(atr*0.12,range*0.18));
-   if(spread>maxSpread){
-      powerPublishState(index,"D1_SPREAD_GUARD",
-         "Spread too large for current M5 distribution; spreadTicks="+
-         DoubleToString(spread/ts,1),barTime);
-      return;
-   }
-
-   // Layer gaps expand with both volatility and the number of already-open layers.
-   // BUY basket: require a materially lower fresh Low. SELL basket: a materially higher fresh High.
-   double layerGap=MathMax(ts*(4.0+2.0*total),
-                           MathMax(atr*(0.035+0.012*total),range*(0.045+0.012*total)));
+   // Layer spacing uses only tradable tick size and active layer count.
+   // No ATR, volatility normalization, or percentage-of-range entry threshold.
+   double layerGap=ts*(4.0+2.0*total);
    bool sellFresh=(powerMomentumLastSellHigh[index]<=0.0||
                    candleHigh>=powerMomentumLastSellHigh[index]+layerGap);
    bool buyFresh=(powerMomentumLastBuyLow[index]<=0.0||
                   candleLow<=powerMomentumLastBuyLow[index]-layerGap);
 
-   // Location is measured across the entire current M5 range, not just the last tick.
-   double bidPosition=(tick.bid-candleLow)/range;
-   double askPosition=(tick.ask-candleLow)/range;
+   // Read the actual M5 candle body and rejection wicks; no percentage zones.
    double upperWick=candleHigh-MathMax(candleOpen,tick.bid);
    double lowerWick=MathMin(candleOpen,tick.bid)-candleLow;
    double body=MathAbs(tick.bid-candleOpen);
-   double minRejection=MathMax(ts*3.0,MathMin(range*0.10,atr*0.07));
-   double minWick=MathMax(ts*2.0,MathMin(range*0.16,atr*0.12));
+   double minRejection=ts*3.0;
+   double minWick=ts*2.0;
 
-   // BUY is only considered while the candle is red and price is still in its lower zone.
-   // SELL is only considered while the candle is green and price is still in its upper zone.
+   // BUY: red candle, price lifts from measured Low, lower-wick rejection and
+   // live Bid/Ask turn show selling pressure is easing.
+   // SELL: green candle, price retreats from measured High, upper-wick rejection and
+   // live Bid/Ask turn show buying pressure is easing.
    bool candleRed=(tick.bid<candleOpen-ts*0.1);
    bool candleGreen=(tick.bid>candleOpen+ts*0.1);
-   double buyPullback=tick.bid-candleLow;       // Bid-based candle low; Ask is execution quote.
-   double sellPullback=candleHigh-tick.bid;    // Bid-based candle high and sell execution quote.
-   bool buyInLowZone=(bidPosition<=0.30&&askPosition<=0.36);
-   bool sellInHighZone=(bidPosition>=0.70);
+   double buyPullback=tick.bid-candleLow;
+   double sellPullback=candleHigh-tick.bid;
    bool buyTickTurn=(hasPreviousTick&&previousBid>0.0&&previousAsk>0.0&&
                      tick.bid>previousBid+ts*0.1&&tick.ask>previousAsk+ts*0.1);
    bool sellTickTurn=(hasPreviousTick&&previousBid>0.0&&previousAsk>0.0&&
                       tick.bid<previousBid-ts*0.1&&tick.ask<previousAsk-ts*0.1);
 
    // A rejection must have meaningful range and wick structure; one tick alone is insufficient.
-   bool buyReady=(buyFresh&&candleRed&&buyInLowZone&&
-                  buyPullback>=minRejection&&lowerWick>=minWick&&
+   bool buyReady=(buyFresh&&candleRed&&
+                  buyPullback>=minRejection&&lowerWick>=minWick&&lowerWick>body&&
                   buyTickTurn&&buyN<cap);
-   bool sellReady=(sellFresh&&candleGreen&&sellInHighZone&&
-                   sellPullback>=minRejection&&upperWick>=minWick&&
+   bool sellReady=(sellFresh&&candleGreen&&
+                   sellPullback>=minRejection&&upperWick>=minWick&&upperWick>body&&
                    sellTickTurn&&sellN<cap);
 
    // Add layers only in the existing basket's direction.
@@ -1964,13 +1942,12 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       else buyReady=false;
    }
    if(!buyReady&&!sellReady){
-      powerPublishState(index,"D1_DISTRIBUTION_SCAN",
-         "M5 range/ATR="+DoubleToString(rangeAtr,2)+
-         " | position="+DoubleToString(bidPosition*100.0,1)+"%"+
+      powerPublishState(index,"D1_CANDLE_READING",
+         "M5 range="+DoubleToString(rangeTicks,1)+" ticks"+
          " | body="+DoubleToString(body/ts,1)+"t"+
          " | lowerWick="+DoubleToString(lowerWick/ts,1)+"t"+
          " | upperWick="+DoubleToString(upperWick/ts,1)+"t"+
-         " | wait red-low BUY / green-high SELL rejection"+
+         " | wait red-candle lower-wick BUY / green-candle upper-wick SELL"+
          " | layers="+IntegerToString(total)+"/"+IntegerToString(cap),barTime);
       return;
    }
@@ -2021,7 +1998,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       powerPublishState(index,"D1_A5_DISTRIBUTION_ENTRY_SENT",
          string(side>0?"BUY on RED candle near Low":"SELL on GREEN candle near High")+
          " | layer="+IntegerToString(total+1)+"/"+IntegerToString(cap)+
-         " | M5 range/ATR="+DoubleToString(rangeAtr,2),barTime);
+         " | candle range="+DoubleToString(rangeTicks,1)+" ticks",barTime);
    }else{
       Print("D1 A5 DISTRIBUTION ENTRY FAILED ",symbol,
             " side=",(side>0?"BUY_RED_LOW":"SELL_GREEN_HIGH"),
