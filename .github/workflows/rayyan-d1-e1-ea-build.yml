@@ -8,7 +8,7 @@ on:
       - '.github/workflows/rayyan-d1-e1-ea-build.yml'
 jobs:
   mt5-ea:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
         with:
@@ -17,7 +17,25 @@ jobs:
         shell: pwsh
         run: |
           $installer = Join-Path $env:RUNNER_TEMP 'mt5setup.exe'
-          Invoke-WebRequest -Uri 'https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe' -OutFile $installer
+          $installerUris = @(
+            'https://download.mql5.com/cdn/web/metaquotes.ltd/mt5/mt5setup.exe?utm_source=www.metatrader5.com&utm_campaign=download',
+            'https://download.terminal.free/cdn/web/metaquotes.ltd/mt5/mt5setup.exe',
+            'https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe'
+          )
+          $downloaded = $false
+          foreach ($uri in $installerUris) {
+            try {
+              Invoke-WebRequest -Uri $uri -OutFile $installer -TimeoutSec 90
+              if ((Test-Path $installer) -and (Get-Item $installer).Length -gt 1000000) {
+                $downloaded = $true
+                break
+              }
+            } catch {
+              Write-Warning "MT5 installer endpoint failed: $($_.Exception.Message)"
+              Remove-Item $installer -Force -ErrorAction SilentlyContinue
+            }
+          }
+          if (-not $downloaded) { throw 'Could not download the official MT5 installer.' }
           Start-Process -FilePath $installer -ArgumentList '/auto' -Wait
           $candidates = @('C:\Program Files\MetaTrader 5\metaeditor64.exe', 'C:\Program Files (x86)\MetaTrader 5\metaeditor64.exe')
           $editor = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
@@ -35,38 +53,60 @@ jobs:
           $dataRoot = Join-Path $env:APPDATA 'MetaQuotes\Terminal'
           $tradeInclude = Get-ChildItem @('C:\Program Files\MetaTrader 5', 'C:\Program Files (x86)\MetaTrader 5', $dataRoot) -Filter 'Trade.mqh' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $tradeInclude) { throw 'MT5 standard library Trade.mqh is missing.' }
-          $includeSource = $tradeInclude.Directory.Parent.FullName
-          $dataDirs = Get-ChildItem $dataRoot -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path (Join-Path $_.FullName 'MQL5') }
-          foreach ($dataDir in $dataDirs) {
-            $targetInclude = Join-Path $dataDir.FullName 'MQL5\Include'
-            New-Item -ItemType Directory -Path $targetInclude -Force | Out-Null
-            Copy-Item (Join-Path $includeSource '*') $targetInclude -Recurse -Force
+          $mql5Root = $tradeInclude.Directory.Parent.Parent.FullName
+          $mt5Root = Split-Path $mql5Root -Parent
+          if (-not (Test-Path (Join-Path $mt5Root 'terminal64.exe'))) {
+            throw "Could not resolve MT5 installation root from Trade.mqh: $($tradeInclude.FullName)"
+          }
+          $sourceInclude = Join-Path $mql5Root 'Include'
+          if (-not (Test-Path (Join-Path $sourceInclude 'Trade\Trade.mqh'))) {
+            throw "Standard Include tree is missing: $sourceInclude"
+          }
+          $dataCandidates = @(Get-ChildItem $dataRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object { Test-Path (Join-Path $_.FullName 'MQL5') })
+          if ($dataCandidates.Count -eq 0) {
+            $defaultDataFolder = Join-Path $dataRoot 'D0E8209F77C8CF37AD8BF550E51FF075'
+            New-Item -ItemType Directory -Force -Path (Join-Path $defaultDataFolder 'MQL5') | Out-Null
+            $dataCandidates = @(Get-Item $defaultDataFolder)
+          }
+          foreach ($dataFolder in $dataCandidates) {
+            $targetInclude = Join-Path $dataFolder.FullName 'MQL5\Include'
+            New-Item -ItemType Directory -Force -Path $targetInclude | Out-Null
+            Copy-Item (Join-Path $sourceInclude '*') $targetInclude -Recurse -Force
+            Write-Host "Seeded MetaEditor include tree: $targetInclude"
           }
           "METAEDITOR=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MT5ROOT=$mt5Root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Compile Rayyan D1 Standalone EA
         shell: pwsh
         run: |
           $source = (Resolve-Path 'mt5/Experts/RayyanD1Standalone.mq5').Path
+          $mt5Root = $env:MT5ROOT
+          if (-not $mt5Root -or -not (Test-Path (Join-Path $mt5Root 'MQL5\Include\Trade\Trade.mqh'))) {
+            throw "MT5 standard library not found under $mt5Root"
+          }
+          $experts = Join-Path $mt5Root 'MQL5\Experts'
+          New-Item -ItemType Directory -Force -Path $experts | Out-Null
+          $terminalSource = Join-Path $experts 'RayyanD1Standalone.mq5'
+          Copy-Item $source $terminalSource -Force
           $log = Join-Path $env:RUNNER_TEMP 'RayyanD1Standalone-compile.log'
-          $args = "/compile:`"$source`" /log:`"$log`""
+          Remove-Item $log -Force -ErrorAction SilentlyContinue
+          $args = "/compile:`"$terminalSource`" /log:`"$log`""
           $process = Start-Process -FilePath $env:METAEDITOR -ArgumentList $args -PassThru -Wait
           Start-Sleep -Seconds 2
           if (-not (Test-Path $log)) { throw "MetaEditor produced no compile log (exit $($process.ExitCode))." }
           Get-Content $log
-          $binary = Join-Path (Split-Path $source) 'RayyanD1Standalone.ex5'
-          if (-not (Test-Path $binary)) {
-            $found = Get-ChildItem "$env:APPDATA\MetaQuotes\Terminal" -Filter 'RayyanD1Standalone.ex5' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($found) { Copy-Item $found.FullName $binary -Force }
-          }
-          if (-not (Test-Path $binary)) { throw 'EA binary was not produced.' }
           $compileLog = Get-Content $log -Raw
           if ($compileLog -match '(?im)\b[1-9]\d* errors?\b') { throw 'MetaEditor reported compile errors.' }
+          $binary = Join-Path $experts 'RayyanD1Standalone.ex5'
+          if (-not (Test-Path $binary)) { throw 'EA binary was not produced.' }
+          New-Item -ItemType Directory -Force -Path build\ea | Out-Null
+          Copy-Item $binary 'build/ea/RayyanD1Standalone.ex5' -Force
+          Copy-Item $source 'build/ea/RayyanD1Standalone.mq5' -Force
+          Copy-Item $log 'build/ea/RayyanD1Standalone-compile.log' -Force
       - uses: actions/upload-artifact@v4
         with:
           name: RAYYAN-D1-E1-MT5-EA
-          path: |
-            mt5/Experts/RayyanD1Standalone.ex5
-            mt5/Experts/RayyanD1Standalone.mq5
-            ${{ runner.temp }}/RayyanD1Standalone-compile.log
+          path: build/ea/*
           if-no-files-found: error
           retention-days: 30
