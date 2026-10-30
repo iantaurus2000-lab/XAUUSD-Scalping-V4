@@ -1927,12 +1927,12 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       powerD1SellTurnCount[index]=0;
    }
    if(hasPreviousTick&&previousBid>0.0&&previousAsk>0.0){
-      if(tick.bid>previousBid&&tick.ask>previousAsk)
-         powerD1BuyTurnCount[index]=MathMin(3,powerD1BuyTurnCount[index]+1);
-      else powerD1BuyTurnCount[index]=0;
-      if(tick.bid<previousBid&&tick.ask<previousAsk)
-         powerD1SellTurnCount[index]=MathMin(3,powerD1SellTurnCount[index]+1);
-      else powerD1SellTurnCount[index]=0;
+      if(tick.bid>previousBid&&tick.ask>previousAsk){
+         if(powerD1BuyTurnCount[index]<3)powerD1BuyTurnCount[index]++;
+      }else powerD1BuyTurnCount[index]=0;
+      if(tick.bid<previousBid&&tick.ask<previousAsk){
+         if(powerD1SellTurnCount[index]<3)powerD1SellTurnCount[index]++;
+      }else powerD1SellTurnCount[index]=0;
    }else{
       powerD1BuyTurnCount[index]=0;
       powerD1SellTurnCount[index]=0;
@@ -1953,8 +1953,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    if(buyN>0)sellReady=false;
    if(sellN>0)buyReady=false;
 
-   double buyScore=(range>0.0?(lowerWick/range)+(buyPullback/range):0.0);
-   double sellScore=(range>0.0?(upperWick/range)+(sellPullback/range):0.0);
+   double buyScore=(range>0.0?(lowerWick/range)+(buyBidRecovery/range)+(buyAskRecovery/range):0.0);
+   double sellScore=(range>0.0?(upperWick/range)+(sellBidRetreat/range)+(sellAskRetreat/range):0.0);
    if(buyReady&&sellReady){
       if(MathAbs(buyScore-sellScore)<0.08){
          powerPublishState(index,"D1_DISTRIBUTION_AMBIGUOUS",
@@ -1970,7 +1970,12 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
          " | body="+DoubleToString(body/ts,1)+"t"+
          " | lowerWick="+DoubleToString(lowerWick/ts,1)+"t"+
          " | upperWick="+DoubleToString(upperWick/ts,1)+"t"+
-         " | wait red-candle lower-wick BUY / green-candle upper-wick SELL"+
+         " | BUY Bid/Ask recovery="+DoubleToString(buyBidRecovery/ts,1)+"/"+
+            DoubleToString(buyAskRecovery/ts,1)+"t"+
+         " | SELL Bid/Ask retreat="+DoubleToString(sellBidRetreat/ts,1)+"/"+
+            DoubleToString(sellAskRetreat/ts,1)+"t"+
+         " | turn BUY/SELL="+IntegerToString(powerD1BuyTurnCount[index])+"/"+
+            IntegerToString(powerD1SellTurnCount[index])+" of 3"+
          " | layers="+IntegerToString(total)+"/"+IntegerToString(cap),barTime);
       return;
    }
@@ -2002,8 +2007,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    powerTrade.SetAsyncMode(false);
    ResetLastError();
    bool sent=(side>0?
-      powerTrade.Buy(lot,symbol,0.0,sl,0.0,"D1-A5-RED-LOW-BUY"):
-      powerTrade.Sell(lot,symbol,0.0,sl,0.0,"D1-A5-GREEN-HIGH-SELL"));
+      powerTrade.Buy(lot,symbol,0.0,sl,0.0,"D1-A6-RED-LOW-BUY"):
+      powerTrade.Sell(lot,symbol,0.0,sl,0.0,"D1-A6-GREEN-HIGH-SELL"));
    uint rc=powerTrade.ResultRetcode();
 
    if(sent&&(rc==TRADE_RETCODE_DONE||rc==TRADE_RETCODE_PLACED||
@@ -2011,21 +2016,21 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       if(side>0)powerMomentumLastBuyLow[index]=candleLow;
       else powerMomentumLastSellHigh[index]=candleHigh;
       powerMomentumLastEntryBar[index]=barTime;
-      Print("D1 A5 DISTRIBUTION ENTRY OK ",symbol,
+      Print("D1 A6 DISTRIBUTION ENTRY OK ",symbol,
             " side=",(side>0?"BUY_RED_LOW":"SELL_GREEN_HIGH"),
             " layer=",total+1,"/",cap,
             " rangeTicks=",DoubleToString(rangeTicks,1),
             " rejectionScore=",DoubleToString(side>0?buyScore:sellScore,3),
             " SL=",slPts," retcode=",rc);
-      powerPublishState(index,"D1_A5_DISTRIBUTION_ENTRY_SENT",
+      powerPublishState(index,"D1_A6_DISTRIBUTION_ENTRY_SENT",
          string(side>0?"BUY on RED candle near Low":"SELL on GREEN candle near High")+
          " | layer="+IntegerToString(total+1)+"/"+IntegerToString(cap)+
          " | candle range="+DoubleToString(rangeTicks,1)+" ticks",barTime);
    }else{
-      Print("D1 A5 DISTRIBUTION ENTRY FAILED ",symbol,
+      Print("D1 A6 DISTRIBUTION ENTRY FAILED ",symbol,
             " side=",(side>0?"BUY_RED_LOW":"SELL_GREEN_HIGH"),
             " retcode=",rc," desc=",powerTrade.ResultRetcodeDescription());
-      powerPublishState(index,"D1_A5_DISTRIBUTION_ENTRY_FAILED",
+      powerPublishState(index,"D1_A6_DISTRIBUTION_ENTRY_FAILED",
          powerTrade.ResultRetcodeDescription(),barTime);
    }
 }
