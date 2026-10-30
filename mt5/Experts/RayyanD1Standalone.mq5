@@ -1808,7 +1808,7 @@ bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick
 }
 void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,double candleOpen,double candleHigh,double candleLow){
  if(index<0||index>=ArraySize(powerSymbols))return;string symbol=powerSymbols[index];
- if(DemoOnly&&!powerIsDemoAccount()){powerPublishState(index,"BLOCKED_REAL_ACCOUNT","D1 standalone is restricted to a demo account while DemoOnly=true",barTime);return;}
+ if(DemoOnly && AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){powerPublishState(index,"BLOCKED_REAL_ACCOUNT","D1 standalone is restricted to a demo account while DemoOnly=true",barTime);return;}
  double point=SymbolInfoDouble(symbol,SYMBOL_POINT),ts=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE),spread=tick.ask-tick.bid;
  if(point<=0||ts<=0||spread<0){powerPublishState(index,"D1_WAIT_DATA","Invalid MT5 quote geometry",barTime);return;}
  double spreadPts=spread/point;if(!powerCfg[index].usePointStops){powerPublishState(index,"BLOCKED_SL_POINTS","D1 requires BUY/SELL SL points",barTime);return;}
