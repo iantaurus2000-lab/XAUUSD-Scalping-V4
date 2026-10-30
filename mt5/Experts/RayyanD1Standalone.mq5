@@ -13,7 +13,6 @@ input string StandaloneSymbol="";
 input double StandaloneLot=0.01;
 input int StandaloneSLBuyPoints=0;
 input int StandaloneSLSellPoints=0;
-input int StandaloneD1TurnConfirmMs=500;
 input int StandaloneMaxLayers=1;
 input int PollSeconds=1;
 // After TP1 is reached, close on a confirmed M1 reversal before TP2.
@@ -82,7 +81,6 @@ struct PowerfullConfig {
    int slEntry2Points;
    bool usePointStops;
    bool pendingLimitEnabled;
-   int d1TurnConfirmMs;
    int maxLayers;
    double maxPendingDistanceATR;
    int minHoldCandles;
@@ -97,12 +95,6 @@ uint powerLastModelAttemptMs[3];
 uint powerModelBuiltAtMs[3];
 uint powerLastSeedAttemptMs[3];
 uint powerLastManageMs[3];
-uint powerMomentumCandidateMs[3];
-int powerMomentumCandidateSide[3];
-datetime powerMomentumCandidateBar[3];
-long powerMomentumCandidateTickMs[3];
-double powerMomentumCandidateExtreme[3];
-datetime powerMomentumLayerBar[3];
 double powerMomentumLastSellHigh[3];
 double powerMomentumLastBuyLow[3];
 // D1 keeps its own live-tick candle extremes; it does not wait for APK/chart uploads.
@@ -136,9 +128,6 @@ double powerForecastRangePips[3];
 double powerUpperShare[3];
 double powerUpperWickPips[3];
 double powerLowerWickPips[3];
-double powerTickPrices[3][32];
-int powerTickWriteIndex[3];
-int powerTickSampleCount[3];
 double powerProjectedLow[3];
 double powerProjectedHigh[3];
 double powerLastBid[3];
@@ -166,8 +155,6 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
 void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,double candleOpen,double candleHigh,double candleLow);
 void powerClosedDealStats(string symbol,int &wins,int &losses,int &closed);
 double powerAtrPrice(int index);
-void powerRecordTick(int index,double mid);
-double powerTickPriceAgo(int index,int ago);
 double powerProjectedNet(ulong ticket);
 bool powerClosePosition(ulong ticket,string reason);
 string powerShortSymbol(string symbol);
@@ -191,7 +178,6 @@ int OnInit(){
          return(INIT_FAILED);
       }
       powerCfg[0].enabled=(StandaloneLot>0.0&&StandaloneSLBuyPoints>0&&StandaloneSLSellPoints>0
-         &&StandaloneD1TurnConfirmMs>=250&&StandaloneD1TurnConfirmMs<=5000
          &&StandaloneMaxLayers>=1&&StandaloneMaxLayers<=3);
       powerCfg[0].lot=StandaloneLot;
       powerCfg[0].pipSize=SymbolInfoDouble(directSymbol,SYMBOL_POINT);
@@ -199,7 +185,6 @@ int OnInit(){
       powerCfg[0].usePointStops=true;
       powerCfg[0].slEntry1Points=StandaloneSLBuyPoints;
       powerCfg[0].slEntry2Points=StandaloneSLSellPoints;
-      powerCfg[0].d1TurnConfirmMs=StandaloneD1TurnConfirmMs;
       powerCfg[0].maxLayers=StandaloneMaxLayers;
       powerCfg[0].minProfitLockPoints=5;
       powerCfg[0].minHoldCandles=0;
@@ -1372,10 +1357,8 @@ bool powerRefreshConfig(int index){
    string slEntry1Text=field(body,"slEntry1Points");
    string slEntry2Text=field(body,"slEntry2Points");
    string pendingLimitFlag=field(body,"pendingLimit");
-   string confirmText=field(body,"d1TurnConfirmMs");
    string maxLayersText=field(body,"maxLayers");
    bool pendingLimitEnabled=(pendingLimitFlag=="1");
-   int d1TurnConfirmMs=(confirmText==""?500:(int)StringToInteger(confirmText));
    int maxLayers=(maxLayersText==""?3:(int)StringToInteger(maxLayersText));
    bool buyEnabled=(buyFlag==""||buyFlag=="1");
    bool sellEnabled=(sellFlag==""||sellFlag=="1");
@@ -1405,7 +1388,6 @@ bool powerRefreshConfig(int index){
       &&minHold>=0&&minHold<=12
       &&MathIsValidNumber(reversalAtr)&&reversalAtr>=0.05&&reversalAtr<=2.0
       &&minProfitLock>=0&&minProfitLock<=100000
-      &&d1TurnConfirmMs>=250&&d1TurnConfirmMs<=5000
       &&maxLayers>=1&&maxLayers<=3;
    powerCfg[index].buyLimitEnabled=buyEnabled;
    powerCfg[index].sellLimitEnabled=sellEnabled;
@@ -1423,7 +1405,6 @@ bool powerRefreshConfig(int index){
    powerCfg[index].slEntry2Points=(slEntry2<0?0:slEntry2);
    powerCfg[index].usePointStops=usePointStops;
    powerCfg[index].pendingLimitEnabled=pendingLimitEnabled;
-   powerCfg[index].d1TurnConfirmMs=d1TurnConfirmMs;
    powerCfg[index].maxLayers=maxLayers;
    powerCfg[index].enabled=requested&&valid;
    powerCfg[index].lot=lot;
@@ -1720,20 +1701,9 @@ double powerCeilToTick(string symbol,double price){
    return NormalizeDouble(MathCeil(price/step-1e-10)*step,digits);
 }
 
-void powerRecordTick(int index,double mid){
-   if(index<0||index>=ArraySize(powerSymbols)||mid<=0.0||!MathIsValidNumber(mid))return;
-   int write=powerTickWriteIndex[index];
-   powerTickPrices[index][write]=mid;
-   powerTickWriteIndex[index]=(write+1)%32;
-   powerTickSampleCount[index]=(int)MathMin(32,powerTickSampleCount[index]+1);
-}
 
-double powerTickPriceAgo(int index,int ago){
-   if(index<0||index>=ArraySize(powerSymbols)||ago<0||ago>=powerTickSampleCount[index])return 0.0;
-   int idx=powerTickWriteIndex[index]-1-ago;
-   while(idx<0)idx+=32;
-   return powerTickPrices[index][idx];
-}
+
+
 
 double powerAtrPrice(int index){
    if(index<0||index>=ArraySize(powerSymbols))return 0.0;
@@ -1837,180 +1807,36 @@ bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick
    return true;
 }
 void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,double candleOpen,double candleHigh,double candleLow){
-   string symbol=powerSymbols[index];
-   if(DemoOnly&&AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
-      powerPublishState(index,"BLOCKED_DEMO_ONLY","D1 trading is restricted to a demo account while DemoOnly=true",barTime);
-      return;
-   }
-   uint now=GetTickCount();
-   double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
-   double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
-   double spread=tick.ask-tick.bid;
-   if(point<=0.0||tickSize<=0.0||spread<0.0){
-      powerPublishState(index,"D1_WAIT_DATA","D1 waiting for valid MT5 point/tick-size/quote",barTime);
-      return;
-   }
-   // Spread is telemetry only: report the live market value, never use it to block an entry.
-   double spreadPoints=spread/point;
-   if(powerMomentumLayerBar[index]!=barTime){
-      powerMomentumLayerBar[index]=barTime;
-      powerMomentumLastSellHigh[index]=0.0;
-      powerMomentumLastBuyLow[index]=0.0;
-      powerMomentumCandidateMs[index]=0;
-      powerMomentumCandidateSide[index]=0;
-      powerMomentumCandidateTickMs[index]=0;
-      powerMomentumCandidateExtreme[index]=0.0;
-   }
-   if(!powerCfg[index].usePointStops){
-      powerMomentumCandidateMs[index]=0;
-      powerMomentumCandidateSide[index]=0;
-      powerPublishState(index,"BLOCKED_SL_POINTS","D1 requires valid BUY and SELL SL points; no entry without loss protection",barTime);
-      return;
-   }
-   ENUM_ACCOUNT_MARGIN_MODE marginMode=(ENUM_ACCOUNT_MARGIN_MODE)AccountInfoInteger(ACCOUNT_MARGIN_MODE);
-   if((marginMode!=ACCOUNT_MARGIN_MODE_RETAIL_HEDGING||AccountInfoInteger(ACCOUNT_HEDGE_ALLOWED)==0)&&powerCfg[index].maxLayers>1){
-      powerPublishState(index,"BLOCKED_NETTING_ACCOUNT","D1 layered entries require MT5 hedging mode",barTime);
-      return;
-   }
-   int totalLayers=0,buyLayers=0,sellLayers=0;
-   for(int p=PositionsTotal()-1;p>=0;p--){
-      ulong ticket=PositionGetTicket(p);
-      if(ticket==0||PositionGetString(POSITION_SYMBOL)!=symbol||
-         (long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
-      totalLayers++;
-      ENUM_POSITION_TYPE positionSide=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
-      if(positionSide==POSITION_TYPE_BUY)buyLayers++;
-      else if(positionSide==POSITION_TYPE_SELL)sellLayers++;
-   }
-   int maxLayers=MathMax(1,MathMin(3,powerCfg[index].maxLayers));
-   if(totalLayers>=maxLayers){
-      powerMomentumCandidateMs[index]=0;
-      powerMomentumCandidateSide[index]=0;
-      powerPublishState(index,"D1_LAYER_CAP","D1 layer cap reached "+IntegerToString(totalLayers)+"/"+IntegerToString(maxLayers),barTime);
-      return;
-   }
-
-   double nearDistance=MathMax(tickSize*3.0,point*3.0);
-   double p0=powerTickPriceAgo(index,0);
-   double p1=powerTickPriceAgo(index,1);
-   double p2=powerTickPriceAgo(index,2);
-   if(p0<=0.0||p1<=0.0||p2<=0.0){
-      powerMomentumCandidateMs[index]=0;
-      powerMomentumCandidateSide[index]=0;
-      powerPublishState(index,"D1_TICK_WARMUP","D1 collecting live MT5 ticks; no previous candle history required",barTime);
-      return;
-   }
-   bool nearHigh=(candleHigh>=tick.bid&&candleHigh-tick.bid<=nearDistance);
-   bool nearLow=(tick.bid>=candleLow&&tick.bid-candleLow<=nearDistance);
-   bool freshSellExtreme=(powerMomentumLastSellHigh[index]<=0.0||candleHigh>=powerMomentumLastSellHigh[index]+tickSize*0.5);
-   bool freshBuyExtreme=(powerMomentumLastBuyLow[index]<=0.0||candleLow<=powerMomentumLastBuyLow[index]-tickSize*0.5);
-   int side=powerMomentumCandidateSide[index];
-
-   // Once a turning tick appears, keep the candidate alive while the same extreme
-   // holds. A continuing reversal tick need not recreate the exact turning pattern.
-   if(side<0){
-      if(candleHigh>powerMomentumCandidateExtreme[index]+tickSize*0.5||
-         candleHigh-tick.bid>nearDistance*1.5||!freshSellExtreme||sellLayers>=maxLayers){
-         side=0;
-      }
-   }else if(side>0){
-      if(candleLow<powerMomentumCandidateExtreme[index]-tickSize*0.5||
-         tick.bid-candleLow>nearDistance*1.5||!freshBuyExtreme||buyLayers>=maxLayers){
-         side=0;
-      }
-   }
-   if(side==0){
-      powerMomentumCandidateMs[index]=0;
-      powerMomentumCandidateSide[index]=0;
-      powerMomentumCandidateTickMs[index]=0;
-      powerMomentumCandidateExtreme[index]=0.0;
-      bool sellTurn=nearHigh&&freshSellExtreme&&sellLayers<maxLayers&&p1>p2&&p0<p1;
-      bool buyTurn=nearLow&&freshBuyExtreme&&buyLayers<maxLayers&&p1<p2&&p0>p1;
-      if(sellTurn)side=-1;
-      else if(buyTurn)side=1;
-      if(side==0){
-         powerPublishState(index,"D1_EXTREME_SCAN",
-            "D1 live tick scan | High="+DoubleToString(candleHigh,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))+
-            " Low="+DoubleToString(candleLow,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))+
-            " | spread="+DoubleToString(spreadPoints,1)+" points (info only)"+
-            " | layers="+IntegerToString(totalLayers)+"/"+IntegerToString(maxLayers)+
-            " | waiting for a turn near a fresh extreme",barTime);
-         return;
-      }
-      powerMomentumCandidateBar[index]=barTime;
-      powerMomentumCandidateSide[index]=side;
-      powerMomentumCandidateMs[index]=now;
-      powerMomentumCandidateTickMs[index]=tick.time_msc;
-      powerMomentumCandidateExtreme[index]=(side<0?candleHigh:candleLow);
-      powerPublishState(index,"D1_EXTREME_CONFIRM",
-         (side>0?"BUY near candle Low":"SELL near candle High")+
-         "; confirming live tick turn for "+IntegerToString(powerCfg[index].d1TurnConfirmMs)+" ms"+
-         " | spread="+DoubleToString(spreadPoints,1)+" points (info only)",barTime);
-      return;
-   }
-   if(powerMomentumCandidateSide[index]!=side||powerMomentumCandidateBar[index]!=barTime)return;
-   if(tick.time_msc<=powerMomentumCandidateTickMs[index])return;
-   powerMomentumCandidateTickMs[index]=tick.time_msc;
-   if((uint)(now-powerMomentumCandidateMs[index])<(uint)powerCfg[index].d1TurnConfirmMs)return;
-
-   int slPoints=(side>0?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
-   long stopLevel=SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL);
-   double slDistance=(double)slPoints*point;
-   double minStop=(double)stopLevel*point;
-   if(slPoints<=0||slDistance+1e-10<minStop+tickSize){
-      powerMomentumCandidateMs[index]=0;powerMomentumCandidateSide[index]=0;
-      powerPublishState(index,"BLOCKED_SL_POINTS","D1 SL "+IntegerToString(slPoints)+" points is zero or below broker stop distance",barTime);
-      return;
-   }
-   double lot=powerCfg[index].lot;
-   double minLot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
-   double maxLot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MAX);
-   double lotStep=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
-   if(lotStep<=0.0||lot<minLot-1e-8||lot>maxLot+1e-8){
-      powerMomentumCandidateMs[index]=0;powerMomentumCandidateSide[index]=0;
-      powerPublishState(index,"BLOCKED_LOT","D1 configured lot outside broker volume limits",barTime);
-      return;
-   }
-   totalLayers=0;
-   for(int p=PositionsTotal()-1;p>=0;p--){
-      ulong ticket=PositionGetTicket(p);
-      if(ticket!=0&&PositionGetString(POSITION_SYMBOL)==symbol&&
-         (long)PositionGetInteger(POSITION_MAGIC)==POWERFULL_MAGIC)totalLayers++;
-   }
-   if(totalLayers>=maxLayers){
-      powerMomentumCandidateMs[index]=0;powerMomentumCandidateSide[index]=0;
-      powerPublishState(index,"D1_LAYER_CAP","Layer cap reached during confirmation",barTime);
-      return;
-   }
-   double entry=(side>0?tick.ask:tick.bid);
-   double sl=powerRoundToTick(symbol,side>0?entry-slDistance:entry+slDistance);
-   powerTrade.SetExpertMagicNumber(POWERFULL_MAGIC);
-   powerTrade.SetDeviationInPoints(powerCfg[index].deviationPoints);
-   powerTrade.SetTypeFillingBySymbol(symbol);
-   powerTrade.SetAsyncMode(false);
-   ResetLastError();
-   bool sent=(side>0
-      ?powerTrade.Buy(lot,symbol,0.0,sl,0.0,"D1-HUMAN-EXTREME-BUY")
-      :powerTrade.Sell(lot,symbol,0.0,sl,0.0,"D1-HUMAN-EXTREME-SELL"));
-   uint rc=powerTrade.ResultRetcode();
-   powerMomentumCandidateMs[index]=0;powerMomentumCandidateSide[index]=0;powerMomentumCandidateTickMs[index]=0;
-   if(sent&&(rc==TRADE_RETCODE_DONE||rc==TRADE_RETCODE_PLACED||rc==TRADE_RETCODE_DONE_PARTIAL)){
-      if(side>0)powerMomentumLastBuyLow[index]=candleLow;
-      else powerMomentumLastSellHigh[index]=candleHigh;
-      Print("POWERFULL D1 HUMAN EXTREME ENTRY OK symbol=",symbol," side=",(side>0?"BUY":"SELL"),
-         " lot=",DoubleToString(lot,2)," extreme=",DoubleToString((side>0?candleLow:candleHigh),(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
-         " layers=",IntegerToString(totalLayers+1),"/",IntegerToString(maxLayers)," SLpoints=",slPoints," retcode=",rc);
-      powerMomentumLastEntryBar[index]=barTime;
-      powerPublishState(index,"D1_EXTREME_ENTRY_SENT",
-         string(side>0?"BUY near live candle Low":"SELL near live candle High")+
-         " | layers="+IntegerToString(totalLayers+1)+"/"+IntegerToString(maxLayers)+
-         " | SL="+IntegerToString(slPoints)+" points"+
-         " | spread="+DoubleToString(spreadPoints,1)+" points (info only)",barTime);
-   }else{
-      Print("POWERFULL D1 HUMAN EXTREME ENTRY FAILED symbol=",symbol," side=",(side>0?"BUY":"SELL"),
-         " retcode=",rc," desc=",powerTrade.ResultRetcodeDescription()," err=",GetLastError());
-      powerPublishState(index,"D1_EXTREME_ENTRY_FAILED","Broker rejected D1 market entry: "+powerTrade.ResultRetcodeDescription(),barTime);
-   }
+ if(index<0||index>=ArraySize(powerSymbols))return;string symbol=powerSymbols[index];
+ if(DemoOnly&&!powerIsDemoAccount()){powerPublishState(index,"BLOCKED_REAL_ACCOUNT","D1 standalone is restricted to a demo account while DemoOnly=true",barTime);return;}
+ double point=SymbolInfoDouble(symbol,SYMBOL_POINT),ts=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE),spread=tick.ask-tick.bid;
+ if(point<=0||ts<=0||spread<0){powerPublishState(index,"D1_WAIT_DATA","Invalid MT5 quote geometry",barTime);return;}
+ double spreadPts=spread/point;if(!powerCfg[index].usePointStops){powerPublishState(index,"BLOCKED_SL_POINTS","D1 requires BUY/SELL SL points",barTime);return;}
+ ENUM_ACCOUNT_MARGIN_MODE mm=(ENUM_ACCOUNT_MARGIN_MODE)AccountInfoInteger(ACCOUNT_MARGIN_MODE);
+ if((mm!=ACCOUNT_MARGIN_MODE_RETAIL_HEDGING||AccountInfoInteger(ACCOUNT_HEDGE_ALLOWED)==0)&&powerCfg[index].maxLayers>1){powerPublishState(index,"BLOCKED_NETTING_ACCOUNT","D1 layers require hedging mode",barTime);return;}
+ int total=0,buyN=0,sellN=0;bool hasProfit=false;
+ for(int p=PositionsTotal()-1;p>=0;p--){ulong t=PositionGetTicket(p);if(t==0||PositionGetString(POSITION_SYMBOL)!=symbol||(long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;total++;ENUM_POSITION_TYPE ps=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);if(ps==POSITION_TYPE_BUY)buyN++;else if(ps==POSITION_TYPE_SELL)sellN++;if(powerProjectedNet(t)>0)hasProfit=true;}
+ if(hasProfit){powerPublishState(index,"D1_PROFIT_HOLD","An open D1 position is profitable; pause all new BUY/SELL entries",barTime);return;}
+ int cap=MathMax(1,MathMin(3,powerCfg[index].maxLayers));if(total>=cap){powerPublishState(index,"D1_LAYER_CAP","Layer cap "+IntegerToString(total)+"/"+IntegerToString(cap),barTime);return;}
+ double weaken=MathMax(ts*2.0,point*2.0);
+ bool sellFresh=powerMomentumLastSellHigh[index]<=0||candleHigh>=powerMomentumLastSellHigh[index]+ts*0.5;
+ bool buyFresh=powerMomentumLastBuyLow[index]<=0||candleLow<=powerMomentumLastBuyLow[index]-ts*0.5;
+ bool sellReady=sellFresh&&(candleHigh-tick.bid)>=weaken&&sellN<cap;
+ bool buyReady=buyFresh&&(tick.bid-candleLow)>=weaken&&buyN<cap;
+ if(!sellReady&&!buyReady){powerPublishState(index,"D1_DISTRIBUTION_SCAN","M5 "+(tick.bid>=candleOpen?"bullish":"bearish")+" Open="+DoubleToString(candleOpen,_Digits)+" High="+DoubleToString(candleHigh,_Digits)+" Low="+DoubleToString(candleLow,_Digits)+" | wait new extreme then weakening | spread="+DoubleToString(spreadPts,1)+" points (info only) | layers="+IntegerToString(total)+"/"+IntegerToString(cap),barTime);return;}
+ int side=(sellReady&&buyReady?((tick.bid-candleOpen)>=0?-1:1):(sellReady?-1:1));
+ int slPts=(side>0?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);double slDist=slPts*point,minStop=SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL)*point;
+ if(slPts<=0||slDist+1e-10<minStop+ts){powerPublishState(index,"BLOCKED_SL_POINTS","SL below broker stop distance",barTime);return;}
+ double lot=powerCfg[index].lot,minLot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN),maxLot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MAX),step=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+ if(step<=0||lot<minLot-1e-8||lot>maxLot+1e-8){powerPublishState(index,"BLOCKED_LOT","Configured lot outside broker limits",barTime);return;}
+ double px=(side>0?tick.ask:tick.bid),sl=powerRoundToTick(symbol,side>0?px-slDist:px+slDist);
+ powerTrade.SetExpertMagicNumber(POWERFULL_MAGIC);powerTrade.SetDeviationInPoints(powerCfg[index].deviationPoints);powerTrade.SetTypeFillingBySymbol(symbol);powerTrade.SetAsyncMode(false);ResetLastError();
+ bool sent=(side>0?powerTrade.Buy(lot,symbol,0,sl,0,"D1-DISTRIBUTION-BUY"):powerTrade.Sell(lot,symbol,0,sl,0,"D1-DISTRIBUTION-SELL"));uint rc=powerTrade.ResultRetcode();
+ if(sent&&(rc==TRADE_RETCODE_DONE||rc==TRADE_RETCODE_PLACED||rc==TRADE_RETCODE_DONE_PARTIAL)){
+  if(side>0)powerMomentumLastBuyLow[index]=candleLow;else powerMomentumLastSellHigh[index]=candleHigh;
+  Print("D1 DISTRIBUTION ENTRY OK ",symbol," side=",(side>0?"BUY":"SELL")," layer=",total+1,"/",cap," weakeningPts=",DoubleToString(weaken/point,1)," SL=",slPts," retcode=",rc);
+  powerMomentumLastEntryBar[index]=barTime;powerPublishState(index,"D1_DISTRIBUTION_ENTRY_SENT",string(side>0?"BUY after fresh Low weakened":"SELL after fresh High weakened")+" | layer="+IntegerToString(total+1)+"/"+IntegerToString(cap)+" | spread="+DoubleToString(spreadPts,1)+" points (info only)",barTime);
+ }else{Print("D1 DISTRIBUTION ENTRY FAILED ",symbol," side=",(side>0?"BUY":"SELL")," retcode=",rc," desc=",powerTrade.ResultRetcodeDescription());powerPublishState(index,"D1_DISTRIBUTION_ENTRY_FAILED",powerTrade.ResultRetcodeDescription(),barTime);}
 }
 
 void powerClosedDealStats(string symbol,int &wins,int &losses,int &closed){
@@ -2082,25 +1908,16 @@ bool powerClosePosition(ulong ticket,string reason){
    return false;
 }
 
-void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double candleOpen,
-                          bool hasPreviousTick,double previousBid){
- if(index<0||index>=ArraySize(powerSymbols))return;
- string symbol=powerSymbols[index];double point=SymbolInfoDouble(symbol,SYMBOL_POINT),tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE),spread=tick.ask-tick.bid;
- if(point<=0.0||tickSize<=0.0||spread<0.0)return;
- double minLock=MathMax((double)powerCfg[index].minProfitLockPoints*point,spread*1.5);
- double trail=MathMax(minLock,MathMax(spread*2.0,tickSize*3.0));
- for(int i=PositionsTotal()-1;i>=0;i--){
-  ulong ticket=PositionGetTicket(i);if(ticket==0||PositionGetString(POSITION_SYMBOL)!=symbol||(long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
-  if(!PositionSelectByTicket(ticket))continue;
-  ENUM_POSITION_TYPE side=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);double entry=PositionGetDouble(POSITION_PRICE_OPEN),executable=(side==POSITION_TYPE_BUY?tick.bid:tick.ask),net=powerProjectedNet(ticket);
-  int slPoints=(side==POSITION_TYPE_BUY?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
-  double hardStop=(powerCfg[index].usePointStops?(double)slPoints*point:powerCfg[index].stopPips*powerCfg[index].pipSize);
-  double adverse=(side==POSITION_TYPE_BUY?entry-executable:executable-entry);
-  if(hardStop>0.0&&adverse+point*0.1>=hardStop){powerClosePosition(ticket,"HARD_LOSS_GUARD configuredDistance="+DoubleToString(hardStop/point,1)+" points");continue;}
-  string peakKey="PW_PEAK_"+IntegerToString((long)ticket);if(!GlobalVariableCheck(peakKey))GlobalVariableSet(peakKey,executable);
-  double peak=GlobalVariableGet(peakKey);if((side==POSITION_TYPE_BUY&&executable>peak)||(side==POSITION_TYPE_SELL&&executable<peak)){peak=executable;GlobalVariableSet(peakKey,peak);}
-  double retrace=(side==POSITION_TYPE_BUY?peak-executable:executable-peak),locked=(side==POSITION_TYPE_BUY?executable-entry:entry-executable);
-  if(net>0.0&&locked>=minLock&&retrace>=trail)powerClosePosition(ticket,"D1_TICK_PROFIT_LOCK retrace="+DoubleToString(retrace/point,1)+" points threshold="+DoubleToString(trail/point,1)+" points");
+void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double candleOpen,bool hasPreviousTick,double previousBid){
+ if(index<0||index>=ArraySize(powerSymbols))return;string symbol=powerSymbols[index];double point=SymbolInfoDouble(symbol,SYMBOL_POINT),ts=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);if(point<=0||ts<=0)return;
+ double minLock=MathMax((double)powerCfg[index].minProfitLockPoints*point,ts*2),trail=MathMax(minLock,ts*3);
+ for(int i=PositionsTotal()-1;i>=0;i--){ulong t=PositionGetTicket(i);if(t==0||PositionGetString(POSITION_SYMBOL)!=symbol||(long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC||!PositionSelectByTicket(t))continue;
+  ENUM_POSITION_TYPE side=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);double entry=PositionGetDouble(POSITION_PRICE_OPEN),px=(side==POSITION_TYPE_BUY?tick.bid:tick.ask),net=powerProjectedNet(t);
+  int slPts=(side==POSITION_TYPE_BUY?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);double hard=powerCfg[index].usePointStops?slPts*point:powerCfg[index].stopPips*powerCfg[index].pipSize,adverse=(side==POSITION_TYPE_BUY?entry-px:px-entry);
+  if(hard>0&&adverse+point*.1>=hard){powerClosePosition(t,"HARD_LOSS_GUARD");continue;}
+  string key="PW_PEAK_"+IntegerToString((long)t);if(!GlobalVariableCheck(key))GlobalVariableSet(key,px);double peak=GlobalVariableGet(key);if((side==POSITION_TYPE_BUY&&px>peak)||(side==POSITION_TYPE_SELL&&px<peak)){peak=px;GlobalVariableSet(key,peak);}
+  double retrace=(side==POSITION_TYPE_BUY?peak-px:px-peak),locked=(side==POSITION_TYPE_BUY?px-entry:entry-px);int held=iBarShift(symbol,PERIOD_M5,(datetime)PositionGetInteger(POSITION_TIME),false);if(held<0)held=0;
+  if(net>0&&held>=3&&locked>=minLock&&retrace>=trail)powerClosePosition(t,"D1_PROFIT_REVERSAL_HOLD_3_CANDLES");
  }
 }
 
@@ -2256,8 +2073,6 @@ void managePowerfullSymbol(int index){
 
    bool hasPreviousTick=(powerLastTickMs[index]>0);
    double previousBid=powerLastBid[index];
-   if(tick.time_msc!=powerLastTickMs[index])
-      powerRecordTick(index,(tick.bid+tick.ask)*0.5);
    powerManagePositions(index,tick,barTime,candleOpen,hasPreviousTick,previousBid);
    powerLastBid[index]=tick.bid;
    powerLastAsk[index]=tick.ask;
