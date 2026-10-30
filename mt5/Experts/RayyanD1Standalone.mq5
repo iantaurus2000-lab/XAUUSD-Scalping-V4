@@ -14,6 +14,8 @@ input double StandaloneLot=0.01;
 input int StandaloneSLBuyPoints=0;
 input int StandaloneSLSellPoints=0;
 input int StandaloneMaxLayers=1;
+// E1: allow the new M5 candle to develop before any first/layer entry.
+input int StandaloneScanWarmupSeconds=30;
 input int PollSeconds=1;
 // After TP1 is reached, close on a confirmed M1 reversal before TP2.
 input bool EnableTP2RetraceProtection=true;
@@ -101,6 +103,8 @@ double powerMomentumLastBuyLow[3];
 datetime powerD1FallbackBar[3];
 double powerD1FallbackOpen[3],powerD1FallbackHigh[3],powerD1FallbackLow[3];
 datetime powerMomentumLastEntryBar[3];
+// E1/D1: first eligible entry time is gated by candle age; OHLC still resets per M5 bar.
+uint powerD1ScanStartedMs[3];
 uint powerStatsCalcMs[3];
 int powerStatsWins[3];
 int powerStatsLosses[3];
@@ -1818,9 +1822,13 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,doubl
  for(int p=PositionsTotal()-1;p>=0;p--){ulong t=PositionGetTicket(p);if(t==0||PositionGetString(POSITION_SYMBOL)!=symbol||(long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;total++;ENUM_POSITION_TYPE ps=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);if(ps==POSITION_TYPE_BUY)buyN++;else if(ps==POSITION_TYPE_SELL)sellN++;if(powerProjectedNet(t)>0)hasProfit=true;}
  if(hasProfit){powerPublishState(index,"D1_PROFIT_HOLD","An open D1 position is profitable; pause all new BUY/SELL entries",barTime);return;}
  int cap=MathMax(1,MathMin(3,powerCfg[index].maxLayers));if(total>=cap){powerPublishState(index,"D1_LAYER_CAP","Layer cap "+IntegerToString(total)+"/"+IntegerToString(cap),barTime);return;}
+ int candleAge=(int)(TimeCurrent()-barTime);
+ int scanWait=MathMax(0,StandaloneScanWarmupSeconds);
+ if(candleAge<scanWait){powerPublishState(index,"D1_SCAN_WARMUP","E1 scan candle age="+IntegerToString(candleAge)+"/"+IntegerToString(scanWait)+" seconds; wait for M5 range to develop before first/layer entry",barTime);return;}
  double weaken=MathMax(ts*2.0,point*2.0);
- bool sellFresh=powerMomentumLastSellHigh[index]<=0||candleHigh>=powerMomentumLastSellHigh[index]+ts*0.5;
- bool buyFresh=powerMomentumLastBuyLow[index]<=0||candleLow<=powerMomentumLastBuyLow[index]-ts*0.5;
+ // A new layer must exceed the last extreme that actually produced an order by at least one tradable tick.
+ bool sellFresh=powerMomentumLastSellHigh[index]<=0||candleHigh>=powerMomentumLastSellHigh[index]+ts- point*0.01;
+ bool buyFresh=powerMomentumLastBuyLow[index]<=0||candleLow<=powerMomentumLastBuyLow[index]-ts+ point*0.01;
  bool sellReady=sellFresh&&(candleHigh-tick.bid)>=weaken&&sellN<cap;
  bool buyReady=buyFresh&&(tick.bid-candleLow)>=weaken&&buyN<cap;
  if(!sellReady&&!buyReady){powerPublishState(index,"D1_DISTRIBUTION_SCAN","M5 "+(tick.bid>=candleOpen?"bullish":"bearish")+" Open="+DoubleToString(candleOpen,_Digits)+" High="+DoubleToString(candleHigh,_Digits)+" Low="+DoubleToString(candleLow,_Digits)+" | wait new extreme then weakening | spread="+DoubleToString(spreadPts,1)+" points (info only) | layers="+IntegerToString(total)+"/"+IntegerToString(cap),barTime);return;}
@@ -1917,6 +1925,14 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
   if(hard>0&&adverse+point*.1>=hard){powerClosePosition(t,"HARD_LOSS_GUARD");continue;}
   string key="PW_PEAK_"+IntegerToString((long)t);if(!GlobalVariableCheck(key))GlobalVariableSet(key,px);double peak=GlobalVariableGet(key);if((side==POSITION_TYPE_BUY&&px>peak)||(side==POSITION_TYPE_SELL&&px<peak)){peak=px;GlobalVariableSet(key,peak);}
   double retrace=(side==POSITION_TYPE_BUY?peak-px:px-peak),locked=(side==POSITION_TYPE_BUY?px-entry:entry-px);int held=iBarShift(symbol,PERIOD_M5,(datetime)PositionGetInteger(POSITION_TIME),false);if(held<0)held=0;
+  // E1 exception: before the normal 3-candle hold, allow an early profit exit only
+  // after a real retreat from the position peak (>=2 tradable ticks) and positive net P/L.
+  // The broker-side SL remains attached and is never removed by this logic.
+  double earlyRetrace=MathMax(ts*2.0,point*2.0);
+  if(net>0&&held<3&&locked>0.0&&retrace>=earlyRetrace){
+    powerClosePosition(t,"E1_EARLY_PROFIT_RETRACE_NET_POSITIVE");
+    continue;
+  }
   if(net>0&&held>=3&&locked>=minLock&&retrace>=trail)powerClosePosition(t,"D1_PROFIT_REVERSAL_HOLD_3_CANDLES");
  }
 }
