@@ -1850,6 +1850,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,doubl
       powerPublishState(index,"D1_WAIT_DATA","D1 waiting for valid MT5 point/tick-size/quote",barTime);
       return;
    }
+   // Spread is telemetry only: report the live market value, never use it to block an entry.
+   double spreadPoints=spread/point;
    if(powerMomentumLayerBar[index]!=barTime){
       powerMomentumLayerBar[index]=barTime;
       powerMomentumLastSellHigh[index]=0.0;
@@ -1888,7 +1890,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,doubl
       return;
    }
 
-   double nearDistance=MathMax(tickSize*3.0,MathMax(spread*1.5,point*3.0));
+   double nearDistance=MathMax(tickSize*3.0,point*3.0);
    double p0=powerTickPriceAgo(index,0);
    double p1=powerTickPriceAgo(index,1);
    double p2=powerTickPriceAgo(index,2);
@@ -1930,6 +1932,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,doubl
          powerPublishState(index,"D1_EXTREME_SCAN",
             "D1 live tick scan | High="+DoubleToString(candleHigh,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))+
             " Low="+DoubleToString(candleLow,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))+
+            " | spread="+DoubleToString(spreadPoints,1)+" points (info only)"+
             " | layers="+IntegerToString(totalLayers)+"/"+IntegerToString(maxLayers)+
             " | waiting for a turn near a fresh extreme",barTime);
          return;
@@ -1941,7 +1944,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,doubl
       powerMomentumCandidateExtreme[index]=(side<0?candleHigh:candleLow);
       powerPublishState(index,"D1_EXTREME_CONFIRM",
          (side>0?"BUY near candle Low":"SELL near candle High")+
-         "; confirming live tick turn for "+IntegerToString(powerCfg[index].d1TurnConfirmMs)+" ms",barTime);
+         "; confirming live tick turn for "+IntegerToString(powerCfg[index].d1TurnConfirmMs)+" ms"+
+         " | spread="+DoubleToString(spreadPoints,1)+" points (info only)",barTime);
       return;
    }
    if(powerMomentumCandidateSide[index]!=side||powerMomentumCandidateBar[index]!=barTime)return;
@@ -1956,12 +1960,6 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,doubl
    if(slPoints<=0||slDistance+1e-10<minStop+tickSize){
       powerMomentumCandidateMs[index]=0;powerMomentumCandidateSide[index]=0;
       powerPublishState(index,"BLOCKED_SL_POINTS","D1 SL "+IntegerToString(slPoints)+" points is zero or below broker stop distance",barTime);
-      return;
-   }
-   double spreadPoints=spread/point;
-   if(spreadPoints>(double)MathMax(20,powerCfg[index].minDistancePoints*2)){
-      powerMomentumCandidateMs[index]=0;powerMomentumCandidateSide[index]=0;
-      powerPublishState(index,"BLOCKED_SPREAD","D1 spread="+DoubleToString(spreadPoints,1)+" points exceeds safety threshold",barTime);
       return;
    }
    double lot=powerCfg[index].lot;
@@ -2006,7 +2004,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,doubl
       powerPublishState(index,"D1_EXTREME_ENTRY_SENT",
          string(side>0?"BUY near live candle Low":"SELL near live candle High")+
          " | layers="+IntegerToString(totalLayers+1)+"/"+IntegerToString(maxLayers)+
-         " | SL="+IntegerToString(slPoints)+" points",barTime);
+         " | SL="+IntegerToString(slPoints)+" points"+
+         " | spread="+DoubleToString(spreadPoints,1)+" points (info only)",barTime);
    }else{
       Print("POWERFULL D1 HUMAN EXTREME ENTRY FAILED symbol=",symbol," side=",(side>0?"BUY":"SELL"),
          " retcode=",rc," desc=",powerTrade.ResultRetcodeDescription()," err=",GetLastError());
