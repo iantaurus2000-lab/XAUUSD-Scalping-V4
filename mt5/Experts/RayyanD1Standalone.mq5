@@ -1831,9 +1831,9 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
 
    double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
    double ts=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
-   double spread=tick.ask-tick.bid;
-   if(point<=0.0||ts<=0.0||spread<0.0){
-      powerPublishState(index,"D1_WAIT_DATA","Invalid MT5 quote geometry",barTime);
+   // Spread is informational only; it is never an entry filter or blocker.
+   if(point<=0.0||ts<=0.0){
+      powerPublishState(index,"D1_WAIT_DATA","Invalid MT5 point/tick geometry",barTime);
       return;
    }
    if(!powerCfg[index].usePointStops){
@@ -1849,7 +1849,6 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    }
 
    int total=0,buyN=0,sellN=0;
-   bool hasProfit=false;
    for(int p=PositionsTotal()-1;p>=0;p--){
       ulong ticket=PositionGetTicket(p);
       if(ticket==0||PositionGetString(POSITION_SYMBOL)!=symbol||
@@ -1858,15 +1857,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       ENUM_POSITION_TYPE ps=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
       if(ps==POSITION_TYPE_BUY)buyN++;
       else if(ps==POSITION_TYPE_SELL)sellN++;
-      if(powerProjectedNet(ticket)>0.0)hasProfit=true;
    }
 
-   // Preserve A4's profit lock: a profitable open layer pauses every new entry.
-   if(hasProfit){
-      powerPublishState(index,"D1_PROFIT_HOLD",
-         "An open D1 position is profitable; pause all new BUY/SELL entries",barTime);
-      return;
-   }
    int cap=MathMax(1,MathMin(5,powerCfg[index].maxLayers));
    if(total>=cap){
       powerPublishState(index,"D1_LAYER_CAP",
@@ -1893,6 +1885,15 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       powerPublishState(index,"D1_CANDLE_BUILDING",
          "Waiting for current M5 candle to establish its live High/Low",barTime);
       return;
+   }
+
+   // Each new M5 candle gets a fresh entry-extreme baseline.
+   // Existing positions remain open and the global basket cap remains five.
+   // Within the candle, each additional layer requires a fresh extreme and a
+   // confirmed live rejection; no completed-candle range/history is consulted.
+   if(powerMomentumLastEntryBar[index]!=barTime){
+      powerMomentumLastBuyLow[index]=0.0;
+      powerMomentumLastSellHigh[index]=0.0;
    }
 
    // #95 live M5 candle distribution: no fixed tick-distance or historical candle window.
@@ -1967,10 +1968,11 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
             DoubleToString(sellAskRetreat/range*100.0,1)+"%"+
          " | turn BUY/SELL="+(buyBidTurn?"1":"0")+"/"+
             (sellBidTurn?"1":"0")+
+         " | spread(info)="+DoubleToString((tick.ask-tick.bid)/ts,1)+"t"+
          " | layers="+IntegerToString(total)+"/"+IntegerToString(cap),barTime);
       return;
    }
-   // Add layers only in the existing basket's direction.
+   // Add layers only in the existing basket's direction; no opposite-side hedge.
    if(buyN>0)sellReady=false;
    if(sellN>0)buyReady=false;
    if(!buyReady&&!sellReady)return;
