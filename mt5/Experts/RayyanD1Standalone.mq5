@@ -1903,12 +1903,12 @@ bool powerClosePosition(ulong ticket,string reason){
    if(ok&&(rc==TRADE_RETCODE_DONE||rc==TRADE_RETCODE_DONE_PARTIAL)){
       Print("POWERFULL CLOSE OK symbol=",symbol," ticket=",ticket," reason=",reason," retcode=",rc);
       string suffix=IntegerToString((long)ticket);
-      string key="PW_HMODE_"+suffix;
-      string barKey="PW_HBAR_"+suffix;
-      string peakKey="PW_PEAK_"+suffix;
-      if(GlobalVariableCheck(key))GlobalVariableDel(key);
-      if(GlobalVariableCheck(barKey))GlobalVariableDel(barKey);
-      if(GlobalVariableCheck(peakKey))GlobalVariableDel(peakKey);
+      string keys[7]={"PW_HMODE_","PW_HBAR_","PW_PEAK_","PW_RISK_ARM_",
+                      "PW_RISK_ADVERSE_","PW_RISK_RECOVERY_","PW_RISK_LASTPX_"};
+      for(int k=0;k<ArraySize(keys);k++){
+         string key=keys[k]+suffix;
+         if(GlobalVariableCheck(key))GlobalVariableDel(key);
+      }
       return true;
    }
    Print("POWERFULL CLOSE FAILED symbol=",symbol," ticket=",ticket," reason=",reason,
@@ -1917,24 +1917,139 @@ bool powerClosePosition(ulong ticket,string reason){
 }
 
 void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double candleOpen,bool hasPreviousTick,double previousBid){
- if(index<0||index>=ArraySize(powerSymbols))return;string symbol=powerSymbols[index];double point=SymbolInfoDouble(symbol,SYMBOL_POINT),ts=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);if(point<=0||ts<=0)return;
- double minLock=MathMax((double)powerCfg[index].minProfitLockPoints*point,ts*2),trail=MathMax(minLock,ts*3);
- for(int i=PositionsTotal()-1;i>=0;i--){ulong t=PositionGetTicket(i);if(t==0||PositionGetString(POSITION_SYMBOL)!=symbol||(long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC||!PositionSelectByTicket(t))continue;
-  ENUM_POSITION_TYPE side=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);double entry=PositionGetDouble(POSITION_PRICE_OPEN),px=(side==POSITION_TYPE_BUY?tick.bid:tick.ask),net=powerProjectedNet(t);
-  int slPts=(side==POSITION_TYPE_BUY?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);double hard=powerCfg[index].usePointStops?slPts*point:powerCfg[index].stopPips*powerCfg[index].pipSize,adverse=(side==POSITION_TYPE_BUY?entry-px:px-entry);
-  if(hard>0&&adverse+point*.1>=hard){powerClosePosition(t,"HARD_LOSS_GUARD");continue;}
-  string key="PW_PEAK_"+IntegerToString((long)t);if(!GlobalVariableCheck(key))GlobalVariableSet(key,px);double peak=GlobalVariableGet(key);if((side==POSITION_TYPE_BUY&&px>peak)||(side==POSITION_TYPE_SELL&&px<peak)){peak=px;GlobalVariableSet(key,peak);}
-  double retrace=(side==POSITION_TYPE_BUY?peak-px:px-peak),locked=(side==POSITION_TYPE_BUY?px-entry:entry-px);int held=iBarShift(symbol,PERIOD_M5,(datetime)PositionGetInteger(POSITION_TIME),false);if(held<0)held=0;
-  // E1 exception: before the normal 3-candle hold, allow an early profit exit only
-  // after a real retreat from the position peak (>=2 tradable ticks) and positive net P/L.
-  // The broker-side SL remains attached and is never removed by this logic.
-  double earlyRetrace=MathMax(ts*2.0,point*2.0);
-  if(net>0&&held<3&&locked>0.0&&retrace>=earlyRetrace){
-    powerClosePosition(t,"E1_EARLY_PROFIT_RETRACE_NET_POSITIVE");
-    continue;
-  }
-  if(net>0&&held>=3&&locked>=minLock&&retrace>=trail)powerClosePosition(t,"D1_PROFIT_REVERSAL_HOLD_3_CANDLES");
- }
+   if(index<0||index>=ArraySize(powerSymbols))return;
+   string symbol=powerSymbols[index];
+   double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+   double ts=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+   if(point<=0.0||ts<=0.0)return;
+
+   double minLock=MathMax((double)powerCfg[index].minProfitLockPoints*point,ts*2.0);
+   double trail=MathMax(minLock,ts*3.0);
+
+   for(int i=PositionsTotal()-1;i>=0;i--){
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0||PositionGetString(POSITION_SYMBOL)!=symbol||
+         (long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC||
+         !PositionSelectByTicket(ticket))continue;
+
+      ENUM_POSITION_TYPE side=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      bool isBuy=(side==POSITION_TYPE_BUY);
+      double entry=PositionGetDouble(POSITION_PRICE_OPEN);
+      double px=(isBuy?tick.bid:tick.ask);
+      double net=powerProjectedNet(ticket);
+      int slPts=(isBuy?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
+      double hard=(powerCfg[index].usePointStops?slPts*point:
+                   powerCfg[index].stopPips*powerCfg[index].pipSize);
+      double adverse=(isBuy?entry-px:px-entry);
+
+      // Absolute SL protection remains the final hard boundary.
+      if(hard>0.0&&adverse+point*0.1>=hard){
+         powerClosePosition(ticket,"HARD_LOSS_GUARD");
+         continue;
+      }
+
+      string suffix=IntegerToString((long)ticket);
+      string peakKey="PW_PEAK_"+suffix;
+      string armKey="PW_RISK_ARM_"+suffix;
+      string adverseKey="PW_RISK_ADVERSE_"+suffix;
+      string recoveryKey="PW_RISK_RECOVERY_"+suffix;
+      string lastPxKey="PW_RISK_LASTPX_"+suffix;
+
+      // Keep the existing favorable peak for normal profit management.
+      if(!GlobalVariableCheck(peakKey))GlobalVariableSet(peakKey,px);
+      double peak=GlobalVariableGet(peakKey);
+      if((isBuy&&px>peak)||(!isBuy&&px<peak)){
+         peak=px;
+         GlobalVariableSet(peakKey,peak);
+      }
+
+      // Track the most adverse quote since entry. Approaching SL arms observation;
+      // it does NOT itself close the position.
+      if(!GlobalVariableCheck(adverseKey))GlobalVariableSet(adverseKey,px);
+      double adverseExtreme=GlobalVariableGet(adverseKey);
+      if((isBuy&&px<adverseExtreme-ts*0.1)||(!isBuy&&px>adverseExtreme+ts*0.1)){
+         adverseExtreme=px;
+         GlobalVariableSet(adverseKey,adverseExtreme);
+         if(GlobalVariableCheck(recoveryKey))GlobalVariableSet(recoveryKey,px);
+      }
+
+      double riskArmDistance=(hard>0.0?MathMin(MathMax(ts*3.0,hard*0.35),hard*0.70):ts*6.0);
+      bool riskArmed=(GlobalVariableCheck(armKey)&&GlobalVariableGet(armKey)>0.5);
+      double adverseExcursion=(isBuy?entry-adverseExtreme:adverseExtreme-entry);
+      if(!riskArmed&&adverseExcursion>=riskArmDistance){
+         riskArmed=true;
+         GlobalVariableSet(armKey,1.0);
+         GlobalVariableSet(recoveryKey,px);
+         Print("POWERFULL RISK WATCH ARMED symbol=",symbol," ticket=",ticket,
+               " side=",(isBuy?"BUY":"SELL"),
+               " adversePoints=",DoubleToString(adverseExcursion/point,1),
+               " triggerPoints=",DoubleToString(riskArmDistance/point,1),
+               " | observe recovery; no automatic close");
+      }
+
+      // Compare the current executable quote with the prior executable quote.
+      // For SELL, both values are Ask; BUY uses Bid.
+      double previousExitPx=0.0;
+      bool havePreviousExit=GlobalVariableCheck(lastPxKey);
+      if(havePreviousExit)previousExitPx=GlobalVariableGet(lastPxKey);
+      else if(hasPreviousTick&&previousBid>0.0){
+         previousExitPx=(isBuy?previousBid:previousBid+(tick.ask-tick.bid));
+         havePreviousExit=true;
+      }
+      bool movingAgainst=(havePreviousExit&&
+         (isBuy?px<previousExitPx-ts*0.1:px>previousExitPx+ts*0.1));
+      GlobalVariableSet(lastPxKey,px);
+
+      if(riskArmed){
+         if(!GlobalVariableCheck(recoveryKey))GlobalVariableSet(recoveryKey,px);
+         double recoveryExtreme=GlobalVariableGet(recoveryKey);
+         if((isBuy&&px>recoveryExtreme)||(!isBuy&&px<recoveryExtreme)){
+            recoveryExtreme=px;
+            GlobalVariableSet(recoveryKey,recoveryExtreme);
+         }
+
+         // Require a meaningful recovery toward entry, followed by a confirmed
+         // move against the position while price is still near the entry area.
+         // This catches a failed rebound without selling every small retracement.
+         double recoveryProgress=(isBuy?recoveryExtreme-adverseExtreme:
+                                         adverseExtreme-recoveryExtreme);
+         double recoveryConfirmDistance=MathMax(ts*3.0,hard*0.10);
+         double nearEntry=MathMax(ts*2.0,hard*0.08);
+         double reversalConfirmDistance=MathMax(ts*3.0,hard*0.08);
+         bool recoveryMeaningful=(recoveryProgress>=recoveryConfirmDistance);
+         bool recoveryReachedEntry=(isBuy?recoveryExtreme>=entry-nearEntry:
+                                            recoveryExtreme<=entry+nearEntry);
+         bool reversalConfirmed=(isBuy?recoveryExtreme-px>=reversalConfirmDistance:
+                                         px-recoveryExtreme>=reversalConfirmDistance);
+         double locked=(isBuy?px-entry:entry-px);
+         bool stillNearEntry=(locked>=-nearEntry);
+         if(recoveryMeaningful&&recoveryReachedEntry&&reversalConfirmed&&
+            movingAgainst&&stillNearEntry){
+            Print("POWERFULL RISK REVERSAL symbol=",symbol," ticket=",ticket,
+                  " side=",(isBuy?"BUY":"SELL"),
+                  " entry=",DoubleToString(entry,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+                  " exitQuote=",DoubleToString(px,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+                  " net=",DoubleToString(net,2),
+                  " recoveryPoints=",DoubleToString(recoveryProgress/point,1),
+                  " reversalPoints=",DoubleToString((isBuy?recoveryExtreme-px:px-recoveryExtreme)/point,1));
+            powerClosePosition(ticket,"E1_RISK_RECOVERY_FAILED_EXIT");
+            continue;
+         }
+      }
+
+      double retrace=(isBuy?peak-px:px-peak);
+      double locked=(isBuy?px-entry:entry-px);
+      int held=iBarShift(symbol,PERIOD_M5,(datetime)PositionGetInteger(POSITION_TIME),false);
+      if(held<0)held=0;
+
+      // Normal profit management is unchanged: no routine early retracement exit
+      // before 3 completed M5 bars. A risk exit above requires an armed adverse
+      // excursion, meaningful recovery, and a confirmed failed rebound near entry.
+      if(net>0.0&&held>=3&&locked>=minLock&&retrace>=trail){
+         powerClosePosition(ticket,"D1_PROFIT_REVERSAL_HOLD_3_CANDLES");
+         continue;
+      }
+   }
 }
 
 void powerPublishState(int index,string status,string detail,datetime barTime){
