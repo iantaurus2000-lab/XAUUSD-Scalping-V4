@@ -1958,37 +1958,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    // Add layers only in the existing basket's direction.
    if(buyN>0)sellReady=false;
    if(sellN>0)buyReady=false;
-
-   double buyScore=(1.0-candlePosition)+(lowerWick/range)+
-      (buyBidRecovery/range)+(buyAskRecovery/range);
-   double sellScore=candlePosition+(upperWick/range)+
-      (sellBidRetreat/range)+(sellAskRetreat/range);
-   if(buyReady&&sellReady){
-      if(MathAbs(buyScore-sellScore)<0.08){
-         powerPublishState(index,"D1_DISTRIBUTION_AMBIGUOUS",
-            "Both extremes have similar rejection quality; wait for a clearer M5 setup",barTime);
-         return;
-      }
-      if(buyScore>sellScore)sellReady=false;
-      else buyReady=false;
-   }
-   if(!buyReady&&!sellReady){
-      powerPublishState(index,"D1_CANDLE_READING",
-         "M5 range="+DoubleToString(rangeTicks,1)+"t"+
-         " | range/median="+DoubleToString(range/powerD1MedianRange[index],2)+
-         " | location="+DoubleToString(candlePosition*100.0,1)+"%"+
-         " | body="+DoubleToString(body/ts,1)+"t"+
-         " | lower/upper wick="+DoubleToString(lowerWick/ts,1)+"/"+
-            DoubleToString(upperWick/ts,1)+"t"+
-         " | BUY recovery Bid/Ask="+DoubleToString(buyBidRecovery/ts,1)+"/"+
-            DoubleToString(buyAskRecovery/ts,1)+"t"+
-         " | SELL retreat Bid/Ask="+DoubleToString(sellBidRetreat/ts,1)+"/"+
-            DoubleToString(sellAskRetreat/ts,1)+"t"+
-         " | tick turn BUY/SELL="+IntegerToString(powerD1BuyTurnCount[index])+"/"+
-            IntegerToString(powerD1SellTurnCount[index])+"/3"+
-         " | layers="+IntegerToString(total)+"/"+IntegerToString(cap),barTime);
-      return;
-   }
+   if(!buyReady&&!sellReady)return;
 
    int side=(buyReady?1:-1);
    int slPts=(side>0?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
