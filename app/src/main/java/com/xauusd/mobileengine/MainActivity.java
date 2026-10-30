@@ -1946,13 +1946,13 @@ public class MainActivity extends Activity {
         fields.setBackground(roundBg(Color.rgb(3,18,30),16));
         TextView title=tv("SMART AUTO-POWERFULL • PENGATURAN",16);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
         fields.addView(title,new LinearLayout.LayoutParams(-1,uiDp(42)));
-        TextView note=tv("D1 Human Price Extreme: SELL dekat High / BUY dekat Low dari tick MT5 aktual. Layer 1–3 fleksibel; profit diamankan berdasarkan tick, spread, dan retrace. Tidak memakai riwayat candle sebelumnya untuk entry.",11);
+        TextView note=tv("A5 Distribution Entry: BUY di candle merah dekat Low; SELL di candle hijau dekat High. EA membaca posisi harga pada range M5, body/wick, ATR, spread dan konfirmasi Bid/Ask. Layer 1–5.",11);
         note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
         fields.addView(note,new LinearLayout.LayoutParams(-1,uiDp(58)));
         EditText lot=addEaParameter(fields,"Initial Lot",String.format(Locale.US,"%.2f",gp.getFloat("powerfull_lot_"+symbol,(float)Math.max(minLotForSymbol(symbol),lotForMarket()))),true);
         EditText profitLock=addEaParameter(fields,"Profit Lock Minimum Points",Integer.toString(gp.getInt("powerfull_min_profit_lock_points_"+symbol,5)),false);
         EditText confirmMs=addEaParameter(fields,"D1 Tick Turn Confirmation (ms)",Integer.toString(gp.getInt("powerfull_d1_turn_confirm_ms_"+symbol,500)),false);
-        EditText maxLayers=addEaParameter(fields,"Maximum Layers (1–3)",Integer.toString(gp.getInt("powerfull_max_layers_"+symbol,3)),false);
+        EditText maxLayers=addEaParameter(fields,"Maximum Layers (1–5)",Integer.toString(gp.getInt("powerfull_max_layers_"+symbol,3)),false);
         EditText slBuy=addEaParameter(fields,"SL BUY Points (wajib > 0)",Integer.toString(gp.getInt("powerfull_sl_buy_points_"+symbol,0)),false);
         EditText slSell=addEaParameter(fields,"SL SELL Points (wajib > 0)",Integer.toString(gp.getInt("powerfull_sl_sell_points_"+symbol,0)),false);
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(false);scroll.addView(fields);
@@ -1975,9 +1975,9 @@ public class MainActivity extends Activity {
                 int vSlSell=Integer.parseInt(slSell.getText().toString().trim());
                 if(!Double.isFinite(vLot)||vLot<minLotForSymbol(symbol)
                     ||vLock<0||vLock>100000||vConfirmMs<250||vConfirmMs>5000
-                    ||vMaxLayers<1||vMaxLayers>3||vSlBuy<=0||vSlSell<=0
+                    ||vMaxLayers<1||vMaxLayers>5||vSlBuy<=0||vSlSell<=0
                     ||vSlBuy>100000000||vSlSell>100000000){
-                    Toast.makeText(this,"Periksa Lot, konfirmasi tick 250–5000 ms, layer 1–3, dan SL BUY/SELL wajib lebih dari 0.",Toast.LENGTH_LONG).show();return;
+                    Toast.makeText(this,"Periksa Lot, konfirmasi tick 250–5000 ms, layer 1–5, dan SL BUY/SELL wajib lebih dari 0.",Toast.LENGTH_LONG).show();return;
                 }
                 double point=preferenceDouble(gp,"broker_quote_point_"+symbol,0.0);
                 double pip=gp.getFloat("powerfull_pip_size_"+symbol,(float)(point>0?point:0.01));
