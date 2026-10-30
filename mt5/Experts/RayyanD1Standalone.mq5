@@ -192,7 +192,7 @@ int OnInit(){
       powerConfigReceivedMs[0]=1;
       Print("D1 STANDALONE MODE symbol=",directSymbol," lot=",DoubleToString(StandaloneLot,2),
          " SLbuy=",StandaloneSLBuyPoints," SLsell=",StandaloneSLSellPoints,
-         " confirmMs=",StandaloneD1TurnConfirmMs," maxLayers=",StandaloneMaxLayers,
+         " maxLayers=",StandaloneMaxLayers,
          " enabled=",powerCfg[0].enabled,
          " | BUY/SELL SL points must be positive before enabling Algo Trading");
    }else{
