@@ -106,6 +106,9 @@ double powerD1AskHigh[3],powerD1AskLow[3];
 int powerD1BuyTurnCount[3],powerD1SellTurnCount[3];
 datetime powerD1TurnBar[3];
 long powerD1LastCountedTickMs[3];
+// A11: completed M5 candle distribution baseline; refreshed once per new M5 candle.
+double powerD1MedianRange[3],powerD1MedianBodyRatio[3],powerD1MedianWickRatio[3];
+int powerD1ReferenceSamples[3];
 datetime powerMomentumLastEntryBar[3];
 // E1/D1: first eligible entry time is gated by candle age; OHLC still resets per M5 bar.
 uint powerD1ScanStartedMs[3];
@@ -161,6 +164,61 @@ bool powerHasPendingSide(string symbol,bool buySide);
 bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick &tick,double target);
 void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double candleOpen,
                           bool hasPreviousTick,double previousBid,double previousAsk);
+bool powerD1BuildDistributionReference(int index){
+   if(index<0||index>=ArraySize(powerSymbols)||powerSymbols[index]=="")return false;
+   MqlRates rates[];
+   ArraySetAsSeries(rates,true);
+   ResetLastError();
+   int copied=CopyRates(powerSymbols[index],PERIOD_M5,1,20,rates);
+   if(copied<10){
+      powerD1ReferenceSamples[index]=0;
+      Print("D1 A11 DISTRIBUTION WAIT symbol=",powerSymbols[index],
+            " completedM5=",copied," required=10 err=",GetLastError());
+      return false;
+   }
+
+   double ranges[],bodyRatios[],wickRatios[];
+   ArrayResize(ranges,0);
+   ArrayResize(bodyRatios,0);
+   ArrayResize(wickRatios,0);
+   for(int i=0;i<copied;i++){
+      double h=rates[i].high,l=rates[i].low,o=rates[i].open,c=rates[i].close;
+      if(rates[i].time<=0||h<=l||o<=0.0||c<=0.0)continue;
+      double candleRange=h-l;
+      double body=MathAbs(c-o);
+      double upper=h-MathMax(o,c);
+      double lower=MathMin(o,c)-l;
+      if(candleRange<=0.0||!MathIsValidNumber(candleRange))continue;
+      int n=ArraySize(ranges);
+      ArrayResize(ranges,n+1);
+      ArrayResize(bodyRatios,n+1);
+      ArrayResize(wickRatios,n+1);
+      ranges[n]=candleRange;
+      bodyRatios[n]=body/candleRange;
+      wickRatios[n]=(upper+lower)/candleRange;
+   }
+   int used=ArraySize(ranges);
+   powerD1ReferenceSamples[index]=used;
+   if(used<10)return false;
+   ArraySort(ranges);
+   ArraySort(bodyRatios);
+   ArraySort(wickRatios);
+   int mid=used/2;
+   double medianRange=(used%2==0?(ranges[mid-1]+ranges[mid])*0.5:ranges[mid]);
+   double medianBody=(used%2==0?(bodyRatios[mid-1]+bodyRatios[mid])*0.5:bodyRatios[mid]);
+   double medianWick=(used%2==0?(wickRatios[mid-1]+wickRatios[mid])*0.5:wickRatios[mid]);
+   if(medianRange<=0.0||!MathIsValidNumber(medianRange))return false;
+   powerD1MedianRange[index]=medianRange;
+   powerD1MedianBodyRatio[index]=medianBody;
+   powerD1MedianWickRatio[index]=medianWick;
+   Print("D1 A11 DISTRIBUTION BASELINE symbol=",powerSymbols[index],
+         " samples=",used,
+         " medianRange=",DoubleToString(medianRange,(int)SymbolInfoInteger(powerSymbols[index],SYMBOL_DIGITS)),
+         " medianBodyRatio=",DoubleToString(medianBody,3),
+         " medianWickRatio=",DoubleToString(medianWick,3));
+   return true;
+}
+
 void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
                              double candleOpen,double candleHigh,double candleLow,
                              double askHigh,double askLow,
@@ -1896,29 +1954,46 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
          "Waiting for a valid M5 candle range from MT5 OHLC",barTime);
       return;
    }
+   if(powerD1MedianRange[index]<=0.0||powerD1ReferenceSamples[index]<10){
+      powerPublishState(index,"D1_WAIT_CANDLE_DISTRIBUTION",
+         "Need at least 10 completed M5 candles to establish the range/body/wick distribution baseline",barTime);
+      return;
+   }
 
-   // A6: a new layer follows a genuinely new M5 extreme, not an artificial expanding delay.
-   // One tradable tick beyond the prior layer extreme marks fresh distribution.
+   // A6 layer discipline retained: a new layer requires a genuinely new M5 extreme.
    bool sellFresh=(powerMomentumLastSellHigh[index]<=0.0||
                    candleHigh>=powerMomentumLastSellHigh[index]+ts);
    bool buyFresh=(powerMomentumLastBuyLow[index]<=0.0||
                   candleLow<=powerMomentumLastBuyLow[index]-ts);
 
-   // Standard MT5 OHLC is Bid-based. Ask high/low is tracked live by this EA.
-   // Wait until BOTH executable quotes have moved away from their candle extreme.
+   // A11: locate price inside the FULL current M5 range, not relative to Open alone.
+   // BUY must be in the bottom 18%; SELL must be in the top 18%.
+   double candlePosition=(tick.bid-candleLow)/range;
+   candlePosition=MathMax(0.0,MathMin(1.0,candlePosition));
    double upperWick=candleHigh-MathMax(candleOpen,tick.bid);
    double lowerWick=MathMin(candleOpen,tick.bid)-candleLow;
    double body=MathAbs(tick.bid-candleOpen);
-   double minRejection=ts*3.0;
-   double minWick=ts*2.0;
    double buyBidRecovery=tick.bid-candleLow;
    double buyAskRecovery=tick.ask-askLow;
    double sellBidRetreat=candleHigh-tick.bid;
    double sellAskRetreat=askHigh-tick.ask;
 
-   // Strict candle direction: BUY only below M5 Open; SELL only above M5 Open.
+   // Normalize confirmation to both the active candle and recent M5 distribution.
+   // Tick movement confirms rejection only after the candle structure qualifies.
+   double minRejection=MathMax(ts*3.0,MathMax(range*0.05,powerD1MedianRange[index]*0.02));
+   double minWick=MathMax(ts*2.0,range*MathMax(0.10,powerD1MedianWickRatio[index]*0.35));
+   double minWickBodyRatio=MathMax(0.20,powerD1MedianBodyRatio[index]*0.35);
+   bool rangeQualified=(range>=powerD1MedianRange[index]*0.35);
+   bool buyExtremeZone=(candlePosition<=0.18);
+   bool sellExtremeZone=(candlePosition>=0.82);
+
+   // Strict candle direction: BUY only on a red candle; SELL only on a green candle.
    bool candleRed=(tick.bid<candleOpen);
    bool candleGreen=(tick.bid>candleOpen);
+   bool buyCandleStructure=(rangeQualified&&buyExtremeZone&&
+      lowerWick>=minWick&&lowerWick>=body*minWickBodyRatio);
+   bool sellCandleStructure=(rangeQualified&&sellExtremeZone&&
+      upperWick>=minWick&&upperWick>=body*minWickBodyRatio);
 
    // Do not trigger from one quote change. Require three consecutive movements
    // with Bid AND Ask moving in the intended direction after the extreme.
@@ -1946,21 +2021,23 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    bool buyTickTurn=(powerD1BuyTurnCount[index]>=3);
    bool sellTickTurn=(powerD1SellTurnCount[index]>=3);
 
-   // BUY: red candle, fresh Low, lower-wick rejection and Bid+Ask recovery.
-   // SELL: green candle, fresh High, upper-wick rejection and Bid+Ask retreat.
-   bool buyReady=(buyFresh&&candleRed&&
+   // BUY/SELL require the extreme-zone + candle-distribution structure first.
+   // Bid and Ask turn counts are secondary execution confirmation, never location filters.
+   bool buyReady=(buyFresh&&candleRed&&buyCandleStructure&&
                   buyBidRecovery>=minRejection&&buyAskRecovery>=minRejection&&
-                  lowerWick>=minWick&&lowerWick>body&&buyTickTurn&&buyN<cap);
-   bool sellReady=(sellFresh&&candleGreen&&
+                  buyTickTurn&&buyN<cap);
+   bool sellReady=(sellFresh&&candleGreen&&sellCandleStructure&&
                    sellBidRetreat>=minRejection&&sellAskRetreat>=minRejection&&
-                   upperWick>=minWick&&upperWick>body&&sellTickTurn&&sellN<cap);
+                   sellTickTurn&&sellN<cap);
 
    // Add layers only in the existing basket's direction.
    if(buyN>0)sellReady=false;
    if(sellN>0)buyReady=false;
 
-   double buyScore=(range>0.0?(lowerWick/range)+(buyBidRecovery/range)+(buyAskRecovery/range):0.0);
-   double sellScore=(range>0.0?(upperWick/range)+(sellBidRetreat/range)+(sellAskRetreat/range):0.0);
+   double buyScore=(1.0-candlePosition)+(lowerWick/range)+
+      (buyBidRecovery/range)+(buyAskRecovery/range);
+   double sellScore=candlePosition+(upperWick/range)+
+      (sellBidRetreat/range)+(sellAskRetreat/range);
    if(buyReady&&sellReady){
       if(MathAbs(buyScore-sellScore)<0.08){
          powerPublishState(index,"D1_DISTRIBUTION_AMBIGUOUS",
@@ -1972,16 +2049,18 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    }
    if(!buyReady&&!sellReady){
       powerPublishState(index,"D1_CANDLE_READING",
-         "M5 range="+DoubleToString(rangeTicks,1)+" ticks"+
+         "M5 range="+DoubleToString(rangeTicks,1)+"t"+
+         " | range/median="+DoubleToString(range/powerD1MedianRange[index],2)+
+         " | location="+DoubleToString(candlePosition*100.0,1)+"%"+
          " | body="+DoubleToString(body/ts,1)+"t"+
-         " | lowerWick="+DoubleToString(lowerWick/ts,1)+"t"+
-         " | upperWick="+DoubleToString(upperWick/ts,1)+"t"+
-         " | BUY Bid/Ask recovery="+DoubleToString(buyBidRecovery/ts,1)+"/"+
+         " | lower/upper wick="+DoubleToString(lowerWick/ts,1)+"/"+
+            DoubleToString(upperWick/ts,1)+"t"+
+         " | BUY recovery Bid/Ask="+DoubleToString(buyBidRecovery/ts,1)+"/"+
             DoubleToString(buyAskRecovery/ts,1)+"t"+
-         " | SELL Bid/Ask retreat="+DoubleToString(sellBidRetreat/ts,1)+"/"+
+         " | SELL retreat Bid/Ask="+DoubleToString(sellBidRetreat/ts,1)+"/"+
             DoubleToString(sellAskRetreat/ts,1)+"t"+
-         " | turn BUY/SELL="+IntegerToString(powerD1BuyTurnCount[index])+"/"+
-            IntegerToString(powerD1SellTurnCount[index])+" of 3"+
+         " | tick turn BUY/SELL="+IntegerToString(powerD1BuyTurnCount[index])+"/"+
+            IntegerToString(powerD1SellTurnCount[index])+"/3"+
          " | layers="+IntegerToString(total)+"/"+IntegerToString(cap),barTime);
       return;
    }
@@ -2391,6 +2470,10 @@ void managePowerfullSymbol(int index){
       powerD1SellTurnCount[index]=0;
       powerD1TurnBar[index]=barTime;
       powerD1LastCountedTickMs[index]=tick.time_msc;
+      powerD1MedianRange[index]=0.0;
+      powerD1MedianBodyRatio[index]=0.0;
+      powerD1MedianWickRatio[index]=0.0;
+      powerD1ReferenceSamples[index]=0;
    }else{
       powerD1FallbackHigh[index]=MathMax(powerD1FallbackHigh[index],tick.bid);
       powerD1FallbackLow[index]=MathMin(powerD1FallbackLow[index],tick.bid);
@@ -2410,6 +2493,8 @@ void managePowerfullSymbol(int index){
       powerPublishState(index,"D1_TICK_CANDLE_WAIT","Waiting for a valid live tick to seed the current candle",barTime);
       return;
    }
+   // Build/retry the completed-candle distribution baseline; no per-tick history scan after success.
+   if(powerD1MedianRange[index]<=0.0)powerD1BuildDistributionReference(index);
 
    bool hasPreviousTick=(powerLastTickMs[index]>0);
    double previousBid=powerLastBid[index];
