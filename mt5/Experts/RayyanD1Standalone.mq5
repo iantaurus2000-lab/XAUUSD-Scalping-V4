@@ -106,6 +106,10 @@ double powerD1AskHigh[3],powerD1AskLow[3];
 // A12: live M5 candle distribution only. No completed-candle reference/history is used.
 long powerD1LastCountedTickMs[3];
 datetime powerMomentumLastEntryBar[3];
+// A5: tick-based weakening/reversal confirmation, reset on each new M5 candle.
+datetime powerEntrySignalBar[3];
+int powerBuyWeakTicks[3],powerSellWeakTicks[3];
+int powerBuyTurnTicks[3],powerSellTurnTicks[3];
 // E1/D1: first eligible entry time is gated by candle age; OHLC still resets per M5 bar.
 uint powerD1ScanStartedMs[3];
 datetime powerD1LastLayerCloseBar[3]; // at most one staged layer close per M5 candle
@@ -1873,7 +1877,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
 
    int candleAge=(int)(TimeCurrent()-barTime);
    int scanWait=MathMax(0,StandaloneScanWarmupSeconds);
-   if(candleAge<scanWait){
+   // A5: warm-up applies only to the first layer; additional layers react to live ticks.
+   if(total==0&&candleAge<scanWait){
       powerPublishState(index,"D1_SCAN_WARMUP",
          "M5 observation warm-up "+IntegerToString(candleAge)+"/"+
          IntegerToString(scanWait)+" seconds; warm-up is not an entry timer",barTime);
@@ -1894,6 +1899,11 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    if(powerMomentumLastEntryBar[index]!=barTime){
       powerMomentumLastBuyLow[index]=0.0;
       powerMomentumLastSellHigh[index]=0.0;
+   }
+   if(powerEntrySignalBar[index]!=barTime){
+      powerEntrySignalBar[index]=barTime;
+      powerBuyWeakTicks[index]=0; powerSellWeakTicks[index]=0;
+      powerBuyTurnTicks[index]=0; powerSellTurnTicks[index]=0;
    }
 
    // #95 live M5 candle distribution: no fixed tick-distance or historical candle window.
@@ -1926,28 +1936,40 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
                     powerD1LastCountedTickMs[index]!=tick.time_msc);
    if(freshQuote)powerD1LastCountedTickMs[index]=tick.time_msc;
 
-   // Bid and Ask must turn together. Rejection distance is range-relative, not 1 tick.
-   bool buyBidTurn=(freshQuote&&hasPreviousTick&&
-                    tick.bid>previousBid&&tick.ask>previousAsk);
-   bool sellBidTurn=(freshQuote&&hasPreviousTick&&
-                     tick.bid<previousBid&&tick.ask<previousAsk);
-   double rejectionNeed=range*0.12;
-   double wickNeed=range*0.15;
+   // A5: layer 1 detects stalling/weakening at the live extreme without waiting
+   // for a reversal tick. Layers 2+ need 3 consecutive ticks away from a new extreme.
    bool buyExtremeDistribution=(buyOpenExtension>=0.55&&
                                 bidLocation<=0.30&&askLocation<=0.35);
    bool sellExtremeDistribution=(sellOpenExtension>=0.55&&
                                  bidLocation>=0.70&&askLocation>=0.65);
-   bool buyCandleStructure=(candleRed&&lowerWick>=wickNeed&&
-                            buyBidRecovery>=rejectionNeed);
-   bool sellCandleStructure=(candleGreen&&upperWick>=wickNeed&&
-                             sellBidRetreat>=rejectionNeed);
-
-   bool buyReady=(buyFresh&&buyExtremeDistribution&&buyCandleStructure&&
-                  buyBidRecovery>=rejectionNeed&&buyAskRecovery>=rejectionNeed&&
-                  buyBidTurn&&buyN<cap);
-   bool sellReady=(sellFresh&&sellExtremeDistribution&&sellCandleStructure&&
-                   sellBidRetreat>=rejectionNeed&&sellAskRetreat>=rejectionNeed&&
-                   sellBidTurn&&sellN<cap);
+   bool buyWeakEdge=(candleRed&&buyExtremeDistribution);
+   bool sellWeakEdge=(candleGreen&&sellExtremeDistribution);
+   bool buyTickToward=(freshQuote&&hasPreviousTick&&tick.bid>previousBid&&tick.ask>previousAsk);
+   bool sellTickToward=(freshQuote&&hasPreviousTick&&tick.bid<previousBid&&tick.ask<previousAsk);
+   bool buyNoFreshLow=(freshQuote&&hasPreviousTick&&
+                       tick.bid>=previousBid-ts*0.1&&tick.ask>=previousAsk-ts*0.1);
+   bool sellNoFreshHigh=(freshQuote&&hasPreviousTick&&
+                         tick.bid<=previousBid+ts*0.1&&tick.ask<=previousAsk+ts*0.1);
+   if(freshQuote){
+      if(buyWeakEdge&&buyNoFreshLow)powerBuyWeakTicks[index]++;
+      else if(!buyWeakEdge||tick.bid<previousBid-ts*0.1||tick.ask<previousAsk-ts*0.1)
+         powerBuyWeakTicks[index]=0;
+      if(sellWeakEdge&&sellNoFreshHigh)powerSellWeakTicks[index]++;
+      else if(!sellWeakEdge||tick.bid>previousBid+ts*0.1||tick.ask>previousAsk+ts*0.1)
+         powerSellWeakTicks[index]=0;
+      if(buyWeakEdge&&buyTickToward)powerBuyTurnTicks[index]++;
+      else if(!buyWeakEdge||!buyTickToward)powerBuyTurnTicks[index]=0;
+      if(sellWeakEdge&&sellTickToward)powerSellTurnTicks[index]++;
+      else if(!sellWeakEdge||!sellTickToward)powerSellTurnTicks[index]=0;
+   }
+   bool buyCandleStructure=candleRed;
+   bool sellCandleStructure=candleGreen;
+   bool buyEntryConfirm=(total==0?powerBuyWeakTicks[index]>=2:powerBuyTurnTicks[index]>=3);
+   bool sellEntryConfirm=(total==0?powerSellWeakTicks[index]>=2:powerSellTurnTicks[index]>=3);
+   bool buyReady=(buyFresh&&buyExtremeDistribution&&buyCandleStructure&&buyEntryConfirm&&buyN<cap);
+   bool sellReady=(sellFresh&&sellExtremeDistribution&&sellCandleStructure&&sellEntryConfirm&&sellN<cap);
+   double rejectionNeed=range*0.12;
+   double wickNeed=range*0.15;
 
    double buyScore=buyOpenExtension+lowerWick/range+
                    buyBidRecovery/range+buyAskRecovery/range;
@@ -1966,8 +1988,10 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
             DoubleToString(buyAskRecovery/range*100.0,1)+"%"+
          " | SELL B/A="+DoubleToString(sellBidRetreat/range*100.0,1)+"/"+
             DoubleToString(sellAskRetreat/range*100.0,1)+"%"+
-         " | turn BUY/SELL="+(buyBidTurn?"1":"0")+"/"+
-            (sellBidTurn?"1":"0")+
+         " | weakTicks BUY/SELL="+IntegerToString(powerBuyWeakTicks[index])+"/"+
+            IntegerToString(powerSellWeakTicks[index])+" | turnTicks="+
+            IntegerToString(powerBuyTurnTicks[index])+"/"+
+            IntegerToString(powerSellTurnTicks[index])+
          " | spread(info)="+DoubleToString((tick.ask-tick.bid)/ts,1)+"t"+
          " | layers="+IntegerToString(total)+"/"+IntegerToString(cap),barTime);
       return;
@@ -2013,7 +2037,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       if(side>0)powerMomentumLastBuyLow[index]=candleLow;
       else powerMomentumLastSellHigh[index]=candleHigh;
       powerMomentumLastEntryBar[index]=barTime;
-      Print("D1 #95 LIVE-CANDLE ENTRY OK ",symbol,
+      Print("D1 A5 LIVE-CANDLE ENTRY OK ",symbol,
             " side=",(side>0?"BUY_RED_LOW":"SELL_GREEN_HIGH"),
             " layer=",total+1,"/",cap,
             " liveRangeTicks=",DoubleToString(range/ts,1),
@@ -2022,7 +2046,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       powerPublishState(index,"D1_95_LIVE_CANDLE_ENTRY_SENT",
          string(side>0?"BUY on RED candle near Low":"SELL on GREEN candle near High")+
          " | layer="+IntegerToString(total+1)+"/"+IntegerToString(cap)+
-         " | live M5 range="+DoubleToString(range/ts,1)+" ticks",barTime);
+         " | live M5 range="+DoubleToString(range/ts,1)+" ticks"+
+         " | confirm="+(total==0?"weakness-2-ticks":"reversal-3-ticks"),barTime);
    }else{
       Print("D1 #95 LIVE-CANDLE ENTRY FAILED ",symbol,
             " side=",(side>0?"BUY_RED_LOW":"SELL_GREEN_HIGH"),
@@ -2143,6 +2168,7 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       string adverseKey="PW_RISK_ADVERSE_"+suffix;
       string recoveryKey="PW_RISK_RECOVERY_"+suffix;
       string lastPxKey="PW_RISK_LASTPX_"+suffix;
+      string recoveryTicksKey="PW_RISK_REC_TICKS_"+suffix;
 
       if(!GlobalVariableCheck(peakKey))GlobalVariableSet(peakKey,px);
       double peak=GlobalVariableGet(peakKey);
@@ -2183,9 +2209,17 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       }
       bool movingAgainst=(havePreviousExit&&
          (isBuy?px<previousExitPx-ts*0.1:px>previousExitPx+ts*0.1));
+      bool movingTowardEntry=(havePreviousExit&&
+         (isBuy?px>previousExitPx+ts*0.1:px<previousExitPx-ts*0.1));
+      int recoveryTickCount=(GlobalVariableCheck(recoveryTicksKey)?
+         (int)GlobalVariableGet(recoveryTicksKey):0);
+      if(riskArmed&&movingTowardEntry)recoveryTickCount++;
+      else if(riskArmed&&movingAgainst)recoveryTickCount=0;
+      GlobalVariableSet(recoveryTicksKey,(double)recoveryTickCount);
       GlobalVariableSet(lastPxKey,px);
 
       bool riskExit=false;
+      bool riskRecoveryScalpExit=false;
       if(riskArmed){
          if(!GlobalVariableCheck(recoveryKey))GlobalVariableSet(recoveryKey,px);
          double recoveryExtreme=GlobalVariableGet(recoveryKey);
@@ -2208,6 +2242,11 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
          bool stillNearEntry=(locked>=-nearEntry);
          riskExit=(recoveryMeaningful&&recoveryReachedEntry&&reversalConfirmed&&
                    movingAgainst&&stillNearEntry);
+         // A5: recover toward entry for 3 consecutive ticks; close on small positive net.
+         double smallProfitCeiling=MathMax(minLock*4.0,(hard>0.0?hard*0.15:minLock*4.0));
+         bool nearEntryProfit=(locked>=minLock&&locked<=smallProfitCeiling&&net>0.0);
+         riskRecoveryScalpExit=(riskArmed&&recoveryTickCount>=3&&
+                                nearEntryProfit&&movingTowardEntry);
       }
 
       double retrace=(isBuy?peak-px:px-peak);
@@ -2225,7 +2264,8 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
                              retrace>=stagedRetrace&&movingAgainst&&candleReversal);
 
       string candidateReason="";
-      if(riskExit)candidateReason="E1_RISK_RECOVERY_FAILED_EXIT";
+      if(riskRecoveryScalpExit)candidateReason="A5_RISK_RECOVERY_SMALL_PROFIT";
+      else if(riskExit)candidateReason="E1_RISK_RECOVERY_FAILED_EXIT";
       else if(stagedProfitExit)candidateReason="D1_STAGED_30PCT_PROFIT_REVERSAL";
       if(candidateReason!=""){
          double distance=MathAbs(px-entry);
