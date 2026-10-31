@@ -2113,8 +2113,9 @@ bool powerClosePosition(ulong ticket,string reason){
    if(ok&&(rc==TRADE_RETCODE_DONE||rc==TRADE_RETCODE_DONE_PARTIAL)){
       Print("POWERFULL CLOSE OK symbol=",symbol," ticket=",ticket," reason=",reason," retcode=",rc);
       string suffix=IntegerToString((long)ticket);
-      string keys[7]={"PW_HMODE_","PW_HBAR_","PW_PEAK_","PW_RISK_ARM_",
-                      "PW_RISK_ADVERSE_","PW_RISK_RECOVERY_","PW_RISK_LASTPX_"};
+      string keys[8]={"PW_HMODE_","PW_HBAR_","PW_PEAK_","PW_RISK_ARM_",
+                      "PW_RISK_ADVERSE_","PW_RISK_RECOVERY_","PW_RISK_LASTPX_",
+                      "PW_RISK_REC_TICKS_"};
       for(int k=0;k<ArraySize(keys);k++){
          string key=keys[k]+suffix;
          if(GlobalVariableCheck(key))GlobalVariableDel(key);
@@ -2213,8 +2214,10 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
          (isBuy?px>previousExitPx+ts*0.1:px<previousExitPx-ts*0.1));
       int recoveryTickCount=(GlobalVariableCheck(recoveryTicksKey)?
          (int)GlobalVariableGet(recoveryTicksKey):0);
-      if(riskArmed&&movingTowardEntry)recoveryTickCount++;
-      else if(riskArmed&&movingAgainst)recoveryTickCount=0;
+      if(riskArmed){
+         if(movingTowardEntry)recoveryTickCount++;
+         else recoveryTickCount=0; // strictly consecutive favorable ticks
+      }
       GlobalVariableSet(recoveryTicksKey,(double)recoveryTickCount);
       GlobalVariableSet(lastPxKey,px);
 
@@ -2243,7 +2246,8 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
          riskExit=(recoveryMeaningful&&recoveryReachedEntry&&reversalConfirmed&&
                    movingAgainst&&stillNearEntry);
          // A5: recover toward entry for 3 consecutive ticks; close on small positive net.
-         double smallProfitCeiling=MathMax(minLock*4.0,(hard>0.0?hard*0.15:minLock*4.0));
+         double smallProfitCeiling=(hard>0.0?
+            MathMax(minLock,MathMin(minLock*4.0,hard*0.15)):minLock*4.0);
          bool nearEntryProfit=(locked>=minLock&&locked<=smallProfitCeiling&&net>0.0);
          riskRecoveryScalpExit=(riskArmed&&recoveryTickCount>=3&&
                                 nearEntryProfit&&movingTowardEntry);
