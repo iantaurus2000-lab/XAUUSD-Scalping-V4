@@ -2126,7 +2126,7 @@ bool powerClosePosition(ulong ticket,string reason){
 }
 
 void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double candleOpen,
-                          bool hasPreviousTick,double previousBid,double previousAsk){
+                          bool candleJustChanged,bool hasPreviousTick,double previousBid,double previousAsk){
    if(index<0||index>=ArraySize(powerSymbols))return;
    string symbol=powerSymbols[index];
    double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
@@ -2241,7 +2241,8 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
                                          px-recoveryExtreme>=reversalConfirmDistance);
          double locked=(isBuy?px-entry:entry-px);
          bool stillNearEntry=(locked>=-nearEntry);
-         riskExit=(recoveryMeaningful&&recoveryReachedEntry&&reversalConfirmed&&
+         // A6: rescue exit is allowed only when the projected net result is positive.
+         riskExit=(net>0.0&&recoveryMeaningful&&recoveryReachedEntry&&reversalConfirmed&&
                    movingAgainst&&stillNearEntry);
          // A5: recover toward entry for 3 consecutive ticks; close on small positive net.
          double smallProfitCeiling=(hard>0.0?
@@ -2261,9 +2262,10 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       // Exit requires 3+ completed M5 candles, 30% peak-profit pullback,
       // positive net P/L, and an actual reversal against the position.
       double stagedRetrace=MathMax(trail,peakGain*0.30);
-      bool candleReversal=(isBuy?tick.bid<candleOpen:tick.bid>candleOpen);
+      // A6: candle color/open at a new bar is not a close signal. Profit exit is
+      // based on actual tick movement against the position and the 30% profit retracement.
       bool stagedProfitExit=(net>0.0&&held>=3&&locked>=minLock&&peakGain>=minLock&&
-                             retrace>=stagedRetrace&&movingAgainst&&candleReversal);
+                             retrace>=stagedRetrace&&movingAgainst);
 
       string candidateReason="";
       if(riskRecoveryScalpExit)candidateReason="A5_RISK_RECOVERY_SMALL_PROFIT";
@@ -2280,7 +2282,8 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
    }
 
    // Close only one eligible layer per M5 candle, nearest entry to executable Bid/Ask first.
-   if(closeCandidate>0&&powerD1LastLayerCloseBar[index]!=barTime){
+   // A6: never execute a close on the first live tick of a newly opened M5 candle.
+   if(closeCandidate>0&&!candleJustChanged&&powerD1LastLayerCloseBar[index]!=barTime){
       if(powerClosePosition(closeCandidate,closeReason))
          powerD1LastLayerCloseBar[index]=barTime;
    }
@@ -2410,6 +2413,7 @@ void managePowerfullSymbol(int index){
    datetime tickTime=(datetime)(tick.time_msc/1000);
    datetime barTime=iTime(symbol,PERIOD_M5,0);
    if(barTime<=0)barTime=(datetime)(((long)tickTime/300)*300);
+   bool candleJustChanged=(powerD1FallbackBar[index]>0&&powerD1FallbackBar[index]!=barTime);
    double candleOpen=iOpen(symbol,PERIOD_M5,0);
    double candleHigh=iHigh(symbol,PERIOD_M5,0);
    double candleLow=iLow(symbol,PERIOD_M5,0);
@@ -2443,7 +2447,8 @@ void managePowerfullSymbol(int index){
    bool hasPreviousTick=(powerLastTickMs[index]>0);
    double previousBid=powerLastBid[index];
    double previousAsk=powerLastAsk[index];
-   powerManagePositions(index,tick,barTime,candleOpen,hasPreviousTick,previousBid,previousAsk);
+   powerManagePositions(index,tick,barTime,candleOpen,candleJustChanged,
+                         hasPreviousTick,previousBid,previousAsk);
    powerLastBid[index]=tick.bid;
    powerLastAsk[index]=tick.ask;
    powerLastTickMs[index]=tick.time_msc;
