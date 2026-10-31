@@ -1894,8 +1894,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
 
    // Each new M5 candle gets a fresh entry-extreme baseline.
    // Existing positions remain open and the global basket cap remains five.
-   // Within the candle, each additional layer requires a fresh extreme and a
-   // confirmed live rejection; no completed-candle range/history is consulted.
+   // Within the candle, each additional layer requires a fresh extreme and
+   // three consecutive favorable ticks; no completed-candle history is consulted.
    if(powerMomentumLastEntryBar[index]!=barTime){
       powerMomentumLastBuyLow[index]=0.0;
       powerMomentumLastSellHigh[index]=0.0;
@@ -1917,8 +1917,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
 
    double upperWick=candleHigh-MathMax(candleOpen,tick.bid);
    double lowerWick=MathMin(candleOpen,tick.bid)-candleLow;
-   double body=MathAbs(tick.bid-candleOpen);
-   double buyBidRecovery=tick.bid-candleLow;
+remove unused body   double buyBidRecovery=tick.bid-candleLow;
    double buyAskRecovery=tick.ask-askLow;
    double sellBidRetreat=candleHigh-tick.bid;
    double sellAskRetreat=askHigh-tick.ask;
@@ -1968,9 +1967,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    bool sellEntryConfirm=(total==0?powerSellWeakTicks[index]>=2:powerSellTurnTicks[index]>=3);
    bool buyReady=(buyFresh&&buyExtremeDistribution&&buyCandleStructure&&buyEntryConfirm&&buyN<cap);
    bool sellReady=(sellFresh&&sellExtremeDistribution&&sellCandleStructure&&sellEntryConfirm&&sellN<cap);
-   double rejectionNeed=range*0.12;
-   double wickNeed=range*0.15;
-
+remove obsolete rejection gates
    double buyScore=buyOpenExtension+lowerWick/range+
                    buyBidRecovery/range+buyAskRecovery/range;
    double sellScore=sellOpenExtension+upperWick/range+
@@ -2028,8 +2025,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    powerTrade.SetAsyncMode(false);
    ResetLastError();
    bool sent=(side>0?
-      powerTrade.Buy(lot,symbol,0.0,sl,0.0,"D1-95-LIVE-RED-LOW-BUY"):
-      powerTrade.Sell(lot,symbol,0.0,sl,0.0,"D1-95-LIVE-GREEN-HIGH-SELL"));
+      powerTrade.Buy(lot,symbol,0.0,sl,0.0,"D1-A5-LIVE-RED-LOW-BUY"):
+      powerTrade.Sell(lot,symbol,0.0,sl,0.0,"D1-A5-LIVE-GREEN-HIGH-SELL"));
    uint rc=powerTrade.ResultRetcode();
 
    if(sent&&(rc==TRADE_RETCODE_DONE||rc==TRADE_RETCODE_PLACED||
