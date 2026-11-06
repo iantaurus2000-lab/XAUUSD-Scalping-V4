@@ -109,7 +109,6 @@ datetime powerMomentumLastEntryBar[3];
 // A5: tick-based weakening/reversal confirmation, reset on each new M5 candle.
 datetime powerEntrySignalBar[3];
 int powerBuyWeakTicks[3],powerSellWeakTicks[3];
-int powerBuyTurnTicks[3],powerSellTurnTicks[3];
 // E1/D1: first eligible entry time is gated by candle age; OHLC still resets per M5 bar.
 uint powerD1ScanStartedMs[3];
 datetime powerD1LastLayerCloseBar[3]; // at most one staged layer close per M5 candle
@@ -1903,7 +1902,6 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    if(powerEntrySignalBar[index]!=barTime){
       powerEntrySignalBar[index]=barTime;
       powerBuyWeakTicks[index]=0; powerSellWeakTicks[index]=0;
-      powerBuyTurnTicks[index]=0; powerSellTurnTicks[index]=0;
    }
 
    // #95 live M5 candle distribution: no fixed tick-distance or historical candle window.
@@ -1944,8 +1942,6 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
                                  bidLocation>=0.70&&askLocation>=0.65);
    bool buyWeakEdge=(candleRed&&buyExtremeDistribution);
    bool sellWeakEdge=(candleGreen&&sellExtremeDistribution);
-   bool buyTickToward=(freshQuote&&hasPreviousTick&&tick.bid>previousBid&&tick.ask>previousAsk);
-   bool sellTickToward=(freshQuote&&hasPreviousTick&&tick.bid<previousBid&&tick.ask<previousAsk);
    bool buyNoFreshLow=(freshQuote&&hasPreviousTick&&
                        tick.bid>=previousBid-ts*0.1&&tick.ask>=previousAsk-ts*0.1);
    bool sellNoFreshHigh=(freshQuote&&hasPreviousTick&&
@@ -1957,15 +1953,14 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       if(sellWeakEdge&&sellNoFreshHigh)powerSellWeakTicks[index]++;
       else if(!sellWeakEdge||tick.bid>previousBid+ts*0.1||tick.ask>previousAsk+ts*0.1)
          powerSellWeakTicks[index]=0;
-      if(buyWeakEdge&&buyTickToward)powerBuyTurnTicks[index]++;
-      else if(!buyWeakEdge||!buyTickToward)powerBuyTurnTicks[index]=0;
-      if(sellWeakEdge&&sellTickToward)powerSellTurnTicks[index]++;
-      else if(!sellWeakEdge||!sellTickToward)powerSellTurnTicks[index]=0;
    }
    bool buyCandleStructure=candleRed;
    bool sellCandleStructure=candleGreen;
-   bool buyEntryConfirm=(total==0?powerBuyWeakTicks[index]>=2:powerBuyTurnTicks[index]>=3);
-   bool sellEntryConfirm=(total==0?powerSellWeakTicks[index]>=2:powerSellTurnTicks[index]>=3);
+   // Every layer uses the same live-extreme weakening evidence: two fresh quote
+   // observations where the weak edge persists without extending the extreme.
+   // This confirms stalling at the new extreme, not a price reversal away from it.
+   bool buyEntryConfirm=(powerBuyWeakTicks[index]>=2);
+   bool sellEntryConfirm=(powerSellWeakTicks[index]>=2);
    bool buyReady=(buyFresh&&buyExtremeDistribution&&buyCandleStructure&&buyEntryConfirm&&buyN<cap);
    bool sellReady=(sellFresh&&sellExtremeDistribution&&sellCandleStructure&&sellEntryConfirm&&sellN<cap);
    // Entry readiness is governed by the agreed A5 weakness conditions above.
@@ -1987,9 +1982,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
          " | SELL B/A="+DoubleToString(sellBidRetreat/range*100.0,1)+"/"+
             DoubleToString(sellAskRetreat/range*100.0,1)+"%"+
          " | weakTicks BUY/SELL="+IntegerToString(powerBuyWeakTicks[index])+"/"+
-            IntegerToString(powerSellWeakTicks[index])+" | turnTicks="+
-            IntegerToString(powerBuyTurnTicks[index])+"/"+
-            IntegerToString(powerSellTurnTicks[index])+
+            IntegerToString(powerSellWeakTicks[index])+
          " | spread(info)="+DoubleToString((tick.ask-tick.bid)/ts,1)+"t"+
          " | layers="+IntegerToString(total)+"/"+IntegerToString(cap),barTime);
       return;
@@ -2045,7 +2038,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
          string(side>0?"BUY on RED candle near Low":"SELL on GREEN candle near High")+
          " | layer="+IntegerToString(total+1)+"/"+IntegerToString(cap)+
          " | live M5 range="+DoubleToString(range/ts,1)+" ticks"+
-         " | confirm="+(total==0?"weakness-2-ticks":"reversal-3-ticks"),barTime);
+         " | confirm=weak-edge-stall-2-quotes (no reversal wait)",barTime);
    }else{
       Print("D1 #95 LIVE-CANDLE ENTRY FAILED ",symbol,
             " side=",(side>0?"BUY_RED_LOW":"SELL_GREEN_HIGH"),
