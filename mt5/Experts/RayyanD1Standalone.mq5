@@ -175,6 +175,117 @@ bool powerConfigFresh(int index);
 bool powerHasPendingOnBar(string symbol,datetime barTime);
 
 
+
+#define POWERFULL_REPORT_DIR "RAYYAN_REPORTS"
+#define POWERFULL_RECORDER_FILE "RAYYAN_REPORTS\\\\RAYYAN_LOSS_RECORDER.csv"
+#define POWERFULL_ANALYSIS_FILE "RAYYAN_REPORTS\\\\RAYYAN_LOSS_ANALYSIS.html"
+
+string powerReportSide(ENUM_DEAL_TYPE type){
+   if(type==DEAL_TYPE_BUY)return "BUY";
+   if(type==DEAL_TYPE_SELL)return "SELL";
+   return EnumToString(type);
+}
+void powerAppendDealRecord(ulong deal){
+   if(deal==0||!HistoryDealSelect(deal))return;
+   if((long)HistoryDealGetInteger(deal,DEAL_MAGIC)!=POWERFULL_MAGIC)return;
+   string symbol=HistoryDealGetString(deal,DEAL_SYMBOL);
+   ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
+   ENUM_DEAL_TYPE type=(ENUM_DEAL_TYPE)HistoryDealGetInteger(deal,DEAL_TYPE);
+   datetime when=(datetime)HistoryDealGetInteger(deal,DEAL_TIME);
+   ulong positionId=(ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID);
+   double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+   int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+   int slPoints=(type==DEAL_TYPE_BUY?StandaloneSLBuyPoints:StandaloneSLSellPoints);
+   double actualSL=0.0;
+   string slState="NOT_AVAILABLE_AFTER_CLOSE";
+   if(entry==DEAL_ENTRY_IN||entry==DEAL_ENTRY_INOUT){
+      for(int p=PositionsTotal()-1;p>=0;p--){
+         ulong ticket=PositionGetTicket(p);
+         if(ticket==0||!PositionSelectByTicket(ticket))continue;
+         if(PositionGetString(POSITION_SYMBOL)!=symbol||
+            (long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
+         if((ulong)PositionGetInteger(POSITION_IDENTIFIER)!=positionId)continue;
+         actualSL=PositionGetDouble(POSITION_SL);
+         slState=(actualSL>0.0?"SET":"MISSING");
+         break;
+      }
+   }
+   int h=FileOpen(POWERFULL_RECORDER_FILE,FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,';');
+   if(h==INVALID_HANDLE){Print("POWERFULL REPORT CSV OPEN FAILED err=",GetLastError());return;}
+   if(FileSize(h)==0)
+      FileWrite(h,"time","deal_ticket","position_id","symbol","entry_type","side","volume","price",
+                "sl_points_setting","sl_price_distance","actual_sl_price","sl_state",
+                "deal_profit","swap","commission","fee","net","reason","comment");
+   FileSeek(h,0,SEEK_END);
+   double profit=HistoryDealGetDouble(deal,DEAL_PROFIT);
+   double swap=HistoryDealGetDouble(deal,DEAL_SWAP);
+   double commission=HistoryDealGetDouble(deal,DEAL_COMMISSION);
+   double fee=HistoryDealGetDouble(deal,DEAL_FEE);
+   FileWrite(h,TimeToString(when,TIME_DATE|TIME_SECONDS),(string)deal,(string)positionId,symbol,
+      EnumToString(entry),powerReportSide(type),
+      DoubleToString(HistoryDealGetDouble(deal,DEAL_VOLUME),8),
+      DoubleToString(HistoryDealGetDouble(deal,DEAL_PRICE),digits),
+      slPoints,DoubleToString(slPoints*point,digits),
+      (actualSL>0.0?DoubleToString(actualSL,digits):""),
+      slState,DoubleToString(profit,2),DoubleToString(swap,2),
+      DoubleToString(commission,2),DoubleToString(fee,2),
+      DoubleToString(profit+swap+commission+fee,2),
+      EnumToString((ENUM_DEAL_REASON)HistoryDealGetInteger(deal,DEAL_REASON)),
+      HistoryDealGetString(deal,DEAL_COMMENT));
+   FileClose(h);
+}
+void powerWriteAnalysisReport(){
+   datetime to=TimeCurrent(),from=to-90*86400;
+   if(!HistorySelect(from,to))return;
+   int h=FileOpen(POWERFULL_ANALYSIS_FILE,FILE_WRITE|FILE_TXT|FILE_ANSI);
+   if(h==INVALID_HANDLE){Print("POWERFULL REPORT HTML OPEN FAILED err=",GetLastError());return;}
+   int entries=0,exits=0,wins=0,losses=0;
+   double gross=0.0,net=0.0;
+   string rows="";
+   for(int i=0;i<HistoryDealsTotal();i++){
+      ulong deal=HistoryDealGetTicket(i);
+      if(deal==0||(long)HistoryDealGetInteger(deal,DEAL_MAGIC)!=POWERFULL_MAGIC)continue;
+      string symbol=HistoryDealGetString(deal,DEAL_SYMBOL);
+      ENUM_DEAL_ENTRY en=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
+      ENUM_DEAL_TYPE side=(ENUM_DEAL_TYPE)HistoryDealGetInteger(deal,DEAL_TYPE);
+      double profit=HistoryDealGetDouble(deal,DEAL_PROFIT);
+      double swap=HistoryDealGetDouble(deal,DEAL_SWAP);
+      double commission=HistoryDealGetDouble(deal,DEAL_COMMISSION);
+      double fee=HistoryDealGetDouble(deal,DEAL_FEE);
+      double dealNet=profit+swap+commission+fee;
+      if(en==DEAL_ENTRY_IN||en==DEAL_ENTRY_INOUT)entries++;
+      if(en==DEAL_ENTRY_OUT||en==DEAL_ENTRY_OUT_BY||en==DEAL_ENTRY_INOUT){
+         exits++;gross+=profit;net+=dealNet;
+         if(dealNet>0.0)wins++;else if(dealNet<0.0)losses++;
+      }
+      rows+="<tr><td>"+TimeToString((datetime)HistoryDealGetInteger(deal,DEAL_TIME),TIME_DATE|TIME_MINUTES)+
+         "</td><td>"+symbol+"</td><td>"+EnumToString(en)+"</td><td>"+powerReportSide(side)+
+         "</td><td>"+DoubleToString(HistoryDealGetDouble(deal,DEAL_VOLUME),2)+
+         "</td><td>"+DoubleToString(HistoryDealGetDouble(deal,DEAL_PRICE),(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))+
+         "</td><td>"+DoubleToString(dealNet,2)+"</td><td>"+
+         EnumToString((ENUM_DEAL_REASON)HistoryDealGetInteger(deal,DEAL_REASON))+"</td></tr>";
+   }
+   string html="<!doctype html><html><head><meta charset='utf-8'><title>Rayyan POWERFULL Analysis</title>"+
+      "<style>body{font-family:Arial,sans-serif;margin:24px;color:#202124}table{border-collapse:collapse;width:100%}"+
+      "th,td{border:1px solid #ddd;padding:7px;text-align:left}th{background:#eee}</style></head><body>"+
+      "<h1>Rayyan POWERFULL Analysis</h1><p>Period: last 90 days | Generated: "+
+      TimeToString(to,TIME_DATE|TIME_SECONDS)+"</p><ul><li>Entry deals: "+IntegerToString(entries)+
+      "</li><li>Exit deals: "+IntegerToString(exits)+"</li><li>Winning exits: "+IntegerToString(wins)+
+      "</li><li>Losing exits: "+IntegerToString(losses)+"</li><li>Gross profit: "+DoubleToString(gross,2)+
+      "</li><li>Net result: "+DoubleToString(net,2)+"</li></ul><table><thead><tr><th>Time</th><th>Symbol</th>"+
+      "<th>Entry</th><th>Side</th><th>Volume</th><th>Price</th><th>Net</th><th>Reason</th></tr></thead><tbody>"+
+      rows+"</tbody></table></body></html>";
+   FileWriteString(h,html);
+   FileClose(h);
+}
+void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &request,const MqlTradeResult &result){
+   if(trans.type!=TRADE_TRANSACTION_DEAL_ADD||trans.deal==0)return;
+   if(!HistoryDealSelect(trans.deal))return;
+   if((long)HistoryDealGetInteger(trans.deal,DEAL_MAGIC)!=POWERFULL_MAGIC)return;
+   powerAppendDealRecord(trans.deal);
+   powerWriteAnalysisReport();
+}
+
 int OnInit(){
    // Remove legacy chart-attached EMA/MA indicators and old Rayyan EMA objects.
    // The EA below is the sole owner of the two colored EMA curves.
@@ -201,6 +312,8 @@ int OnInit(){
       powerCfg[0].minHoldCandles=0;
       powerCfg[0].reason=(powerCfg[0].enabled?"STANDALONE_READY":"STANDALONE_CONFIG_INVALID");
       powerConfigReceivedMs[0]=1;
+      FolderCreate(POWERFULL_REPORT_DIR);
+      powerWriteAnalysisReport();
       int symbolDigits=(int)SymbolInfoInteger(directSymbol,SYMBOL_DIGITS);
       double symbolPoint=SymbolInfoDouble(directSymbol,SYMBOL_POINT);
       Print("D1 STANDALONE MODE symbol=",directSymbol," lot=",DoubleToString(StandaloneLot,2),
@@ -234,6 +347,7 @@ int OnInit(){
    if(StandaloneD1Mode) Print("RAYYAN D1 STANDALONE READY: no Gateway/WebRequest calls will be made.");
    else Print("RAYYAN4 START Gateway=",GatewayUrl," Symbol=",AllowedSymbol,
          " trade queue=/next indicator queue=/indicator_next");
+   if(StandaloneD1Mode){FolderCreate(POWERFULL_REPORT_DIR);powerWriteAnalysisReport();}
    return(INIT_SUCCEEDED);
 }
 void OnDeinit(const int r){
