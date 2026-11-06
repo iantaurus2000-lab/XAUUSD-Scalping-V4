@@ -195,7 +195,8 @@ void powerAppendDealRecord(ulong deal){
    ulong positionId=(ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID);
    double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
    int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
-   int slPoints=(type==DEAL_TYPE_BUY?StandaloneSLBuyPoints:StandaloneSLSellPoints);
+   bool positionBuy=((entry==DEAL_ENTRY_OUT||entry==DEAL_ENTRY_OUT_BY)?(type==DEAL_TYPE_SELL):(type==DEAL_TYPE_BUY));
+   int slPoints=(positionBuy?StandaloneSLBuyPoints:StandaloneSLSellPoints);
    double actualSL=0.0;
    string slState="NOT_AVAILABLE_AFTER_CLOSE";
    if(entry==DEAL_ENTRY_IN||entry==DEAL_ENTRY_INOUT){
