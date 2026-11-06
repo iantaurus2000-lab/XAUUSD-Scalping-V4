@@ -177,8 +177,8 @@ bool powerHasPendingOnBar(string symbol,datetime barTime);
 
 
 #define POWERFULL_REPORT_DIR "RAYYAN_REPORTS"
-#define POWERFULL_RECORDER_FILE "RAYYAN_REPORTS\\\\RAYYAN_LOSS_RECORDER.csv"
-#define POWERFULL_ANALYSIS_FILE "RAYYAN_REPORTS\\\\RAYYAN_LOSS_ANALYSIS.html"
+#define POWERFULL_RECORDER_FILE "RAYYAN_REPORTS\\RAYYAN_LOSS_RECORDER.csv"
+#define POWERFULL_ANALYSIS_FILE "RAYYAN_REPORTS\\RAYYAN_LOSS_ANALYSIS.html"
 
 string powerReportSide(ENUM_DEAL_TYPE type){
    if(type==DEAL_TYPE_BUY)return "BUY";
@@ -2105,6 +2105,40 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
 
    if(sent&&(rc==TRADE_RETCODE_DONE||rc==TRADE_RETCODE_PLACED||
              rc==TRADE_RETCODE_DONE_PARTIAL)){
+      // Verify the broker-side SL on the newly opened POWERFULL position.
+      ulong verifiedTicket=0;
+      long newestPositionMs=-1;
+      double actualSL=0.0;
+      for(int p=PositionsTotal()-1;p>=0;p--){
+         ulong pt=PositionGetTicket(p);
+         if(pt==0||!PositionSelectByTicket(pt))continue;
+         if(PositionGetString(POSITION_SYMBOL)!=symbol||
+            (long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
+         ENUM_POSITION_TYPE pside=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+         if((side>0&&pside!=POSITION_TYPE_BUY)||(side<0&&pside!=POSITION_TYPE_SELL))continue;
+         long openedMs=PositionGetInteger(POSITION_TIME_MSC);
+         if(openedMs>=newestPositionMs){
+            newestPositionMs=openedMs;
+            verifiedTicket=pt;
+            actualSL=PositionGetDouble(POSITION_SL);
+         }
+      }
+      if(verifiedTicket>0&&(actualSL<=0.0||MathAbs(actualSL-sl)>ts*0.5)){
+         ResetLastError();
+         bool modified=powerTrade.PositionModify(verifiedTicket,sl,0.0);
+         uint modifyRc=powerTrade.ResultRetcode();
+         if(PositionSelectByTicket(verifiedTicket))actualSL=PositionGetDouble(POSITION_SL);
+         Print("D1 SL VERIFY symbol=",symbol," ticket=",verifiedTicket,
+            " modify=",modified," retcode=",modifyRc,
+            " requestedSL=",DoubleToString(sl,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " actualSL=",DoubleToString(actualSL,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " status=",(actualSL>0.0&&MathAbs(actualSL-sl)<=ts*0.5?"VERIFIED":"CHECK_REQUIRED"),
+            " err=",GetLastError());
+      }else if(verifiedTicket==0){
+         Print("D1 SL VERIFY PENDING symbol=",symbol," side=",(side>0?"BUY":"SELL"),
+               " deal=",powerTrade.ResultDeal()," requestedSL=",
+               DoubleToString(sl,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)));
+      }
       if(side>0)powerMomentumLastBuyLow[index]=candleLow;
       else powerMomentumLastSellHigh[index]=candleHigh;
       powerMomentumLastEntryBar[index]=barTime;
