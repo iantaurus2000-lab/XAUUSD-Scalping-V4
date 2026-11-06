@@ -14,8 +14,7 @@ input double StandaloneLot=0.01;
 input int StandaloneSLBuyPoints=0;
 input int StandaloneSLSellPoints=0;
 input int StandaloneMaxLayers=5; // configurable 1..5; A6 default allows five layers
-// E1: allow the new M5 candle to develop before any first/layer entry.
-input int StandaloneScanWarmupSeconds=30;
+// POWERFULL final: no time-based entry warm-up.
 input int PollSeconds=1;
 // After TP1 is reached, close on a confirmed M1 reversal before TP2.
 input bool EnableTP2RetraceProtection=true;
@@ -109,11 +108,7 @@ double powerD1AskHigh[3],powerD1AskLow[3];
 // A12: live M5 candle distribution only. No completed-candle reference/history is used.
 long powerD1LastCountedTickMs[3];
 datetime powerMomentumLastEntryBar[3];
-// Entry weakening evidence is reset on each new M5 candle.
-datetime powerEntrySignalBar[3];
-int powerBuyWeakTicks[3],powerSellWeakTicks[3];
-// E1/D1: first eligible entry time is gated by candle age; OHLC still resets per M5 bar.
-uint powerD1ScanStartedMs[3];
+// Successful-entry extremes persist within each M5 candle for subsequent layers.
 uint powerStatsCalcMs[3];
 int powerStatsWins[3];
 int powerStatsLosses[3];
@@ -206,11 +201,14 @@ int OnInit(){
       powerCfg[0].minHoldCandles=0;
       powerCfg[0].reason=(powerCfg[0].enabled?"STANDALONE_READY":"STANDALONE_CONFIG_INVALID");
       powerConfigReceivedMs[0]=1;
+      int symbolDigits=(int)SymbolInfoInteger(directSymbol,SYMBOL_DIGITS);
+      double symbolPoint=SymbolInfoDouble(directSymbol,SYMBOL_POINT);
       Print("D1 STANDALONE MODE symbol=",directSymbol," lot=",DoubleToString(StandaloneLot,2),
-         " SLbuy=",StandaloneSLBuyPoints," SLsell=",StandaloneSLSellPoints,
-         " maxLayers=",StandaloneMaxLayers,
-         " enabled=",powerCfg[0].enabled,
-         " | BUY/SELL SL points must be positive before enabling Algo Trading");
+         " Digits=",symbolDigits," Point=",DoubleToString(symbolPoint,symbolDigits+2),
+         " SLbuy=",StandaloneSLBuyPoints," POINT (price distance=",DoubleToString(StandaloneSLBuyPoints*symbolPoint,symbolDigits),")",
+         " SLsell=",StandaloneSLSellPoints," POINT (price distance=",DoubleToString(StandaloneSLSellPoints*symbolPoint,symbolDigits),")",
+         " maxLayers=",StandaloneMaxLayers," enabled=",powerCfg[0].enabled,
+         " | SL inputs use POINT only; no pip conversion");
    }else{
       for(int i=0;i<ArraySize(powerSymbols);i++){
          if(powerSymbols[i]=="")continue;
@@ -1878,15 +1876,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       return;
    }
 
-   int candleAge=(int)(TimeCurrent()-barTime);
-   int scanWait=MathMax(0,StandaloneScanWarmupSeconds);
-   // A5: warm-up applies only to the first layer; additional layers react to live ticks.
-   if(total==0&&candleAge<scanWait){
-      powerPublishState(index,"D1_SCAN_WARMUP",
-         "M5 observation warm-up "+IntegerToString(candleAge)+"/"+
-         IntegerToString(scanWait)+" seconds; warm-up is not an entry timer",barTime);
-      return;
-   }
+   // No warm-up timer: evaluate the current M5 candle as soon as live OHLC is valid.
 
    double range=candleHigh-candleLow;
    if(range<=0.0){
@@ -1897,15 +1887,11 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
 
    // Each new M5 candle gets a fresh entry-extreme baseline.
    // Existing positions remain open and the global basket cap remains five.
-   // Within the candle, each additional layer requires a fresh extreme and
-   // three consecutive favorable ticks; no completed-candle history is consulted.
+   // Every later layer needs a new weakening extreme within this candle.
+   // No timer, reversal wait, or tick-count confirmation is used.
    if(powerMomentumLastEntryBar[index]!=barTime){
       powerMomentumLastBuyLow[index]=0.0;
       powerMomentumLastSellHigh[index]=0.0;
-   }
-   if(powerEntrySignalBar[index]!=barTime){
-      powerEntrySignalBar[index]=barTime;
-      powerBuyWeakTicks[index]=0; powerSellWeakTicks[index]=0;
    }
 
    // #95 live M5 candle distribution: no fixed tick-distance or historical candle window.
@@ -1933,40 +1919,17 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    bool candleRed=(tick.bid<candleOpen);
    bool candleGreen=(tick.bid>candleOpen);
 
-   // Ignore duplicate OnTick/OnTimer processing of the same MT5 quote.
-   bool freshQuote=(tick.time_msc>0&&
-                    powerD1LastCountedTickMs[index]!=tick.time_msc);
-   if(freshQuote)powerD1LastCountedTickMs[index]=tick.time_msc;
-
-   // A5: layer 1 detects stalling/weakening at the live extreme without waiting
-   // for a reversal tick. Layers 2+ need 3 consecutive ticks away from a new extreme.
+   // Weakness is determined from the live M5 candle distribution at its extreme.
+   // Red candle near its developed Low = BUY; green candle near its developed High = SELL.
+   // No reversal tick or consecutive-tick confirmation is required.
    bool buyExtremeDistribution=(buyOpenExtension>=0.55&&
                                 bidLocation<=0.30&&askLocation<=0.35);
    bool sellExtremeDistribution=(sellOpenExtension>=0.55&&
                                  bidLocation>=0.70&&askLocation>=0.65);
-   bool buyWeakEdge=(candleRed&&buyExtremeDistribution);
-   bool sellWeakEdge=(candleGreen&&sellExtremeDistribution);
-   bool buyNoFreshLow=(freshQuote&&hasPreviousTick&&
-                       tick.bid>=previousBid-ts*0.1&&tick.ask>=previousAsk-ts*0.1);
-   bool sellNoFreshHigh=(freshQuote&&hasPreviousTick&&
-                         tick.bid<=previousBid+ts*0.1&&tick.ask<=previousAsk+ts*0.1);
-   if(freshQuote){
-      if(buyWeakEdge&&buyNoFreshLow)powerBuyWeakTicks[index]++;
-      else if(!buyWeakEdge||tick.bid<previousBid-ts*0.1||tick.ask<previousAsk-ts*0.1)
-         powerBuyWeakTicks[index]=0;
-      if(sellWeakEdge&&sellNoFreshHigh)powerSellWeakTicks[index]++;
-      else if(!sellWeakEdge||tick.bid>previousBid+ts*0.1||tick.ask>previousAsk+ts*0.1)
-         powerSellWeakTicks[index]=0;
-   }
    bool buyCandleStructure=candleRed;
    bool sellCandleStructure=candleGreen;
-   // Every layer uses the same live-extreme weakening evidence: two fresh quote
-   // observations where the weak edge persists without extending the extreme.
-   // This confirms stalling at the new extreme, not a price reversal away from it.
-   bool buyEntryConfirm=(powerBuyWeakTicks[index]>=2);
-   bool sellEntryConfirm=(powerSellWeakTicks[index]>=2);
-   bool buyReady=(buyFresh&&buyExtremeDistribution&&buyCandleStructure&&buyEntryConfirm&&buyN<cap);
-   bool sellReady=(sellFresh&&sellExtremeDistribution&&sellCandleStructure&&sellEntryConfirm&&sellN<cap);
+   bool buyReady=(buyFresh&&buyExtremeDistribution&&buyCandleStructure&&buyN<cap);
+   bool sellReady=(sellFresh&&sellExtremeDistribution&&sellCandleStructure&&sellN<cap);
    // Entry readiness is governed by the agreed A5 weakness conditions above.
    double buyScore=buyOpenExtension+lowerWick/range+
                    buyBidRecovery/range+buyAskRecovery/range;
@@ -1985,8 +1948,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
             DoubleToString(buyAskRecovery/range*100.0,1)+"%"+
          " | SELL B/A="+DoubleToString(sellBidRetreat/range*100.0,1)+"/"+
             DoubleToString(sellAskRetreat/range*100.0,1)+"%"+
-         " | weakTicks BUY/SELL="+IntegerToString(powerBuyWeakTicks[index])+"/"+
-            IntegerToString(powerSellWeakTicks[index])+
+         " | weakness=live-extreme-distribution (no tick-count confirmation)"+
          " | spread(info)="+DoubleToString((tick.ask-tick.bid)/ts,1)+"t"+
          " | layers="+IntegerToString(total)+"/"+IntegerToString(cap),barTime);
       return;
@@ -2016,7 +1978,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
 
    // BUY executes at Ask; SELL executes at Bid. Signal location remains candle-distribution based.
    double px=(side>0?tick.ask:tick.bid);
-   double sl=powerRoundToTick(symbol,side>0?px-slDist:px+slDist);
+   double sl=(side>0?powerFloorToTick(symbol,px-slDist):powerCeilToTick(symbol,px+slDist));
    powerTrade.SetExpertMagicNumber(POWERFULL_MAGIC);
    powerTrade.SetDeviationInPoints(powerCfg[index].deviationPoints);
    powerTrade.SetTypeFillingBySymbol(symbol);
@@ -2037,12 +1999,15 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
             " layer=",total+1,"/",cap,
             " liveRangeTicks=",DoubleToString(range/ts,1),
             " rejectionScore=",DoubleToString(side>0?buyScore:sellScore,3),
-            " SL=",slPts," retcode=",rc);
+            " Digits=",(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS),
+            " Point=",DoubleToString(point,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)+2),
+            " SL=",slPts," POINT (price distance=",DoubleToString(slDist,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " price=",DoubleToString(sl,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),") retcode=",rc);
       powerPublishState(index,"D1_95_LIVE_CANDLE_ENTRY_SENT",
          string(side>0?"BUY on RED candle near Low":"SELL on GREEN candle near High")+
          " | layer="+IntegerToString(total+1)+"/"+IntegerToString(cap)+
          " | live M5 range="+DoubleToString(range/ts,1)+" ticks"+
-         " | confirm=weak-edge-stall-2-quotes (no reversal wait)",barTime);
+         " | confirm=live-candle-extreme-weakening (no warm-up/tick-count wait)",barTime);
    }else{
       Print("D1 #95 LIVE-CANDLE ENTRY FAILED ",symbol,
             " side=",(side>0?"BUY_RED_LOW":"SELL_GREEN_HIGH"),
@@ -2432,7 +2397,7 @@ void managePowerfullSymbol(int index){
          powerPublishState(index,"D1_WAIT_LEGACY_CANCEL","D1 is active; waiting for old POWERFULL pending orders to cancel",barTime);
          return;
       }
-      powerPublishState(index,"D1_ACTIVE","A12 uses current M5 candle range distribution; Bid/Ask confirm the live extreme rejection; max layers="+
+      powerPublishState(index,"D1_ACTIVE","POWERFULL final: current M5 weakening extreme; no warm-up or tick-count confirmation; max layers="+
          IntegerToString(powerCfg[index].maxLayers),barTime);
       return;
    }
