@@ -109,12 +109,11 @@ double powerD1AskHigh[3],powerD1AskLow[3];
 // A12: live M5 candle distribution only. No completed-candle reference/history is used.
 long powerD1LastCountedTickMs[3];
 datetime powerMomentumLastEntryBar[3];
-// A5: tick-based weakening/reversal confirmation, reset on each new M5 candle.
+// Entry weakening evidence is reset on each new M5 candle.
 datetime powerEntrySignalBar[3];
 int powerBuyWeakTicks[3],powerSellWeakTicks[3];
 // E1/D1: first eligible entry time is gated by candle age; OHLC still resets per M5 bar.
 uint powerD1ScanStartedMs[3];
-datetime powerD1LastLayerCloseBar[3]; // at most one staged layer close per M5 candle
 uint powerStatsCalcMs[3];
 int powerStatsWins[3];
 int powerStatsLosses[3];
