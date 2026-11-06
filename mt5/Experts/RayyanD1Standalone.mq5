@@ -2207,17 +2207,17 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       int held=iBarShift(symbol,PERIOD_M5,(datetime)PositionGetInteger(POSITION_TIME),false);
       if(held<0)held=0;
 
-      // Each profitable layer retains at least 70% of its best excursion.
-      // Exit requires 3+ completed M5 candles, 30% peak-profit pullback,
-      // positive net P/L, and an actual reversal against the position.
-      double stagedRetrace=MathMax(trail,peakGain*0.30);
-      // A6: candle color/open at a new bar is not a close signal. Profit exit is
-      // based on actual tick movement against the position and the 30% profit retracement.
+      // A5: each profitable layer retains at least 55% of its best excursion.
+      // Exit requires 3+ completed M5 candles, 45% peak-profit pullback,
+      // positive net P/L, and adverse tick confirmation; a pullback alone is not enough.
+      double stagedRetrace=MathMax(trail,peakGain*0.45);
+      // A5: candle color/open at a new bar is not a close signal. Wait for an
+      // actual tick moving against the position after the 45% peak-profit retracement.
       bool stagedProfitExit=(net>0.0&&held>=3&&locked>=minLock&&peakGain>=minLock&&
                              retrace>=stagedRetrace&&movingAgainst);
 
       string candidateReason="";
-      if(stagedProfitExit)candidateReason="C2_MAX_PROFIT_30PCT_PEAK_RETRACE";
+      if(stagedProfitExit)candidateReason="A5_MAX_PROFIT_45PCT_PEAK_RETRACE";
       if(candidateReason!=""){
          double distance=MathAbs(px-entry);
          if(distance<closestEntryDistance){
