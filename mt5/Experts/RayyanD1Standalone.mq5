@@ -2158,9 +2158,7 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       string peakKey="PW_PEAK_"+suffix;
       string armKey="PW_RISK_ARM_"+suffix;
       string adverseKey="PW_RISK_ADVERSE_"+suffix;
-      string recoveryKey="PW_RISK_RECOVERY_"+suffix;
       string lastPxKey="PW_RISK_LASTPX_"+suffix;
-      string recoveryTicksKey="PW_RISK_REC_TICKS_"+suffix;
 
       if(!GlobalVariableCheck(peakKey))GlobalVariableSet(peakKey,px);
       double peak=GlobalVariableGet(peakKey);
@@ -2175,7 +2173,6 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       if((isBuy&&px<adverseExtreme-ts*0.1)||(!isBuy&&px>adverseExtreme+ts*0.1)){
          adverseExtreme=px;
          GlobalVariableSet(adverseKey,adverseExtreme);
-         if(GlobalVariableCheck(recoveryKey))GlobalVariableSet(recoveryKey,px);
       }
 
       double riskArmDistance=(hard>0.0?MathMin(MathMax(ts*3.0,hard*0.35),hard*0.70):ts*6.0);
@@ -2184,7 +2181,6 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       if(!riskArmed&&adverseExcursion>=riskArmDistance){
          riskArmed=true;
          GlobalVariableSet(armKey,1.0);
-         GlobalVariableSet(recoveryKey,px);
          Print("POWERFULL RISK WATCH ARMED symbol=",symbol," ticket=",ticket,
                " side=",(isBuy?"BUY":"SELL"),
                " adversePoints=",DoubleToString(adverseExcursion/point,1),
@@ -2201,49 +2197,9 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       }
       bool movingAgainst=(havePreviousExit&&
          (isBuy?px<previousExitPx-ts*0.1:px>previousExitPx+ts*0.1));
-      bool movingTowardEntry=(havePreviousExit&&
-         (isBuy?px>previousExitPx+ts*0.1:px<previousExitPx-ts*0.1));
-      int recoveryTickCount=(GlobalVariableCheck(recoveryTicksKey)?
-         (int)GlobalVariableGet(recoveryTicksKey):0);
-      if(riskArmed){
-         if(movingTowardEntry)recoveryTickCount++;
-         else recoveryTickCount=0; // strictly consecutive favorable ticks
-      }
-      GlobalVariableSet(recoveryTicksKey,(double)recoveryTickCount);
       GlobalVariableSet(lastPxKey,px);
-
-      bool riskExit=false;
-      bool riskRecoveryScalpExit=false;
-      if(riskArmed){
-         if(!GlobalVariableCheck(recoveryKey))GlobalVariableSet(recoveryKey,px);
-         double recoveryExtreme=GlobalVariableGet(recoveryKey);
-         if((isBuy&&px>recoveryExtreme)||(!isBuy&&px<recoveryExtreme)){
-            recoveryExtreme=px;
-            GlobalVariableSet(recoveryKey,recoveryExtreme);
-         }
-
-         double recoveryProgress=(isBuy?recoveryExtreme-adverseExtreme:
-                                         adverseExtreme-recoveryExtreme);
-         double recoveryConfirmDistance=MathMax(ts*3.0,hard*0.10);
-         double nearEntry=MathMax(ts*2.0,hard*0.08);
-         double reversalConfirmDistance=MathMax(ts*3.0,hard*0.08);
-         bool recoveryMeaningful=(recoveryProgress>=recoveryConfirmDistance);
-         bool recoveryReachedEntry=(isBuy?recoveryExtreme>=entry-nearEntry:
-                                            recoveryExtreme<=entry+nearEntry);
-         bool reversalConfirmed=(isBuy?recoveryExtreme-px>=reversalConfirmDistance:
-                                         px-recoveryExtreme>=reversalConfirmDistance);
-         double locked=(isBuy?px-entry:entry-px);
-         bool stillNearEntry=(locked>=-nearEntry);
-         // A6: rescue exit is allowed only when the projected net result is positive.
-         riskExit=(net>0.0&&recoveryMeaningful&&recoveryReachedEntry&&reversalConfirmed&&
-                   movingAgainst&&stillNearEntry);
-         // A5: recover toward entry for 3 consecutive ticks; close on small positive net.
-         double smallProfitCeiling=(hard>0.0?
-            MathMax(minLock,MathMin(minLock*4.0,hard*0.15)):minLock*4.0);
-         bool nearEntryProfit=(locked>=minLock&&locked<=smallProfitCeiling&&net>0.0);
-         riskRecoveryScalpExit=(riskArmed&&recoveryTickCount>=3&&
-                                nearEntryProfit&&movingTowardEntry);
-      }
+      // C2: do not close at thin profit when price merely recovers toward entry.
+      // Let a favorable reversal develop; the staged peak-profit exit below manages closure.
 
       double retrace=(isBuy?peak-px:px-peak);
       double peakGain=(isBuy?peak-entry:entry-peak);
@@ -2261,9 +2217,7 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
                              retrace>=stagedRetrace&&movingAgainst);
 
       string candidateReason="";
-      if(riskRecoveryScalpExit)candidateReason="A5_RISK_RECOVERY_SMALL_PROFIT";
-      else if(riskExit)candidateReason="E1_RISK_RECOVERY_FAILED_EXIT";
-      else if(stagedProfitExit)candidateReason="D1_STAGED_30PCT_PROFIT_REVERSAL";
+      if(stagedProfitExit)candidateReason="C2_MAX_PROFIT_30PCT_PEAK_RETRACE";
       if(candidateReason!=""){
          double distance=MathAbs(px-entry);
          if(distance<closestEntryDistance){
