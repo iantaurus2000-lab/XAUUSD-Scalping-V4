@@ -1531,7 +1531,8 @@ int powerPendingCount(string symbol){
       if((long)OrderGetInteger(ORDER_MAGIC)!=POWERFULL_MAGIC)continue;
       ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
       if(type==ORDER_TYPE_BUY_LIMIT||type==ORDER_TYPE_SELL_LIMIT||
-         type==ORDER_TYPE_BUY_STOP||type==ORDER_TYPE_SELL_STOP)count++;
+         type==ORDER_TYPE_BUY_STOP||type==ORDER_TYPE_SELL_STOP||
+         type==ORDER_TYPE_BUY_STOP_LIMIT||type==ORDER_TYPE_SELL_STOP_LIMIT)count++;
    }
    return count;
 }
@@ -1577,7 +1578,8 @@ bool powerCancelPendingForSymbol(string symbol){
       if((long)OrderGetInteger(ORDER_MAGIC)!=POWERFULL_MAGIC)continue;
       ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
       bool pending=(type==ORDER_TYPE_BUY_LIMIT||type==ORDER_TYPE_SELL_LIMIT||
-                    type==ORDER_TYPE_BUY_STOP||type==ORDER_TYPE_SELL_STOP);
+                    type==ORDER_TYPE_BUY_STOP||type==ORDER_TYPE_SELL_STOP||
+                    type==ORDER_TYPE_BUY_STOP_LIMIT||type==ORDER_TYPE_SELL_STOP_LIMIT);
       if(!pending)continue;
       ResetLastError();
       bool deleted=powerTrade.OrderDelete(ticket);
@@ -2191,6 +2193,9 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       double threshold=MathMax(trail,peakGain*0.45);
       bool armed=(GlobalVariableCheck(armKey)&&GlobalVariableGet(armKey)>0.5);
       bool cooldown=(GlobalVariableCheck(cooldownKey)&&GlobalVariableGet(cooldownKey)>0.5);
+      // After a trend-resumption candle, require the pullback to recover below
+      // 45% before a later, separate pullback can arm a new reversal evaluation.
+      if(cooldown&&retrace<threshold){GlobalVariableDel(cooldownKey);cooldown=false;}
       if(!armed&&!cooldown&&peakGain>=minLock&&retrace>=threshold){
          GlobalVariableSet(armKey,1.0); GlobalVariableSet(countKey,0.0);
          datetime priorClosed=iTime(symbol,PERIOD_M5,1);
