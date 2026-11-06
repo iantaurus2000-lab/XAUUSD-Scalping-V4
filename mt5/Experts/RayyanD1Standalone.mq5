@@ -56,6 +56,9 @@ string lastIndicatorCommandId="";
 datetime lastIndicatorBar=0, lastIndicatorDiag=0;
 #define RAYYAN_EMA_DRAW_BARS 140
 
+input bool PowerfullCloseBeforeWeekend=true;
+input int PowerfullFridayCloseHour=21;   // Broker server time.
+input int PowerfullFridayCloseMinute=30;
 #define POWERFULL_MAGIC 4104451
 #define POWERFULL_HISTORY_LIMIT 105120
 #define POWERFULL_CONFIG_TIMEOUT_MS 300
@@ -2104,9 +2107,10 @@ bool powerClosePosition(ulong ticket,string reason){
    if(ok&&(rc==TRADE_RETCODE_DONE||rc==TRADE_RETCODE_DONE_PARTIAL)){
       Print("POWERFULL CLOSE OK symbol=",symbol," ticket=",ticket," reason=",reason," retcode=",rc);
       string suffix=IntegerToString((long)ticket);
-      string keys[8]={"PW_HMODE_","PW_HBAR_","PW_PEAK_","PW_RISK_ARM_",
+      string keys[12]={"PW_HMODE_","PW_HBAR_","PW_PEAK_","PW_RISK_ARM_",
                       "PW_RISK_ADVERSE_","PW_RISK_RECOVERY_","PW_RISK_LASTPX_",
-                      "PW_RISK_REC_TICKS_"};
+                      "PW_RISK_REC_TICKS_","PW_A5_ARM_","PW_A5_ADVERSE_COUNT_",
+                      "PW_A5_LAST_BAR_","PW_A5_COOLDOWN_"};
       for(int k=0;k<ArraySize(keys);k++){
          string key=keys[k]+suffix;
          if(GlobalVariableCheck(key))GlobalVariableDel(key);
@@ -2118,6 +2122,26 @@ bool powerClosePosition(ulong ticket,string reason){
    return false;
 }
 
+bool powerWeekendCloseDue(){
+   if(!PowerfullCloseBeforeWeekend)return false;
+   datetime serverNow=TimeTradeServer();
+   if(serverNow<=0)serverNow=TimeCurrent();
+   if(serverNow<=0)return false;
+   MqlDateTime st; TimeToStruct(serverNow,st);
+   if(st.day_of_week!=5)return false;
+   int hh=MathMax(0,MathMin(23,PowerfullFridayCloseHour));
+   int mm=MathMax(0,MathMin(59,PowerfullFridayCloseMinute));
+   return (st.hour>hh||(st.hour==hh&&st.min>=mm));
+}
+void powerApplyWeekendClose(string symbol){
+   powerCancelPendingForSymbol(symbol);
+   for(int i=PositionsTotal()-1;i>=0;i--){
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0||PositionGetString(POSITION_SYMBOL)!=symbol||
+         (long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
+      powerClosePosition(ticket,"WEEKEND_FLAT_FRIDAY");
+   }
+}
 void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double candleOpen,
                           bool candleJustChanged,bool hasPreviousTick,double previousBid,double previousAsk){
    if(index<0||index>=ArraySize(powerSymbols))return;
@@ -2125,115 +2149,84 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
    double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
    double ts=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
    if(point<=0.0||ts<=0.0)return;
-
    double minLock=MathMax((double)powerCfg[index].minProfitLockPoints*point,ts*2.0);
    double trail=MathMax(minLock,ts*3.0);
-   ulong closeCandidate=0;
-   string closeReason="";
-   double closestEntryDistance=DBL_MAX;
+   ulong closeTickets[]; string closeReasons[]; int closeCount=0;
 
    for(int i=PositionsTotal()-1;i>=0;i--){
       ulong ticket=PositionGetTicket(i);
       if(ticket==0||PositionGetString(POSITION_SYMBOL)!=symbol||
          (long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC||
          !PositionSelectByTicket(ticket))continue;
-
       ENUM_POSITION_TYPE side=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
       bool isBuy=(side==POSITION_TYPE_BUY);
       double entry=PositionGetDouble(POSITION_PRICE_OPEN);
       double px=(isBuy?tick.bid:tick.ask);
       double net=powerProjectedNet(ticket);
       int slPts=(isBuy?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
-      double hard=(powerCfg[index].usePointStops?slPts*point:
-                   powerCfg[index].stopPips*powerCfg[index].pipSize);
+      double hard=(powerCfg[index].usePointStops?slPts*point:powerCfg[index].stopPips*powerCfg[index].pipSize);
       double adverse=(isBuy?entry-px:px-entry);
-
-      // Broker SL is the final boundary. This guard is an additional last-resort close.
-      if(hard>0.0&&adverse+point*0.1>=hard){
-         powerClosePosition(ticket,"HARD_LOSS_GUARD");
-         continue;
-      }
+      if(hard>0.0&&adverse+point*0.1>=hard){powerClosePosition(ticket,"HARD_LOSS_GUARD");continue;}
 
       string suffix=IntegerToString((long)ticket);
-      string peakKey="PW_PEAK_"+suffix;
-      string armKey="PW_RISK_ARM_"+suffix;
-      string adverseKey="PW_RISK_ADVERSE_"+suffix;
-      string lastPxKey="PW_RISK_LASTPX_"+suffix;
-
+      string peakKey="PW_PEAK_"+suffix, armKey="PW_A5_ARM_"+suffix;
+      string countKey="PW_A5_ADVERSE_COUNT_"+suffix, barKey="PW_A5_LAST_BAR_"+suffix;
+      string cooldownKey="PW_A5_COOLDOWN_"+suffix;
       if(!GlobalVariableCheck(peakKey))GlobalVariableSet(peakKey,px);
       double peak=GlobalVariableGet(peakKey);
-      if((isBuy&&px>peak)||(!isBuy&&px<peak)){
-         peak=px;
-         GlobalVariableSet(peakKey,peak);
+      bool newPeak=(isBuy?px>peak+ts*0.1:px<peak-ts*0.1);
+      if(newPeak){
+         peak=px; GlobalVariableSet(peakKey,peak);
+         if(GlobalVariableCheck(armKey))GlobalVariableDel(armKey);
+         if(GlobalVariableCheck(countKey))GlobalVariableDel(countKey);
+         if(GlobalVariableCheck(barKey))GlobalVariableDel(barKey);
+         if(GlobalVariableCheck(cooldownKey))GlobalVariableDel(cooldownKey);
       }
 
-      // Approaching SL arms observation only; it never closes the trade by itself.
-      if(!GlobalVariableCheck(adverseKey))GlobalVariableSet(adverseKey,px);
-      double adverseExtreme=GlobalVariableGet(adverseKey);
-      if((isBuy&&px<adverseExtreme-ts*0.1)||(!isBuy&&px>adverseExtreme+ts*0.1)){
-         adverseExtreme=px;
-         GlobalVariableSet(adverseKey,adverseExtreme);
-      }
-
-      double riskArmDistance=(hard>0.0?MathMin(MathMax(ts*3.0,hard*0.35),hard*0.70):ts*6.0);
-      bool riskArmed=(GlobalVariableCheck(armKey)&&GlobalVariableGet(armKey)>0.5);
-      double adverseExcursion=(isBuy?entry-adverseExtreme:adverseExtreme-entry);
-      if(!riskArmed&&adverseExcursion>=riskArmDistance){
-         riskArmed=true;
-         GlobalVariableSet(armKey,1.0);
-         Print("POWERFULL RISK WATCH ARMED symbol=",symbol," ticket=",ticket,
-               " side=",(isBuy?"BUY":"SELL"),
-               " adversePoints=",DoubleToString(adverseExcursion/point,1),
-               " triggerPoints=",DoubleToString(riskArmDistance/point,1),
-               " | observe recovery; no automatic close");
-      }
-
-      double previousExitPx=0.0;
-      bool havePreviousExit=GlobalVariableCheck(lastPxKey);
-      if(havePreviousExit)previousExitPx=GlobalVariableGet(lastPxKey);
-      else if(hasPreviousTick){
-         previousExitPx=(isBuy?previousBid:previousAsk);
-         havePreviousExit=(previousExitPx>0.0);
-      }
-      bool movingAgainst=(havePreviousExit&&
-         (isBuy?px<previousExitPx-ts*0.1:px>previousExitPx+ts*0.1));
-      GlobalVariableSet(lastPxKey,px);
-      // C2: do not close at thin profit when price merely recovers toward entry.
-      // Let a favorable reversal develop; the staged peak-profit exit below manages closure.
-
+      // C2: no thin-profit rescue close near entry; broker SL and hard-loss guard remain.
       double retrace=(isBuy?peak-px:px-peak);
       double peakGain=(isBuy?peak-entry:entry-peak);
       double locked=(isBuy?px-entry:entry-px);
       int held=iBarShift(symbol,PERIOD_M5,(datetime)PositionGetInteger(POSITION_TIME),false);
       if(held<0)held=0;
-
-      // A5: each profitable layer retains at least 55% of its best excursion.
-      // Exit requires 3+ completed M5 candles, 45% peak-profit pullback,
-      // positive net P/L, and adverse tick confirmation; a pullback alone is not enough.
-      double stagedRetrace=MathMax(trail,peakGain*0.45);
-      // A5: candle color/open at a new bar is not a close signal. Wait for an
-      // actual tick moving against the position after the 45% peak-profit retracement.
-      bool stagedProfitExit=(net>0.0&&held>=3&&locked>=minLock&&peakGain>=minLock&&
-                             retrace>=stagedRetrace&&movingAgainst);
-
-      string candidateReason="";
-      if(stagedProfitExit)candidateReason="A5_MAX_PROFIT_45PCT_PEAK_RETRACE";
-      if(candidateReason!=""){
-         double distance=MathAbs(px-entry);
-         if(distance<closestEntryDistance){
-            closestEntryDistance=distance;
-            closeCandidate=ticket;
-            closeReason=candidateReason;
-         }
+      double threshold=MathMax(trail,peakGain*0.45);
+      bool armed=(GlobalVariableCheck(armKey)&&GlobalVariableGet(armKey)>0.5);
+      bool cooldown=(GlobalVariableCheck(cooldownKey)&&GlobalVariableGet(cooldownKey)>0.5);
+      if(!armed&&!cooldown&&peakGain>=minLock&&retrace>=threshold){
+         GlobalVariableSet(armKey,1.0); GlobalVariableSet(countKey,0.0);
+         datetime priorClosed=iTime(symbol,PERIOD_M5,1);
+         if(priorClosed>0)GlobalVariableSet(barKey,(double)priorClosed);
+         armed=true;
+         Print("POWERFULL A5 45PCT WATCH symbol=",symbol," ticket=",ticket,
+               " evaluation only; waiting for sustained M5 reversal");
       }
-   }
+      if(!armed)continue;
 
-   // Close only one eligible layer per M5 candle, nearest entry to executable Bid/Ask first.
-   // A6: never execute a close on the first live tick of a newly opened M5 candle.
-   if(closeCandidate>0&&!candleJustChanged&&powerD1LastLayerCloseBar[index]!=barTime){
-      if(powerClosePosition(closeCandidate,closeReason))
-         powerD1LastLayerCloseBar[index]=barTime;
+      datetime closedBar=iTime(symbol,PERIOD_M5,1);
+      double closedOpen=iOpen(symbol,PERIOD_M5,1), closedPrice=iClose(symbol,PERIOD_M5,1);
+      if(closedBar<=0||closedOpen<=0.0||closedPrice<=0.0)continue;
+      double lastBar=(GlobalVariableCheck(barKey)?GlobalVariableGet(barKey):0.0);
+      if((double)closedBar<=lastBar)continue;
+      GlobalVariableSet(barKey,(double)closedBar);
+      bool adverseClose=(isBuy?closedPrice<closedOpen:closedPrice>closedOpen);
+      bool trendResumed=(isBuy?closedPrice>closedOpen:closedPrice<closedOpen);
+      if(trendResumed){
+         GlobalVariableSet(armKey,0.0); GlobalVariableSet(countKey,0.0);
+         GlobalVariableSet(cooldownKey,1.0);
+         Print("POWERFULL A5 RESET symbol=",symbol," ticket=",ticket," reason=M5_TREND_RESUMED; keep holding");
+         continue;
+      }
+      if(adverseClose){
+         double nAdverse=GlobalVariableGet(countKey)+1.0;
+         GlobalVariableSet(countKey,nAdverse);
+         if(nAdverse>=2.0&&held>=3&&net>0.0&&locked>=minLock&&peakGain>=minLock){
+            int n=ArraySize(closeTickets); ArrayResize(closeTickets,n+1); ArrayResize(closeReasons,n+1);
+            closeTickets[n]=ticket; closeReasons[n]="A5_CONFIRMED_M5_REVERSAL_AFTER_45PCT"; closeCount++;
+         }
+      }else GlobalVariableSet(countKey,0.0); // Doji breaks the consecutive sequence.
    }
+   // All qualifying profitable layers can close in this cycle; no one-layer-per-candle cap.
+   for(int c=0;c<closeCount;c++)powerClosePosition(closeTickets[c],closeReasons[c]);
 }
 
 void powerPublishState(int index,string status,string detail,datetime barTime){
@@ -2342,6 +2335,12 @@ void managePowerfullSymbol(int index){
    string symbol=powerSymbols[index];
    if(!SymbolSelect(symbol,true)){
       powerPublishState(index,"SYMBOL_UNAVAILABLE","SymbolSelect failed; check broker Market Watch",0);
+      return;
+   }
+   if(powerWeekendCloseDue()){
+      powerApplyWeekendClose(symbol);
+      powerPublishState(index,"WEEKEND_FLAT",
+         "Friday broker-server cutoff reached; closing POWERFULL positions and deleting POWERFULL pending orders",0);
       return;
    }
    MqlTick tick;
