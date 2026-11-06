@@ -2266,7 +2266,7 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
    if(point<=0.0||ts<=0.0)return;
    double minLock=MathMax((double)powerCfg[index].minProfitLockPoints*point,ts*2.0);
    double trail=MathMax(minLock,ts*3.0);
-   ulong closeTickets[]; string closeReasons[]; int closeCount=0;
+   ulong closeTickets[]; string closeReasons[]; double closeDistances[]; int closeCount=0;
 
    for(int i=PositionsTotal()-1;i>=0;i--){
       ulong ticket=PositionGetTicket(i);
@@ -2338,13 +2338,32 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
          double nAdverse=GlobalVariableGet(countKey)+1.0;
          GlobalVariableSet(countKey,nAdverse);
          if(nAdverse>=2.0&&held>=3&&net>0.0&&locked>=minLock&&peakGain>=minLock){
-            int n=ArraySize(closeTickets); ArrayResize(closeTickets,n+1); ArrayResize(closeReasons,n+1);
-            closeTickets[n]=ticket; closeReasons[n]="A5_CONFIRMED_M5_REVERSAL_AFTER_45PCT"; closeCount++;
+            int n=ArraySize(closeTickets);
+            ArrayResize(closeTickets,n+1);
+            ArrayResize(closeReasons,n+1);
+            ArrayResize(closeDistances,n+1);
+            closeTickets[n]=ticket;
+            closeReasons[n]="A5_CONFIRMED_M5_REVERSAL_AFTER_45PCT";
+            // Smaller distance means this layer's entry is closest to the executable Bid/Ask.
+            closeDistances[n]=MathAbs(entry-px);
+            closeCount++;
          }
       }else GlobalVariableSet(countKey,0.0); // Doji breaks the consecutive sequence.
    }
-   // All qualifying profitable layers can close in this cycle; no one-layer-per-candle cap.
-   for(int c=0;c<closeCount;c++)powerClosePosition(closeTickets[c],closeReasons[c]);
+   // Close only one qualifying layer per newly confirmed M5 reversal.
+   // Select the layer nearest the live executable Bid/Ask first; remaining layers
+   // stay managed and can be evaluated again on a later completed M5 candle.
+   if(closeCount>0){
+      int nearest=0;
+      for(int c=1;c<closeCount;c++)
+         if(closeDistances[c]<closeDistances[nearest])nearest=c;
+      Print("POWERFULL A5 GRADUAL EXIT symbol=",symbol,
+            " selected_ticket=",closeTickets[nearest],
+            " distance_to_quote=",DoubleToString(closeDistances[nearest],(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " candidates=",closeCount,
+            " policy=ONE_LAYER_PER_CONFIRMED_M5_REVERSAL");
+      powerClosePosition(closeTickets[nearest],closeReasons[nearest]);
+   }
 }
 
 void powerPublishState(int index,string status,string detail,datetime barTime){
