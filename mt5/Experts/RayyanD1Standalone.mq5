@@ -279,11 +279,109 @@ void powerWriteAnalysisReport(){
    FileWriteString(h,html);
    FileClose(h);
 }
+
+#define POWERFULL_ENTRY_CANDLE_CSV "RAYYAN_REPORTS\\RAYYAN_ENTRY_CANDLE_LOG.csv"
+
+void powerCaptureEntryCandle(ulong deal){
+   // Observational recorder only: this function runs after MT5 confirms an entry deal.
+   if(deal==0||!HistoryDealSelect(deal))return;
+   if((long)HistoryDealGetInteger(deal,DEAL_MAGIC)!=POWERFULL_MAGIC)return;
+   ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
+   if(entry!=DEAL_ENTRY_IN&&entry!=DEAL_ENTRY_INOUT)return;
+
+   string symbol=HistoryDealGetString(deal,DEAL_SYMBOL);
+   ENUM_DEAL_TYPE dealType=(ENUM_DEAL_TYPE)HistoryDealGetInteger(deal,DEAL_TYPE);
+   if(dealType!=DEAL_TYPE_BUY&&dealType!=DEAL_TYPE_SELL)return;
+   string side=(dealType==DEAL_TYPE_BUY?"BUY":"SELL");
+   datetime when=(datetime)HistoryDealGetInteger(deal,DEAL_TIME);
+   ulong positionId=(ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID);
+   double entryPrice=HistoryDealGetDouble(deal,DEAL_PRICE);
+   double volume=HistoryDealGetDouble(deal,DEAL_VOLUME);
+   int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+   double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+   MqlTick tick; ZeroMemory(tick);
+   bool hasTick=SymbolInfoTick(symbol,tick);
+   double candleOpen=iOpen(symbol,PERIOD_M5,0);
+   double candleHigh=iHigh(symbol,PERIOD_M5,0);
+   double candleLow=iLow(symbol,PERIOD_M5,0);
+   double candleClose=iClose(symbol,PERIOD_M5,0);
+   // Use the EA's live-tick fallback only when the broker's current M5 OHLC is unavailable.
+   for(int k=0;k<ArraySize(powerSymbols);k++){
+      if(powerSymbols[k]==symbol&&powerD1FallbackBar[k]>0){
+         if(candleOpen<=0.0)candleOpen=powerD1FallbackOpen[k];
+         if(candleHigh<=0.0)candleHigh=powerD1FallbackHigh[k];
+         if(candleLow<=0.0)candleLow=powerD1FallbackLow[k];
+         break;
+      }
+   }
+   string candleColor=(candleOpen>0.0&&candleClose>0.0?
+      (candleClose>candleOpen?"BULL":(candleClose<candleOpen?"BEAR":"DOJI")):"OHLC_UNAVAILABLE");
+   double extremeDistance=(side=="BUY"&&candleLow>0.0?entryPrice-candleLow:
+      (side=="SELL"&&candleHigh>0.0?candleHigh-entryPrice:0.0));
+   double sl=0.0;
+   for(int p=PositionsTotal()-1;p>=0;p--){
+      ulong ticket=PositionGetTicket(p);
+      if(ticket==0||!PositionSelectByTicket(ticket))continue;
+      if(PositionGetString(POSITION_SYMBOL)!=symbol||
+         (long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
+      if((ulong)PositionGetInteger(POSITION_IDENTIFIER)==positionId){
+         sl=PositionGetDouble(POSITION_SL); break;
+      }
+   }
+
+   FolderCreate(POWERFULL_REPORT_DIR);
+   string stamp=TimeToString(when,TIME_DATE|TIME_MINUTES|TIME_SECONDS);
+   StringReplace(stamp,".",""); StringReplace(stamp,":",""); StringReplace(stamp," ","_");
+   string safeSymbol=symbol; StringReplace(safeSymbol,".","_");
+   string imagePath=POWERFULL_REPORT_DIR+"\\ENTRY_"+safeSymbol+"_"+stamp+"_"+(string)deal+".png";
+   long chart=0;
+   // Capture only a chart that actually displays this traded symbol on M5.
+   for(long candidate=ChartFirst();candidate>=0;candidate=ChartNext(candidate)){
+      if(ChartSymbol(candidate)==symbol&&ChartPeriod(candidate)==PERIOD_M5){chart=candidate;break;}
+   }
+   bool shot=false;
+   string shotState="NO_MATCHING_M5_CHART";
+   if(chart>0){
+      ResetLastError();
+      shot=ChartScreenShot(chart,imagePath,1280,720,ALIGN_RIGHT);
+      shotState=(shot?"SAVED":"FAILED_"+IntegerToString(GetLastError()));
+   }
+
+   int h=FileOpen(POWERFULL_ENTRY_CANDLE_CSV,
+      FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,';');
+   if(h==INVALID_HANDLE){
+      Print("RAYYAN ENTRY CANDLE CSV OPEN FAILED deal=",deal," err=",GetLastError(),
+            " screenshot=",shotState," path=",imagePath);
+      return;
+   }
+   if(FileSize(h)==0)
+      FileWrite(h,"time","deal_ticket","position_id","symbol","side","volume","entry_price",
+         "bid_at_record","ask_at_record","m5_open","m5_high","m5_low","m5_close",
+         "candle_color","distance_from_extreme","distance_points","sl_price",
+         "screenshot_status","screenshot_file");
+   FileSeek(h,0,SEEK_END);
+   double bid=(hasTick?tick.bid:0.0), ask=(hasTick?tick.ask:0.0);
+   FileWrite(h,TimeToString(when,TIME_DATE|TIME_SECONDS),(string)deal,(string)positionId,
+      symbol,side,DoubleToString(volume,8),DoubleToString(entryPrice,digits),
+      (bid>0.0?DoubleToString(bid,digits):""),(ask>0.0?DoubleToString(ask,digits):""),
+      (candleOpen>0.0?DoubleToString(candleOpen,digits):""),
+      (candleHigh>0.0?DoubleToString(candleHigh,digits):""),
+      (candleLow>0.0?DoubleToString(candleLow,digits):""),
+      (candleClose>0.0?DoubleToString(candleClose,digits):""),candleColor,
+      DoubleToString(extremeDistance,digits),
+      (point>0.0?DoubleToString(extremeDistance/point,1):""),
+      (sl>0.0?DoubleToString(sl,digits):""),shotState,(shot?imagePath:""));
+   FileClose(h);
+   Print("RAYYAN ENTRY CANDLE RECORDED deal=",deal," side=",side,
+      " symbol=",symbol," screenshot=",shotState," csv=",POWERFULL_ENTRY_CANDLE_CSV);
+}
+
 void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &request,const MqlTradeResult &result){
    if(trans.type!=TRADE_TRANSACTION_DEAL_ADD||trans.deal==0)return;
    if(!HistoryDealSelect(trans.deal))return;
    if((long)HistoryDealGetInteger(trans.deal,DEAL_MAGIC)!=POWERFULL_MAGIC)return;
    powerAppendDealRecord(trans.deal);
+   powerCaptureEntryCandle(trans.deal); // Post-confirmation diagnostics; never gates or delays an order.
    powerWriteAnalysisReport();
 }
 
