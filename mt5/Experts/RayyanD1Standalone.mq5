@@ -234,9 +234,11 @@ void powerSessionWriteSummary(string folder,datetime started,datetime ended){
       "<h1>RAYYAN POWERFULL Test Session</h1><p>Session ID: "+powerSessionStamp(started)+
       "</p><p>Start: "+TimeToString(started,TIME_DATE|TIME_SECONDS)+
       "</p><p>Algo Trading OFF: "+(ended>0?TimeToString(ended,TIME_DATE|TIME_SECONDS):"ACTIVE")+
-      "</p><p>See LOSS_ANALYSIS.csv, LOSS_RECORDER.csv, ENTRY_CANDLE_LOG.csv and OPEN_POSITIONS.csv.</p>"+
+      "</p><p>See LOSS_ANALYSIS.html, LOSS_RECORDER.csv, ENTRY_CANDLE_LOG.csv and OPEN_POSITIONS.csv.</p>"+
       "<p>Late closing deals remain assigned to their original position session.</p></body></html>";
    FileWriteString(h,html); FileClose(h);
+   int a=FileOpen(folder+"\\LOSS_ANALYSIS.html",FILE_WRITE|FILE_TXT|FILE_ANSI);
+   if(a!=INVALID_HANDLE){FileWriteString(a,html);FileClose(a);}
 }
 void powerSessionStartNew(){
    powerSessionStart=TimeCurrent(); powerSessionEnd=0;
@@ -276,6 +278,7 @@ void powerAppendDealRecord(ulong deal){
    if(deal==0||!HistoryDealSelect(deal))return;
    if((long)HistoryDealGetInteger(deal,DEAL_MAGIC)!=POWERFULL_MAGIC)return;
    ulong positionId=(ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID);
+   string dealSessionFolder=powerSessionFolderForPosition(positionId);
    if(powerSessionDealSeen(deal))return;
    ENUM_DEAL_ENTRY dealEntry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
    if(dealEntry==DEAL_ENTRY_IN||dealEntry==DEAL_ENTRY_INOUT){
@@ -336,6 +339,7 @@ void powerAppendDealRecord(ulong deal){
             (long)PositionGetInteger(POSITION_MAGIC)==POWERFULL_MAGIC){stillOpen=true;break;}
       }
       if(!stillOpen)GlobalVariableDel("PW_SID_"+(string)positionId);
+      if(dealSessionFolder!="")powerSessionWriteOpenPositions(dealSessionFolder);
    }
 }
 void powerWriteAnalysisReport(){
@@ -478,7 +482,7 @@ void powerCaptureEntryCandle(ulong deal){
       (sl>0.0?DoubleToString(sl,digits):""),shotState,(shot?imagePath:""));
    FileClose(h);
    Print("RAYYAN ENTRY CANDLE RECORDED deal=",deal," side=",side,
-      " symbol=",symbol," screenshot=",shotState," csv=",POWERFULL_ENTRY_CANDLE_CSV);
+      " symbol=",symbol," screenshot=",shotState," csv=",powerSessionCandlePath(positionId));
 }
 
 void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &request,const MqlTradeResult &result){
