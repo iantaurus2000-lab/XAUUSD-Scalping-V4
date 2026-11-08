@@ -522,7 +522,7 @@ int OnInit(){
       powerCfg[0].reason=(powerCfg[0].enabled?"STANDALONE_READY":"STANDALONE_CONFIG_INVALID");
       powerConfigReceivedMs[0]=1;
       FolderCreate(POWERFULL_REPORT_DIR);
-      powerWriteAnalysisReport();
+      // Session reports are generated only inside the active Algo Trading session.
       int symbolDigits=(int)SymbolInfoInteger(directSymbol,SYMBOL_DIGITS);
       double symbolPoint=SymbolInfoDouble(directSymbol,SYMBOL_POINT);
       Print("D1 STANDALONE MODE symbol=",directSymbol," lot=",DoubleToString(StandaloneLot,2),
