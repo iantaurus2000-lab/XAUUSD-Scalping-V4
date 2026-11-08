@@ -177,8 +177,95 @@ bool powerHasPendingOnBar(string symbol,datetime barTime);
 
 
 #define POWERFULL_REPORT_DIR "RAYYAN_REPORTS"
-#define POWERFULL_RECORDER_FILE "RAYYAN_REPORTS\\RAYYAN_LOSS_RECORDER.csv"
 #define POWERFULL_ANALYSIS_FILE "RAYYAN_REPORTS\\RAYYAN_LOSS_ANALYSIS.html"
+string powerSessionId="",powerSessionFolder="",powerLastSessionFolder="";
+datetime powerSessionStart=0,powerSessionEnd=0;
+bool powerSessionActive=false;
+string powerSessionStamp(datetime value){
+   string stamp=TimeToString(value,TIME_DATE|TIME_MINUTES|TIME_SECONDS);
+   StringReplace(stamp,".",""); StringReplace(stamp,":",""); StringReplace(stamp," ","_");
+   return stamp;
+}
+string powerSessionFolderFromStart(datetime started){return POWERFULL_REPORT_DIR+"\\SESSION_"+powerSessionStamp(started);}
+string powerSessionFolderForPosition(ulong positionId){
+   string key="PW_SID_"+(string)positionId;
+   if(GlobalVariableCheck(key))return powerSessionFolderFromStart((datetime)GlobalVariableGet(key));
+   if(powerSessionActive)return powerSessionFolder;
+   return powerLastSessionFolder;
+}
+string powerSessionPath(ulong positionId,string leaf){
+   string folder=powerSessionFolderForPosition(positionId);
+   if(folder=="")return "";
+   FolderCreate(folder); FolderCreate(folder+"\\SCREENSHOTS");
+   return folder+"\\"+leaf;
+}
+bool powerSessionDealSeen(ulong deal){
+   string key="PW_DEAL_"+(string)deal;
+   if(GlobalVariableCheck(key))return true;
+   GlobalVariableSet(key,(double)TimeCurrent()); return false;
+}
+void powerSessionWriteOpenPositions(string folder){
+   if(folder=="")return;
+   int h=FileOpen(folder+"\\OPEN_POSITIONS.csv",FILE_WRITE|FILE_CSV|FILE_ANSI,';');
+   if(h==INVALID_HANDLE)return;
+   FileWrite(h,"ticket","position_id","symbol","side","volume","open_price","sl","profit");
+   for(int i=PositionsTotal()-1;i>=0;i--){
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0||!PositionSelectByTicket(ticket)||(long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
+      ulong pid=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      string key="PW_SID_"+(string)pid;
+      if(!GlobalVariableCheck(key)||powerSessionFolderFromStart((datetime)GlobalVariableGet(key))!=folder)continue;
+      string symbol=PositionGetString(POSITION_SYMBOL);
+      ENUM_POSITION_TYPE side=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+      FileWrite(h,(string)ticket,(string)pid,symbol,(side==POSITION_TYPE_BUY?"BUY":"SELL"),
+         DoubleToString(PositionGetDouble(POSITION_VOLUME),2),
+         DoubleToString(PositionGetDouble(POSITION_PRICE_OPEN),digits),
+         DoubleToString(PositionGetDouble(POSITION_SL),digits),
+         DoubleToString(PositionGetDouble(POSITION_PROFIT),2));
+   }
+   FileClose(h);
+}
+void powerSessionWriteSummary(string folder,datetime started,datetime ended){
+   if(folder=="")return;
+   int h=FileOpen(folder+"\\SESSION_SUMMARY.html",FILE_WRITE|FILE_TXT|FILE_ANSI);
+   if(h==INVALID_HANDLE)return;
+   string html="<!doctype html><html><head><meta charset='utf-8'><title>RAYYAN Session</title></head><body>"+
+      "<h1>RAYYAN POWERFULL Test Session</h1><p>Session ID: "+powerSessionStamp(started)+
+      "</p><p>Start: "+TimeToString(started,TIME_DATE|TIME_SECONDS)+
+      "</p><p>Algo Trading OFF: "+(ended>0?TimeToString(ended,TIME_DATE|TIME_SECONDS):"ACTIVE")+
+      "</p><p>See LOSS_ANALYSIS.csv, LOSS_RECORDER.csv, ENTRY_CANDLE_LOG.csv and OPEN_POSITIONS.csv.</p>"+
+      "<p>Late closing deals remain assigned to their original position session.</p></body></html>";
+   FileWriteString(h,html); FileClose(h);
+}
+void powerSessionStartNew(){
+   powerSessionStart=TimeCurrent(); powerSessionEnd=0;
+   powerSessionId=powerSessionStamp(powerSessionStart);
+   powerSessionFolder=powerSessionFolderFromStart(powerSessionStart);
+   powerLastSessionFolder=powerSessionFolder;
+   FolderCreate(POWERFULL_REPORT_DIR); FolderCreate(powerSessionFolder);
+   FolderCreate(powerSessionFolder+"\\SCREENSHOTS");
+   powerSessionActive=true; GlobalVariableSet("PW_ACTIVE_SESSION_START",(double)powerSessionStart);
+   Print("RAYYAN SESSION START id=",powerSessionId," folder=",powerSessionFolder);
+   powerSessionWriteSummary(powerSessionFolder,powerSessionStart,0);
+}
+void powerSessionFinish(){
+   if(!powerSessionActive)return;
+   powerSessionEnd=TimeCurrent(); powerSessionActive=false;
+   powerLastSessionFolder=powerSessionFolder;
+   GlobalVariableDel("PW_ACTIVE_SESSION_START");
+   powerSessionWriteOpenPositions(powerSessionFolder);
+   powerSessionWriteSummary(powerSessionFolder,powerSessionStart,powerSessionEnd);
+   Print("RAYYAN SESSION END id=",powerSessionId," time=",TimeToString(powerSessionEnd,TIME_DATE|TIME_SECONDS),
+         " open POWERFULL positions are retained in OPEN_POSITIONS.csv");
+}
+void powerSessionRefresh(){
+   bool allowed=(bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED);
+   if(allowed&&!powerSessionActive)powerSessionStartNew();
+   else if(!allowed&&powerSessionActive)powerSessionFinish();
+}
+string powerSessionLossPath(ulong positionId){return powerSessionPath(positionId,"LOSS_RECORDER.csv");}
+string powerSessionCandlePath(ulong positionId){return powerSessionPath(positionId,"ENTRY_CANDLE_LOG.csv");}
 
 string powerReportSide(ENUM_DEAL_TYPE type){
    if(type==DEAL_TYPE_BUY)return "BUY";
@@ -188,11 +275,17 @@ string powerReportSide(ENUM_DEAL_TYPE type){
 void powerAppendDealRecord(ulong deal){
    if(deal==0||!HistoryDealSelect(deal))return;
    if((long)HistoryDealGetInteger(deal,DEAL_MAGIC)!=POWERFULL_MAGIC)return;
+   ulong positionId=(ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID);
+   if(powerSessionDealSeen(deal))return;
+   ENUM_DEAL_ENTRY dealEntry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
+   if(dealEntry==DEAL_ENTRY_IN||dealEntry==DEAL_ENTRY_INOUT){
+      if(!powerSessionActive)return;
+      GlobalVariableSet("PW_SID_"+(string)positionId,(double)powerSessionStart);
+   }
    string symbol=HistoryDealGetString(deal,DEAL_SYMBOL);
    ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
    ENUM_DEAL_TYPE type=(ENUM_DEAL_TYPE)HistoryDealGetInteger(deal,DEAL_TYPE);
    datetime when=(datetime)HistoryDealGetInteger(deal,DEAL_TIME);
-   ulong positionId=(ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID);
    double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
    int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
    bool positionBuy=((entry==DEAL_ENTRY_OUT||entry==DEAL_ENTRY_OUT_BY)?(type==DEAL_TYPE_SELL):(type==DEAL_TYPE_BUY));
@@ -211,7 +304,7 @@ void powerAppendDealRecord(ulong deal){
          break;
       }
    }
-   int h=FileOpen(POWERFULL_RECORDER_FILE,FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,';');
+   int h=FileOpen(powerSessionLossPath(positionId),FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,';');
    if(h==INVALID_HANDLE){Print("POWERFULL REPORT CSV OPEN FAILED err=",GetLastError());return;}
    if(FileSize(h)==0)
       FileWrite(h,"time","deal_ticket","position_id","symbol","entry_type","side","volume","price",
@@ -234,6 +327,16 @@ void powerAppendDealRecord(ulong deal){
       EnumToString((ENUM_DEAL_REASON)HistoryDealGetInteger(deal,DEAL_REASON)),
       HistoryDealGetString(deal,DEAL_COMMENT));
    FileClose(h);
+   if(entry==DEAL_ENTRY_OUT||entry==DEAL_ENTRY_OUT_BY||entry==DEAL_ENTRY_INOUT){
+      bool stillOpen=false;
+      for(int q=PositionsTotal()-1;q>=0;q--){
+         ulong qt=PositionGetTicket(q);
+         if(qt>0&&PositionSelectByTicket(qt)&&
+            (ulong)PositionGetInteger(POSITION_IDENTIFIER)==positionId&&
+            (long)PositionGetInteger(POSITION_MAGIC)==POWERFULL_MAGIC){stillOpen=true;break;}
+      }
+      if(!stillOpen)GlobalVariableDel("PW_SID_"+(string)positionId);
+   }
 }
 void powerWriteAnalysisReport(){
    datetime to=TimeCurrent(),from=to-90*86400;
@@ -280,12 +383,12 @@ void powerWriteAnalysisReport(){
    FileClose(h);
 }
 
-#define POWERFULL_ENTRY_CANDLE_CSV "RAYYAN_REPORTS\\RAYYAN_ENTRY_CANDLE_LOG.csv"
-
 void powerCaptureEntryCandle(ulong deal){
    // Observational recorder only: this function runs after MT5 confirms an entry deal.
    if(deal==0||!HistoryDealSelect(deal))return;
    if((long)HistoryDealGetInteger(deal,DEAL_MAGIC)!=POWERFULL_MAGIC)return;
+   if(GlobalVariableCheck("PW_CANDLE_"+(string)deal))return;
+   GlobalVariableSet("PW_CANDLE_"+(string)deal,(double)TimeCurrent());
    ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
    if(entry!=DEAL_ENTRY_IN&&entry!=DEAL_ENTRY_INOUT)return;
 
@@ -343,11 +446,13 @@ void powerCaptureEntryCandle(ulong deal){
    string shotState="NO_MATCHING_M5_CHART";
    if(chart>0){
       ResetLastError();
-      shot=ChartScreenShot(chart,imagePath,1280,720,ALIGN_RIGHT);
+      string sessionImage=powerSessionPath(positionId,"SCREENSHOTS\\ENTRY_"+safeSymbol+"_"+stamp+"_"+(string)deal+".png");
+      shot=ChartScreenShot(chart,sessionImage,1280,720,ALIGN_RIGHT);
+      imagePath=sessionImage;
       shotState=(shot?"SAVED":"FAILED_"+IntegerToString(GetLastError()));
    }
 
-   int h=FileOpen(POWERFULL_ENTRY_CANDLE_CSV,
+   int h=FileOpen(powerSessionCandlePath(positionId),
       FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,';');
    if(h==INVALID_HANDLE){
       Print("RAYYAN ENTRY CANDLE CSV OPEN FAILED deal=",deal," err=",GetLastError(),
@@ -380,9 +485,9 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
    if(trans.type!=TRADE_TRANSACTION_DEAL_ADD||trans.deal==0)return;
    if(!HistoryDealSelect(trans.deal))return;
    if((long)HistoryDealGetInteger(trans.deal,DEAL_MAGIC)!=POWERFULL_MAGIC)return;
+   powerSessionRefresh();
    powerAppendDealRecord(trans.deal);
    powerCaptureEntryCandle(trans.deal); // Post-confirmation diagnostics; never gates or delays an order.
-   powerWriteAnalysisReport();
 }
 
 int OnInit(){
@@ -392,6 +497,7 @@ int OnInit(){
    hEma50=iMA(_Symbol,_Period,50,0,MODE_EMA,PRICE_CLOSE);
    hEma200=iMA(_Symbol,_Period,200,0,MODE_EMA,PRICE_CLOSE);
    if(StandaloneD1Mode){
+      powerSessionRefresh();
       string directSymbol=(StringLen(StandaloneSymbol)>0?StandaloneSymbol:_Symbol);
       powerSymbols[0]=directSymbol; powerSymbols[1]=""; powerSymbols[2]="";
       if(!SymbolSelect(directSymbol,true)){
@@ -446,7 +552,7 @@ int OnInit(){
    if(StandaloneD1Mode) Print("RAYYAN D1 STANDALONE READY: no Gateway/WebRequest calls will be made.");
    else Print("RAYYAN4 START Gateway=",GatewayUrl," Symbol=",AllowedSymbol,
          " trade queue=/next indicator queue=/indicator_next");
-   if(StandaloneD1Mode){FolderCreate(POWERFULL_REPORT_DIR);powerWriteAnalysisReport();}
+   if(StandaloneD1Mode){FolderCreate(POWERFULL_REPORT_DIR);powerSessionRefresh();}
    return(INIT_SUCCEEDED);
 }
 void OnDeinit(const int r){
@@ -467,13 +573,14 @@ void OnDeinit(const int r){
    }
 }
 void OnTick(){
+   if(StandaloneD1Mode)powerSessionRefresh();
    if(!StandaloneD1Mode) manageTP2RetraceProtection(); // Standalone mode manages D1 positions only.
    // Opportunistic fast path; no gateway config request is issued from this event.
    managePowerfullAllMarkets(false);
 }
 
 void OnTimer(){
-   if(StandaloneD1Mode){ managePowerfullAllMarkets(false); return; }
+   if(StandaloneD1Mode){ powerSessionRefresh(); managePowerfullAllMarkets(false); return; }
    // Fast quote path: publish changed MT5 ticks without waiting for the OHLC batch.
    // The publisher throttles requests and sends only symbols whose tick changed.
    uint nowMs=GetTickCount();
@@ -2135,10 +2242,14 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    // Weakness is determined from the live M5 candle distribution at its extreme.
    // Red candle near its developed Low = BUY; green candle near its developed High = SELL.
    // No reversal tick or consecutive-tick confirmation is required.
+   // Agreed weakening threshold: price must be at least two tradable ticks
+   // away from the live extreme. This is a distance threshold, not a reversal-pattern wait.
+   bool buyWeakeningDistance=(buyBidRecovery>=2.0*ts&&buyAskRecovery>=2.0*ts);
+   bool sellWeakeningDistance=(sellBidRetreat>=2.0*ts&&sellAskRetreat>=2.0*ts);
    bool buyExtremeDistribution=(buyOpenExtension>=0.55&&
-                                bidLocation<=0.30&&askLocation<=0.35);
+                                bidLocation<=0.30&&askLocation<=0.35&&buyWeakeningDistance);
    bool sellExtremeDistribution=(sellOpenExtension>=0.55&&
-                                 bidLocation>=0.70&&askLocation>=0.65);
+                                 bidLocation>=0.70&&askLocation>=0.65&&sellWeakeningDistance);
    bool buyCandleStructure=candleRed;
    bool sellCandleStructure=candleGreen;
    bool buyReady=(buyFresh&&buyExtremeDistribution&&buyCandleStructure&&buyN<cap);
