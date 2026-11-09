@@ -2597,13 +2597,15 @@ bool powerManageTrendHold(int index,const MqlTick &tick){
       string suffix=IntegerToString((long)ticket),modeKey="PW_HMODE_"+suffix;
       if(!GlobalVariableCheck(modeKey)||(int)GlobalVariableGet(modeKey)!=POWERFULL_MODE_TREND_HOLD)continue;
       datetime opened=(datetime)PositionGetInteger(POSITION_TIME);
-      if(opened<=0||TimeCurrent()-opened<POWERFULL_MIN_TREND_HOLD_SECONDS)continue;
+      if(opened<=0)continue;
       bool isBuy=((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
       double entry=PositionGetDouble(POSITION_PRICE_OPEN),executable=(isBuy?tick.bid:tick.ask);
       string peakKey="PW_PEAK_"+suffix;
       if(!GlobalVariableCheck(peakKey))GlobalVariableSet(peakKey,entry);
       double peak=GlobalVariableGet(peakKey);
+      // Keep recording the true favorable extreme during the minimum hold window.
       if(isBuy?executable>peak+ts*0.1:executable<peak-ts*0.1){peak=executable;GlobalVariableSet(peakKey,peak);}
+      if(TimeCurrent()-opened<POWERFULL_MIN_TREND_HOLD_SECONDS)continue;
       double peakGain=(isBuy?peak-entry:entry-peak),giveback=(isBuy?peak-executable:executable-peak);
       double net=powerProjectedNet(ticket);
       if(peakGain<minLock||giveback<peakGain*0.30||net<=0.0)continue;
