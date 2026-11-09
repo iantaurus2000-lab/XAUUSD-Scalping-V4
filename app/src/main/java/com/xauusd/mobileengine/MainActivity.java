@@ -725,7 +725,7 @@ public class MainActivity extends Activity {
         double[] q=freshBrokerQuote(selectedMarket);
         String quoteAudit=brokerQuoteAuditText();
         if(q==null||!QuoteSafety.valid(q[0],q[1]))return quoteAudit;
-        double atr=SmartLimitReentry.atr(m1,14);
+        double atr=MarketVolatility.atr(m1,14);
         double spread=q[1]-q[0];
         double max=QuoteSafety.maxAllowedSpread(q[0],q[1],atr);
         double point=brokerPoint(getSharedPreferences("rayyan4_gateway",MODE_PRIVATE));
@@ -1716,7 +1716,7 @@ public class MainActivity extends Activity {
         if(marketOrder){
             SharedPreferences quotePrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
             double[] q=freshBrokerQuote(selectedMarket);
-            double atr=SmartLimitReentry.atr(m1Data,14);
+            double atr=MarketVolatility.atr(m1Data,14);
             long received=quotePrefs.getLong("broker_quote_received_ms_"+mt5SymbolForMarket(selectedMarket),0L);
             long tickMs=quotePrefs.getLong("broker_quote_tick_ms_"+mt5SymbolForMarket(selectedMarket),0L);
             long now=System.currentTimeMillis();
