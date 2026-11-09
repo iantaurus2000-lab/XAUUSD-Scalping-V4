@@ -554,67 +554,9 @@ public final class GatewayService extends Service {
     }
 
     private void backgroundSignalTick(){
-        if(MainActivity.isAppVisible())return;
-        long now=System.currentTimeMillis();
-        if(!isEaRecentlyOnline(this)){
-            logBgStatus("EA_OFFLINE signal notifications paused");
-            return;
-        }
-        if(now<nextBgAttemptAt)return;
-        nextBgAttemptAt=now+30000L;
-        try{
-            String market=getSharedPreferences("rayyan4_indicators",MODE_PRIVATE)
-                .getString("market","XAUUSD");
-            String symbol=backgroundMt5Symbol(market);
-            Candle[] m1=readStoredMt5Bars(symbol,"M1",200);
-            Candle[] m5=readStoredMt5Bars(symbol,"M5",200);
-            double[] t=readFreshMt5Quote(symbol);
-            bgFailureCount=0;
-            nextBgAttemptAt=System.currentTimeMillis()+30000L;
-            if(m1==null||m5==null||t==null||m1.length<30||m5.length<60){
-                logBgStatus("MT5_DATA_STALE_OR_INSUFFICIENT market="+market+" symbol="+symbol+
-                    " M1="+(m1==null?0:m1.length)+" M5="+(m5==null?0:m5.length)+" quote="+(t!=null));
-                return;
-            }
-            logBgStatus("MT5_FEED_OK market="+market+" symbol="+symbol+" M1="+m1.length+" M5="+m5.length);
-            SharedPreferences strategyPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-            boolean standard=strategyPrefs.getBoolean("rayyan_strategy_enabled_STANDAR_"+symbol,false);
-            boolean excellent=strategyPrefs.getBoolean("rayyan_strategy_enabled_EXCELLENT_"+symbol,false);
-            boolean powerful=strategyPrefs.getBoolean("powerfull_enabled_"+symbol,false);
-            int activeCount=(standard?1:0)+(excellent?1:0)+(powerful?1:0);
-            if(activeCount!=1 || powerful){
-                logBgStatus("BACKGROUND_SIGNAL_PAUSED strategy="+(activeCount>1?"CONFLICT":(powerful?"POWERFULL_EA_OWNED":"OFF"))+" symbol="+symbol);
-                return;
-            }
-            SignalResult s=excellent
-                ?ExcellentSignalEngine.evaluate(m1,m5,t[0],t[1],t[0],t[1])
-                :SignalEngine.evaluate(m1,m5,t[0],t[1],t[0],t[1]);
-            if(s==null){logBgStatus("SIGNAL_RESULT_NULL");return;}
-            String side=s.side;
-            if(!"BUY".equals(side)&&!"SELL".equals(side))logBgStatus("SIGNAL_WAIT side="+side+" confidence="+s.confidence);
-            SharedPreferences p=getSharedPreferences("rayyan4_bg_signal",MODE_PRIVATE);
-            String last=p.getString("side_"+symbol,"");
-            long lastAlertAt=p.getLong("last_alert_at_"+symbol,0L);
-            long alertNow=System.currentTimeMillis();
-            if(("BUY".equals(side)||"SELL".equals(side))&&!side.equals(last)&&alertNow-lastAlertAt>=180000L){
-                p.edit().putString("side_"+symbol,side).putLong("last_alert_at_"+symbol,alertNow).apply();
-                String msg=market+" SCALPING\n\n"+side+
-                    "\nEntry: "+f(s.entry)+"\nSL: "+f(s.sl)+"\nTP1: "+f(s.tp1)+"\nTP2: "+f(s.tp2)+
-                    "\nTF: M1\nBias: M5 "+s.m5Bias+"\nSetup: "+s.setup+"\nConfidence: "+s.confidence+"/5";
-                AppLog.add(this,"BACKGROUND SIGNAL",market+" "+side+" "+f(s.entry)+" score="+s.score);
-                HistoryStore.add(this,"SIGNAL",side,s.entry,s.sl,s.tp1,s.tp2,s.confidence);
-                String token=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE).getString("token","");
-                String chat=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE).getString("chat","");
-                boolean tg=getSharedPreferences("rayyan4_telegram",MODE_PRIVATE).getBoolean("enabled",false);
-                if(tg)TelegramClient.send(token,chat,msg,(ok,detail)->AppLog.add(this,"TELEGRAM",ok?"background sent":"background error"));
-                notifyAlert(market+" "+side,"Entry "+f(s.entry)+" | SL "+f(s.sl)+" | TP1 "+f(s.tp1));
-            }
-        }catch(Exception e){
-            bgFailureCount=Math.min(bgFailureCount+1,5);
-            long delay=Math.min(300000L,30000L*(1L<<Math.min(bgFailureCount-1,4)));
-            nextBgAttemptAt=System.currentTimeMillis()+delay;
-            logBgStatus("FEED_ERROR retry="+(delay/1000L)+"s "+e.getClass().getSimpleName()+": "+e.getMessage());
-        }
+        // Removed legacy Android STANDAR/EXCELLENT background signal engine.
+        // POWERFULL is executed and reported by the attached MT5 EA only.
+        logBgStatus("APK_SIGNAL_ENGINE_REMOVED_POWERFULL_EA_OWNED");
     }
 
     private String backgroundMt5Symbol(String market){
