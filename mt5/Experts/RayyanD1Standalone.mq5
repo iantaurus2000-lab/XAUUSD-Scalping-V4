@@ -330,7 +330,7 @@ void powerAppendDealRecord(ulong deal){
    double swap=HistoryDealGetDouble(deal,DEAL_SWAP);
    double commission=HistoryDealGetDouble(deal,DEAL_COMMISSION);
    double fee=HistoryDealGetDouble(deal,DEAL_FEE);
-   int rowWritten=FileWrite(h,TimeToString(when,TIME_DATE|TIME_SECONDS),(string)deal,(string)positionId,symbol,
+   uint rowWritten=FileWrite(h,TimeToString(when,TIME_DATE|TIME_SECONDS),(string)deal,(string)positionId,symbol,
       EnumToString(entry),powerReportSide(type),
       DoubleToString(HistoryDealGetDouble(deal,DEAL_VOLUME),8),
       DoubleToString(HistoryDealGetDouble(deal,DEAL_PRICE),digits),
@@ -2341,12 +2341,24 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    double px=(side>0?tick.ask:tick.bid);
    double requiredMargin=0.0;
    ENUM_ORDER_TYPE marginOrderType=(side>0?ORDER_TYPE_BUY:ORDER_TYPE_SELL);
-   if(!OrderCalcMargin(marginOrderType,symbol,lot,px,requiredMargin)||
-      !MathIsValidNumber(requiredMargin)||requiredMargin<=0.0){
-      powerPublishState(index,"BLOCKED_MARGIN_CALC","MT5 could not calculate required margin; no new order sent",barTime);
+   ResetLastError();
+   bool marginCalcOk=OrderCalcMargin(marginOrderType,symbol,lot,px,requiredMargin);
+   int marginCalcError=GetLastError();
+   bool marginValueValid=(MathIsValidNumber(requiredMargin)&&requiredMargin>0.0);
+   if(!marginCalcOk||!marginValueValid){
+      long marginMode=SymbolInfoInteger(symbol,SYMBOL_TRADE_CALC_MODE);
+      double contractSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_CONTRACT_SIZE);
+      double initialMargin=SymbolInfoDouble(symbol,SYMBOL_MARGIN_INITIAL);
+      powerPublishState(index,"BLOCKED_MARGIN_CALC","MT5 could not calculate a positive required margin; no new order sent",barTime);
       Print("D1 MARGIN CHECK FAILED symbol=",symbol," side=",(side>0?"BUY":"SELL"),
             " lot=",DoubleToString(lot,2)," price=",DoubleToString(px,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
-            " err=",GetLastError());
+            " calc_ok=",(marginCalcOk?"true":"false"),
+            " required_margin=",DoubleToString(requiredMargin,2),
+            " free_margin=",DoubleToString(AccountInfoDouble(ACCOUNT_MARGIN_FREE),2),
+            " calc_mode=",marginMode,
+            " contract_size=",DoubleToString(contractSize,2),
+            " symbol_initial_margin=",DoubleToString(initialMargin,2),
+            " err=",marginCalcError);
       return;
    }
    double freeMargin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
