@@ -431,7 +431,7 @@ public class MainActivity extends Activity {
             status.setText("● POWERFULL EA • "+(fresh?powerState:"STATUS EA STALE")+" • "+market+" • M5");
             return;
         }
-        if(!"STANDAR".equals(strategy)&&!"EXCELLENT".equals(strategy)){
+        if(true){
             status.setText("● QUOTE LIVE • STRATEGI OFF • "+market+" • "+selectedTf);
             return;
         }
@@ -798,21 +798,10 @@ public class MainActivity extends Activity {
     }
 
     /** Deduplicate independently by diagnostic category; READY logs must not reset FILTER logs. */
-    private void autoDiagnostic(SharedPreferences p,String eventKey,String message){
-        if(eventKey==null)eventKey="";
-        int split=eventKey.indexOf('|');
-        String category=split>0?eventKey.substring(0,split):eventKey;
-        String prefKey="smart_diag_last_"+category;
-        if(!eventKey.equals(p.getString(prefKey,""))){
-            AppLog.add(this,"SMART AUTO DIAG",message);
-            p.edit().putString(prefKey,eventKey)
-                .putString("smart_diag_last_message",message)
-                .putLong("smart_diag_last_at",System.currentTimeMillis()).apply();
-        }
-    }
+
 
     private void queueBlockDiagnostic(String reason){
-        if(!"SMART_AUTO".equals(queueOrigin))return;
+        return; // Legacy Smart Auto notification lifecycle removed.
         String code="GENERAL";
         if(reason.startsWith("quote/chart stale"))code="QUOTE_STALE";
         else if(reason.startsWith("invalid side"))code="INVALID_SIDE";
@@ -1518,10 +1507,7 @@ public class MainActivity extends Activity {
     void updateQuickLayerButton(Button b,String label){
         String mode=activeStrategyForSymbol(mt5SymbolForMarket(selectedMarket));
         boolean on;
-        if(label.contains("S/R"))on="STANDAR".equals(mode)&&ind("sr",true);
-        else if(label.contains("Fibo"))on="STANDAR".equals(mode)&&ind("fibo",true);
-        else if(label.contains("EMA"))on="STANDAR".equals(mode)&&(ind("ema50",true)||ind("ema200",true));
-        else if(label.contains("Buy/Sell"))on=ind("signals",true);
+        if(label.contains("S/R")||label.contains("Fibo")||label.contains("EMA")||label.contains("Buy/Sell"))on=false;
         else if(label.contains("Order"))on=ind("orders",true);
         else on=ind("position",true);
         b.setTextColor(on?green:Color.LTGRAY);
@@ -1632,64 +1618,17 @@ public class MainActivity extends Activity {
      * Save the market-specific lot and unified strategy settings.
      * SMART AUTO computes Entry/SL/TP from the closed M1 wick signal; those manual fields are not used.
      */
-    private boolean saveAutoEntrySettings(Switch auto,Switch smartReentry,Spinner mode,
-                                           EditText volume,SharedPreferences gatewayPrefs,String symbol){
-        final double lot;
-        try{
-            lot=Double.parseDouble(volume.getText().toString().trim());
-        }catch(Exception e){
-            Toast.makeText(this,"Isi lot yang valid terlebih dahulu",Toast.LENGTH_SHORT).show();
-            return false;
-        }
-        double min=minLotForSymbol(symbol);
-        if(!Double.isFinite(lot)||lot<=0||lot+1e-8<min){
-            Toast.makeText(this,"Lot minimum "+symbol+" = "+lotText(min),Toast.LENGTH_LONG).show();
-            volume.setText(lotText(min));
-            return false;
-        }
-        String operation=mode.getSelectedItemPosition()==1?"READY":"REST";
-        gatewayPrefs.edit().putFloat("lot_"+symbol,(float)lot)
-            .putBoolean("auto",auto.isChecked())
-            .putBoolean("smart_reentry_enabled",smartReentry.isChecked())
-            .putString("operation_mode",operation).apply();
-        AppLog.add(this,"MODE",operation.equals("READY")?"SIAP TRADING":"ISTIRAHAT");
-        AppLog.add(this,"SMART AUTO","settings saved symbol="+symbol+" lot="+lotText(lot)
-            +" auto="+auto.isChecked()+" mode="+operation);
-        return true;
-    }
+
 
     String lotText(double lot){return String.format(Locale.US,"%.2f",lot);}
 
-    private double smartReentryMaxDistanceAtr(SharedPreferences gp){
-        double value=gp.getFloat("smart_reentry_max_distance_atr",1.5f);
-        return Double.isFinite(value)&&value>=0.5&&value<=5.0?value:1.5;
-    }
 
-    private int smartReentryMaxAgeBars(SharedPreferences gp){
-        int value=gp.getInt("smart_reentry_max_age_m1_bars",3);
-        return value>=3&&value<=3?value:3;
-    }
 
-    private boolean validSmartReentryLimits(EditText distance,EditText age){
-        try{
-            double d=Double.parseDouble(distance.getText().toString().trim());
-            int a=Integer.parseInt(age.getText().toString().trim());
-            if(!Double.isFinite(d)||d<0.5||d>5.0||a!=3)throw new NumberFormatException();
-            return true;
-        }catch(Exception e){
-            Toast.makeText(this,"Jarak maksimum 0,5–5,0 ATR dan usia LIMIT harus 3 candle M1.",
-                Toast.LENGTH_LONG).show();
-            return false;
-        }
-    }
 
-    private void persistSmartReentryLimits(EditText distance,EditText age,SharedPreferences gp){
-        double d=Double.parseDouble(distance.getText().toString().trim());
-        int a=Integer.parseInt(age.getText().toString().trim());
-        gp.edit().putFloat("smart_reentry_max_distance_atr",(float)d)
-            .putInt("smart_reentry_max_age_m1_bars",a).apply();
-        AppLog.add(this,"SMART LIMIT","limits saved maxDistance="+d+" ATR; maxAge="+a+" M1 bars");
-    }
+
+
+
+
 
     double readQuickLot(){
         try{
@@ -1777,7 +1716,7 @@ public class MainActivity extends Activity {
         if(marketOrder){
             SharedPreferences quotePrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
             double[] q=freshBrokerQuote(selectedMarket);
-            double atr=m1Data!=null?SmartLimitReentry.atr(m1Data,14):0.0;
+            double atr=0.0;
             long received=quotePrefs.getLong("broker_quote_received_ms_"+mt5SymbolForMarket(selectedMarket),0L);
             long tickMs=quotePrefs.getLong("broker_quote_tick_ms_"+mt5SymbolForMarket(selectedMarket),0L);
             long now=System.currentTimeMillis();
