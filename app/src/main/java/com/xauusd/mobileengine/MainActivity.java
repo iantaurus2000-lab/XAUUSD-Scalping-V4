@@ -746,17 +746,9 @@ public class MainActivity extends Activity {
         if("SELL".equals(signal.side))return signal.tp2<signal.tp1&&signal.tp1<signal.entry?signal.tp2:0.0;
         return 0.0;
     }
-    private SignalResult evaluateSignal(Candle[] m1,Candle[] m5,double bid,double ask,
-                                        double spreadBid,double spreadAsk){
-        String symbol=mt5SymbolForMarket(selectedMarket);
-        String active=activeStrategyForSymbol(symbol);
-        // The selector fails closed if stale preferences somehow contain >1 active strategy.
-        if("EXCELLENT".equals(active))
-            return ExcellentSignalEngine.evaluate(m1,m5,bid,ask,spreadBid,spreadAsk);
-        if("STANDAR".equals(active))
-            return SignalEngine.evaluate(m1,m5,bid,ask,spreadBid,spreadAsk);
+    private SignalResult evaluateSignal(Candle[] m1,Candle[] m5,double bid,double ask,double spreadBid,double spreadAsk){
         return new SignalResult("WAIT","NEUTRAL",0,0,0,0,0,0,1,
-            "STRATEGI STANDAR/EXCELLENT OFF • POWERFULL dikendalikan EA secara terpisah",
+            "APK SIGNAL ENGINE REMOVED • POWERFULL EA ONLY",
             false,false,false,false,false,false,false,false);
     }
     private String autoEntryBlockReason(SignalResult signal,double bid,double ask,boolean m1Context){
