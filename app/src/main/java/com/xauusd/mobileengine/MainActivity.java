@@ -2516,232 +2516,45 @@ public class MainActivity extends Activity {
     }
 
     void showMt5Dialog(){
-        SharedPreferences gatewayPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        String selectedMt5Symbol=mt5SymbolForMarket(selectedMarket);
-
-        // Fixed header and footer keep KIRIM LIMIT / SIMPAN / TUTUP visible on small phones.
-        LinearLayout root=new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(uiDp(14),uiDp(12),uiDp(14),uiDp(10));
-        root.setBackground(roundBg(Color.rgb(3,18,30),16));
-
-        TextView panelTitle=tv("AUTO ENTRY / MT5 • DEMO",18);
-        panelTitle.setTextColor(Color.CYAN);panelTitle.setTypeface(null,Typeface.BOLD);
-        root.addView(panelTitle,new LinearLayout.LayoutParams(-1,uiDp(36)));
-        String strategyMode=activeStrategyForSymbol(selectedMt5Symbol);
-        String strategyDescription="STANDAR".equals(strategyMode)
-            ?"STANDAR aktif • Fibo/wick M1 + EMA50/200 M5"
-            :("EXCELLENT".equals(strategyMode)
-                ?"EXCELLENT aktif • EMA20/50 M5 + RSI/ATR + wick/sweep M1"
-                :("POWERFULL".equals(strategyMode)
-                    ?"POWERFULL aktif • D1 Human Price Extreme, entry BUY/SELL pada pembalikan tick di ekstrem M5; SL points wajib"
-                    :"Strategi OFF • auto-entry strategi tidak berjalan"));
-        TextView panelNote=tv(strategyDescription+" • TP1/TP2 dan level order divalidasi",12);
-        panelNote.setTextColor(Color.LTGRAY);
-        panelNote.setMaxLines(2);
-        root.addView(panelNote,new LinearLayout.LayoutParams(-1,uiDp(40)));
-
-        LinearLayout fields=new LinearLayout(this);
-        fields.setOrientation(LinearLayout.VERTICAL);
-        fields.setPadding(0,uiDp(3),0,uiDp(5));
-
-        Switch auto=new Switch(this);
-        auto.setText("SMART AUTO MASTER • lifecycle legacy");
-        auto.setTextSize(14);auto.setPadding(uiDp(10),uiDp(4),uiDp(10),uiDp(4));
-        auto.setBackground(roundBg(Color.rgb(7,30,47),12));
-        auto.setMinHeight(uiDp(52));auto.setMinimumHeight(uiDp(52));
-        auto.setChecked(gatewayPrefs.getBoolean("auto",false));
-
-
-        Switch smartReentry=new Switch(this);
-        smartReentry.setText("SMART RE-ENTRY • kelola order aktif sampai status MT5 jelas");
-        smartReentry.setTextSize(13);
-        smartReentry.setPadding(uiDp(10),uiDp(4),uiDp(10),uiDp(4));
-        smartReentry.setBackground(roundBg(Color.rgb(7,30,47),12));
-        smartReentry.setMinHeight(uiDp(52));smartReentry.setMinimumHeight(uiDp(52));
-        smartReentry.setChecked(gatewayPrefs.getBoolean("smart_reentry_enabled",true));
-
-        EditText maxDistance=new EditText(this);
-        maxDistance.setHint("Jarak entry baru maksimum (ATR M1), default 1.5");
-        maxDistance.setInputType(8194);styleDialogInput(maxDistance);
-        maxDistance.setText(String.format(Locale.US,"%.1f",
-            gatewayPrefs.getFloat("smart_reentry_max_distance_atr",1.5f)));
-        EditText maxAge=new EditText(this);
-        maxAge.setHint("Usia maksimum LIMIT (candle M1), wajib 3");
-        maxAge.setInputType(2);styleDialogInput(maxAge);
-        maxAge.setText(Integer.toString(gatewayPrefs.getInt("smart_reentry_max_age_m1_bars",3)));
-
-        Spinner mode=new Spinner(this);
-        String[] modes={"MODE ISTIRAHAT","MODE SIAP TRADING"};
-        ArrayAdapter<String> modeAdapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,modes);
-        mode.setAdapter(modeAdapter);mode.setMinimumHeight(uiDp(50));
-        mode.setBackground(roundBg(Color.rgb(7,30,47),12));
-        mode.setSelection("READY".equals(gatewayPrefs.getString("operation_mode","REST"))?1:0);
-
-        TextView modeHint=tv("DEMO ONLY • "+selectedMt5Symbol+" • minimum lot "+lotText(minLotForSymbol(selectedMt5Symbol))+
-            " • EA MT5 harus polling aktif. STANDAR/EXCELLENT ON/OFF di Strategy Control dan tidak bergantung pada master ini atau MODE SIAP TRADING.",10);
-        modeHint.setTextSize(11);modeHint.setTextColor(Color.CYAN);
-        modeHint.setPadding(uiDp(10),uiDp(7),uiDp(10),uiDp(7));
-        modeHint.setBackground(roundBg(Color.rgb(7,30,47),10));
-
-        EditText side=new EditText(this);side.setHint("BUY_LIMIT / SELL_LIMIT");styleDialogInput(side);
-        EditText vol=new EditText(this);vol.setHint("Lot • minimum "+lotText(minLotForSymbol(selectedMt5Symbol)));
-        vol.setInputType(8194);styleDialogInput(vol);vol.setText(lotText(lotForMarket()));
-        EditText en=new EditText(this);en.setHint("Entry");en.setInputType(8194);styleDialogInput(en);
-        EditText sl=new EditText(this);sl.setHint("Stop Loss (SL)");sl.setInputType(8194);styleDialogInput(sl);
-        EditText tp=new EditText(this);tp.setHint("Take Profit (TP)");tp.setInputType(8194);styleDialogInput(tp);
-
-        SignalResult current=lastSignal;
-        if(current!=null&&current.entry>0&&current.sl>0&&current.tp1>0){
-            if("BUY".equals(current.side))side.setText("BUY_LIMIT");
-            else if("SELL".equals(current.side))side.setText("SELL_LIMIT");
-            en.setText(String.format(Locale.US,"%.2f",current.entry));
-            sl.setText(String.format(Locale.US,"%.2f",current.sl));
-            double target=validAutoTarget(current);
-            if(target>0)tp.setText(String.format(Locale.US,"%.2f",target));
-        }else{
-            side.setText("");
-        }
-
-        fields.addView(mode,new LinearLayout.LayoutParams(-1,uiDp(52)));
-        LinearLayout.LayoutParams hintParams=new LinearLayout.LayoutParams(-1,-2);
-        hintParams.setMargins(0,uiDp(5),0,uiDp(6));fields.addView(modeHint,hintParams);
-        fields.addView(auto,new LinearLayout.LayoutParams(-1,uiDp(54)));
-        fields.addView(smartReentry,new LinearLayout.LayoutParams(-1,uiDp(54)));
-        fields.addView(maxDistance,new LinearLayout.LayoutParams(-1,uiDp(54)));
-        fields.addView(maxAge,new LinearLayout.LayoutParams(-1,uiDp(54)));
-        fields.addView(vol,new LinearLayout.LayoutParams(-1,uiDp(54)));
-
-        // Manual one-shot LIMIT fields are separate from automatic signal execution.
-        // With AUTO enabled, only market-specific lot and operating mode need adjustment.
-        LinearLayout manualFields=new LinearLayout(this);
-        manualFields.setOrientation(LinearLayout.VERTICAL);
-        TextView manualTitle=tv("MANUAL LIMIT • Entry / SL / TP (manual terpisah)",11);
-        manualTitle.setTextColor(Color.CYAN);
-        manualTitle.setPadding(uiDp(3),uiDp(6),uiDp(3),uiDp(3));
-        manualFields.addView(manualTitle,new LinearLayout.LayoutParams(-1,uiDp(28)));
-        manualFields.addView(side,new LinearLayout.LayoutParams(-1,uiDp(54)));
-        manualFields.addView(en,new LinearLayout.LayoutParams(-1,uiDp(54)));
-        manualFields.addView(sl,new LinearLayout.LayoutParams(-1,uiDp(54)));
-        manualFields.addView(tp,new LinearLayout.LayoutParams(-1,uiDp(54)));
-        fields.addView(manualFields,new LinearLayout.LayoutParams(-1,-2));
-
-        ScrollView sc=new ScrollView(this);
-        sc.setFillViewport(false);sc.setSmoothScrollingEnabled(true);sc.addView(fields);
-        root.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
-
-        TextView queuedStatus=tv("Belum ada perintah baru.",11);
-        queuedStatus.setTextColor(Color.LTGRAY);
-        queuedStatus.setPadding(uiDp(4),uiDp(4),uiDp(4),uiDp(4));
-        queuedStatus.setMaxLines(3);
-        queuedStatus.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        root.addView(queuedStatus,new LinearLayout.LayoutParams(-1,-2));
-
-        Button send=btn("KIRIM LIMIT DEMO");
-        send.setTextSize(12);send.setTypeface(null,Typeface.BOLD);
-        send.setTextColor(Color.WHITE);send.setBackground(roundBg(Color.rgb(0,110,85),10));
-        send.setMinHeight(uiDp(46));send.setMinimumHeight(uiDp(46));
+        final String symbol=mt5SymbolForMarket(selectedMarket);
+        LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(uiDp(16),uiDp(14),uiDp(16),uiDp(12));root.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("MANUAL LIMIT • MT5 DEMO",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        root.addView(title,new LinearLayout.LayoutParams(-1,uiDp(38)));
+        TextView note=tv(symbol+" • strategi otomatis STANDAR/EXCELLENT dan Smart Auto APK telah dihapus. POWERFULL tetap dijalankan EA MT5.",11);
+        note.setTextColor(Color.LTGRAY);root.addView(note,new LinearLayout.LayoutParams(-1,uiDp(48)));
+        EditText side=new EditText(this);side.setSingleLine(true);side.setHint("BUY_LIMIT / SELL_LIMIT");styleDialogInput(side);
+        EditText volume=new EditText(this);volume.setSingleLine(true);volume.setHint("Lot • minimum "+lotText(minLotForSymbol(symbol)));
+        volume.setInputType(8194);styleDialogInput(volume);volume.setText(lotText(lotForMarket()));
+        EditText entry=new EditText(this);entry.setSingleLine(true);entry.setHint("Entry");entry.setInputType(8194);styleDialogInput(entry);
+        EditText sl=new EditText(this);sl.setSingleLine(true);sl.setHint("Stop Loss");sl.setInputType(8194);styleDialogInput(sl);
+        EditText tp=new EditText(this);tp.setSingleLine(true);tp.setHint("Take Profit");tp.setInputType(8194);styleDialogInput(tp);
+        for(EditText field:new EditText[]{side,volume,entry,sl,tp})root.addView(field,new LinearLayout.LayoutParams(-1,uiDp(52)));
+        TextView statusView=tv("Order manual menunggu dikirim.",11);statusView.setTextColor(Color.LTGRAY);
+        root.addView(statusView,new LinearLayout.LayoutParams(-1,uiDp(34)));
+        Button send=btn("KIRIM LIMIT DEMO");send.setTextColor(Color.WHITE);send.setBackground(roundBg(Color.rgb(0,110,85),10));
         root.addView(send,new LinearLayout.LayoutParams(-1,uiDp(48)));
-
-        LinearLayout footer=new LinearLayout(this);
-        footer.setOrientation(LinearLayout.HORIZONTAL);
-        footer.setGravity(Gravity.CENTER_VERTICAL);
-        Button save=btn("SIMPAN MODE");
-        save.setTextSize(11);save.setTextColor(Color.WHITE);
-        save.setBackground(roundBg(Color.rgb(8,70,103),10));
-        Button close=btn("TUTUP");
-        close.setTextSize(11);close.setTextColor(Color.WHITE);
-        close.setBackground(roundBg(Color.rgb(53,65,77),10));
-        LinearLayout.LayoutParams buttonParams=new LinearLayout.LayoutParams(0,uiDp(46),1f);
-        buttonParams.setMargins(0,uiDp(5),uiDp(4),0);footer.addView(save,buttonParams);
-        LinearLayout.LayoutParams closeParams=new LinearLayout.LayoutParams(0,uiDp(46),1f);
-        closeParams.setMargins(uiDp(4),uiDp(5),0,0);footer.addView(close,closeParams);
-        root.addView(footer,new LinearLayout.LayoutParams(-1,uiDp(51)));
-
+        Button close=btn("TUTUP");close.setTextColor(Color.WHITE);close.setBackground(roundBg(Color.rgb(53,65,77),10));
+        root.addView(close,new LinearLayout.LayoutParams(-1,uiDp(44)));
         AlertDialog dialog=new AlertDialog.Builder(this).setView(root).create();
-        final String[] queuedOrderId={""};
-        Runnable updateAutoUi=()->{
-            int visibility=auto.isChecked()?View.GONE:View.VISIBLE;
-            manualFields.setVisibility(visibility);
-            send.setVisibility(visibility);
-        };
-        auto.setOnCheckedChangeListener((buttonView,isChecked)->updateAutoUi.run());
-        updateAutoUi.run();
-
-        save.setOnClickListener(v->{
-            if(!validSmartReentryLimits(maxDistance,maxAge))return;
-            if(!saveAutoEntrySettings(auto,smartReentry,mode,vol,gatewayPrefs,selectedMt5Symbol))return;
-            persistSmartReentryLimits(maxDistance,maxAge,gatewayPrefs);
-            Toast.makeText(this,"Pengaturan AUTO ENTRY dan batas Smart LIMIT tersimpan untuk "+selectedMt5Symbol,Toast.LENGTH_SHORT).show();
-            dialog.dismiss();
-        });
         close.setOnClickListener(v->dialog.dismiss());
         send.setOnClickListener(v->{
             try{
-                if(!validSmartReentryLimits(maxDistance,maxAge))return;
-                if(!saveAutoEntrySettings(auto,smartReentry,mode,vol,gatewayPrefs,selectedMt5Symbol))return;
-                persistSmartReentryLimits(maxDistance,maxAge,gatewayPrefs);
                 if(!GatewayService.isEaRecentlyOnline(this)){
-                    queuedStatus.setTextColor(Color.rgb(255,190,70));
-                    queuedStatus.setText("DITAHAN • EA MT5 belum polling aktif. Periksa koneksi MT5/Winlator; tidak ada order yang diantrekan.");
-                    AppLog.add(this,"ORDER_BLOCKED","manual LIMIT blocked: EA offline");
-                    Toast.makeText(this,"EA MT5 belum terhubung • LIMIT tidak dikirim",Toast.LENGTH_LONG).show();
-                    return;
+                    statusView.setText("DITAHAN • EA MT5 belum polling aktif.");return;
                 }
-                boolean queued=queueLimit(side.getText().toString().trim().toUpperCase(Locale.US),
-                    Double.parseDouble(vol.getText().toString().trim()),
-                    Double.parseDouble(en.getText().toString().trim()),
-                    Double.parseDouble(sl.getText().toString().trim()),
-                    Double.parseDouble(tp.getText().toString().trim()));
-                if(queued){
-                    queuedOrderId[0]=gatewayPrefs.getString("order_status_id","");
-                    queuedStatus.setTextColor(Color.rgb(255,190,70));
-                    queuedStatus.setText("DIANTREKAN • menunggu ACK EA MT5. Ini belum berarti order telah terpasang.");
-                    send.setText("LIMIT SUDAH DIANTREKAN");
-                    send.setEnabled(false);
-                }
-            }catch(Exception e){
-                AppLog.add(this,"ORDER","dialog input error: "+e.getClass().getSimpleName()+" "+e.getMessage());
-                Toast.makeText(this,"Periksa angka Lot, Entry, SL dan TP",Toast.LENGTH_SHORT).show();
-            }catch(Throwable t){
-                AppLog.add(this,"ORDER","dialog submit failure: "+t.getClass().getSimpleName()+" "+t.getMessage());
-                Toast.makeText(this,"Gagal memproses LIMIT; aplikasi tetap dibuka",Toast.LENGTH_LONG).show();
-            }
+                double lot=Double.parseDouble(volume.getText().toString().trim());
+                double en=Double.parseDouble(entry.getText().toString().trim());
+                double stop=Double.parseDouble(sl.getText().toString().trim());
+                double target=Double.parseDouble(tp.getText().toString().trim());
+                String orderSide=side.getText().toString().trim().toUpperCase(Locale.US);
+                if(queueLimit(orderSide,lot,en,stop,target)){
+                    statusView.setText("QUEUED • menunggu konfirmasi EA MT5.");
+                    Toast.makeText(this,"Order manual masuk antrean Gateway.",Toast.LENGTH_SHORT).show();
+                }else statusView.setText("Order tidak masuk antrean. Periksa Log.");
+            }catch(Exception ex){statusView.setText("Input tidak valid • isi lot, entry, SL, TP dan side.");}
         });
-
-        showSizedDialog(dialog,0.86f,450);
-        android.os.Handler ackHandler=new android.os.Handler(android.os.Looper.getMainLooper());
-        Runnable ackWatcher=new Runnable(){
-            @Override public void run(){
-                if(!dialog.isShowing())return;
-                if(!queuedOrderId[0].isEmpty()){
-                    SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-                    String statusId=p.getString("order_status_id","");
-                    if(queuedOrderId[0].equals(statusId)){
-                        String result=p.getString("order_status","UNKNOWN");
-                        String detail=p.getString("order_status_detail","");
-                        if("QUEUED".equals(result)){
-                            queuedStatus.setTextColor(Color.rgb(255,190,70));
-                            queuedStatus.setText("DIANTREKAN • menunggu ACK EA MT5; belum terpasang.");
-                        }else if("EXECUTED".equals(result)){
-                            queuedStatus.setTextColor(green);
-                            queuedStatus.setText("ORDER TERPASANG • MT5 mengonfirmasi order diterima.");
-                        }else if("EXPIRED".equals(result)){
-                            queuedStatus.setTextColor(red);
-                            queuedStatus.setText("ACK KEDALUWARSA • "+detail+" • cek MT5 Trade/Experts sebelum kirim ulang.");
-                        }else{
-                            queuedStatus.setTextColor(red);
-                            queuedStatus.setText("ORDER GAGAL: "+result+" • "+detail+" • periksa Experts log MT5.");
-                        }
-                    }else{
-                        queuedStatus.setTextColor(Color.rgb(255,190,70));
-                        queuedStatus.setText("DIANTREKAN • menunggu ACK EA MT5; belum terpasang.");
-                    }
-                }
-                ackHandler.postDelayed(this,1000L);
-            }
-        };
-        ackHandler.post(ackWatcher);
+        showSizedDialog(dialog,0.82f,440);
     }
 
     @Override protected void onDestroy(){
