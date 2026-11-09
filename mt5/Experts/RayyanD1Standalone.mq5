@@ -2339,38 +2339,58 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
 
    // BUY executes at Ask; SELL executes at Bid. Signal location remains candle-distribution based.
    double px=(side>0?tick.ask:tick.bid);
-   double requiredMargin=0.0;
-   ENUM_ORDER_TYPE marginOrderType=(side>0?ORDER_TYPE_BUY:ORDER_TYPE_SELL);
-   ResetLastError();
-   bool marginCalcOk=OrderCalcMargin(marginOrderType,symbol,lot,px,requiredMargin);
-   int marginCalcError=GetLastError();
-   bool marginValueValid=(MathIsValidNumber(requiredMargin)&&requiredMargin>0.0);
-   if(!marginCalcOk||!marginValueValid){
-      long marginMode=SymbolInfoInteger(symbol,SYMBOL_TRADE_CALC_MODE);
-      double contractSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_CONTRACT_SIZE);
-      double initialMargin=SymbolInfoDouble(symbol,SYMBOL_MARGIN_INITIAL);
-      powerPublishState(index,"BLOCKED_MARGIN_CALC","MT5 could not calculate a positive required margin; no new order sent",barTime);
-      Print("D1 MARGIN CHECK FAILED symbol=",symbol," side=",(side>0?"BUY":"SELL"),
-            " lot=",DoubleToString(lot,2)," price=",DoubleToString(px,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
-            " calc_ok=",(marginCalcOk?"true":"false"),
-            " required_margin=",DoubleToString(requiredMargin,2),
-            " free_margin=",DoubleToString(AccountInfoDouble(ACCOUNT_MARGIN_FREE),2),
-            " calc_mode=",marginMode,
-            " contract_size=",DoubleToString(contractSize,2),
-            " symbol_initial_margin=",DoubleToString(initialMargin,2),
-            " err=",marginCalcError);
-      return;
-   }
-   double freeMargin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
-   if(freeMargin<=0.0||requiredMargin>freeMargin){
-      powerPublishState(index,"BLOCKED_INSUFFICIENT_MARGIN",
-         "Required margin exceeds current free margin; MT5 free margin includes existing positions",barTime);
-      Print("D1 MARGIN BLOCK symbol=",symbol," required=",DoubleToString(requiredMargin,2),
-            " free=",DoubleToString(freeMargin,2)," equity=",DoubleToString(AccountInfoDouble(ACCOUNT_EQUITY),2),
-            " no arbitrary reserve or lot change applied");
-      return;
-   }
    double sl=(side>0?powerFloorToTick(symbol,px-slDist):powerCeilToTick(symbol,px+slDist));
+   ENUM_ORDER_TYPE marginOrderType=(side>0?ORDER_TYPE_BUY:ORDER_TYPE_SELL);
+
+   // Use MT5's full request pre-check instead of OrderCalcMargin's isolated estimate.
+   // OrderCheck evaluates the proposed deal against the account's current positions,
+   // margin and broker request rules; this avoids a false BLOCKED_MARGIN_CALC result.
+   long fillingModes=SymbolInfoInteger(symbol,SYMBOL_FILLING_MODE);
+   long executionMode=SymbolInfoInteger(symbol,SYMBOL_TRADE_EXEMODE);
+   ENUM_ORDER_TYPE_FILLING filling=ORDER_FILLING_RETURN;
+   if((fillingModes&SYMBOL_FILLING_FOK)!=0)
+      filling=ORDER_FILLING_FOK;
+   else if((fillingModes&SYMBOL_FILLING_IOC)!=0)
+      filling=ORDER_FILLING_IOC;
+   else if(executionMode==SYMBOL_TRADE_EXECUTION_MARKET){
+      powerPublishState(index,"BLOCKED_FILLING_MODE","No supported FOK/IOC filling mode for Market Execution",barTime);
+      Print("D1 ORDER CHECK BLOCK symbol=",symbol," reason=NO_SUPPORTED_FILLING_MODE",
+            " filling_modes=",fillingModes," execution_mode=",executionMode);
+      return;
+   }
+
+   MqlTradeRequest marginRequest={};
+   MqlTradeCheckResult marginCheck={};
+   marginRequest.action=TRADE_ACTION_DEAL;
+   marginRequest.magic=POWERFULL_MAGIC;
+   marginRequest.symbol=symbol;
+   marginRequest.volume=lot;
+   marginRequest.type=marginOrderType;
+   marginRequest.price=px;
+   marginRequest.sl=sl;
+   marginRequest.deviation=(ulong)powerCfg[index].deviationPoints;
+   marginRequest.type_filling=filling;
+   marginRequest.type_time=ORDER_TIME_GTC;
+   marginRequest.comment=(side>0?"D1-A5-LIVE-RED-LOW-BUY":"D1-A5-LIVE-GREEN-HIGH-SELL");
+
+   ResetLastError();
+   bool marginCheckOk=OrderCheck(marginRequest,marginCheck);
+   int marginCheckError=GetLastError();
+   if(!marginCheckOk||!MathIsValidNumber(marginCheck.margin_free)||marginCheck.margin_free<0.0){
+      powerPublishState(index,"BLOCKED_INSUFFICIENT_MARGIN",
+         "MT5 OrderCheck rejected the proposed deal or projected free margin is negative",barTime);
+      Print("D1 ORDER CHECK FAILED symbol=",symbol," side=",(side>0?"BUY":"SELL"),
+            " lot=",DoubleToString(lot,2)," price=",DoubleToString(px,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " check_ok=",(marginCheckOk?"true":"false"),
+            " retcode=",marginCheck.retcode,
+            " required_margin=",DoubleToString(marginCheck.margin,2),
+            " projected_free_margin=",DoubleToString(marginCheck.margin_free,2),
+            " projected_equity=",DoubleToString(marginCheck.equity,2),
+            " margin_level=",DoubleToString(marginCheck.margin_level,2),
+            " comment=",marginCheck.comment,
+            " err=",marginCheckError);
+      return;
+   }
    powerTrade.SetExpertMagicNumber(POWERFULL_MAGIC);
    powerTrade.SetDeviationInPoints(powerCfg[index].deviationPoints);
    powerTrade.SetTypeFillingBySymbol(symbol);
