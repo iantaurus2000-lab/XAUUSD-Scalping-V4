@@ -1716,7 +1716,7 @@ public class MainActivity extends Activity {
         if(marketOrder){
             SharedPreferences quotePrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
             double[] q=freshBrokerQuote(selectedMarket);
-            double atr=0.0;
+            double atr=SmartLimitReentry.atr(m1Data,14);
             long received=quotePrefs.getLong("broker_quote_received_ms_"+mt5SymbolForMarket(selectedMarket),0L);
             long tickMs=quotePrefs.getLong("broker_quote_tick_ms_"+mt5SymbolForMarket(selectedMarket),0L);
             long now=System.currentTimeMillis();
