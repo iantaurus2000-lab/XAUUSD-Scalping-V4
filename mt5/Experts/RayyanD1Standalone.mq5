@@ -2198,6 +2198,17 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       powerPublishState(index,"D1_WAIT_DATA","Invalid MT5 point/tick geometry",barTime);
       return;
    }
+   int trendDirection=powerTrendDirection(symbol);
+   if(trendDirection==0){
+      powerPublishState(index,"D1_TREND_UNCLEAR","M15 and H1 structure do not agree; no new entry",barTime);
+      return;
+   }
+   datetime candleEnd=barTime+PeriodSeconds(PERIOD_M5);
+   int secondsRemaining=(int)(candleEnd-tick.time);
+   if(secondsRemaining<=40){
+      powerPublishState(index,"D1_FINAL_40S_GUARD","New entries/layers are disabled in the final 40 seconds of M5",barTime);
+      return;
+   }
    if(!powerCfg[index].usePointStops){
       powerPublishState(index,"BLOCKED_SL_POINTS","D1 requires BUY/SELL SL points",barTime);
       return;
@@ -2289,8 +2300,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
                                  bidLocation>=0.70&&askLocation>=0.65&&sellWeakeningDistance);
    bool buyCandleStructure=candleRed;
    bool sellCandleStructure=candleGreen;
-   bool buyReady=(buyFresh&&buyExtremeDistribution&&buyCandleStructure&&buyN<cap);
-   bool sellReady=(sellFresh&&sellExtremeDistribution&&sellCandleStructure&&sellN<cap);
+   bool buyReady=(trendDirection>0&&buyFresh&&buyExtremeDistribution&&buyCandleStructure&&buyN<cap);
+   bool sellReady=(trendDirection<0&&sellFresh&&sellExtremeDistribution&&sellCandleStructure&&sellN<cap);
    // Entry readiness is governed by the agreed A5 weakness conditions above.
    double buyScore=buyOpenExtension+lowerWick/range+
                    buyBidRecovery/range+buyAskRecovery/range;
@@ -2558,6 +2569,23 @@ void powerApplyWeekendClose(string symbol){
       powerClosePosition(ticket,"WEEKEND_FLAT_FRIDAY");
    }
 }
+// POWERFULL direction filter: compare recent closed-candle structure on M15 and H1.
+// Both timeframes must agree; no EMA/ATR or delayed external feed is used.
+int powerTrendDirection(string symbol){
+   ENUM_TIMEFRAMES frames[2]={PERIOD_M15,PERIOD_H1};
+   int direction[2]={0,0};
+   for(int f=0;f<2;f++){
+      MqlRates rates[]; ArraySetAsSeries(rates,true);
+      if(CopyRates(symbol,frames[f],1,4,rates)<4)return 0;
+      if(rates[0].close<=0.0||rates[2].close<=0.0||rates[0].high<=0.0||rates[0].low<=0.0||
+         rates[2].high<=0.0||rates[2].low<=0.0)return 0;
+      bool higherStructure=(rates[0].close>rates[2].close && rates[0].low>rates[2].low);
+      bool lowerStructure=(rates[0].close<rates[2].close && rates[0].high<rates[2].high);
+      direction[f]=(higherStructure?1:(lowerStructure?-1:0));
+   }
+   return (direction[0]!=0&&direction[0]==direction[1]?direction[0]:0);
+}
+
 bool powerA6StructureBreak(string symbol,ENUM_TIMEFRAMES tf,bool isBuy,int lookback){
    MqlRates rates[]; ArraySetAsSeries(rates,true);
    int need=lookback+1;
@@ -2589,6 +2617,8 @@ void powerA6LogOrderflowProxy(string symbol,ulong ticket,bool isBuy){
 bool powerManageLossRescue(int index,const MqlTick &tick){
    if(index<0||index>=ArraySize(powerSymbols))return false;
    string symbol=powerSymbols[index];
+   int trendDirection=powerTrendDirection(symbol);
+   if(trendDirection==0)return false;
    ulong chosenTicket=0;
    double nearestDistance=DBL_MAX,chosenNet=0.0;
    for(int i=PositionsTotal()-1;i>=0;i--){
@@ -2601,6 +2631,7 @@ bool powerManageLossRescue(int index,const MqlTick &tick){
       double net=powerProjectedNet(ticket);
       if(net<=0.0)continue; // Never force-close a LOSS RESCUE ticket while net is negative.
       bool isBuy=((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
+      if(trendDirection==(isBuy?1:-1))continue;
       double entry=PositionGetDouble(POSITION_PRICE_OPEN),executable=(isBuy?tick.bid:tick.ask);
       double distance=MathAbs(entry-executable);
       if(distance<nearestDistance){nearestDistance=distance;chosenTicket=ticket;chosenNet=net;}
@@ -2616,6 +2647,8 @@ bool powerManageLossRescue(int index,const MqlTick &tick){
 bool powerManageTrendHold(int index,const MqlTick &tick){
    if(index<0||index>=ArraySize(powerSymbols))return false;
    string symbol=powerSymbols[index];
+   int trendDirection=powerTrendDirection(symbol);
+   if(trendDirection==0)return false;
    double point=SymbolInfoDouble(symbol,SYMBOL_POINT),ts=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
    if(point<=0.0||ts<=0.0)return false;
    double minLock=MathMax((double)powerCfg[index].minProfitLockPoints*point,ts*2.0);
@@ -2631,13 +2664,13 @@ bool powerManageTrendHold(int index,const MqlTick &tick){
       datetime opened=(datetime)PositionGetInteger(POSITION_TIME);
       if(opened<=0)continue;
       bool isBuy=((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
+      if(trendDirection==(isBuy?1:-1))continue; // TREND_HOLD has priority while market direction supports the ticket.
       double entry=PositionGetDouble(POSITION_PRICE_OPEN),executable=(isBuy?tick.bid:tick.ask);
       string peakKey="PW_PEAK_"+suffix;
       if(!GlobalVariableCheck(peakKey))GlobalVariableSet(peakKey,entry);
       double peak=GlobalVariableGet(peakKey);
-      // Keep recording the true favorable extreme during the minimum hold window.
+      // Keep recording the true favorable extreme across M5 candle changes.
       if(isBuy?executable>peak+ts*0.1:executable<peak-ts*0.1){peak=executable;GlobalVariableSet(peakKey,peak);}
-      if(TimeCurrent()-opened<POWERFULL_MIN_TREND_HOLD_SECONDS)continue;
       double peakGain=(isBuy?peak-entry:entry-peak),giveback=(isBuy?peak-executable:executable-peak);
       double net=powerProjectedNet(ticket);
       if(peakGain<minLock||giveback<peakGain*0.30||net<=0.0)continue;
@@ -2647,8 +2680,7 @@ bool powerManageTrendHold(int index,const MqlTick &tick){
    if(chosenTicket==0)return false;
    Print("POWERFULL TREND_HOLD EXIT READY symbol=",symbol," ticket=",chosenTicket,
          " peak_giveback_pct=30.0 projected_net=",DoubleToString(chosenNet,2),
-         " min_hold_seconds=",POWERFULL_MIN_TREND_HOLD_SECONDS,
-         " H1_M15_CONFIRMATION=OBSERVATION_ONLY");
+         " exit_condition=M15_H1_reversal_plus_30pct_peak_giveback");
    powerClosePosition(chosenTicket,"TREND_HOLD_30PCT_PEAK_GIVEBACK_POSITIVE_NET");
    return true; // Gradual layer exit: nearest executable price first, one per tick.
 }
@@ -2660,8 +2692,9 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
    double point=SymbolInfoDouble(symbol,SYMBOL_POINT),ts=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
    if(point<=0.0||ts<=0.0)return;
 
-   // Each ticket has one independent mode. First positive net => TREND_HOLD.
-   // Continuous negative net for three M5 candles => LOSS_RESCUE.
+   // Each ticket is evaluated against the same M15+H1 structure used by entry.
+   // A genuine opposite direction activates LOSS_RESCUE; neutral direction never forces an exit.
+   int trendDirection=powerTrendDirection(symbol);
    for(int i=PositionsTotal()-1;i>=0;i--){
       ulong ticket=PositionGetTicket(i);
       if(ticket==0||!PositionSelectByTicket(ticket)||
@@ -2678,22 +2711,23 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       string modeKey="PW_HMODE_"+suffix,lossSinceKey="PW_RISK_ARM_"+suffix;
       int mode=(GlobalVariableCheck(modeKey)?(int)GlobalVariableGet(modeKey):0);
       double net=powerProjectedNet(ticket);
-      if(mode==POWERFULL_MODE_LOSS_RESCUE)continue;
-      if(net>0.0){
+      int ticketDirection=(isBuy?1:-1);
+      bool directionSupports=(trendDirection==ticketDirection);
+      bool genuineReversal=(trendDirection==-ticketDirection);
+      if(directionSupports){
          if(mode!=POWERFULL_MODE_TREND_HOLD){
             GlobalVariableSet(modeKey,(double)POWERFULL_MODE_TREND_HOLD);
-            Print("POWERFULL MODE symbol=",symbol," ticket=",ticket," mode=TREND_HOLD reason=positive_projected_net");
+            Print("POWERFULL MODE symbol=",symbol," ticket=",ticket," mode=TREND_HOLD reason=M15_H1_direction_supports_ticket");
          }
          if(GlobalVariableCheck(lossSinceKey))GlobalVariableDel(lossSinceKey);
          continue;
       }
-      if(!GlobalVariableCheck(lossSinceKey))GlobalVariableSet(lossSinceKey,(double)TimeCurrent());
-      datetime lossSince=(datetime)GlobalVariableGet(lossSinceKey);
-      if(TimeCurrent()-lossSince>=POWERFULL_LOSS_RESCUE_ARM_SECONDS){
+      if(!genuineReversal)continue; // Unclear structure is not a reversal signal.
+      if(mode!=POWERFULL_MODE_LOSS_RESCUE){
          GlobalVariableSet(modeKey,(double)POWERFULL_MODE_LOSS_RESCUE);
          Print("POWERFULL MODE symbol=",symbol," ticket=",ticket,
-               " mode=LOSS_RESCUE reason=continuous_negative_net_for_3_M5_candles",
-               " projected_net=",DoubleToString(net,2)," next_exit=first_positive_net_no_H1_M15_wait");
+               " mode=LOSS_RESCUE reason=confirmed_M15_H1_direction_reversal",
+               " projected_net=",DoubleToString(net,2)," exit=first_positive_net_per_ticket");
       }
    }
    if(powerManageLossRescue(index,tick))return;
@@ -2870,8 +2904,8 @@ void managePowerfullSymbol(int index){
    powerLastAsk[index]=tick.ask;
    powerLastTickMs[index]=tick.time_msc;
 
-   // Both entry engines may run together or independently. Momentum is evaluated
-   // on each fresh tick; pending LIMIT planning remains timer-only.
+   // POWERFULL direct-market entry is evaluated on every fresh MT5 tick.
+   // The legacy forecast/pending engine is not used while POWERFULL is enabled.
    bool d1Active=(powerConfigReceivedMs[index]>0&&powerCfg[index].enabled);
    if(d1Active)
       powerTryD1ExtremeEntry(index,tick,barTime,candleOpen,candleHigh,candleLow,
@@ -2904,8 +2938,8 @@ void managePowerfullSymbol(int index){
       return;
    }
 
-   // If D1 is OFF, the optional legacy Pending LIMIT mode remains available.
-   if(!powerCfg[index].pendingLimitEnabled){
+   // POWERFULL is market-entry only. Never activate the legacy ATR/Pending LIMIT planner.
+   if(true){
       if(!powerCancelPendingForSymbol(symbol)||powerPendingCount(symbol)>0){
          powerPublishState(index,"LIMIT_OFF_WAIT_CANCEL","Pending LIMIT mode is OFF; waiting for broker cancellation",barTime);
          return;
