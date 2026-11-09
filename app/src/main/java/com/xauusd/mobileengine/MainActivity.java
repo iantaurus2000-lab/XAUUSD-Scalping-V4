@@ -678,7 +678,7 @@ public class MainActivity extends Activity {
         submitWickLimitEntry(requestedSide, readQuickLot(), "MANUAL_BUTTON");
     }
     void executeCurrentSignal(){
-        submitWickLimitEntry(null, readQuickLot(), "MANUAL_CHART");
+        Toast.makeText(this,"Sinyal dan entry otomatis hanya dijalankan oleh EA POWERFULL di MT5.",Toast.LENGTH_SHORT).show();
     }
     /** One confirmed wick-end LIMIT setup is shared by manual and Smart Auto. */
     private void submitWickLimitEntry(String requestedSide,double lot,String origin){
@@ -1713,8 +1713,8 @@ public class MainActivity extends Activity {
         else if("settings".equals(action))showSettingsPanel(null);
         else if("settings_theme".equals(action))showThemeDialog();
         else if("live_chart".equals(action))showChartDisplayDialog();
-        else if("strategy_control".equals(action))showStrategyControlDialog();
-        else if("strategy".equals(action))showStrategyDialog();
+        else if("strategy_control".equals(action))showPowerfullDialog();
+        else if("strategy".equals(action))showPowerfullDialog();
         else if("risk".equals(action))showRiskManagementDialog();
         else if("powerfull".equals(action))showPowerfullDialog();
     }
@@ -2071,46 +2071,7 @@ public class MainActivity extends Activity {
         d.show();if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-36,430),-2);}
     }
     void showSignalDialog(){
-        String activeMode=activeStrategyForSymbol(mt5SymbolForMarket(selectedMarket));
-        if(!"STANDAR".equals(activeMode)&&!"EXCELLENT".equals(activeMode)){
-            Toast.makeText(this,"Signal Android tidak aktif • mode "+activeMode,Toast.LENGTH_SHORT).show();
-            return;
-        }
-        if(lastSignal==null){Toast.makeText(this,"Menunggu data Signal Engine...",Toast.LENGTH_SHORT).show();return;}
-        SignalResult s=lastSignal;
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(12));
-        box.setBackground(roundBg(Color.rgb(3,18,30),16));
-        TextView title=tv("SIGNAL ENGINE",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
-        box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(38)));
-        TextView note=tv(selectedMarket+" • STRATEGI "+activeMode+" • M5 + M1",12);note.setTextColor(Color.LTGRAY);
-        box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(34)));
-        LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
-        addPanelRow(rows,"MARKET",selectedMarket,Color.WHITE);
-        addPanelRow(rows,"SIDE",s.side,("BUY".equals(s.side)?green:("SELL".equals(s.side)?red:Color.rgb(255,190,70))));
-        addPanelRow(rows,"M5 BIAS",String.valueOf(s.m5Bias),Color.CYAN);
-        addPanelRow(rows,"M1 ENTRY",String.valueOf(s.entry),Color.WHITE);
-        addPanelRow(rows,"STOP LOSS (SL)",String.valueOf(s.sl),red);
-        addPanelRow(rows,"TAKE PROFIT 1 (TP1)",String.valueOf(s.tp1),green);
-        addPanelRow(rows,"TAKE PROFIT 2 (TP2)",String.valueOf(s.tp2),green);
-        addPanelRow(rows,"RISK : REWARD",String.format(Locale.US,"%.2f",s.rr),Color.WHITE);
-        addPanelRow(rows,"CONFIDENCE",s.confidence+"/5  •  ENTRY SCORE "+s.score+"%",Color.CYAN);
-        if("STANDAR".equals(activeMode)){
-            addPanelRow(rows,"M5 TREND / EMA50-200",String.valueOf(s.m5Bias),("BUY".equals(s.m5Bias)||"SELL".equals(s.m5Bias))?green:Color.LTGRAY);
-            addPanelRow(rows,"FIBONACCI ZONE 50–61.8%",onoff("BUY".equals(s.side)||"SELL".equals(s.side)),("BUY".equals(s.side)||"SELL".equals(s.side))?green:Color.LTGRAY);
-            addPanelRow(rows,"CANDLE CONFIRMATION",onoff("BUY".equals(s.side)||"SELL".equals(s.side)),("BUY".equals(s.side)||"SELL".equals(s.side))?green:Color.LTGRAY);
-            addPanelRow(rows,"WICK REJECTION",onoff(s.wickRejection),s.wickRejection?green:Color.LTGRAY);
-        }else{
-            addPanelRow(rows,"M5 EMA20/50 BIAS",String.valueOf(s.m5Bias),("BUY".equals(s.m5Bias)||"SELL".equals(s.m5Bias))?green:Color.LTGRAY);
-            addPanelRow(rows,"WICK REJECTION",onoff(s.wickRejection),s.wickRejection?green:Color.LTGRAY);
-            addPanelRow(rows,"LIQUIDITY SWEEP",onoff(s.liquiditySweep),s.liquiditySweep?green:Color.LTGRAY);
-        }
-        addPanelRow(rows,"ATR FILTER",onoff(s.atrFilter),s.atrFilter?green:Color.LTGRAY);
-        addPanelRow(rows,"SPREAD FILTER",onoff(s.spreadFilter),s.spreadFilter?green:Color.LTGRAY);
-        ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
-        box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
-        AlertDialog d=new AlertDialog.Builder(this).setView(box).setPositiveButton("TUTUP",null).create();
-        showSizedDialog(d,0.82f,450);
+        showPowerfullDialog();
     }
 
     String onoff(boolean v){return v?"ON":"OFF";}
@@ -2324,40 +2285,23 @@ public class MainActivity extends Activity {
     }
 
     void showIndicatorDialog(){
-        final String[] names={"EMA 50","EMA 200","Support / Resistance","Fibonacci","RSI 14","MACD","ATR","Buy / Sell","Trend / Structure","Bid / Ask","Entry / SL / TP"};
-        final String[] keys={"ema50","ema200","sr","fibo","rsi","macd","atr","signals","wickbos","bidask","orders"};
-        final String[] icons={"〽","〽","⌗","⟋","◌","∿","↕","↗","〰","⇄","▤"};
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(22,16,22,14);box.setBackground(roundBg(Color.rgb(3,18,30),16));
-        TextView title=tv("CHART LAYERS",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);box.addView(title,new LinearLayout.LayoutParams(-1,40));
-        String activeMode=activeStrategyForSymbol(mt5SymbolForMarket(selectedMarket));
-        TextView note=tv("Mode aktif: "+activeMode+". EMA50/EMA200/SR/Fibo hanya tampil pada STANDAR; RSI/ATR hanya pada EXCELLENT; MACD selalu nonaktif. Preferensi layer lain tetap tersimpan.",12);note.setTextColor(Color.LTGRAY);note.setMaxLines(3);box.addView(note,new LinearLayout.LayoutParams(-1,52));
-        ScrollView scroll=new ScrollView(this);LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);scroll.addView(list);
-        for(int i=0;i<names.length;i++){final int index=i;
-            boolean standardLayer=index<=3, excellentLayer=index==4||index==6, macdLayer=index==5;
-            boolean enabled=macdLayer?false:ind(keys[i],true);
-            boolean allowed=!standardLayer||"STANDAR".equals(activeMode);
-            if(excellentLayer)allowed="EXCELLENT".equals(activeMode);
-            if(macdLayer)allowed=false;
-            boolean visibleNow=enabled&&allowed;
-            LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(12,7,12,7);row.setBackground(roundBg(visibleNow?Color.rgb(5,48,55):Color.rgb(7,30,47),12));
-            LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,64);rp.setMargins(0,5,0,5);list.addView(row,rp);
-            TextView ico=tv(icons[i],21);ico.setTextColor(Color.rgb(0,225,180));ico.setGravity(Gravity.CENTER);row.addView(ico,new LinearLayout.LayoutParams(38,-1));
-            LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setGravity(Gravity.CENTER_VERTICAL);TextView nm=tv(names[i],14);nm.setTextColor(Color.WHITE);nm.setTypeface(null,Typeface.BOLD);labels.addView(nm);
-            String stateText=macdLayer?"SELALU NONAKTIF":(!allowed&&enabled?"TERSIMPAN • TIDAK TAMPIL DI "+activeMode:(visibleNow?"TAMPIL • ON":"SEMBUNYI • OFF"));
-            TextView state=tv(stateText,10);state.setTextColor(visibleNow?Color.rgb(0,225,150):Color.LTGRAY);labels.addView(state);row.addView(labels,new LinearLayout.LayoutParams(0,-1,1));
-            Switch sw=new Switch(this);sw.setChecked(enabled);sw.setEnabled(!macdLayer);row.addView(sw);sw.setOnCheckedChangeListener((button,isChecked)->{
-                setInd(keys[index],isChecked);
-                boolean nowAllowed=(!standardLayer||"STANDAR".equals(activeStrategyForSymbol(mt5SymbolForMarket(selectedMarket))));
-                if(excellentLayer)nowAllowed="EXCELLENT".equals(activeStrategyForSymbol(mt5SymbolForMarket(selectedMarket)));
-                boolean nowVisible=isChecked&&nowAllowed&&!macdLayer;
-                row.setBackground(roundBg(nowVisible?Color.rgb(5,48,55):Color.rgb(7,30,47),12));
-                state.setText(macdLayer?"SELALU NONAKTIF":(!nowAllowed&&isChecked?"TERSIMPAN • TIDAK TAMPIL DI "+activeStrategyForSymbol(mt5SymbolForMarket(selectedMarket)):(nowVisible?"TAMPIL • ON":"SEMBUNYI • OFF")));
-                state.setTextColor(nowVisible?Color.rgb(0,225,150):Color.LTGRAY);
-            });
-            row.setOnClickListener(v->{if(!macdLayer)sw.setChecked(!sw.isChecked());});
+        final String[] names={"Bid / Ask","Entry / SL / TP","Posisi"};
+        final String[] keys={"bidask","orders","position"};
+        final String[] icons={"⇄","▤","◎"};
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(22,16,22,14);box.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("CHART DISPLAY",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        box.addView(title,new LinearLayout.LayoutParams(-1,40));
+        TextView note=tv("Indikator strategi STANDAR/EXCELLENT dihapus. POWERFULL dikelola EA MT5.",12);
+        note.setTextColor(Color.LTGRAY);box.addView(note,new LinearLayout.LayoutParams(-1,48));
+        for(int i=0;i<names.length;i++){final int index=i;LinearLayout row=new LinearLayout(this);
+            row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(8,8,8,8);
+            TextView label=tv(icons[i]+"  "+names[i],14);row.addView(label,new LinearLayout.LayoutParams(0,48,1));
+            Switch sw=new Switch(this);sw.setChecked(ind(keys[i],true));row.addView(sw);
+            sw.setOnCheckedChangeListener((button,on)->{setInd(keys[index],on);applyStrategyIndicatorProfile();queueNativeIndicatorState();});
+            box.addView(row,new LinearLayout.LayoutParams(-1,56));
         }
-        box.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        AlertDialog d=new AlertDialog.Builder(this).setView(box).setPositiveButton("SELESAI",null).create();d.setOnShowListener(v->{if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-36,430),Math.min((int)(getResources().getDisplayMetrics().heightPixels*.82),760));}});d.show();if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-36,430),Math.min((int)(getResources().getDisplayMetrics().heightPixels*.82),760));}
+        new AlertDialog.Builder(this).setView(box).setPositiveButton("SELESAI",null).show();
     }
 
     void sendTelegram(String msg){TelegramClient.send(tgPrefs.getString("token",""),tgPrefs.getString("chat",""),msg,(ok,detail)->AppLog.add(this,"TELEGRAM",ok?"sent":"error"));}
