@@ -2201,13 +2201,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    }
    int trendDirection=powerTrendDirection(symbol);
    if(trendDirection==0){
-      powerPublishState(index,"D1_TREND_UNCLEAR","M15 and H1 structure do not agree; no new entry",barTime);
-      return;
-   }
-   datetime candleEnd=barTime+PeriodSeconds(PERIOD_M5);
-   int secondsRemaining=(int)(candleEnd-tick.time);
-   if(secondsRemaining<=40){
-      powerPublishState(index,"D1_FINAL_40S_GUARD","New entries/layers are disabled in the final 40 seconds of M5",barTime);
+      powerPublishState(index,"D1_ORDERFLOW_NEUTRAL","MT5 tick pressure is insufficient or balanced; waiting for directional flow",barTime);
       return;
    }
    if(!powerCfg[index].usePointStops){
@@ -2566,21 +2560,31 @@ void powerApplyWeekendClose(string symbol){
       powerClosePosition(ticket,"WEEKEND_FLAT_FRIDAY");
    }
 }
-// POWERFULL direction filter: compare recent closed-candle structure on M15 and H1.
-// Both timeframes must agree; no EMA/ATR or delayed external feed is used.
+// POWERFULL direction source: MT5 broker tick-flow proxy only.
+// This is signed quote/tick pressure (not centralized-exchange aggressor volume).
+// Up/down classification uses sequential Bid/Ask mid-price changes from the latest ticks.
 int powerTrendDirection(string symbol){
-   ENUM_TIMEFRAMES frames[2]={PERIOD_M15,PERIOD_H1};
-   int direction[2]={0,0};
-   for(int f=0;f<2;f++){
-      MqlRates rates[]; ArraySetAsSeries(rates,true);
-      if(CopyRates(symbol,frames[f],1,4,rates)<4)return 0;
-      if(rates[0].close<=0.0||rates[2].close<=0.0||rates[0].high<=0.0||rates[0].low<=0.0||
-         rates[2].high<=0.0||rates[2].low<=0.0)return 0;
-      bool higherStructure=(rates[0].close>rates[2].close && rates[0].low>rates[2].low);
-      bool lowerStructure=(rates[0].close<rates[2].close && rates[0].high<rates[2].high);
-      direction[f]=(higherStructure?1:(lowerStructure?-1:0));
+   MqlTick ticks[];
+   ArraySetAsSeries(ticks,false);
+   int copied=CopyTicks(symbol,ticks,COPY_TICKS_ALL,0,64);
+   if(copied<7)return 0;
+
+   int upTicks=0,downTicks=0;
+   double previousMid=0.0;
+   for(int i=0;i<copied;i++){
+      if(ticks[i].bid<=0.0||ticks[i].ask<=0.0)continue;
+      double mid=(ticks[i].bid+ticks[i].ask)*0.5;
+      if(previousMid>0.0){
+         if(mid>previousMid)upTicks++;
+         else if(mid<previousMid)downTicks++;
+      }
+      previousMid=mid;
    }
-   return (direction[0]!=0&&direction[0]==direction[1]?direction[0]:0);
+   int directionalTicks=upTicks+downTicks;
+   if(directionalTicks<5)return 0;
+   if(upTicks>downTicks)return 1;
+   if(downTicks>upTicks)return -1;
+   return 0;
 }
 
 bool powerA6StructureBreak(string symbol,ENUM_TIMEFRAMES tf,bool isBuy,int lookback){
