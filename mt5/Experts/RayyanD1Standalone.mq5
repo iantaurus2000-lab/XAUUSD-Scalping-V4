@@ -2254,14 +2254,10 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       return;
    }
 
-   // Each new M5 candle gets a fresh entry-extreme baseline.
-   // Existing positions remain open and the global basket cap remains five.
-   // Every later layer needs a new weakening extreme within this candle.
+   // Reset only the live candle OHLC measurement at a new M5 bar.
+   // Last successful BUY Low / SELL High remains persistent across candle changes,
+   // so continuation layers require a genuinely newer extreme than the prior fill.
    // No timer, reversal wait, or tick-count confirmation is used.
-   if(powerMomentumLastEntryBar[index]!=barTime){
-      powerMomentumLastBuyLow[index]=0.0;
-      powerMomentumLastSellHigh[index]=0.0;
-   }
 
    // #95 live M5 candle distribution: no fixed tick-distance or historical candle window.
    // Price is mapped into the current candle's 0..100% range.
