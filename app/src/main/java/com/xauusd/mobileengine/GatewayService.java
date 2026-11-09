@@ -354,9 +354,6 @@ public final class GatewayService extends Service {
         SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         String suffix=symbol;
         boolean requested=p.getBoolean("powerfull_enabled_"+suffix,false);
-        boolean standardOn=p.getBoolean("rayyan_strategy_enabled_STANDAR_"+suffix,false);
-        boolean excellentOn=p.getBoolean("rayyan_strategy_enabled_EXCELLENT_"+suffix,false);
-        boolean strategyConflict=requested&&(standardOn||excellentOn);
         int d1TurnConfirmMs=p.getInt("powerfull_d1_turn_confirm_ms_"+suffix,500);
         int maxLayers=p.getInt("powerfull_max_layers_"+suffix,3);
         boolean reforecast=p.getBoolean("powerfull_reforecast_"+suffix,true);
@@ -381,8 +378,8 @@ public final class GatewayService extends Service {
             &&minDistancePoints>=0&&minDistancePoints<=100000&&deviationPoints>=0&&deviationPoints<=10000
             &&slBuyPoints>0&&slSellPoints>0&&d1TurnConfirmMs>=250&&d1TurnConfirmMs<=5000
             &&maxLayers>=1&&maxLayers<=3&&minProfitLockPoints>=0&&minProfitLockPoints<=100000;
-        boolean enabled=requested&&valid&&!strategyConflict;
-        String reason=enabled?"READY":(!requested?"DISABLED":(strategyConflict?"STRATEGY_CONFLICT":((slBuyPoints<=0||slSellPoints<=0)?"SL_POINTS_REQUIRED":"CONFIG_INVALID")));
+        boolean enabled=requested&&valid;
+        String reason=enabled?"READY":(!requested?"DISABLED":((slBuyPoints<=0||slSellPoints<=0)?"SL_POINTS_REQUIRED":"CONFIG_INVALID"));
         return "symbol="+symbol
             +";enabled="+(enabled?"1":"0")
             +";buyLimit=1;sellLimit=1;pendingLimit=0"
