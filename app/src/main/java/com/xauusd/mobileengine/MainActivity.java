@@ -202,7 +202,7 @@ public class MainActivity extends Activity {
 
         // CHART TOOLS
         LinearLayout layers=new LinearLayout(this);layers.setPadding(4,3,4,3);layers.setBackgroundColor(Color.rgb(3,14,24));
-        String[] ls={"⌗ S/R","⟋ Fibo","〽 EMA","↗ Buy/Sell","▤ Order","◎ Posisi"};
+        String[] ls={"⇄ Bid/Ask","▤ Order","◎ Posisi"};
         for(String s:ls){
             Button b=btn(s);b.setTextSize(9);layers.addView(b,new LinearLayout.LayoutParams(0,38,1));bindQuickLayer(b,s);
         }
@@ -218,7 +218,7 @@ public class MainActivity extends Activity {
         side.setBackground(roundBg(Color.rgb(110,115,125),1000));
         side.setOnClickListener(v->Toast.makeText(this,"Entry Ready menyiapkan BUY LIMIT / SELL LIMIT di area wick",Toast.LENGTH_SHORT).show());
         top.addView(side,new LinearLayout.LayoutParams(30,30));
-        signalSummary=tv("Menunggu setup Fibo M1 + wick rejection / EMA M5",10);
+        signalSummary=tv("POWERFULL dikendalikan EA MT5",10);
         signalSummary.setIncludeFontPadding(false);signalSummary.setMaxLines(2);
         signalSummary.setEllipsize(android.text.TextUtils.TruncateAt.END);
         signalSummary.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);
@@ -296,11 +296,11 @@ public class MainActivity extends Activity {
 
         // BOTTOM NAV - 5 fixed tabs
         LinearLayout nav=new LinearLayout(this);nav.setPadding(4,3,4,3);nav.setBackgroundColor(Color.rgb(2,12,22));
-        String[] navs={"▥ MARKET","▥ CHART","♧ SIGNAL","▣ ORDERS","⚙ SETTINGS"};
+        String[] navs={"▥ MARKET","▥ CHART","◆ POWERFULL","▣ ORDERS","⚙ SETTINGS"};
         for(String s:navs){
             Button q=btn(s);q.setTextSize(9);nav.addView(q,new LinearLayout.LayoutParams(0,48,1));
             if(s.contains("MARKET"))q.setOnClickListener(v->showMarketDialog());
-            else if(s.contains("SIGNAL"))q.setOnClickListener(v->showSignalDialog());
+            else if(s.contains("POWERFULL"))q.setOnClickListener(v->showPowerfullDialog());
             else if(s.contains("ORDERS"))q.setOnClickListener(v->showLogDialog("ORDERS / HISTORY"));
             else if(s.contains("SETTINGS"))q.setOnClickListener(v->showSettingsPanel(q));
             else if(s.contains("CHART"))q.setOnClickListener(v->chart.goLive());
@@ -1451,84 +1451,16 @@ public class MainActivity extends Activity {
     }
 
     void updateSignal(Candle[] m1,Candle[] m5){
+        // APK-side STANDAR/EXCELLENT signal evaluation and Smart Auto LIMIT lifecycle removed.
+        // POWERFULL signals, entries and position management belong exclusively to the MT5 EA.
         syncBrokerEntryLine();
-        if(m1==null||m1.length<30||m5==null||m5.length<60){
-            if(scoreView!=null)scoreView.setText("SCORE 0%");
-            resetEntryReadyUi("menunggu data M1/M5");
-            return;
-        }
-        double[] brokerForSignal=freshBrokerQuote(selectedMarket);
-        double bid=brokerForSignal!=null?brokerForSignal[0]:(chart==null?0:chart.getBid());
-        double ask=brokerForSignal!=null?brokerForSignal[1]:(chart==null?0:chart.getAsk());
-        double spreadBid=brokerForSignal==null?0.0:brokerForSignal[0];
-        double spreadAsk=brokerForSignal==null?0.0:brokerForSignal[1];
-        SignalResult previous=lastSignal;
-        lastSignal=evaluateSignal(m1,m5,bid,ask,spreadBid,spreadAsk);
-        SignalResult s=lastSignal;
-
-        int displayScore=Math.max(0,Math.min(100,s.score));
-        scoreView.setText("SCORE "+displayScore+"%");
-        scoreView.setTextSize(11);
-        scoreView.setSingleLine(true);
-        scoreView.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        scoreView.setIncludeFontPadding(false);
-        scoreView.setGravity(Gravity.CENTER);
-        scoreView.setTextColor(displayScore>=75?Color.YELLOW:displayScore>=60?Color.CYAN:Color.WHITE);
-        boolean directional="BUY".equals(s.side)||"SELL".equals(s.side);
-        signalSummary.setText((directional?("M1 "+s.side+" • M5 "+s.m5Bias):"WAIT • "+s.m5Bias)+"\n"+s.setup+" • CONF "+s.confidence+"/5");
-        entryView.setText("Entry\n"+price(directional?s.entry:0));slView.setText("SL\n"+price(directional?s.sl:0));
-        tp1View.setText("TP1\n"+price(directional?s.tp1:0));tp2View.setText("TP2\n"+price(directional?s.tp2:0));
-        // Use the same M1 bar timestamp as Smart Auto Entry and order lifecycle.
-        updateEntryReadyUi(s,bid,ask,m1,m1[m1.length-1].t);
-
-        View v=((ViewGroup)scoreView.getParent()).getChildAt(0);
-        if(v instanceof Button){
-            Button b=(Button)v;
-            b.setText("");
-            b.setTextSize(1);
-            b.setBackground(roundBg("BUY".equals(s.side)?Color.rgb(0,225,135):"SELL".equals(s.side)?Color.rgb(255,65,82):Color.rgb(110,115,125),1000));
-        }
-        boolean signalDirectional="BUY".equals(s.side)||"SELL".equals(s.side);
-        // updateEntryReadyUi owns the single signal-level update, including BUY/SELL
-        // direction. Do not overwrite SELL levels with the legacy BUY-default overload.
-
-        long candleStamp=m1[m1.length-1].t;
-        WinRateTracker.evaluate(this,selectedMarket,m1);
-        if(entryReady && ("BUY".equals(s.side)||"SELL".equals(s.side))){
-            String readyTrackKey=selectedMarket+"|"+readyCandleKey+"|"+readyCandleSide;
-            SharedPreferences trackPrefs=getSharedPreferences("rayyan4_winrate",MODE_PRIVATE);
-            if(!readyTrackKey.equals(trackPrefs.getString("last_ready_key",""))){
-                WinRateTracker.record(this,"READY",selectedMarket,s.side,s.entry,s.sl,s.tp1,candleStamp);
-                trackPrefs.edit().putString("last_ready_key",readyTrackKey).apply();
-            }
-            String activeStrategy=activeStrategyForSymbol(mt5SymbolForMarket(selectedMarket));
-            if("STANDAR".equals(activeStrategy)||"EXCELLENT".equals(activeStrategy)){
-                WinRateTracker.record(this,"STRATEGY_"+activeStrategy,selectedMarket,s.side,s.entry,s.sl,s.tp1,candleStamp);
-            }
-        }
-
-        boolean changed=previous==null||!s.side.equals(previous.side);
-        String candleKey=selectedMarket+"|"+selectedTf+"|"+candleStamp;
-        String noticeKey=candleKey+"|"+s.side;
-        String noticePrefKey="signal_notified_candle_"+s.side.toLowerCase(Locale.US);
-        SharedPreferences noticePrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        boolean alreadyNotified=noticeKey.equals(noticePrefs.getString(noticePrefKey,""));
-        // The lifecycle manager owns one Rayyan LIMIT/position at a time. It
-        // queues, cancels, and re-enters only after fresh EA state plus matching ACK.
-        processAutoLimit(s,m1,m5,bid,ask,candleStamp);
-        if(changed&&("BUY".equals(s.side)||"SELL".equals(s.side))){
-            String msg=selectedMarket+" SCALPING\n\n"+s.side+"\nEntry: "+price(s.entry)+"\nSL: "+price(s.sl)+"\nTP1: "+price(s.tp1)+"\nTP2: "+price(s.tp2)+"\nTF: M1\nBias: M5 "+s.m5Bias+"\nSetup: "+s.setup+"\nConfidence: "+s.confidence+"/5";
-            AppLog.add(this,"SIGNAL",s.side+" "+price(s.entry)+" score="+s.score);
-            if(!alreadyNotified){
-                noticePrefs.edit().putString(noticePrefKey,noticeKey).apply();
-                if(GatewayService.isEaRecentlyOnline(this)){
-                    if(telegramEnabled)sendTelegram(msg);
-                    notifyLocal(selectedMarket+" SIGNAL "+s.side,"Maksimal satu notifikasi per candle • Entry "+price(s.entry)+" | SL "+price(s.sl)+" | TP1 "+price(s.tp1));
-                }else{
-                    AppLog.add(this,"SIGNAL","notification suppressed: EA offline; signal is not an MT5 order");
-                }
-            }
-        }
+        if(scoreView!=null)scoreView.setText("POWERFULL • EA");
+        if(signalSummary!=null)signalSummary.setText("POWERFULL dikendalikan EA MT5 • tidak ada mesin sinyal APK");
+        if(entryView!=null)entryView.setText("ENTRY\\nEA");
+        if(slView!=null)slView.setText("SL\\nEA");
+        if(tp1View!=null)tp1View.setText("TP1\\nEA");
+        if(tp2View!=null)tp2View.setText("TP2\\nEA");
+        resetEntryReadyUi("POWERFULL • sinyal dari EA MT5");
     }
 
     String stars(int n){StringBuilder s=new StringBuilder();for(int i=0;i<5;i++)s.append(i<n?"★":"☆");return s.toString();}
@@ -2249,15 +2181,7 @@ public class MainActivity extends Activity {
 
     private String activeStrategyForSymbol(String symbol){
         SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        boolean standard=gp.getBoolean(strategyEnabledKey("STANDAR",symbol),false);
-        boolean excellent=gp.getBoolean(strategyEnabledKey("EXCELLENT",symbol),false);
-        boolean powerfull=gp.getBoolean("powerfull_enabled_"+symbol,false);
-        int activeCount=(standard?1:0)+(excellent?1:0)+(powerfull?1:0);
-        if(activeCount>1)return "OFF"; // fail closed; never run or draw multiple strategies
-        if(standard)return "STANDAR";
-        if(excellent)return "EXCELLENT";
-        if(powerfull)return "POWERFULL";
-        return "OFF";
+        return gp.getBoolean("powerfull_enabled_"+symbol,false)?"POWERFULL":"OFF";
     }
 
     private void applyStrategyIndicatorProfile(){
@@ -2268,29 +2192,25 @@ public class MainActivity extends Activity {
         if(!profileKey.equals(lastAppliedStrategyProfile)){
             lastAppliedStrategyProfile=profileKey;
             chart.setSignalLevels("BUY",0,0,0,0,false);
-            resetEntryReadyUi("strategi "+mode+" • evaluasi ulang sinyal");
+            resetEntryReadyUi("POWERFULL EA • tanpa indikator strategi APK");
             lastSignal=null;
-            if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nSTRATEGI "+mode+" • menunggu sinyal baru");
-            if(entryView!=null)entryView.setText("ENTRY\n--");
-            if(slView!=null)slView.setText("SL\n--");
-            if(tp1View!=null)tp1View.setText("TP1\n--");
-            if(tp2View!=null)tp2View.setText("TP2\n--");
+            if(signalSummary!=null)signalSummary.setText(selectedMarket+" • POWERFULL EA");
+            if(entryView!=null)entryView.setText("ENTRY\\nEA");
+            if(slView!=null)slView.setText("SL\\nEA");
+            if(tp1View!=null)tp1View.setText("TP1\\nEA");
+            if(tp2View!=null)tp2View.setText("TP2\\nEA");
         }
-        boolean standard="STANDAR".equals(mode),excellent="EXCELLENT".equals(mode);
-        boolean powerful="POWERFULL".equals(mode);
-        // POWERFULL is EA-owned: suppress legacy APK signal/indicator overlays so
-        // old EMA/RSI/Fibo/wick signals cannot be mistaken for the tested M5 EA.
-        chart.setShowEMA50(standard&&ind("ema50",true));
-        chart.setShowEMA200(standard&&ind("ema200",true));
-        chart.setShowSR(standard&&ind("sr",true));
-        chart.setShowFibo(standard&&ind("fibo",true));
-        chart.setShowRSI(excellent&&ind("rsi",true));
-        chart.setShowATR(excellent&&ind("atr",true));
+        chart.setShowEMA50(false);
+        chart.setShowEMA200(false);
+        chart.setShowSR(false);
+        chart.setShowFibo(false);
+        chart.setShowRSI(false);
+        chart.setShowATR(false);
         chart.setShowMACD(false);
-        chart.setShowSignals(!powerful&&ind("signals",true));
-        chart.setShowWickBos(!powerful&&ind("wickbos",true));
-        chart.setShowTradeLevels(!powerful&&ind("orders",true));
-        chart.setShowPosition(!powerful&&ind("position",true));
+        chart.setShowSignals(false);
+        chart.setShowWickBos(false);
+        chart.setShowTradeLevels(false);
+        chart.setShowPosition(true);
         chart.setShowBidAsk(ind("bidask",true));
     }
 
