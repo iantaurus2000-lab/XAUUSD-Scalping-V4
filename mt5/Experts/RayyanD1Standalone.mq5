@@ -162,6 +162,7 @@ bool powerCancelPendingForSymbol(string symbol);
 bool powerCancelDistantPendings(int index,const MqlTick &tick);
 bool powerHasPendingSide(string symbol,bool buySide);
 bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick &tick,double target);
+int powerTrendDirection(string symbol);
 void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double candleOpen,
                           bool candleJustChanged,bool hasPreviousTick,double previousBid,double previousAsk);
 bool powerManageLossRescue(int index,const MqlTick &tick);
@@ -2664,13 +2665,13 @@ bool powerManageTrendHold(int index,const MqlTick &tick){
       datetime opened=(datetime)PositionGetInteger(POSITION_TIME);
       if(opened<=0)continue;
       bool isBuy=((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
-      if(trendDirection==(isBuy?1:-1))continue; // TREND_HOLD has priority while market direction supports the ticket.
       double entry=PositionGetDouble(POSITION_PRICE_OPEN),executable=(isBuy?tick.bid:tick.ask);
       string peakKey="PW_PEAK_"+suffix;
       if(!GlobalVariableCheck(peakKey))GlobalVariableSet(peakKey,entry);
       double peak=GlobalVariableGet(peakKey);
-      // Keep recording the true favorable extreme across M5 candle changes.
+      // Keep recording the true favorable extreme across M5 candle changes, even while trend holds.
       if(isBuy?executable>peak+ts*0.1:executable<peak-ts*0.1){peak=executable;GlobalVariableSet(peakKey,peak);}
+      if(trendDirection==(isBuy?1:-1))continue; // TREND_HOLD has priority while market direction supports the ticket.
       double peakGain=(isBuy?peak-entry:entry-peak),giveback=(isBuy?peak-executable:executable-peak);
       double net=powerProjectedNet(ticket);
       if(peakGain<minLock||giveback<peakGain*0.30||net<=0.0)continue;
