@@ -70,29 +70,25 @@ public final class RayyanMenuLayout {
             new Item("◈", "Market", "Pilih XAUUSD, BTCUSD, atau ETHUSD", "market"),
             new Item("⌖", "Chart", "Kembali ke chart live", "chart"),
             new Item("◉", "Tampilan Live Chart", "Chart native: OHLC MT5 + Bid/Ask live", "live_chart"),
-            new Item("▦", "Indicators / Tampilan", "EMA, S/R, Fibonacci, RSI, MACD", "indicators"),
-            new Item("↗", "Signal Engine", "Entry, SL, TP, bias dan filter", "signal"),
-            new Item("◉", "Confidence Entry", "Ambang minimum 60%, 70%, 80%, atau 90%", "confidence")
+            new Item("▦", "Tampilan Chart", "Atur tampilan chart dan level transaksi", "indicators")
         ), actions);
 
         addSection(host, content, "SMART AUTO ENTRY & KONEKSI");
         addItems(host, content, Arrays.asList(
             new Item("⇄", "Gateway / Queue / ACK", "Status EA, antrean, dan konfirmasi MT5", "gateway"),
             new Item("▤", "Orders / History", "Log dan riwayat aktivitas aplikasi", "orders"),
-            new Item("✦", "Smart Auto Entry", "Pengaturan Auto Entry dan LIMIT demo", "mt5"),
             new Item("⚡", "SMART AUTO-POWERFULL", "Proyeksi rentang 3–5 candle M5 • entry saat candle baru", "powerfull")
         ), actions);
 
         addSection(host, content, "ALAT & PENGATURAN");
         addItems(host, content, Arrays.asList(
-            new Item("✦", "Strategy Control", "STANDAR, EXCELLENT, POWERFULL • pilih mesin aktif", "strategy_control"),
-            new Item("✦", "Strategy", "Informasi strategi scalping", "strategy"),
+            new Item("⚡", "POWERFULL", "Kontrol strategi EA MT5 dan parameternya", "powerfull"),
             new Item("◒", "Risk Management", "Informasi kontrol risiko", "risk"),
             new Item("✉", "Telegram", "Token bot dan Chat ID", "telegram"),
             new Item("♧", "Notifikasi", "Aktif/nonaktifkan notifikasi aplikasi", "notifications"),
             new Item("⚙", "Settings", "Pengaturan tampilan dan sistem", "settings")
         ), actions);
-        addFooter(host, root, "APK menjalankan STANDAR/EXCELLENT; POWERFULL dan model distribusinya dikelola EA MT5.");
+        addFooter(host, root, "Mesin STANDAR dan EXCELLENT dinonaktifkan. POWERFULL tetap dikendalikan EA MT5.");
         showDialog(host, root, "rayyan_main_menu");
     }
 
@@ -110,15 +106,13 @@ public final class RayyanMenuLayout {
         addSection(host, content, "TAMPILAN & MARKET");
         addItems(host, content, Arrays.asList(
             new Item("◐", "Tema Aplikasi", "Default Theme, Dark Professional, atau Light Professional", "settings_theme"),
-            new Item("▦", "Indicators / Tampilan", "Atur indikator yang terlihat di chart", "settings_indicators"),
+            new Item("▦", "Tampilan Chart", "Atur layer chart non-strategi", "settings_indicators"),
             new Item("◈", "Pilih Market", "XAUUSD, BTCUSD, atau ETHUSD", "settings_market"),
-            new Item("✦", "Strategy Control", "Pilih satu mesin aktif: STANDAR / EXCELLENT / POWERFULL", "strategy_control"),
-            new Item("⚡", "SMART AUTO-POWERFULL", "Konfigurasi proyeksi sederhana M5 EA", "powerfull")
+            new Item("⚡", "POWERFULL", "Kontrol strategi EA MT5 dan parameternya", "powerfull")
         ), actions);
         addSection(host, content, "KONEKSI & NOTIFIKASI");
         addItems(host, content, Arrays.asList(
             new Item("⇄", "Gateway / Queue / ACK", "Periksa status EA dan antrean; tidak mengirim order", "settings_gateway"),
-            new Item("✦", "Smart Auto Entry", "Pengaturan Auto Entry dan LIMIT demo", "settings_mt5"),
             new Item("✉", "Telegram", "Token bot dan Chat ID", "settings_telegram"),
             new Item("♧", "Notifikasi", "Aktif/nonaktifkan notifikasi aplikasi", "settings_notifications"),
             new Item("▤", "Log Sistem", "Lihat catatan aktivitas aplikasi", "settings_logs")
