@@ -1473,13 +1473,7 @@ public class MainActivity extends Activity {
     private int getMinimumEntryConfidence(){ return getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).getInt("min_entry_score",60); }
 
     private void showConfidenceDialog(){
-        int current=getMinimumEntryConfidence();
-        LinearLayout box=new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL); box.setPadding(24,18,24,18); box.setBackground(roundBg(Color.rgb(3,18,30),16));
-        TextView title=tv("ENTRY CONFIDENCE",18); title.setTextColor(Color.CYAN); title.setTypeface(null,Typeface.BOLD); box.addView(title,new LinearLayout.LayoutParams(-1,42));
-        TextView note=tv("Pilih ambang confidence minimum",12); note.setTextColor(Color.LTGRAY); box.addView(note,new LinearLayout.LayoutParams(-1,34));
-        LinearLayout choices=new LinearLayout(this); choices.setOrientation(LinearLayout.VERTICAL);
-        for(int value:new int[]{60,70,80,90}){ Button option=btn((current==value?"✓  ":"")+"CONFIDENCE "+value+"%"); option.setTextSize(14); option.setBackground(roundBg(current==value?Color.rgb(0,105,83):Color.rgb(7,34,60),12)); LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,58);p.setMargins(0,6,0,6);choices.addView(option,p);option.setOnClickListener(v->{getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putInt("min_entry_score",value).apply();Toast.makeText(this,"Confidence minimum "+value+"%",Toast.LENGTH_SHORT).show();if(lastSignal!=null&&m1Data!=null&&m1Data.length>0)updateEntryReadyUi(lastSignal,chart.getBid(),chart.getAsk(),m1Data,m1Data[m1Data.length-1].t);((Dialog)box.getTag()).dismiss();}); }
-        box.addView(choices); AlertDialog d=new AlertDialog.Builder(this).setView(box).setNegativeButton("Tutup",null).create();box.setTag(d);d.setOnShowListener(x->{if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-40,420),-2);}});d.show();if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-40,420),-2);}
+        Toast.makeText(this,"Pengaturan confidence strategi lama sudah dihapus. POWERFULL dikendalikan EA MT5.",Toast.LENGTH_SHORT).show();
     }
 
     private void showSettingsPanel(View anchor){
@@ -1636,38 +1630,7 @@ public class MainActivity extends Activity {
         showSizedDialog(dialog,0.46f,400);
     }
 
-    private void showStrategyDialog(){
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(12));
-        box.setBackground(roundBg(Color.rgb(3,18,30),16));
-        TextView title=tv("SCALPING STRATEGY",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
-        box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(40)));
-        TextView note=tv("Panduan baca-sinyal • bukan jaminan hasil",12);note.setTextColor(Color.LTGRAY);
-        box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(36)));
-        LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
-        String activeMode=activeStrategyForSymbol(mt5SymbolForMarket(selectedMarket));
-        if("STANDAR".equals(activeMode)){
-            addPanelRow(rows,"MESIN AKTIF","STANDAR • EMA50/EMA200 M5 + Fibo/SR + setup wick M1.",Color.CYAN);
-            addPanelRow(rows,"ENTRY LIMIT","Entry dari area wick/Fibonacci; tidak mengejar harga dengan MARKET.",Color.WHITE);
-            addPanelRow(rows,"SL / TARGET","SL di luar area setup dengan buffer ATR; TP1 = 1R dan TP2 = 1,8R.",Color.WHITE);
-        }else if("EXCELLENT".equals(activeMode)){
-            addPanelRow(rows,"MESIN AKTIF","EXCELLENT • EMA20/EMA50 M5 + RSI/ATR + wick/sweep M1.",Color.CYAN);
-            addPanelRow(rows,"ENTRY LIMIT","Entry hanya setelah konfirmasi internal EXCELLENT dan geometri LIMIT valid.",Color.WHITE);
-            addPanelRow(rows,"SL / TARGET","SL dan TP dihitung dari setup/ATR; validasi spread dan arah tetap berjalan.",Color.WHITE);
-        }else if("POWERFULL".equals(activeMode)){
-            addPanelRow(rows,"MESIN AKTIF","POWERFULL • D1 Human Price Extreme: entry dari tick MT5 pada ekstrem High/Low M5; SL points wajib.",Color.CYAN);
-            addPanelRow(rows,"ENTRY / PENDING","D1 memvalidasi pembalikan tick pada ekstrem candle; tidak memakai forecast Pending LIMIT. Posisi aktif mengunci entry baru sampai siklus selesai.",Color.WHITE);
-            addPanelRow(rows,"STATUS","Posisi dikelola lintas candle; sinyal reversal saja tidak menutup order. Profit diamankan setelah hold minimum, profit terlindungi, dan retracement/pelemahan terkonfirmasi.",Color.WHITE);
-        }else{
-            addPanelRow(rows,"MESIN AKTIF","OFF • tidak ada strategi otomatis yang dipilih untuk market ini.",Color.rgb(255,205,95));
-            addPanelRow(rows,"AKTIFKAN","Buka Strategy Control lalu pilih tepat satu: STANDAR, EXCELLENT, atau POWERFULL.",Color.WHITE);
-        }
-        addPanelRow(rows,"PENGAMAN","Quote MT5 harus segar, EA online, status order jelas, antrean aman, lot dan geometri order valid.",Color.CYAN);
-        ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
-        box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
-        AlertDialog d=new AlertDialog.Builder(this).setView(box).setPositiveButton("TUTUP",null).create();
-        showSizedDialog(d,0.80f,450);
-    }
+    private void showStrategyDialog(){ showPowerfullDialog(); }
 
     private void showRiskManagementDialog(){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
@@ -1716,82 +1679,7 @@ public class MainActivity extends Activity {
     }
 
     /** Exactly one strategy may be active per market. Indicators are owned by that strategy. */
-    private void showStrategyControlDialog(){
-        final String symbol=mt5SymbolForMarket(selectedMarket);
-        final SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        final String standardKey=strategyEnabledKey("STANDAR",symbol);
-        final String excellentKey=strategyEnabledKey("EXCELLENT",symbol);
-        final String powerKey="powerfull_enabled_"+symbol;
-        // Fail closed if old preferences contain multiple active engines.
-        boolean stdOn=gp.getBoolean(standardKey,false);
-        boolean excOn=gp.getBoolean(excellentKey,false);
-        boolean powOn=gp.getBoolean(powerKey,false);
-        int activeCount=(stdOn?1:0)+(excOn?1:0)+(powOn?1:0);
-        if(activeCount>1){
-            gp.edit().putBoolean(standardKey,false).putBoolean(excellentKey,false)
-                .putBoolean(powerKey,false).apply();
-            stdOn=false;excOn=false;powOn=false;
-            AppLog.add(this,"STRATEGY","multiple active strategies found; all switched OFF for safe isolation");
-        }
-        Switch standard=new Switch(this);standard.setText("STANDAR • Fibo/Wick LIMIT");standard.setTextColor(Color.WHITE);
-        Switch excellent=new Switch(this);excellent.setText("EXCELLENT • konfirmasi tambahan");excellent.setTextColor(Color.WHITE);
-        Switch powerful=new Switch(this);powerful.setText("POWERFULL • sinyal dan manajemen posisi dijalankan EA MT5");powerful.setTextColor(Color.WHITE);
-        LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(uiDp(18),uiDp(14),uiDp(18),uiDp(12));root.setBackground(roundBg(Color.rgb(3,18,30),16));
-        TextView title=tv("STRATEGY CONTROL • "+symbol,17);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
-        root.addView(title,new LinearLayout.LayoutParams(-1,uiDp(34)));
-        TextView note=tv("Pilih maksimal satu strategi per market. POWERFULL dikelola EA MT5. Saat posisi terbuka, pending lain dibatalkan dan entry baru diblokir. Posisi rugi tidak ditutup hanya karena reversal; posisi profit dibiarkan berkembang lintas candle dan ditutup setelah profit terlindungi serta retracement/pelemahan terkonfirmasi. SL tetap menjadi proteksi risiko.",11);
-        note.setTextColor(Color.LTGRAY);note.setPadding(0,0,0,uiDp(8));root.addView(note,new LinearLayout.LayoutParams(-1,-2));
-        root.addView(standard,new LinearLayout.LayoutParams(-1,uiDp(48)));
-        root.addView(excellent,new LinearLayout.LayoutParams(-1,uiDp(48)));
-        root.addView(powerful,new LinearLayout.LayoutParams(-1,uiDp(48)));
-        standard.setChecked(stdOn);
-        excellent.setChecked(excOn);
-        powerful.setChecked(powOn);
-        applyStrategyIndicatorProfile();
-        queueNativeIndicatorState();
-        standard.setOnCheckedChangeListener((b,on)->{
-            if(on){
-                gp.edit().putBoolean(standardKey,true).putBoolean(excellentKey,false).putBoolean(powerKey,false).apply();
-                excellent.setChecked(false);powerful.setChecked(false);
-            }else gp.edit().putBoolean(standardKey,false).apply();
-            applyStrategyIndicatorProfile();queueNativeIndicatorState();
-            Toast.makeText(this,"STANDAR "+(on?"ON":"OFF")+" • "+symbol,Toast.LENGTH_SHORT).show();
-        });
-        excellent.setOnCheckedChangeListener((b,on)->{
-            if(on){
-                gp.edit().putBoolean(excellentKey,true).putBoolean(standardKey,false).putBoolean(powerKey,false).apply();
-                standard.setChecked(false);powerful.setChecked(false);
-            }else gp.edit().putBoolean(excellentKey,false).apply();
-            applyStrategyIndicatorProfile();queueNativeIndicatorState();
-            Toast.makeText(this,"EXCELLENT "+(on?"ON":"OFF")+" • "+symbol,Toast.LENGTH_SHORT).show();
-        });
-        powerful.setOnCheckedChangeListener((b,on)->{
-            double configuredLot=gp.getFloat("powerfull_lot_"+symbol,0f);
-            if(on&&configuredLot<minLotForSymbol(symbol)){
-                powerful.setChecked(false);
-                Toast.makeText(this,"Simpan Initial Lot di submenu EA uji test terlebih dahulu.",Toast.LENGTH_LONG).show();
-                showPowerfullSettingsDialog();
-                return;
-            }
-            if(on){
-                gp.edit().putBoolean(powerKey,true).putBoolean(standardKey,false).putBoolean(excellentKey,false)
-                    .putBoolean("powerfull_buy_limit_"+symbol,true).putBoolean("powerfull_sell_limit_"+symbol,true)
-                    .putBoolean("powerfull_reforecast_"+symbol,true).putBoolean("powerfull_quick_profit_"+symbol,true)
-                    .putBoolean("powerfull_cross_candle_"+symbol,true).apply();
-                standard.setChecked(false);excellent.setChecked(false);
-            }else gp.edit().putBoolean(powerKey,false).apply();
-            applyStrategyIndicatorProfile();queueNativeIndicatorState();
-            Toast.makeText(this,"POWERFULL "+(on?"ON":"OFF")+" • "+symbol,Toast.LENGTH_SHORT).show();
-        });
-        Button openPower=btn("PENGATURAN DETAIL POWERFULL");openPower.setTextSize(11);openPower.setTextColor(Color.WHITE);
-        openPower.setBackground(roundBg(Color.rgb(8,70,103),10));root.addView(openPower,new LinearLayout.LayoutParams(-1,uiDp(44)));
-        openPower.setOnClickListener(v->showPowerfullDialog());
-        Button close=btn("TUTUP");close.setTextColor(Color.WHITE);close.setBackground(roundBg(Color.rgb(53,65,77),10));
-        root.addView(close,new LinearLayout.LayoutParams(-1,uiDp(42)));
-        AlertDialog dialog=new AlertDialog.Builder(this).setView(root).create();
-        close.setOnClickListener(v->dialog.dismiss());showSizedDialog(dialog,0.78f,420);
-    }
+    private void showStrategyControlDialog(){ showPowerfullDialog(); }
 
     /**
      * SMART AUTO-POWERFULL is intentionally isolated from legacy SMART AUTO settings.
@@ -1842,8 +1730,7 @@ public class MainActivity extends Activity {
                 .putBoolean("powerfull_buy_limit_"+symbol,true).putBoolean("powerfull_sell_limit_"+symbol,true)
                 .putBoolean("powerfull_quick_profit_"+symbol,true).putBoolean("powerfull_cross_candle_"+symbol,true)
                 .putBoolean("powerfull_reforecast_"+symbol,true)
-                .putBoolean(strategyEnabledKey("STANDAR",symbol),enabled.isChecked()?false:gp.getBoolean(strategyEnabledKey("STANDAR",symbol),false))
-                .putBoolean(strategyEnabledKey("EXCELLENT",symbol),enabled.isChecked()?false:gp.getBoolean(strategyEnabledKey("EXCELLENT",symbol),false)).apply();
+.apply();
             applyStrategyIndicatorProfile();queueNativeIndicatorState();
             AppLog.add(this,"UJI TEST EA","POWERFULL "+(enabled.isChecked()?"ON":"OFF")+" symbol="+symbol);
             Toast.makeText(this,"POWERFULL EA "+(enabled.isChecked()?"ON":"OFF"),Toast.LENGTH_SHORT).show();
@@ -2121,8 +2008,7 @@ public class MainActivity extends Activity {
                 StringBuilder normalized=new StringBuilder();
                 for(Double n:valid){if(normalized.length()>0)normalized.append(", ");normalized.append(String.format(Locale.US,"%.4f",n).replaceAll("0+$","").replaceAll("\\.$",""));}
                 prefs.edit().putString("fibo_levels_percent",normalized.toString()).apply();
-                chart.setFibonacciLevels(readFibonacciLevels());
-                setInd("fibo",true);
+                        setInd("fibo",true);
                 AppLog.add(this,"FIBONACCI","levels updated: "+normalized);
                 Toast.makeText(this,"Level Fibonacci disimpan",Toast.LENGTH_SHORT).show();
                 d.dismiss();
@@ -2168,7 +2054,6 @@ public class MainActivity extends Activity {
     }
 
     void loadIndicatorSettings(){
-        chart.setFibonacciLevels(readFibonacciLevels());
         chart.setShowSignals(ind("signals",true));chart.setShowWickBos(ind("wickbos",true));chart.setShowTradeLevels(ind("orders",true));chart.setShowPosition(ind("position",true));chart.setShowBidAsk(ind("bidask",true));
         applyStrategyIndicatorProfile();
         queueNativeIndicatorState();
@@ -2178,15 +2063,11 @@ public class MainActivity extends Activity {
         long id=System.currentTimeMillis();
         String symbol=mt5SymbolForMarket(selectedMarket);
         String strategy=activeStrategyForSymbol(symbol);
-        boolean standard="STANDAR".equals(strategy);
         String command="id="+id+
             ";symbol="+symbol+
             ";tf="+selectedTf+
             ";strategy="+strategy+
-            ";ema50="+(standard&&ind("ema50",true)?"1":"0")+
-            ";ema200="+(standard&&ind("ema200",true)?"1":"0")+
-            ";sr="+(standard&&ind("sr",true)?"1":"0")+
-            ";fibo="+(standard&&ind("fibo",true)?"1":"0");
+            ";ema50=0;ema200=0;sr=0;fibo=0";
         getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putString("indicator_next",command).apply();
         AppLog.add(this,"MT5 INDICATORS","queued native chart state id="+id);
     }
@@ -2202,52 +2083,18 @@ public class MainActivity extends Activity {
     }
 
     private void showWinRateDialog(){
-        WinRateTracker.Stats ready=WinRateTracker.stats(this,"READY");
-        WinRateTracker.Stats manual=WinRateTracker.stats(this,"MANUAL");
-        WinRateTracker.Stats smart=WinRateTracker.stats(this,"SMART_AUTO");
-        WinRateTracker.Stats standard=WinRateTracker.stats(this,"STRATEGY_STANDAR");
-        WinRateTracker.Stats excellent=WinRateTracker.stats(this,"STRATEGY_EXCELLENT");
-        SharedPreferences powerPrefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        String powerSymbol=mt5SymbolForMarket(selectedMarket);
-        int powerWins=powerPrefs.getInt("powerfull_wins_"+powerSymbol,0);
-        int powerLosses=powerPrefs.getInt("powerfull_losses_"+powerSymbol,0);
-        int powerClosed=powerPrefs.getInt("powerfull_closed_deals_"+powerSymbol,0);
-        double powerRate=powerClosed>0?100.0*powerWins/powerClosed:0.0;
+        SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        String symbol=mt5SymbolForMarket(selectedMarket);
+        int wins=p.getInt("powerfull_wins_"+symbol,0),losses=p.getInt("powerfull_losses_"+symbol,0),closed=p.getInt("powerfull_closed_deals_"+symbol,0);
+        double rate=closed>0?100.0*wins/closed:0.0;
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(uiDp(16),uiDp(14),uiDp(16),uiDp(12));
-        box.setBackground(roundBg(Color.rgb(3,18,30),16));
-        TextView title=tv("HASIL UJI • WIN RATE",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        box.setPadding(uiDp(16),uiDp(14),uiDp(16),uiDp(12));box.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("POWERFULL • HASIL MT5",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
         box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(38)));
-        TextView note=tv("STANDAR/EXCELLENT: simulasi sinyal M1. POWERFULL: hasil deal penutupan MT5 yang dilaporkan EA untuk simbol terpilih selama 30 hari terakhir; data masuk saat EA online.",11);
-        note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
-        box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(42)));
-        LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
-        addWinRateRow(rows,"1. AKURASI STRATEGI STANDAR",standard);
-        addWinRateRow(rows,"2. AKURASI STRATEGI EXCELLENT",excellent);
-        addPanelRow(rows,"3. WIN RATE POWERFULL • "+selectedMarket,
-            "WIN "+powerWins+" • LOSS "+powerLosses+" • DEAL TERTUTUP "+powerClosed+
-            "\nWIN RATE REALISASI "+String.format(Locale.US,"%.1f",powerRate)+"% • "+powerSymbol,
-            powerClosed>0?green:Color.WHITE);
-        addWinRateRow(rows,"4. SINYAL ENTRY READY",ready);
-        addWinRateRow(rows,"5. ORDER MANUAL",manual);
-        addWinRateRow(rows,"6. SMART AUTO ENTRY",smart);
-        TextView rule=tv("WIN: TP1 tersentuh dahulu • LOSS: SL tersentuh dahulu • OPEN: belum selesai • AMBIGU: TP1 dan SL tersentuh dalam candle sama. Garis ENTRY tetap pada harga yang dicatat terakhir.",11);
-        rule.setTextColor(Color.rgb(255,205,95));rule.setGravity(Gravity.TOP|Gravity.START);
-        rule.setPadding(uiDp(10),uiDp(8),uiDp(10),uiDp(8));rule.setBackground(roundBg(Color.rgb(7,30,47),10));
-        rows.addView(rule,new LinearLayout.LayoutParams(-1,-2));
-        TextView disclaimer=tv("Catatan: untuk order MANUAL/SMART AUTO, status OPEN dimulai saat APK menerima perintah ke antrean; ini belum membuktikan order terisi di MT5. Hasil memakai level Entry/SL/TP1 dan candle berikutnya sebagai simulasi.",10);
-        disclaimer.setTextColor(Color.LTGRAY);disclaimer.setGravity(Gravity.TOP|Gravity.START);
-        disclaimer.setPadding(uiDp(10),uiDp(8),uiDp(10),uiDp(8));rows.addView(disclaimer);
-        TextView detailTitle=tv("RIWAYAT TERAKHIR",13);detailTitle.setTextColor(Color.CYAN);detailTitle.setTypeface(null,Typeface.BOLD);
-        rows.addView(detailTitle,new LinearLayout.LayoutParams(-1,uiDp(32)));
-        TextView details=tv("STRATEGI STANDAR\n"+WinRateTracker.details(this,"STRATEGY_STANDAR")+"\n\nSTRATEGI EXCELLENT\n"+WinRateTracker.details(this,"STRATEGY_EXCELLENT")+"\n\nPOWERFULL MT5 • "+powerSymbol+"\nWIN "+powerWins+" / LOSS "+powerLosses+" / CLOSED "+powerClosed+"\n\nREADY\n"+WinRateTracker.details(this,"READY")+"\n\nMANUAL\n"+WinRateTracker.details(this,"MANUAL")+"\n\nSMART AUTO\n"+WinRateTracker.details(this,"SMART_AUTO"),11);
-        details.setTextIsSelectable(true);details.setGravity(Gravity.TOP|Gravity.START);
-        details.setPadding(uiDp(10),uiDp(8),uiDp(10),uiDp(8));details.setBackground(roundBg(Color.rgb(6,25,40),10));
-        rows.addView(details,new LinearLayout.LayoutParams(-1,-2));
-        ScrollView sc=new ScrollView(this);sc.setFillViewport(false);sc.addView(rows);
-        box.addView(sc,new LinearLayout.LayoutParams(-1,0,1f));
-        AlertDialog d=new AlertDialog.Builder(this).setView(box).setPositiveButton("PERBARUI",null).setNegativeButton("TUTUP",null).create();
-        showSizedDialog(d,0.84f,450);
+        addPanelRow(box,"DEAL TERTUTUP • "+symbol,"WIN "+wins+" • LOSS "+losses+" • TOTAL "+closed+"\nWIN RATE "+String.format(Locale.US,"%.1f",rate)+"%",closed>0?green:Color.WHITE);
+        TextView note=tv("Data berasal dari deal MT5 yang dilaporkan EA. Tidak ada statistik simulasi STANDAR/EXCELLENT di APK.",11);
+        note.setTextColor(Color.LTGRAY);box.addView(note);
+        new AlertDialog.Builder(this).setView(box).setPositiveButton("TUTUP",null).show();
     }
 
     private void addWinRateRow(LinearLayout parent,String title,WinRateTracker.Stats s){
