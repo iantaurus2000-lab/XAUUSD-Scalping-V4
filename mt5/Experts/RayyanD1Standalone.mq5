@@ -561,7 +561,9 @@ int OnInit(){
       powerSessionRefresh();
       string directSymbol=(StringLen(StandaloneSymbol)>0?StandaloneSymbol:_Symbol);
       powerSymbols[0]=directSymbol; powerSymbols[1]=""; powerSymbols[2]="";
-      // Subscribe to broker Market Depth when supported; absence is non-fatal.\n      bool bookReady=MarketBookAdd(directSymbol);\n      Print("POWERFLOW DOM subscription symbol=",directSymbol," available=",bookReady);\n      if(!SymbolSelect(directSymbol,true)){
+      // Subscribe to broker Market Depth when supported; absence is non-fatal.
+      bool bookReady=MarketBookAdd(directSymbol);
+      Print("POWERFLOW DOM subscription symbol=",directSymbol," available=",bookReady);\n      if(!SymbolSelect(directSymbol,true)){
          Print("D1 STANDALONE CONFIG ERROR: symbol unavailable: ",directSymbol);
          return(INIT_FAILED);
       }
@@ -617,7 +619,8 @@ int OnInit(){
    return(INIT_SUCCEEDED);
 }
 void OnDeinit(const int r){
-   EventKillTimer();\n   if(StandaloneD1Mode){ string directSymbol=(StringLen(StandaloneSymbol)>0?StandaloneSymbol:_Symbol); MarketBookRelease(directSymbol); }
+   EventKillTimer();
+   if(StandaloneD1Mode){ string directSymbol=(StringLen(StandaloneSymbol)>0?StandaloneSymbol:_Symbol); MarketBookRelease(directSymbol); }
    ObjectDelete(0,"RAYYAN_MT5_BAR_TIMER");
    ObjectDelete(0,"RAYYAN8_SR_RESISTANCE");
    ObjectDelete(0,"RAYYAN8_SR_SUPPORT");
