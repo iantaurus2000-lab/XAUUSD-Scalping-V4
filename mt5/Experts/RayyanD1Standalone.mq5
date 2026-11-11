@@ -168,7 +168,7 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
 bool powerManageLossRescue(int index,const MqlTick &tick);
 bool powerManageTrendHold(int index,const MqlTick &tick);
 void powerRefreshAnalysisReports();
-void powerWriteAnalysisReport(string targetPath);
+void powerWriteAnalysisReport(string targetPath,datetime sessionStart=0);
 void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
                              double candleOpen,double candleHigh,double candleLow,
                              double askHigh,double askLow,
@@ -364,7 +364,7 @@ void powerAppendDealRecord(ulong deal){
       if(dealSessionFolder!="")powerSessionWriteOpenPositions(dealSessionFolder);
    }
 }
-void powerWriteAnalysisReport(string targetPath){
+void powerWriteAnalysisReport(string targetPath,datetime sessionStart){
    if(targetPath=="")return;
    datetime to=TimeCurrent(),from=to-90*86400;
    if(!HistorySelect(from,to))return;
