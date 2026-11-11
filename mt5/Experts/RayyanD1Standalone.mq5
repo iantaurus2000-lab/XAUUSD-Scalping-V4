@@ -301,6 +301,7 @@ void powerAppendDealRecord(ulong deal){
    ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
    ENUM_DEAL_TYPE type=(ENUM_DEAL_TYPE)HistoryDealGetInteger(deal,DEAL_TYPE);
    datetime when=(datetime)HistoryDealGetInteger(deal,DEAL_TIME);
+   string symbol=HistoryDealGetString(deal,DEAL_SYMBOL);
    double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
    int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
    bool positionBuy=((entry==DEAL_ENTRY_OUT||entry==DEAL_ENTRY_OUT_BY)?(type==DEAL_TYPE_SELL):(type==DEAL_TYPE_BUY));
