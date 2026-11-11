@@ -2560,9 +2560,6 @@ void powerApplyWeekendClose(string symbol){
       powerClosePosition(ticket,"WEEKEND_FLAT_FRIDAY");
    }
 }
-// POWERFULL direction source: MT5 broker tick-flow proxy only.
-// This is signed quote/tick pressure (not centralized-exchange aggressor volume).
-// Up/down classification uses sequential Bid/Ask mid-price changes from the latest ticks.
 // POWERFULL Order Flow v2: recent MT5 quote-flow + available broker DOM.
 // This is a broker-feed pressure estimate, NOT centralized aggressor trade delta.
 // Tick volume is used only when supplied; otherwise quote updates retain unit weight.
@@ -2582,7 +2579,7 @@ int powerTrendDirection(string symbol){
    if(copied<POWERFLOW_MIN_TICKS)return 0;
 
    // If broker history is unusually dense, use the newest bounded sample.
-   int first=MathMax(0,copied-POWERFLOW_MAX_TICKS);
+   int first=(copied>POWERFLOW_MAX_TICKS?copied-POWERFLOW_MAX_TICKS:0);
    double weightedDelta=0.0,weightTotal=0.0;
    double bidPressure=0.0,askPressure=0.0;
    int valid=0;
@@ -2738,7 +2735,7 @@ bool powerManageTrendHold(int index,const MqlTick &tick){
    if(chosenTicket==0)return false;
    Print("POWERFULL TREND_HOLD EXIT READY symbol=",symbol," ticket=",chosenTicket,
          " peak_giveback_pct=30.0 projected_net=",DoubleToString(chosenNet,2),
-         " exit_condition=M15_H1_reversal_plus_30pct_peak_giveback");
+         " exit_condition=broker_orderflow_reversal_plus_30pct_peak_giveback");
    powerClosePosition(chosenTicket,"TREND_HOLD_30PCT_PEAK_GIVEBACK_POSITIVE_NET");
    return true; // Gradual layer exit: nearest executable price first, one per tick.
 }
@@ -2750,7 +2747,7 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
    double point=SymbolInfoDouble(symbol,SYMBOL_POINT),ts=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
    if(point<=0.0||ts<=0.0)return;
 
-   // Each ticket is evaluated against the same M15+H1 structure used by entry.
+   // Each ticket is evaluated against the same broker Order Flow direction used by entry.
    // A genuine opposite direction activates LOSS_RESCUE; neutral direction never forces an exit.
    int trendDirection=powerTrendDirection(symbol);
    for(int i=PositionsTotal()-1;i>=0;i--){
@@ -2775,7 +2772,7 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       if(directionSupports){
          if(mode!=POWERFULL_MODE_TREND_HOLD){
             GlobalVariableSet(modeKey,(double)POWERFULL_MODE_TREND_HOLD);
-            Print("POWERFULL MODE symbol=",symbol," ticket=",ticket," mode=TREND_HOLD reason=M15_H1_direction_supports_ticket");
+            Print("POWERFULL MODE symbol=",symbol," ticket=",ticket," mode=TREND_HOLD reason=broker_orderflow_supports_ticket");
          }
          if(GlobalVariableCheck(lossSinceKey))GlobalVariableDel(lossSinceKey);
          continue;
@@ -2784,7 +2781,7 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       if(mode!=POWERFULL_MODE_LOSS_RESCUE){
          GlobalVariableSet(modeKey,(double)POWERFULL_MODE_LOSS_RESCUE);
          Print("POWERFULL MODE symbol=",symbol," ticket=",ticket,
-               " mode=LOSS_RESCUE reason=confirmed_M15_H1_direction_reversal",
+               " mode=LOSS_RESCUE reason=confirmed_broker_orderflow_reversal",
                " projected_net=",DoubleToString(net,2)," exit=first_positive_net_per_ticket");
       }
    }
