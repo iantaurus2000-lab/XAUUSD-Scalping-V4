@@ -2186,6 +2186,17 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
                              bool hasPreviousTick,double previousBid,double previousAsk){
    if(index<0||index>=ArraySize(powerSymbols))return;
    string symbol=powerSymbols[index];
+
+   // M5 closing safety window: do not open a new BUY/SELL during the final 40 seconds.
+   // This is a pre-close blackout only; it is NOT a 40-second warm-up after a new bar.
+   long tickSeconds=(long)(tick.time_msc/1000);
+   long candleElapsed=(long)(tickSeconds-(long)barTime);
+   if(barTime>0&&candleElapsed>=260&&candleElapsed<300){
+      powerPublishState(index,"D1_FINAL_40S_NO_ENTRY",
+         "New entries paused during the final 40 seconds of the current M5 candle; existing positions remain managed",barTime);
+      return;
+   }
+
    if(DemoOnly&&AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
       powerPublishState(index,"BLOCKED_REAL_ACCOUNT",
          "D1 standalone is restricted to a demo account while DemoOnly=true",barTime);
@@ -2256,8 +2267,9 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    // Rubber-band entry model: measure live M5 stretch from Open to the
    // developing Low/High, then enter while price is STILL near that extreme.
    // Do not wait for a rejection wick, pullback, reversal tick, or 2-tick retreat.
-   // No end-of-candle 40-second blackout: valid extreme entries remain eligible
-   // until the M5 candle changes.
+   // The final-40-second blackout is enforced above. Before that window,
+   // enter immediately on the first live tick satisfying the rubber-band extreme:
+   // no reversal tick, rejection wick, pullback, or prolonged weakening wait.
    bool sellFresh=(powerMomentumLastSellHigh[index]<=0.0||
                    candleHigh>=powerMomentumLastSellHigh[index]+ts);
    bool buyFresh=(powerMomentumLastBuyLow[index]<=0.0||
@@ -2297,7 +2309,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    bool sellCandleStructure=candleGreen;
    bool buyReady=(trendDirection>0&&buyFresh&&buyExtremeDistribution&&buyCandleStructure&&buyN<cap);
    bool sellReady=(trendDirection<0&&sellFresh&&sellExtremeDistribution&&sellCandleStructure&&sellN<cap);
-   // Entry readiness is governed by the agreed A5 weakness conditions above.
+   // Entry readiness is governed by the live rubber-band stretch and edge location.
+   // Recovery/retreat values below are diagnostics only and never delay the order.
    double buyScore=buyOpenExtension+lowerWick/range+
                    buyBidRecovery/range+buyAskRecovery/range;
    double sellScore=sellOpenExtension+upperWick/range+
