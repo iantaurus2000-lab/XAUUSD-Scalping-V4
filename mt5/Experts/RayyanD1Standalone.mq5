@@ -538,7 +538,7 @@ int OnInit(){
       powerSessionRefresh();
       string directSymbol=(StringLen(StandaloneSymbol)>0?StandaloneSymbol:_Symbol);
       powerSymbols[0]=directSymbol; powerSymbols[1]=""; powerSymbols[2]="";
-      if(!SymbolSelect(directSymbol,true)){
+      // Subscribe to broker Market Depth when supported; absence is non-fatal.\n      bool bookReady=MarketBookAdd(directSymbol);\n      Print("POWERFLOW DOM subscription symbol=",directSymbol," available=",bookReady);\n      if(!SymbolSelect(directSymbol,true)){
          Print("D1 STANDALONE CONFIG ERROR: symbol unavailable: ",directSymbol);
          return(INIT_FAILED);
       }
@@ -594,7 +594,7 @@ int OnInit(){
    return(INIT_SUCCEEDED);
 }
 void OnDeinit(const int r){
-   EventKillTimer();
+   EventKillTimer();\n   if(StandaloneD1Mode){ string directSymbol=(StringLen(StandaloneSymbol)>0?StandaloneSymbol:_Symbol); MarketBookRelease(directSymbol); }
    ObjectDelete(0,"RAYYAN_MT5_BAR_TIMER");
    ObjectDelete(0,"RAYYAN8_SR_RESISTANCE");
    ObjectDelete(0,"RAYYAN8_SR_SUPPORT");
@@ -2563,27 +2563,84 @@ void powerApplyWeekendClose(string symbol){
 // POWERFULL direction source: MT5 broker tick-flow proxy only.
 // This is signed quote/tick pressure (not centralized-exchange aggressor volume).
 // Up/down classification uses sequential Bid/Ask mid-price changes from the latest ticks.
+// POWERFULL Order Flow v2: recent MT5 quote-flow + available broker DOM.
+// This is a broker-feed pressure estimate, NOT centralized aggressor trade delta.
+// Tick volume is used only when supplied; otherwise quote updates retain unit weight.
+#define POWERFLOW_WINDOW_MS 30000
+#define POWERFLOW_MAX_TICKS 512
+#define POWERFLOW_MIN_TICKS 8
+
 int powerTrendDirection(string symbol){
+   MqlTick current;
+   if(!SymbolInfoTick(symbol,current)||current.time_msc<=0)return 0;
+
+   ulong toMsc=(ulong)current.time_msc;
+   ulong fromMsc=(toMsc>(ulong)POWERFLOW_WINDOW_MS?toMsc-(ulong)POWERFLOW_WINDOW_MS:0);
    MqlTick ticks[];
    ArraySetAsSeries(ticks,false);
-   int copied=CopyTicks(symbol,ticks,COPY_TICKS_ALL,0,64);
-   if(copied<7)return 0;
+   int copied=CopyTicksRange(symbol,ticks,COPY_TICKS_ALL,fromMsc,toMsc);
+   if(copied<POWERFLOW_MIN_TICKS)return 0;
 
-   int upTicks=0,downTicks=0;
-   double previousMid=0.0;
-   for(int i=0;i<copied;i++){
-      if(ticks[i].bid<=0.0||ticks[i].ask<=0.0)continue;
-      double mid=(ticks[i].bid+ticks[i].ask)*0.5;
+   // If broker history is unusually dense, use the newest bounded sample.
+   int first=MathMax(0,copied-POWERFLOW_MAX_TICKS);
+   double weightedDelta=0.0,weightTotal=0.0;
+   double bidPressure=0.0,askPressure=0.0;
+   int valid=0;
+   double previousBid=0.0,previousAsk=0.0,previousMid=0.0;
+   for(int i=first;i<copied;i++){
+      MqlTick q=ticks[i];
+      if(q.bid<=0.0||q.ask<q.bid)continue;
+      double mid=(q.bid+q.ask)*0.5;
       if(previousMid>0.0){
-         if(mid>previousMid)upTicks++;
-         else if(mid<previousMid)downTicks++;
+         double w=(q.volume_real>0.0?q.volume_real:(q.volume>0.0?(double)q.volume:1.0));
+         // Signed quote delta: mid movement weighted by broker tick volume when available.
+         if(mid>previousMid)weightedDelta+=w;
+         else if(mid<previousMid)weightedDelta-=w;
+         weightTotal+=w;
+         // Separate quote-side pressure: rising Bid supports buyers; rising Ask
+         // reflects offer repricing. Falling sides are counted independently.
+         if(q.bid>previousBid)bidPressure+=w;
+         else if(q.bid<previousBid)bidPressure-=w;
+         if(q.ask>previousAsk)askPressure+=w;
+         else if(q.ask<previousAsk)askPressure-=w;
+         valid++;
       }
+      previousBid=q.bid;
+      previousAsk=q.ask;
       previousMid=mid;
    }
-   int directionalTicks=upTicks+downTicks;
-   if(directionalTicks<5)return 0;
-   if(upTicks>downTicks)return 1;
-   if(downTicks>upTicks)return -1;
+   if(valid<5||weightTotal<=0.0)return 0;
+
+   double deltaScore=weightedDelta/weightTotal;
+   double bidScore=bidPressure/weightTotal;
+   double askScore=askPressure/weightTotal;
+   // Bid-side lift and Ask-side retreat both support upward pressure; inverse supports down.
+   double quoteScore=(bidScore-askScore)*0.5;
+   double score=deltaScore*0.60+quoteScore*0.40;
+
+   // Optional broker DOM: top five price levels, volume-weighted imbalance.
+   // DOM absence is normal for OTC/CFD brokers and never blocks the tick-flow result.
+   MqlBookInfo book[];
+   double domScore=0.0;
+   bool hasDom=MarketBookGet(symbol,book);
+   if(hasDom&&ArraySize(book)>0){
+      double bidDepth=0.0,askDepth=0.0;
+      int bidLevels=0,askLevels=0;
+      for(int j=0;j<ArraySize(book);j++){
+         double v=(book[j].volume_real>0.0?book[j].volume_real:(double)book[j].volume);
+         if(v<=0.0)continue;
+         if(book[j].type==BOOK_TYPE_BUY&&bidLevels<5){bidDepth+=v;bidLevels++;}
+         else if(book[j].type==BOOK_TYPE_SELL&&askLevels<5){askDepth+=v;askLevels++;}
+      }
+      double depth=bidDepth+askDepth;
+      if(depth>0.0){
+         domScore=(bidDepth-askDepth)/depth;
+         score=score*0.80+domScore*0.20;
+      }
+   }
+   // Require a measurable directional edge; neutral feed stays neutral.
+   if(score>0.03)return 1;
+   if(score< -0.03)return -1;
    return 0;
 }
 
