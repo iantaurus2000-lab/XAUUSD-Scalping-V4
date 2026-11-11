@@ -2713,11 +2713,8 @@ bool powerManageLossRescue(int index,const MqlTick &tick){
    string symbol=powerSymbols[index];
    int trendDirection=powerTrendDirection(symbol);
    if(trendDirection==0)return false;
-   double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
-   double ts=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
-   if(point<=0.0||ts<=0.0)return false;
    ulong chosenTicket=0;
-   double nearestDistance=DBL_MAX,chosenNet=0.0;
+   double nearestDistance=DBL_MAX,chosenNet=0.0,chosenTarget=0.0;
    string chosenReason="";
    for(int i=PositionsTotal()-1;i>=0;i--){
       ulong ticket=PositionGetTicket(i);
@@ -2729,41 +2726,34 @@ bool powerManageLossRescue(int index,const MqlTick &tick){
       if(!GlobalVariableCheck(modeKey)||(int)GlobalVariableGet(modeKey)!=POWERFULL_MODE_LOSS_RESCUE)continue;
       bool isBuy=((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
       int side=(isBuy?1:-1);
-      if(trendDirection!= -side)continue; // Only act while broker Order Flow confirms opposition.
-      double entry=PositionGetDouble(POSITION_PRICE_OPEN);
-      double executable=(isBuy?tick.bid:tick.ask);
+      if(trendDirection!=-side)continue; // Close only after Order Flow no longer supports this position.
       double net=powerProjectedNet(ticket);
       double volume=PositionGetDouble(POSITION_VOLUME);
       double target=powerLossRescueTargetNet(volume);
-      string peakKey="PW_LR_PEAK_"+suffix;
-      if(!GlobalVariableCheck(peakKey))GlobalVariableSet(peakKey,executable);
-      double peak=GlobalVariableGet(peakKey);
-      if(isBuy?executable>peak+ts*0.1:executable<peak-ts*0.1){
-         peak=executable; GlobalVariableSet(peakKey,peak);
+      string wasLossKey="PW_LR_WAS_NEG_"+suffix;
+      if(net<=0.0){
+         GlobalVariableSet(wasLossKey,1.0); // Remember that this ticket entered the loss area.
+         continue;
       }
-      double favorable=(isBuy?peak-entry:entry-peak);
-      double giveback=(isBuy?peak-executable:executable-peak);
-      bool positiveTargetReached=(target<DBL_MAX&&net>=target&&
-         favorable>=ts*2.0&&giveback>=MathMax(favorable*0.20,ts*2.0));
-
-      int slPts=(isBuy?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
-      double hard=(powerCfg[index].usePointStops?slPts*point:powerCfg[index].stopPips*powerCfg[index].pipSize);
-      double adverse=(isBuy?entry-executable:executable-entry);
-      // Escape before the hard SL: only after opposing flow persists into the final 25% of SL distance.
-      bool slRescue=(hard>0.0&&adverse>=hard*0.75);
-      if(!positiveTargetReached&&!slRescue)continue;
+      bool recoveredFromLoss=(GlobalVariableCheck(wasLossKey)&&GlobalVariableGet(wasLossKey)>0.5);
+      bool scaledTargetReached=(target<DBL_MAX&&net>=target);
+      // If it recovered from negative net, close at the first positive net, however small.
+      // Otherwise require the lot-scaled target before closing on a trend/flow weakening.
+      if(!recoveredFromLoss&&!scaledTargetReached)continue;
+      double entry=PositionGetDouble(POSITION_PRICE_OPEN);
+      double executable=(isBuy?tick.bid:tick.ask);
       double distance=MathAbs(entry-executable);
       if(distance<nearestDistance){
-         nearestDistance=distance; chosenTicket=ticket; chosenNet=net;
-         chosenReason=(positiveTargetReached?"LOSS_RESCUE_TARGET_NET_PEAK_REVERSAL":"LOSS_RESCUE_PRE_SL_RISK");
+         nearestDistance=distance; chosenTicket=ticket; chosenNet=net; chosenTarget=target;
+         chosenReason=(recoveredFromLoss?"LOSS_RESCUE_RECOVERED_POSITIVE":"LOSS_RESCUE_SCALED_TARGET_TREND_FADE");
       }
    }
    if(chosenTicket==0)return false;
    Print("POWERFULL LOSS_RESCUE EXIT READY symbol=",symbol," ticket=",chosenTicket,
          " projected_net=",DoubleToString(chosenNet,2),
+         " scaled_target=",DoubleToString(chosenTarget,2),
          " reason=",chosenReason,
-         " target=USD1_per_0.01lot_converted_to_account_currency",
-         " SL_rescue_trigger=75pct_of_configured_SL; opposing_orderflow_confirmed");
+         " rule=close_on_opposing_orderflow; recovered_loss_closes_at_any_positive_net");
    powerClosePosition(chosenTicket,chosenReason);
    return true; // One layer per tick; retry next tick if broker rejects the close.
 }
