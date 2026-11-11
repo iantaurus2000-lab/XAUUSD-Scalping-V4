@@ -199,8 +199,7 @@ string powerSessionFolderFromStart(datetime started){return POWERFULL_REPORT_DIR
 string powerSessionFolderForPosition(ulong positionId){
    string key="PW_SID_"+(string)positionId;
    if(GlobalVariableCheck(key))return powerSessionFolderFromStart((datetime)GlobalVariableGet(key));
-   if(powerSessionActive)return powerSessionFolder;
-   return powerLastSessionFolder;
+   return ""; // Do not mix pre-session positions into a new ON session.
 }
 string powerSessionPath(ulong positionId,string leaf){
    string folder=powerSessionFolderForPosition(positionId);
@@ -259,6 +258,7 @@ void powerSessionStartNew(){
    FolderCreate(powerSessionFolder+"\\SCREENSHOTS");
    powerSessionActive=true; GlobalVariableSet("PW_ACTIVE_SESSION_START",(double)powerSessionStart);
    Print("RAYYAN SESSION START id=",powerSessionId," folder=",powerSessionFolder);
+   powerSessionWriteOpenPositions(powerSessionFolder);
    powerSessionWriteSummary(powerSessionFolder,powerSessionStart,0);
    powerRefreshAnalysisReports();
 }
@@ -296,8 +296,8 @@ void powerAppendDealRecord(ulong deal){
    if(dealEntry==DEAL_ENTRY_IN||dealEntry==DEAL_ENTRY_INOUT){
       if(!powerSessionActive)return;
       GlobalVariableSet("PW_SID_"+(string)positionId,(double)powerSessionStart);
-   }
-   string symbol=HistoryDealGetString(deal,DEAL_SYMBOL);
+      dealSessionFolder=powerSessionFolder;
+   }else if(dealSessionFolder=="")return;
    ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
    ENUM_DEAL_TYPE type=(ENUM_DEAL_TYPE)HistoryDealGetInteger(deal,DEAL_TYPE);
    datetime when=(datetime)HistoryDealGetInteger(deal,DEAL_TIME);
@@ -360,7 +360,7 @@ void powerAppendDealRecord(ulong deal){
             (ulong)PositionGetInteger(POSITION_IDENTIFIER)==positionId&&
             (long)PositionGetInteger(POSITION_MAGIC)==POWERFULL_MAGIC){stillOpen=true;break;}
       }
-      if(!stillOpen)GlobalVariableDel("PW_SID_"+(string)positionId);
+      // Preserve original session mapping for late close deals and report refreshes.
       if(dealSessionFolder!="")powerSessionWriteOpenPositions(dealSessionFolder);
    }
 }
@@ -376,6 +376,11 @@ void powerWriteAnalysisReport(string targetPath,datetime sessionStart){
    for(int i=0;i<HistoryDealsTotal();i++){
       ulong deal=HistoryDealGetTicket(i);
       if(deal==0||(long)HistoryDealGetInteger(deal,DEAL_MAGIC)!=POWERFULL_MAGIC)continue;
+      ulong positionId=(ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID);
+      if(sessionStart>0){
+         string sk="PW_SID_"+(string)positionId;
+         if(!GlobalVariableCheck(sk)||(datetime)GlobalVariableGet(sk)!=sessionStart)continue;
+      }
       string symbol=HistoryDealGetString(deal,DEAL_SYMBOL);
       ENUM_DEAL_ENTRY en=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
       ENUM_DEAL_TYPE side=(ENUM_DEAL_TYPE)HistoryDealGetInteger(deal,DEAL_TYPE);
@@ -396,16 +401,20 @@ void powerWriteAnalysisReport(string targetPath,datetime sessionStart){
          "</td><td>"+DoubleToString(dealNet,2)+"</td><td>"+
          EnumToString((ENUM_DEAL_REASON)HistoryDealGetInteger(deal,DEAL_REASON))+"</td></tr>";
    }
-   string html="<!doctype html><html><head><meta charset='utf-8'><title>Rayyan POWERFULL Analysis</title>"+
-      "<style>body{font-family:Arial,sans-serif;margin:24px;color:#202124}table{border-collapse:collapse;width:100%}"+
-      "th,td{border:1px solid #ddd;padding:7px;text-align:left}th{background:#eee}</style></head><body>"+
-      "<h1>Rayyan POWERFULL Analysis</h1><p>Period: last 90 days | Generated: "+
-      TimeToString(to,TIME_DATE|TIME_SECONDS)+"</p><ul><li>Entry deals: "+IntegerToString(entries)+
-      "</li><li>Exit deals: "+IntegerToString(exits)+"</li><li>Winning exits: "+IntegerToString(wins)+
-      "</li><li>Losing exits: "+IntegerToString(losses)+"</li><li>Gross profit: "+DoubleToString(gross,2)+
-      "</li><li>Net result: "+DoubleToString(net,2)+"</li></ul><table><thead><tr><th>Time</th><th>Symbol</th>"+
-      "<th>Entry</th><th>Side</th><th>Volume</th><th>Price</th><th>Net</th><th>Reason</th></tr></thead><tbody>"+
-      rows+"</tbody></table></body></html>";
+   double winRate=(exits>0?100.0*(double)wins/(double)exits:0.0);
+   string html="<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"+
+      "<title>Rayyan POWERFULL Analysis</title><style>body{font-family:Arial,sans-serif;margin:18px;color:#202124;background:#f7f8fa}"+
+      ".cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px}.card{background:#fff;border:1px solid #ddd;border-radius:8px;padding:12px}"+
+      ".value{font-size:21px;font-weight:bold;margin-top:5px}table{border-collapse:collapse;width:100%;background:#fff;margin-top:12px}"+
+      "th,td{border:1px solid #ddd;padding:8px;text-align:left;font-size:13px}th{background:#eef1f5}.tablewrap{overflow-x:auto}</style></head><body>"+
+      "<h1>Rayyan POWERFULL — Loss Analysis</h1><p>Period: "+(sessionStart>0?"ON/OFF session "+powerSessionStamp(sessionStart):"Last 90 days")+
+      " | Generated: "+TimeToString(to,TIME_DATE|TIME_SECONDS)+"</p><div class='cards'>"+
+      "<div class='card'>Entry<div class='value'>"+IntegerToString(entries)+"</div></div><div class='card'>Exit<div class='value'>"+IntegerToString(exits)+"</div></div>"+
+      "<div class='card'>Winrate (exit deals)<div class='value'>"+DoubleToString(winRate,2)+"%</div></div>"+
+      "<div class='card'>Win / Loss<div class='value'>"+IntegerToString(wins)+" / "+IntegerToString(losses)+"</div></div>"+
+      "<div class='card'>Gross<div class='value'>"+DoubleToString(gross,2)+"</div></div><div class='card'>Net<div class='value'>"+DoubleToString(net,2)+"</div></div></div>"+
+      "<div class='tablewrap'><table><thead><tr><th>Time</th><th>Symbol</th><th>Entry</th><th>Side</th><th>Volume</th><th>Price</th><th>Net</th><th>Reason</th></tr></thead><tbody>"+
+      rows+"</tbody></table></div></body></html>";
    FileWriteString(h,html);
    FileFlush(h);
    FileClose(h);
@@ -413,11 +422,24 @@ void powerWriteAnalysisReport(string targetPath,datetime sessionStart){
 
 void powerRefreshAnalysisReports(){
    FolderCreate(POWERFULL_REPORT_DIR);
-   powerWriteAnalysisReport(POWERFULL_ANALYSIS_FILE);
+   powerWriteAnalysisReport(POWERFULL_ANALYSIS_FILE,0);
    string sessionFolder=(powerSessionActive?powerSessionFolder:powerLastSessionFolder);
+   datetime sessionStart=(powerSessionActive?powerSessionStart:0);
+   if(!powerSessionActive&&sessionFolder!=""){
+      int cut=StringFind(sessionFolder,"SESSION_");
+      if(cut>=0){
+         string stamp=StringSubstr(sessionFolder,cut+8);
+         if(StringLen(stamp)>=15){
+            string d=StringSubstr(stamp,0,4)+"."+StringSubstr(stamp,4,2)+"."+StringSubstr(stamp,6,2);
+            string t=StringSubstr(stamp,9,2)+":"+StringSubstr(stamp,11,2)+":"+StringSubstr(stamp,13,2);
+            sessionStart=StringToTime(d+" "+t);
+         }
+      }
+   }
    if(sessionFolder!=""){
       FolderCreate(sessionFolder);
-      powerWriteAnalysisReport(sessionFolder+"\\LOSS_ANALYSIS.html");
+      powerWriteAnalysisReport(sessionFolder+"\\LOSS_ANALYSIS.html",sessionStart);
+      powerSessionWriteOpenPositions(sessionFolder);
    }
 }
 
