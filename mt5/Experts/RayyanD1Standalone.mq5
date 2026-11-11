@@ -2686,33 +2686,85 @@ void powerA6LogOrderflowProxy(string symbol,ulong ticket,bool isBuy){
          " direction_supports_position=",((isBuy&&body>0.0)||(!isBuy&&body<0.0)?"YES":"NO"),
          " source=broker_tick_volume_proxy_only; decision_weight=OBSERVATION_ONLY");
 }
+// Convert USD target into the trading account currency using broker FX symbols.
+double powerUsdToAccountRate(){
+   string account=AccountInfoString(ACCOUNT_CURRENCY);
+   if(account=="USD")return 1.0;
+   if(account=="")return 0.0;
+   for(int i=0;i<SymbolsTotal(false);i++){
+      string fx=SymbolName(i,false);
+      if(fx==""||!SymbolSelect(fx,true))continue;
+      string base=SymbolInfoString(fx,SYMBOL_CURRENCY_BASE);
+      string quote=SymbolInfoString(fx,SYMBOL_CURRENCY_PROFIT);
+      MqlTick q;
+      if(!SymbolInfoTick(fx,q)||q.bid<=0.0||q.ask<=0.0)continue;
+      if(base=="USD"&&quote==account)return q.bid;
+      if(base==account&&quote=="USD")return 1.0/q.ask;
+   }
+   return 0.0; // Do not guess an exchange rate.
+}
+double powerLossRescueTargetNet(double volume){
+   double rate=powerUsdToAccountRate();
+   if(rate<=0.0)return DBL_MAX;
+   return rate*(volume/0.01); // USD 1 per 0.01 lot, scaled linearly.
+}
 bool powerManageLossRescue(int index,const MqlTick &tick){
    if(index<0||index>=ArraySize(powerSymbols))return false;
    string symbol=powerSymbols[index];
    int trendDirection=powerTrendDirection(symbol);
    if(trendDirection==0)return false;
+   double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+   double ts=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+   if(point<=0.0||ts<=0.0)return false;
    ulong chosenTicket=0;
    double nearestDistance=DBL_MAX,chosenNet=0.0;
+   string chosenReason="";
    for(int i=PositionsTotal()-1;i>=0;i--){
       ulong ticket=PositionGetTicket(i);
       if(ticket==0||!PositionSelectByTicket(ticket)||
          PositionGetString(POSITION_SYMBOL)!=symbol||
          (long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
-      string modeKey="PW_HMODE_"+IntegerToString((long)ticket);
+      string suffix=IntegerToString((long)ticket);
+      string modeKey="PW_HMODE_"+suffix;
       if(!GlobalVariableCheck(modeKey)||(int)GlobalVariableGet(modeKey)!=POWERFULL_MODE_LOSS_RESCUE)continue;
-      double net=powerProjectedNet(ticket);
-      if(net<=0.0)continue; // Never force-close a LOSS RESCUE ticket while net is negative.
       bool isBuy=((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
-      if(trendDirection==(isBuy?1:-1))continue;
-      double entry=PositionGetDouble(POSITION_PRICE_OPEN),executable=(isBuy?tick.bid:tick.ask);
+      int side=(isBuy?1:-1);
+      if(trendDirection!= -side)continue; // Only act while broker Order Flow confirms opposition.
+      double entry=PositionGetDouble(POSITION_PRICE_OPEN);
+      double executable=(isBuy?tick.bid:tick.ask);
+      double net=powerProjectedNet(ticket);
+      double volume=PositionGetDouble(POSITION_VOLUME);
+      double target=powerLossRescueTargetNet(volume);
+      string peakKey="PW_LR_PEAK_"+suffix;
+      if(!GlobalVariableCheck(peakKey))GlobalVariableSet(peakKey,executable);
+      double peak=GlobalVariableGet(peakKey);
+      if(isBuy?executable>peak+ts*0.1:executable<peak-ts*0.1){
+         peak=executable; GlobalVariableSet(peakKey,peak);
+      }
+      double favorable=(isBuy?peak-entry:entry-peak);
+      double giveback=(isBuy?peak-executable:executable-peak);
+      bool positiveTargetReached=(target<DBL_MAX&&net>=target&&
+         favorable>=ts*2.0&&giveback>=MathMax(favorable*0.20,ts*2.0));
+
+      int slPts=(isBuy?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
+      double hard=(powerCfg[index].usePointStops?slPts*point:powerCfg[index].stopPips*powerCfg[index].pipSize);
+      double adverse=(isBuy?entry-executable:executable-entry);
+      // Escape before the hard SL: only after opposing flow persists into the final 25% of SL distance.
+      bool slRescue=(hard>0.0&&adverse>=hard*0.75);
+      if(!positiveTargetReached&&!slRescue)continue;
       double distance=MathAbs(entry-executable);
-      if(distance<nearestDistance){nearestDistance=distance;chosenTicket=ticket;chosenNet=net;}
+      if(distance<nearestDistance){
+         nearestDistance=distance; chosenTicket=ticket; chosenNet=net;
+         chosenReason=(positiveTargetReached?"LOSS_RESCUE_TARGET_NET_PEAK_REVERSAL":"LOSS_RESCUE_PRE_SL_RISK");
+      }
    }
    if(chosenTicket==0)return false;
    Print("POWERFULL LOSS_RESCUE EXIT READY symbol=",symbol," ticket=",chosenTicket,
          " projected_net=",DoubleToString(chosenNet,2),
-         " priority=nearest_executable_price; H1_M15_CONFIRMATION=NOT_REQUIRED");
-   powerClosePosition(chosenTicket,"LOSS_RESCUE_NET_POSITIVE");
+         " reason=",chosenReason,
+         " target=USD1_per_0.01lot_converted_to_account_currency",
+         " SL_rescue_trigger=75pct_of_configured_SL; opposing_orderflow_confirmed");
+   powerClosePosition(chosenTicket,chosenReason);
    return true; // One layer per tick; retry next tick if broker rejects the close.
 }
 
@@ -2799,7 +2851,7 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
          GlobalVariableSet(modeKey,(double)POWERFULL_MODE_LOSS_RESCUE);
          Print("POWERFULL MODE symbol=",symbol," ticket=",ticket,
                " mode=LOSS_RESCUE reason=confirmed_broker_orderflow_reversal",
-               " projected_net=",DoubleToString(net,2)," exit=first_positive_net_per_ticket");
+               " projected_net=",DoubleToString(net,2)," exit=scaled_USD_target_or_pre_SL_risk_rescue");
       }
    }
    if(powerManageLossRescue(index,tick))return;
