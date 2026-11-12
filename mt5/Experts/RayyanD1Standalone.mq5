@@ -2237,11 +2237,9 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       powerPublishState(index,"D1_WAIT_DATA","Invalid MT5 point/tick geometry",barTime);
       return;
    }
+   // Order Flow is advisory trend data only; it must never block or choose an entry side.
    int trendDirection=powerTrendDirection(symbol);
-   if(trendDirection==0){
-      powerPublishState(index,"D1_ORDERFLOW_NEUTRAL","MT5 tick pressure is insufficient or balanced; waiting for directional flow",barTime);
-      return;
-   }
+   string orderFlowLabel=(trendDirection>0?"BUY_BIAS":(trendDirection<0?"SELL_BIAS":"NEUTRAL"));
    if(!powerCfg[index].usePointStops){
       powerPublishState(index,"BLOCKED_SL_POINTS","D1 requires BUY/SELL SL points",barTime);
       return;
@@ -2334,8 +2332,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
                                  askLocation>=POWERFLOW_SELL_ASK_EDGE);
    bool buyCandleStructure=candleRed;
    bool sellCandleStructure=candleGreen;
-   bool buyReady=(trendDirection>0&&buyFresh&&buyExtremeDistribution&&buyCandleStructure&&buyN<cap);
-   bool sellReady=(trendDirection<0&&sellFresh&&sellExtremeDistribution&&sellCandleStructure&&sellN<cap);
+   bool buyReady=(buyFresh&&buyExtremeDistribution&&buyCandleStructure&&buyN<cap);
+   bool sellReady=(sellFresh&&sellExtremeDistribution&&sellCandleStructure&&sellN<cap);
    // Entry readiness is governed by the live rubber-band stretch and edge location.
    // Recovery/retreat values below are diagnostics only and never delay the order.
    double buyScore=buyOpenExtension+lowerWick/range+
