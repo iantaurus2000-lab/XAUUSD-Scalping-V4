@@ -181,6 +181,10 @@ string powerShortSymbol(string symbol);
 datetime powerOrderBarFromComment(string comment);
 double powerRoundToTick(string symbol,double price);
 bool powerConfigFresh(int index);
+void powerDashboardRefresh(bool force=false);
+void powerDashboardDelete();
+void powerDashboardLabel(string name,string value,int x,int y,color clr,int size=9);
+void powerDashboardStats(string symbol,int &entries,int &wins,int &losses,double &totalProfit,double &totalLoss);
 bool powerHasPendingOnBar(string symbol,datetime barTime);
 
 
@@ -549,6 +553,100 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
    powerSessionRefresh();
    powerAppendDealRecord(trans.deal);
    powerCaptureEntryCandle(trans.deal); // Post-confirmation diagnostics; never gates or delays an order.
+}
+
+
+#define RAYYAN_DASH_PREFIX "RAYYAN_DASH_"
+uint powerDashboardLastMs=0;
+bool powerDashboardNeedsRefresh=true;
+
+void powerDashboardLabel(string name,string value,int x,int y,color clr,int size=9){
+   if(ObjectFind(0,name)<0)ObjectCreate(0,name,OBJ_LABEL,0,0,0);
+   ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,name,OBJPROP_XDISTANCE,x);
+   ObjectSetInteger(0,name,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(0,name,OBJPROP_COLOR,clr);
+   ObjectSetInteger(0,name,OBJPROP_FONTSIZE,size);
+   ObjectSetString(0,name,OBJPROP_FONT,"Arial");
+   ObjectSetString(0,name,OBJPROP_TEXT,value);
+   ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
+}
+void powerDashboardDelete(){
+   ObjectsDeleteAll(0,RAYYAN_DASH_PREFIX);
+}
+void powerDashboardStats(string symbol,int &entries,int &wins,int &losses,double &totalProfit,double &totalLoss){
+   entries=0;wins=0;losses=0;totalProfit=0.0;totalLoss=0.0;
+   datetime from=(powerSessionStart>0?powerSessionStart:TimeCurrent()-90*86400);
+   if(!HistorySelect(from,TimeCurrent()))return;
+   for(int i=0;i<HistoryDealsTotal();i++){
+      ulong deal=HistoryDealGetTicket(i);
+      if(deal==0||(long)HistoryDealGetInteger(deal,DEAL_MAGIC)!=POWERFULL_MAGIC)continue;
+      if(HistoryDealGetString(deal,DEAL_SYMBOL)!=symbol)continue;
+      ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
+      if(entry==DEAL_ENTRY_IN){entries++;continue;}
+      if(entry!=DEAL_ENTRY_OUT&&entry!=DEAL_ENTRY_OUT_BY&&entry!=DEAL_ENTRY_INOUT)continue;
+      double net=HistoryDealGetDouble(deal,DEAL_PROFIT)+HistoryDealGetDouble(deal,DEAL_SWAP)+
+                 HistoryDealGetDouble(deal,DEAL_COMMISSION)+HistoryDealGetDouble(deal,DEAL_FEE);
+      if(net>0.0){wins++;totalProfit+=net;}
+      else if(net<0.0){losses++;totalLoss+=net;}
+   }
+}
+void powerDashboardRefresh(bool force=false){
+   if(!StandaloneD1Mode)return;
+   uint now=GetTickCount();
+   if(!force&&powerDashboardLastMs>0&&(uint)(now-powerDashboardLastMs)<1000)return;
+   powerDashboardLastMs=now;
+   string symbol=(StringLen(StandaloneSymbol)>0?StandaloneSymbol:_Symbol);
+   int entries=0,wins=0,losses=0;
+   double totalProfit=0.0,totalLoss=0.0;
+   powerDashboardStats(symbol,entries,wins,losses,totalProfit,totalLoss);
+   int closed=wins+losses;
+   double winrate=(closed>0?100.0*(double)wins/(double)closed:0.0);
+   int m15=powerConfirmedSwingStructure(symbol,PERIOD_M15);
+   int h1=powerConfirmedSwingStructure(symbol,PERIOD_H1);
+   int h4=powerConfirmedSwingStructure(symbol,PERIOD_H4);
+   string m15Text=(m15>0?"▲ BULLISH":(m15<0?"▼ BEARISH":"— NEUTRAL"));
+   string h1Text=(h1>0?"▲ BULLISH":(h1<0?"▼ BEARISH":"— NEUTRAL"));
+   string h4Text=(h4>0?"▲ BULLISH":(h4<0?"▼ BEARISH":"— NEUTRAL"));
+   string bg=RAYYAN_DASH_PREFIX+"BG";
+   if(ObjectFind(0,bg)<0)ObjectCreate(0,bg,OBJ_RECTANGLE_LABEL,0,0,0);
+   ObjectSetInteger(0,bg,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,bg,OBJPROP_XDISTANCE,8);ObjectSetInteger(0,bg,OBJPROP_YDISTANCE,18);
+   ObjectSetInteger(0,bg,OBJPROP_XSIZE,238);ObjectSetInteger(0,bg,OBJPROP_YSIZE,190);
+   ObjectSetInteger(0,bg,OBJPROP_BGCOLOR,C'20,25,33');
+   ObjectSetInteger(0,bg,OBJPROP_BORDER_COLOR,C'75,85,100');
+   ObjectSetInteger(0,bg,OBJPROP_BACK,false);
+   ObjectSetInteger(0,bg,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,bg,OBJPROP_HIDDEN,true);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"TITLE","RAYYAN POWERFULL  |  "+symbol,18,25,clrWhite,10);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINRATE","WINRATE     "+DoubleToString(winrate,2)+"%",18,49,C'90,210,130',10);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINS","WIN              "+IntegerToString(wins),18,70,C'90,210,130',9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSSES","LOSS             "+IntegerToString(losses),130,70,C'245,105,105',9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"M15","M15   "+m15Text,18,96,(m15>0?C'90,210,130':(m15<0?C'245,105,105':clrSilver)),9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"H1","H1      "+h1Text,18,116,(h1>0?C'90,210,130':(h1<0?C'245,105,105':clrSilver)),9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"H4","H4      "+h4Text,18,136,(h4>0?C'90,210,130':(h4<0?C'245,105,105':clrSilver)),9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"ENTRIES","JUMLAH ENTRY     "+IntegerToString(entries),18,158,clrWhite,9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PROFIT","TOTAL PROFIT    "+DoubleToString(totalProfit,2),18,178,C'90,210,130',9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSS","TOTAL LOSS      "+DoubleToString(totalLoss,2),18,198,C'245,105,105',9);
+   string btn=RAYYAN_DASH_PREFIX+"REFRESH";
+   if(ObjectFind(0,btn)<0)ObjectCreate(0,btn,OBJ_BUTTON,0,0,0);
+   ObjectSetInteger(0,btn,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,btn,OBJPROP_XDISTANCE,174);ObjectSetInteger(0,btn,OBJPROP_YDISTANCE,218);
+   ObjectSetInteger(0,btn,OBJPROP_XSIZE,62);ObjectSetInteger(0,btn,OBJPROP_YSIZE,20);
+   ObjectSetString(0,btn,OBJPROP_TEXT,"REFRESH");
+   ObjectSetInteger(0,btn,OBJPROP_BGCOLOR,C'55,75,100');
+   ObjectSetInteger(0,btn,OBJPROP_COLOR,clrWhite);
+   ObjectSetInteger(0,btn,OBJPROP_FONTSIZE,8);
+   ObjectSetInteger(0,btn,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,btn,OBJPROP_HIDDEN,true);
+   ChartRedraw(0);
+}
+void OnChartEvent(const int id,const long &lparam,const double &dparam,const string &sparam){
+   if(id==CHARTEVENT_OBJECT_CLICK&&sparam==RAYYAN_DASH_PREFIX+"REFRESH"){
+      ObjectSetInteger(0,sparam,OBJPROP_STATE,false);
+      powerDashboardRefresh(true);
+   }
 }
 
 int OnInit(){
