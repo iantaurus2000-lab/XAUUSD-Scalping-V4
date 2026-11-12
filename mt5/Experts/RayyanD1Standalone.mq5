@@ -2790,16 +2790,64 @@ bool powerManageLossRescue(int index,const MqlTick &tick){
    return true; // One layer per tick; retry next tick if broker rejects the close.
 }
 
+// Confirmed market structure: two closed candles on each side of a swing pivot.
+// Returns +1 for HH+HL, -1 for LH+LL, 0 when structure is mixed/not confirmed.
+int powerConfirmedSwingStructure(string symbol,ENUM_TIMEFRAMES tf){
+   MqlRates rates[]; ArraySetAsSeries(rates,true);
+   int copied=CopyRates(symbol,tf,1,180,rates);
+   if(copied<20)return 0;
+   double recentHigh=0.0,olderHigh=0.0,recentLow=0.0,olderLow=0.0;
+   int highCount=0,lowCount=0;
+   // Series index 2 is the newest pivot candidate with two newer and two older
+   // closed candles available. Scan toward older bars; first pivot is newest.
+   for(int i=2;i<copied-2 && (highCount<2||lowCount<2);i++){
+      bool swingHigh=true,swingLow=true;
+      for(int k=1;k<=2;k++){
+         if(rates[i].high<=rates[i-k].high||rates[i].high<=rates[i+k].high)swingHigh=false;
+         if(rates[i].low>=rates[i-k].low||rates[i].low>=rates[i+k].low)swingLow=false;
+      }
+      if(swingHigh){
+         if(highCount==0)recentHigh=rates[i].high;
+         else if(highCount==1)olderHigh=rates[i].high;
+         highCount++;
+      }
+      if(swingLow){
+         if(lowCount==0)recentLow=rates[i].low;
+         else if(lowCount==1)olderLow=rates[i].low;
+         lowCount++;
+      }
+   }
+   if(highCount<2||lowCount<2)return 0;
+   bool higherHigh=(recentHigh>olderHigh),higherLow=(recentLow>olderLow);
+   bool lowerHigh=(recentHigh<olderHigh),lowerLow=(recentLow<olderLow);
+   if(higherHigh&&higherLow)return 1;
+   if(lowerHigh&&lowerLow)return -1;
+   return 0;
+}
+int powerTrendHoldStructure(string symbol,bool isBuy){
+   int h4=powerConfirmedSwingStructure(symbol,PERIOD_H4);
+   int h1=powerConfirmedSwingStructure(symbol,PERIOD_H1);
+   int m15=powerConfirmedSwingStructure(symbol,PERIOD_M15);
+   int side=(isBuy?1:-1);
+   // M15 is advisory only. It cannot change holding mode or close a position.
+   if(m15==-side)
+      Print("POWERFULL TREND_HOLD M15 early warning symbol=",symbol,
+            " side=",(isBuy?"BUY":"SELL")," H1=",h1," H4=",h4,
+            " action=HOLD; M15_not_authorized_to_exit");
+   // Only simultaneous confirmed H1 and H4 reversal is a structural reversal.
+   if(h1==-side&&h4==-side)return -side;
+   if(h1==side&&h4==side)return side;
+   return 0;
+}
+
 bool powerManageTrendHold(int index,const MqlTick &tick){
    if(index<0||index>=ArraySize(powerSymbols))return false;
    string symbol=powerSymbols[index];
-   int trendDirection=powerTrendDirection(symbol);
-   if(trendDirection==0)return false;
-   double point=SymbolInfoDouble(symbol,SYMBOL_POINT),ts=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
-   if(point<=0.0||ts<=0.0)return false;
-   double minLock=MathMax((double)powerCfg[index].minProfitLockPoints*point,ts*2.0);
-   ulong chosenTicket=0;
-   double nearestDistance=DBL_MAX,chosenNet=0.0;
+   double ts=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+   if(ts<=0.0)return false;
+   // TREND_HOLD only records the favorable extreme. No 30% giveback or
+   // short-window tick-flow exit is permitted; structural reversal is handled
+   // by powerManagePositions after H1 and H4 both confirm against the ticket.
    for(int i=PositionsTotal()-1;i>=0;i--){
       ulong ticket=PositionGetTicket(i);
       if(ticket==0||!PositionSelectByTicket(ticket)||
@@ -2807,28 +2855,16 @@ bool powerManageTrendHold(int index,const MqlTick &tick){
          (long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
       string suffix=IntegerToString((long)ticket),modeKey="PW_HMODE_"+suffix;
       if(!GlobalVariableCheck(modeKey)||(int)GlobalVariableGet(modeKey)!=POWERFULL_MODE_TREND_HOLD)continue;
-      datetime opened=(datetime)PositionGetInteger(POSITION_TIME);
-      if(opened<=0)continue;
       bool isBuy=((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
       double entry=PositionGetDouble(POSITION_PRICE_OPEN),executable=(isBuy?tick.bid:tick.ask);
       string peakKey="PW_PEAK_"+suffix;
       if(!GlobalVariableCheck(peakKey))GlobalVariableSet(peakKey,entry);
       double peak=GlobalVariableGet(peakKey);
-      // Keep recording the true favorable extreme across M5 candle changes, even while trend holds.
-      if(isBuy?executable>peak+ts*0.1:executable<peak-ts*0.1){peak=executable;GlobalVariableSet(peakKey,peak);}
-      if(trendDirection==(isBuy?1:-1))continue; // TREND_HOLD has priority while market direction supports the ticket.
-      double peakGain=(isBuy?peak-entry:entry-peak),giveback=(isBuy?peak-executable:executable-peak);
-      double net=powerProjectedNet(ticket);
-      if(peakGain<minLock||giveback<peakGain*0.30||net<=0.0)continue;
-      double distance=MathAbs(entry-executable);
-      if(distance<nearestDistance){nearestDistance=distance;chosenTicket=ticket;chosenNet=net;}
+      if(isBuy?executable>peak+ts*0.1:executable<peak-ts*0.1)
+         GlobalVariableSet(peakKey,executable);
+      powerTrendHoldStructure(symbol,isBuy); // M15 warning; H1+H4 confirmation only.
    }
-   if(chosenTicket==0)return false;
-   Print("POWERFULL TREND_HOLD EXIT READY symbol=",symbol," ticket=",chosenTicket,
-         " peak_giveback_pct=30.0 projected_net=",DoubleToString(chosenNet,2),
-         " exit_condition=broker_orderflow_reversal_plus_30pct_peak_giveback");
-   powerClosePosition(chosenTicket,"TREND_HOLD_30PCT_PEAK_GIVEBACK_POSITIVE_NET");
-   return true; // Gradual layer exit: nearest executable price first, one per tick.
+   return false;
 }
 
 void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double candleOpen,
@@ -2858,6 +2894,20 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       int mode=(GlobalVariableCheck(modeKey)?(int)GlobalVariableGet(modeKey):0);
       double net=powerProjectedNet(ticket);
       int ticketDirection=(isBuy?1:-1);
+      // Once a ticket is in TREND_HOLD, ignore short-window tick-flow reversals.
+      // Move it to the existing LOSS_RESCUE engine only after BOTH H1 and H4
+      // confirm a structural reversal. LOSS_RESCUE's own logic is unchanged.
+      if(mode==POWERFULL_MODE_TREND_HOLD){
+         int structure=powerTrendHoldStructure(symbol,isBuy);
+         if(structure==-ticketDirection){
+            GlobalVariableSet(modeKey,(double)POWERFULL_MODE_LOSS_RESCUE);
+            Print("POWERFULL MODE symbol=",symbol," ticket=",ticket,
+                  " mode=LOSS_RESCUE reason=confirmed_MTF_structure_reversal",
+                  " M15=warning_only H1=opposite H4=opposite",
+                  " projected_net=",DoubleToString(net,2));
+         }
+         continue;
+      }
       bool directionSupports=(trendDirection==ticketDirection);
       bool genuineReversal=(trendDirection==-ticketDirection);
       if(directionSupports){
