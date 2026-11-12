@@ -163,6 +163,7 @@ bool powerCancelDistantPendings(int index,const MqlTick &tick);
 bool powerHasPendingSide(string symbol,bool buySide);
 bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick &tick,double target);
 int powerTrendDirection(string symbol);
+int powerConfirmedSwingStructure(string symbol,ENUM_TIMEFRAMES timeframe);
 void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double candleOpen,
                           bool candleJustChanged,bool hasPreviousTick,double previousBid,double previousAsk);
 bool powerManageLossRescue(int index,const MqlTick &tick);
@@ -613,7 +614,7 @@ void powerDashboardRefresh(bool force=false){
    if(ObjectFind(0,bg)<0)ObjectCreate(0,bg,OBJ_RECTANGLE_LABEL,0,0,0);
    ObjectSetInteger(0,bg,OBJPROP_CORNER,CORNER_LEFT_UPPER);
    ObjectSetInteger(0,bg,OBJPROP_XDISTANCE,8);ObjectSetInteger(0,bg,OBJPROP_YDISTANCE,18);
-   ObjectSetInteger(0,bg,OBJPROP_XSIZE,238);ObjectSetInteger(0,bg,OBJPROP_YSIZE,190);
+   ObjectSetInteger(0,bg,OBJPROP_XSIZE,238);ObjectSetInteger(0,bg,OBJPROP_YSIZE,242);
    ObjectSetInteger(0,bg,OBJPROP_BGCOLOR,C'20,25,33');
    ObjectSetInteger(0,bg,OBJPROP_BORDER_COLOR,C'75,85,100');
    ObjectSetInteger(0,bg,OBJPROP_BACK,false);
