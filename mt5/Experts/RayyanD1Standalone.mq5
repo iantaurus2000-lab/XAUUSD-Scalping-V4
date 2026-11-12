@@ -256,6 +256,7 @@ void powerSessionWriteSummary(string folder,datetime started,datetime ended){
 }
 void powerSessionStartNew(){
    powerSessionStart=TimeCurrent(); powerSessionEnd=0;
+   GlobalVariableSet("PW_LAST_SESSION_START",(double)powerSessionStart);
    powerSessionId=powerSessionStamp(powerSessionStart);
    powerSessionFolder=powerSessionFolderFromStart(powerSessionStart);
    powerLastSessionFolder=powerSessionFolder;
@@ -270,6 +271,7 @@ void powerSessionStartNew(){
 void powerSessionFinish(){
    if(!powerSessionActive)return;
    powerSessionEnd=TimeCurrent(); powerSessionActive=false;
+   GlobalVariableSet("PW_LAST_SESSION_START",(double)powerSessionStart);
    powerLastSessionFolder=powerSessionFolder;
    GlobalVariableDel("PW_ACTIVE_SESSION_START");
    powerSessionWriteOpenPositions(powerSessionFolder);
@@ -282,6 +284,8 @@ void powerSessionRefresh(){
    bool allowed=(bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED);
    if(allowed&&!powerSessionActive)powerSessionStartNew();
    else if(!allowed&&powerSessionActive)powerSessionFinish();
+   if(!allowed&&!powerSessionActive&&powerSessionStart==0&&GlobalVariableCheck("PW_LAST_SESSION_START"))
+      powerSessionStart=(datetime)GlobalVariableGet("PW_LAST_SESSION_START");
 }
 string powerSessionLossPath(ulong positionId){return powerSessionPath(positionId,"LOSS_RECORDER.csv");}
 string powerSessionCandlePath(ulong positionId){return powerSessionPath(positionId,"ENTRY_CANDLE_LOG.csv");}
@@ -614,26 +618,29 @@ void powerDashboardRefresh(bool force=false){
    if(ObjectFind(0,bg)<0)ObjectCreate(0,bg,OBJ_RECTANGLE_LABEL,0,0,0);
    ObjectSetInteger(0,bg,OBJPROP_CORNER,CORNER_LEFT_UPPER);
    ObjectSetInteger(0,bg,OBJPROP_XDISTANCE,8);ObjectSetInteger(0,bg,OBJPROP_YDISTANCE,18);
-   ObjectSetInteger(0,bg,OBJPROP_XSIZE,238);ObjectSetInteger(0,bg,OBJPROP_YSIZE,242);
+   ObjectSetInteger(0,bg,OBJPROP_XSIZE,238);ObjectSetInteger(0,bg,OBJPROP_YSIZE,270);
    ObjectSetInteger(0,bg,OBJPROP_BGCOLOR,C'20,25,33');
    ObjectSetInteger(0,bg,OBJPROP_BORDER_COLOR,C'75,85,100');
    ObjectSetInteger(0,bg,OBJPROP_BACK,false);
    ObjectSetInteger(0,bg,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,bg,OBJPROP_HIDDEN,true);
+   bool algoOn=(bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"TITLE","RAYYAN POWERFULL  |  "+symbol,18,25,clrWhite,10);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINRATE","WINRATE     "+DoubleToString(winrate,2)+"%",18,49,C'90,210,130',10);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINS","WIN              "+IntegerToString(wins),18,70,C'90,210,130',9);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSSES","LOSS             "+IntegerToString(losses),130,70,C'245,105,105',9);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"M15","M15   "+m15Text,18,96,(m15>0?C'90,210,130':(m15<0?C'245,105,105':clrSilver)),9);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"H1","H1      "+h1Text,18,116,(h1>0?C'90,210,130':(h1<0?C'245,105,105':clrSilver)),9);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"H4","H4      "+h4Text,18,136,(h4>0?C'90,210,130':(h4<0?C'245,105,105':clrSilver)),9);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"ENTRIES","JUMLAH ENTRY     "+IntegerToString(entries),18,158,clrWhite,9);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PROFIT","TOTAL PROFIT    "+DoubleToString(totalProfit,2),18,178,C'90,210,130',9);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSS","TOTAL LOSS      "+DoubleToString(totalLoss,2),18,198,C'245,105,105',9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"STATUS",(algoOn?"ALGO TRADING : ON":"ALGO TRADING : OFF"),18,43,
+      (algoOn?C'90,210,130':C'245,170,90'),9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINRATE","WINRATE     "+DoubleToString(winrate,2)+"%",18,62,C'90,210,130',10);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINS","WIN              "+IntegerToString(wins),18,83,C'90,210,130',9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSSES","LOSS             "+IntegerToString(losses),130,83,C'245,105,105',9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"M15","M15   "+m15Text,18,109,(m15>0?C'90,210,130':(m15<0?C'245,105,105':clrSilver)),9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"H1","H1      "+h1Text,18,129,(h1>0?C'90,210,130':(h1<0?C'245,105,105':clrSilver)),9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"H4","H4      "+h4Text,18,149,(h4>0?C'90,210,130':(h4<0?C'245,105,105':clrSilver)),9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"ENTRIES","JUMLAH ENTRY     "+IntegerToString(entries),18,171,clrWhite,9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PROFIT","TOTAL PROFIT    "+DoubleToString(totalProfit,2),18,191,C'90,210,130',9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSS","TOTAL LOSS      "+DoubleToString(totalLoss,2),18,211,C'245,105,105',9);
    string btn=RAYYAN_DASH_PREFIX+"REFRESH";
    if(ObjectFind(0,btn)<0)ObjectCreate(0,btn,OBJ_BUTTON,0,0,0);
    ObjectSetInteger(0,btn,OBJPROP_CORNER,CORNER_LEFT_UPPER);
-   ObjectSetInteger(0,btn,OBJPROP_XDISTANCE,174);ObjectSetInteger(0,btn,OBJPROP_YDISTANCE,218);
+   ObjectSetInteger(0,btn,OBJPROP_XDISTANCE,174);ObjectSetInteger(0,btn,OBJPROP_YDISTANCE,238);
    ObjectSetInteger(0,btn,OBJPROP_XSIZE,62);ObjectSetInteger(0,btn,OBJPROP_YSIZE,20);
    ObjectSetString(0,btn,OBJPROP_TEXT,"REFRESH");
    ObjectSetInteger(0,btn,OBJPROP_BGCOLOR,C'55,75,100');
@@ -737,14 +744,14 @@ void OnDeinit(const int r){
    }
 }
 void OnTick(){
-   if(StandaloneD1Mode)powerSessionRefresh();
+   if(StandaloneD1Mode){powerSessionRefresh();powerDashboardRefresh(false);}
    if(!StandaloneD1Mode) manageTP2RetraceProtection(); // Standalone mode manages D1 positions only.
    // Opportunistic fast path; no gateway config request is issued from this event.
    managePowerfullAllMarkets(false);
 }
 
 void OnTimer(){
-   if(StandaloneD1Mode){ powerSessionRefresh(); managePowerfullAllMarkets(false); return; }
+   if(StandaloneD1Mode){ powerSessionRefresh(); powerDashboardRefresh(false); managePowerfullAllMarkets(false); return; }
    // Fast quote path: publish changed MT5 ticks without waiting for the OHLC batch.
    // The publisher throttles requests and sends only symbols whose tick changed.
    uint nowMs=GetTickCount();
