@@ -281,7 +281,7 @@ void powerSessionFinish(){
          " open POWERFULL positions are retained in OPEN_POSITIONS.csv");
 }
 void powerSessionRefresh(){
-   bool allowed=(bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED);
+   bool allowed=powerAlgoTradingEnabled();
    if(allowed&&!powerSessionActive)powerSessionStartNew();
    else if(!allowed&&powerSessionActive)powerSessionFinish();
    if(!allowed&&!powerSessionActive&&powerSessionStart==0&&GlobalVariableCheck("PW_LAST_SESSION_START"))
@@ -577,19 +577,48 @@ void powerDashboardLabel(string name,string value,int x,int y,color clr,int size
    ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
 }
+void powerDashboardBox(string name,int x,int y,int w,int h,color fill,color edge){
+   if(ObjectFind(0,name)<0)ObjectCreate(0,name,OBJ_RECTANGLE_LABEL,0,0,0);
+   ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,name,OBJPROP_XDISTANCE,x);
+   ObjectSetInteger(0,name,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(0,name,OBJPROP_XSIZE,w);
+   ObjectSetInteger(0,name,OBJPROP_YSIZE,h);
+   ObjectSetInteger(0,name,OBJPROP_BGCOLOR,fill);
+   ObjectSetInteger(0,name,OBJPROP_COLOR,edge);
+   ObjectSetInteger(0,name,OBJPROP_BORDER_COLOR,edge);
+   ObjectSetInteger(0,name,OBJPROP_BORDER_TYPE,BORDER_FLAT);
+   ObjectSetInteger(0,name,OBJPROP_BACK,false);
+   ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
+}
+bool powerAlgoTradingEnabled(){
+   return (bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) &&
+          (bool)MQLInfoInteger(MQL_TRADE_ALLOWED);
+}
+int powerLiveCandleDirection(string symbol,ENUM_TIMEFRAMES timeframe){
+   MqlRates current[];
+   ArraySetAsSeries(current,true);
+   if(CopyRates(symbol,timeframe,0,1,current)!=1)return 0;
+   if(current[0].close>current[0].open)return 1;
+   if(current[0].close<current[0].open)return -1;
+   return 0;
+}
 void powerDashboardDelete(){
    ObjectsDeleteAll(0,RAYYAN_DASH_PREFIX);
 }
 void powerDashboardStats(string symbol,int &entries,int &wins,int &losses,double &totalProfit,double &totalLoss){
    entries=0;wins=0;losses=0;totalProfit=0.0;totalLoss=0.0;
-   datetime from=(powerSessionStart>0?powerSessionStart:TimeCurrent()-90*86400);
-   if(!HistorySelect(from,TimeCurrent()))return;
+   // OFF state deliberately shows a clean zeroed dashboard; completed session
+   // reports remain saved in RAYYAN_REPORTS and are not deleted.
+   if(!powerSessionActive||powerSessionStart<=0)return;
+   if(!HistorySelect(powerSessionStart,TimeCurrent()))return;
    for(int i=0;i<HistoryDealsTotal();i++){
       ulong deal=HistoryDealGetTicket(i);
       if(deal==0||(long)HistoryDealGetInteger(deal,DEAL_MAGIC)!=POWERFULL_MAGIC)continue;
       if(HistoryDealGetString(deal,DEAL_SYMBOL)!=symbol)continue;
       ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
-      if(entry==DEAL_ENTRY_IN){entries++;continue;}
+      if(entry==DEAL_ENTRY_IN||entry==DEAL_ENTRY_INOUT)entries++;
       if(entry!=DEAL_ENTRY_OUT&&entry!=DEAL_ENTRY_OUT_BY&&entry!=DEAL_ENTRY_INOUT)continue;
       double net=HistoryDealGetDouble(deal,DEAL_PROFIT)+HistoryDealGetDouble(deal,DEAL_SWAP)+
                  HistoryDealGetDouble(deal,DEAL_COMMISSION)+HistoryDealGetDouble(deal,DEAL_FEE);
@@ -600,51 +629,77 @@ void powerDashboardStats(string symbol,int &entries,int &wins,int &losses,double
 void powerDashboardRefresh(bool force=false){
    if(!StandaloneD1Mode)return;
    uint now=GetTickCount();
-   if(!force&&powerDashboardLastMs>0&&(uint)(now-powerDashboardLastMs)<1000)return;
+   if(!force&&powerDashboardLastMs>0&&(uint)(now-powerDashboardLastMs)<250)return;
    powerDashboardLastMs=now;
    string symbol=(StringLen(StandaloneSymbol)>0?StandaloneSymbol:_Symbol);
+   bool algoOn=powerAlgoTradingEnabled();
    int entries=0,wins=0,losses=0;
    double totalProfit=0.0,totalLoss=0.0;
-   powerDashboardStats(symbol,entries,wins,losses,totalProfit,totalLoss);
+   if(algoOn)powerDashboardStats(symbol,entries,wins,losses,totalProfit,totalLoss);
    int closed=wins+losses;
    double winrate=(closed>0?100.0*(double)wins/(double)closed:0.0);
-   int m15=powerConfirmedSwingStructure(symbol,PERIOD_M15);
-   int h1=powerConfirmedSwingStructure(symbol,PERIOD_H1);
-   int h4=powerConfirmedSwingStructure(symbol,PERIOD_H4);
-   string m15Text=(m15>0?"▲ BULLISH":(m15<0?"▼ BEARISH":"— NEUTRAL"));
-   string h1Text=(h1>0?"▲ BULLISH":(h1<0?"▼ BEARISH":"— NEUTRAL"));
-   string h4Text=(h4>0?"▲ BULLISH":(h4<0?"▼ BEARISH":"— NEUTRAL"));
-   string bg=RAYYAN_DASH_PREFIX+"BG";
-   if(ObjectFind(0,bg)<0)ObjectCreate(0,bg,OBJ_RECTANGLE_LABEL,0,0,0);
-   ObjectSetInteger(0,bg,OBJPROP_CORNER,CORNER_LEFT_UPPER);
-   ObjectSetInteger(0,bg,OBJPROP_XDISTANCE,8);ObjectSetInteger(0,bg,OBJPROP_YDISTANCE,18);
-   ObjectSetInteger(0,bg,OBJPROP_XSIZE,238);ObjectSetInteger(0,bg,OBJPROP_YSIZE,270);
-   ObjectSetInteger(0,bg,OBJPROP_BGCOLOR,C'20,25,33');
-   ObjectSetInteger(0,bg,OBJPROP_BORDER_COLOR,C'75,85,100');
-   ObjectSetInteger(0,bg,OBJPROP_BACK,false);
-   ObjectSetInteger(0,bg,OBJPROP_SELECTABLE,false);
-   ObjectSetInteger(0,bg,OBJPROP_HIDDEN,true);
-   bool algoOn=(bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"TITLE","RAYYAN POWERFULL  |  "+symbol,18,25,clrWhite,10);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"STATUS",(algoOn?"ALGO TRADING : ON":"ALGO TRADING : OFF"),18,43,
-      (algoOn?C'90,210,130':C'245,170,90'),9);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINRATE","WINRATE     "+DoubleToString(winrate,2)+"%",18,62,C'90,210,130',10);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINS","WIN              "+IntegerToString(wins),18,83,C'90,210,130',9);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSSES","LOSS             "+IntegerToString(losses),130,83,C'245,105,105',9);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"M15","M15   "+m15Text,18,109,(m15>0?C'90,210,130':(m15<0?C'245,105,105':clrSilver)),9);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"H1","H1      "+h1Text,18,129,(h1>0?C'90,210,130':(h1<0?C'245,105,105':clrSilver)),9);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"H4","H4      "+h4Text,18,149,(h4>0?C'90,210,130':(h4<0?C'245,105,105':clrSilver)),9);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"ENTRIES","JUMLAH ENTRY     "+IntegerToString(entries),18,171,clrWhite,9);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PROFIT","TOTAL PROFIT    "+DoubleToString(totalProfit,2),18,191,C'90,210,130',9);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSS","TOTAL LOSS      "+DoubleToString(totalLoss,2),18,211,C'245,105,105',9);
+
+   // These indicators follow the live forming candle body, not delayed swing pivots.
+   // They can change from bullish to bearish (and back) before the candle closes.
+   int m15=powerLiveCandleDirection(symbol,PERIOD_M15);
+   int h1=powerLiveCandleDirection(symbol,PERIOD_H1);
+   int h4=powerLiveCandleDirection(symbol,PERIOD_H4);
+   string m15Text=(m15>0?"BULLISH":(m15<0?"BEARISH":"DOJI"));
+   string h1Text=(h1>0?"BULLISH":(h1<0?"BEARISH":"DOJI"));
+   string h4Text=(h4>0?"BULLISH":(h4<0?"BEARISH":"DOJI"));
+   color bull=C'35,190,115',bear=C'235,82,82',neutral=C'165,175,190';
+   color panel=C'20,27,39',card=C'31,42,58',edge=C'65,82,105';
+   color statusColor=(algoOn?bull:C'245,170,85');
+
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"BG",8,18,306,326,panel,C'83,101,125');
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"TITLE","RAYYAN  /  POWERFULL",19,27,clrWhite,11);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"SYMBOL",symbol,19,47,C'175,195,220',8);
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"STATUSBOX",202,25,100,27,
+      (algoOn?C'24,74,58':C'83,56,34'),statusColor);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"STATUS",(algoOn?"●  ALGO ON":"●  ALGO OFF"),211,32,statusColor,9);
+
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"TRENDHEAD","LIVE CANDLE DIRECTION",19,72,C'185,200,220',8);
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"M15BOX",18,88,90,43,card,edge);
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"H1BOX",114,88,90,43,card,edge);
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"H4BOX",210,88,90,43,card,edge);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"M15","M15  "+m15Text,25,103,(m15>0?bull:(m15<0?bear:neutral)),8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"H1","H1    "+h1Text,121,103,(h1>0?bull:(h1<0?bear:neutral)),8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"H4","H4    "+h4Text,217,103,(h4>0?bull:(h4<0?bear:neutral)),8);
+
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"STATHEAD","SESSION PERFORMANCE",19,143,C'185,200,220',8);
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"WINRATEBOX",18,158,138,51,card,edge);
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"WINBOX",164,158,65,51,card,edge);
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"LOSSBOX",237,158,63,51,card,edge);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINRATE","WINRATE",27,166,C'185,200,220',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINRATEVAL",DoubleToString(winrate,2)+"%",27,181,(closed>0?bull:neutral),14);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINS","WIN",174,166,C'185,200,220',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINSVAL",IntegerToString(wins),174,182,bull,13);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSSES","LOSS",246,166,C'185,200,220',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSSESVAL",IntegerToString(losses),246,182,bear,13);
+
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"ENTRYBOX",18,218,138,43,card,edge);
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"CLOSEDBOX",164,218,136,43,card,edge);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"ENTRIES","TOTAL ENTRY",27,225,C'185,200,220',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"ENTRIESVAL",IntegerToString(entries),27,239,clrWhite,12);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"CLOSED","CLOSED TRADES",173,225,C'185,200,220',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"CLOSEDVAL",IntegerToString(closed),173,239,clrWhite,12);
+
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"PROFITBOX",18,270,138,43,C'24,61,51',C'52,125,94');
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"LOSSVALBOX",164,270,136,43,C'69,39,45',C'143,69,78');
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PROFIT","TOTAL PROFIT",27,277,C'185,220,200',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PROFITVAL",DoubleToString(totalProfit,2),27,291,bull,11);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSS","TOTAL LOSS",173,277,C'230,190,195',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSSVAL",DoubleToString(totalLoss,2),173,291,bear,11);
+
    string btn=RAYYAN_DASH_PREFIX+"REFRESH";
    if(ObjectFind(0,btn)<0)ObjectCreate(0,btn,OBJ_BUTTON,0,0,0);
    ObjectSetInteger(0,btn,OBJPROP_CORNER,CORNER_LEFT_UPPER);
-   ObjectSetInteger(0,btn,OBJPROP_XDISTANCE,174);ObjectSetInteger(0,btn,OBJPROP_YDISTANCE,238);
-   ObjectSetInteger(0,btn,OBJPROP_XSIZE,62);ObjectSetInteger(0,btn,OBJPROP_YSIZE,20);
-   ObjectSetString(0,btn,OBJPROP_TEXT,"REFRESH");
-   ObjectSetInteger(0,btn,OBJPROP_BGCOLOR,C'55,75,100');
+   ObjectSetInteger(0,btn,OBJPROP_XDISTANCE,18);ObjectSetInteger(0,btn,OBJPROP_YDISTANCE,319);
+   ObjectSetInteger(0,btn,OBJPROP_XSIZE,282);ObjectSetInteger(0,btn,OBJPROP_YSIZE,19);
+   ObjectSetString(0,btn,OBJPROP_TEXT,"REFRESH DATA");
+   ObjectSetInteger(0,btn,OBJPROP_BGCOLOR,C'52,76,105');
    ObjectSetInteger(0,btn,OBJPROP_COLOR,clrWhite);
+   ObjectSetInteger(0,btn,OBJPROP_BORDER_COLOR,C'100,125,155');
    ObjectSetInteger(0,btn,OBJPROP_FONTSIZE,8);
    ObjectSetInteger(0,btn,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,btn,OBJPROP_HIDDEN,true);
