@@ -2324,10 +2324,16 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    const double POWERFLOW_BUY_ASK_EDGE=0.20;
    const double POWERFLOW_SELL_BID_EDGE=0.85;
    const double POWERFLOW_SELL_ASK_EDGE=0.80;
-   bool buyExtremeDistribution=(buyOpenExtension>=POWERFLOW_STRETCH_MIN&&
+   // Layer 1 must first establish the full 70% Open-to-extreme stretch.
+   // Continuation layers already have an established basket: do not make them
+   // wait for the candle range ratio to stretch again. They still require a
+   // genuinely newer Low/High, the same Bid/Ask edge zone, and candle structure.
+   bool buyStretchReady=(buyN>0||buyOpenExtension>=POWERFLOW_STRETCH_MIN);
+   bool sellStretchReady=(sellN>0||sellOpenExtension>=POWERFLOW_STRETCH_MIN);
+   bool buyExtremeDistribution=(buyStretchReady&&
                                 bidLocation<=POWERFLOW_BUY_BID_EDGE&&
                                 askLocation<=POWERFLOW_BUY_ASK_EDGE);
-   bool sellExtremeDistribution=(sellOpenExtension>=POWERFLOW_STRETCH_MIN&&
+   bool sellExtremeDistribution=(sellStretchReady&&
                                  bidLocation>=POWERFLOW_SELL_BID_EDGE&&
                                  askLocation>=POWERFLOW_SELL_ASK_EDGE);
    bool buyCandleStructure=candleRed;
@@ -2354,7 +2360,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
             DoubleToString(buyAskRecovery/range*100.0,1)+"%"+
          " | SELL pullback diagnostic B/A="+DoubleToString(sellBidRetreat/range*100.0,1)+"/"+
             DoubleToString(sellAskRetreat/range*100.0,1)+"%"+
-         " | rubberStretch=70%; entry-near-live-extreme; no-reversal-wait"+
+         " | rubberStretch=70% first-layer-only; continuation=new-extreme+BidAsk-edge; no-reversal-wait"+
          " | spread(info)="+DoubleToString((tick.ask-tick.bid)/ts,1)+"t"+
          " | layers="+IntegerToString(total)+"/"+IntegerToString(cap),barTime);
       return;
