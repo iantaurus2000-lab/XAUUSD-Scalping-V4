@@ -2345,7 +2345,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
          "M5 live distribution | range="+DoubleToString(range/ts,1)+"t"+
          " | Open->Low/High="+DoubleToString(buyOpenExtension*100.0,1)+"/"+
             DoubleToString(sellOpenExtension*100.0,1)+"%"+
-         " | Bid/Ask location="+DoubleToString(bidLocation*100.0,1)+"/"+
+         " | OrderFlow advisory="+orderFlowLabel+
+          " | Bid/Ask location="+DoubleToString(bidLocation*100.0,1)+"/"+
             DoubleToString(askLocation*100.0,1)+"%"+
          " | wick L/U="+DoubleToString(lowerWick/range*100.0,1)+"/"+
             DoubleToString(upperWick/range*100.0,1)+"%"+
