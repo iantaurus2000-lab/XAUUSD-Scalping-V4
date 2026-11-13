@@ -38,6 +38,8 @@ void manageTP2RetraceProtection();
 void updateChartCountdown();
 void uploadChartSnapshot();
 void publishNativeChartBars();
+void updateHarmonicOverlay();
+void clearHarmonicOverlay();
 bool appendBarsForTimeframe(string symbol,ENUM_TIMEFRAMES tf,string tfName,int count,string &batch);
 void publishBarsForTimeframe(string symbol,ENUM_TIMEFRAMES tf,string tfName,int count);
 string chartTimeframeName(ENUM_TIMEFRAMES tf);
@@ -47,6 +49,10 @@ uint lastScreenshotTick=0;
 // Native chart layers are managed by this same EA; no second EA is needed.
 input int SRLookbackBars=80;
 input int FiboLookbackBars=60;
+input bool EnableHarmonicOverlay=true; // Visual-only; never participates in trade decisions.
+input int HarmonicLookbackBars=260;
+input int HarmonicPivotDepth=3;
+input double HarmonicRatioTolerance=0.12;
 int hEma50=INVALID_HANDLE, hEma200=INVALID_HANDLE;
 // Fail closed: no strategy means no technical indicators on the MT5 chart.
 bool onEma50=false, onEma200=false, onSR=false, onFibo=false;
@@ -833,7 +839,7 @@ void OnTick(){
 }
 
 void OnTimer(){
-   if(StandaloneD1Mode){ powerSessionRefresh(); powerDashboardRefresh(false); managePowerfullAllMarkets(false); return; }
+   if(StandaloneD1Mode){ updateHarmonicOverlay(); powerSessionRefresh(); powerDashboardRefresh(false); managePowerfullAllMarkets(false); return; }
    // Fast quote path: publish changed MT5 ticks without waiting for the OHLC batch.
    // The publisher throttles requests and sends only symbols whose tick changed.
    uint nowMs=GetTickCount();
@@ -1813,6 +1819,119 @@ void drawEmaSegments(int handle,string prefix,bool enabled,color lineColor){
       ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
       ObjectSetInteger(0,name,OBJPROP_BACK,false);
    }
+}
+
+
+#define RAYYAN_HARMONIC_PREFIX "RAYYAN_HARM_"
+struct HarmonicPivot { int shift; datetime time; double price; bool isHigh; };
+bool harmonicNear(double value,double target,double tolerance){
+   return(MathAbs(value-target)<=MathMax(0.015,tolerance)*target);
+}
+bool harmonicBetween(double value,double low,double high){
+   return(value>=low && value<=high);
+}
+void clearHarmonicOverlay(){
+   int total=ObjectsTotal(0,0,-1);
+   for(int i=total-1;i>=0;i--){
+      string name=ObjectName(0,i,0,-1);
+      if(StringFind(name,RAYYAN_HARMONIC_PREFIX)==0) ObjectDelete(0,name);
+   }
+}
+void harmonicTrend(string name,datetime t1,double p1,datetime t2,double p2,color c,int width=2){
+   if(ObjectFind(0,name)<0) ObjectCreate(0,name,OBJ_TREND,0,t1,p1,t2,p2);
+   else { ObjectMove(0,name,0,t1,p1); ObjectMove(0,name,1,t2,p2); }
+   ObjectSetInteger(0,name,OBJPROP_COLOR,c);
+   ObjectSetInteger(0,name,OBJPROP_WIDTH,width);
+   ObjectSetInteger(0,name,OBJPROP_RAY_RIGHT,false);
+   ObjectSetInteger(0,name,OBJPROP_RAY_LEFT,false);
+   ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
+}
+void harmonicText(string name,datetime t,double p,string label,color c){
+   if(ObjectFind(0,name)<0) ObjectCreate(0,name,OBJ_TEXT,0,t,p);
+   else ObjectMove(0,name,0,t,p);
+   ObjectSetString(0,name,OBJPROP_TEXT,label);
+   ObjectSetInteger(0,name,OBJPROP_COLOR,c);
+   ObjectSetInteger(0,name,OBJPROP_FONTSIZE,8);
+   ObjectSetInteger(0,name,OBJPROP_ANCHOR,ANCHOR_LEFT_LOWER);
+   ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
+}
+void harmonicZone(string name,datetime t1,double top,datetime t2,double bottom,color c){
+   if(ObjectFind(0,name)<0) ObjectCreate(0,name,OBJ_RECTANGLE,0,t1,top,t2,bottom);
+   else { ObjectMove(0,name,0,t1,top); ObjectMove(0,name,1,t2,bottom); }
+   ObjectSetInteger(0,name,OBJPROP_COLOR,c);
+   ObjectSetInteger(0,name,OBJPROP_STYLE,STYLE_DOT);
+   ObjectSetInteger(0,name,OBJPROP_WIDTH,1);
+   ObjectSetInteger(0,name,OBJPROP_FILL,true);
+   ObjectSetInteger(0,name,OBJPROP_BACK,true);
+   ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
+}
+void updateHarmonicOverlay(){
+   if(!EnableHarmonicOverlay){ clearHarmonicOverlay(); return; }
+   int depth=(int)MathMax(2,MathMin(8,HarmonicPivotDepth));
+   int bars=(int)MathMax(80,MathMin(600,HarmonicLookbackBars));
+   MqlRates rates[];
+   ArraySetAsSeries(rates,true);
+   int copied=CopyRates(_Symbol,_Period,0,bars,rates);
+   if(copied<depth*2+30) return;
+   HarmonicPivot pivots[];
+   ArrayResize(pivots,0);
+   // Closed bars only; pivots are confirmed by depth bars on both sides.
+   for(int i=depth+1;i<copied-depth;i++){
+      bool hi=true,lo=true;
+      for(int k=1;k<=depth;k++){
+         if(rates[i].high<=rates[i-k].high || rates[i].high<rates[i+k].high) hi=false;
+         if(rates[i].low>=rates[i-k].low || rates[i].low>rates[i+k].low) lo=false;
+      }
+      if(hi==lo) continue;
+      HarmonicPivot p;
+      p.shift=i; p.time=rates[i].time; p.isHigh=hi;
+      p.price=(hi?rates[i].high:rates[i].low);
+      int n=ArraySize(pivots);
+      if(n>0 && pivots[n-1].isHigh==p.isHigh){
+         bool replace=(p.isHigh ? p.price>pivots[n-1].price : p.price<pivots[n-1].price);
+         if(replace) pivots[n-1]=p;
+      }else{
+         ArrayResize(pivots,n+1); pivots[n]=p;
+      }
+   }
+   int n=ArraySize(pivots);
+   if(n<5){ clearHarmonicOverlay(); return; }
+   HarmonicPivot X=pivots[n-5], A=pivots[n-4], B=pivots[n-3], C=pivots[n-2], D=pivots[n-1];
+   double xa=MathAbs(A.price-X.price), ab=MathAbs(B.price-A.price);
+   double bc=MathAbs(C.price-B.price), cd=MathAbs(D.price-C.price), ad=MathAbs(D.price-A.price);
+   if(xa<=_Point*2 || ab<=_Point*2 || bc<=_Point*2){ clearHarmonicOverlay(); return; }
+   double rAB=ab/xa, rBC=bc/ab, rCD=cd/bc, rAD=ad/xa;
+   double tol=MathMax(0.03,MathMin(0.25,HarmonicRatioTolerance));
+   string pattern="";
+   bool bullish=(!X.isHigh && A.isHigh && !B.isHigh && C.isHigh && !D.isHigh);
+   bool bearish=(X.isHigh && !A.isHigh && B.isHigh && !C.isHigh && D.isHigh);
+   if(bullish || bearish){
+      if(harmonicNear(rAB,0.618,tol) && harmonicBetween(rBC,0.382-tol,0.886+tol) && harmonicBetween(rCD,1.27-tol,1.618+tol) && harmonicNear(rAD,0.786,tol)) pattern="GARTLEY";
+      else if(harmonicBetween(rAB,0.382-tol,0.500+tol) && harmonicBetween(rBC,0.382-tol,0.886+tol) && harmonicBetween(rCD,1.618-tol,2.618+tol) && harmonicNear(rAD,0.886,tol)) pattern="BAT";
+      else if(harmonicNear(rAB,0.786,tol) && harmonicBetween(rBC,0.382-tol,0.886+tol) && harmonicBetween(rCD,1.618-tol,2.240+tol) && harmonicBetween(rAD,1.27-tol,1.618+tol)) pattern="BUTTERFLY";
+      else if(harmonicBetween(rAB,0.382-tol,0.618+tol) && harmonicBetween(rBC,0.382-tol,0.886+tol) && harmonicBetween(rCD,2.24-tol,3.618+tol) && harmonicNear(rAD,1.618,tol)) pattern="CRAB";
+   }
+   if(pattern==""){ clearHarmonicOverlay(); return; }
+   clearHarmonicOverlay();
+   color c=(bullish?C'34,197,94':C'239,68,68');
+   string tag=pattern+(bullish?" BUY":" SELL");
+   harmonicTrend(RAYYAN_HARMONIC_PREFIX+"XA",X.time,X.price,A.time,A.price,c,2);
+   harmonicTrend(RAYYAN_HARMONIC_PREFIX+"AB",A.time,A.price,B.time,B.price,c,2);
+   harmonicTrend(RAYYAN_HARMONIC_PREFIX+"BC",B.time,B.price,C.time,C.price,c,2);
+   harmonicTrend(RAYYAN_HARMONIC_PREFIX+"CD",C.time,C.price,D.time,D.price,c,2);
+   harmonicText(RAYYAN_HARMONIC_PREFIX+"X",X.time,X.price,"X",clrGold);
+   harmonicText(RAYYAN_HARMONIC_PREFIX+"A",A.time,A.price,"A",clrGold);
+   harmonicText(RAYYAN_HARMONIC_PREFIX+"B",B.time,B.price,"B",clrGold);
+   harmonicText(RAYYAN_HARMONIC_PREFIX+"C",C.time,C.price,"C",clrGold);
+   harmonicText(RAYYAN_HARMONIC_PREFIX+"D",D.time,D.price,"D",clrGold);
+   harmonicText(RAYYAN_HARMONIC_PREFIX+"TITLE",D.time,D.price,tag+" | AB/XA "+DoubleToString(rAB,3)+" BC/AB "+DoubleToString(rBC,3)+" CD/BC "+DoubleToString(rCD,3)+" AD/XA "+DoubleToString(rAD,3),c);
+   double zoneHalf=MathMax(_Point*10,xa*0.012);
+   datetime rightTime=TimeCurrent()+(datetime)(PeriodSeconds(_Period)*12);
+   harmonicZone(RAYYAN_HARMONIC_PREFIX+"PRZ",D.time,D.price+zoneHalf,rightTime,D.price-zoneHalf,c);
+   ChartRedraw(0);
 }
 
 void updateSR(){
