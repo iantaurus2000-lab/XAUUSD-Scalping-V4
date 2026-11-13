@@ -1925,6 +1925,9 @@ void updateHarmonicOverlay(){
    string pattern="";
    bool bullish=false;
    HarmonicPivot X,A,B,C,D;
+   // Initialize all pivot fields before the search loop so every compiler path
+   // has defined values, including early exits and incomplete pivot sequences.
+   ZeroMemory(X);ZeroMemory(A);ZeroMemory(B);ZeroMemory(C);ZeroMemory(D);
    double xa=0,ab=0,bc=0,cd=0,ad=0,rAB=0,rBC=0,rCD=0,rAD=0;
    double tol=MathMax(0.03,MathMin(0.25,HarmonicRatioTolerance));
    // Search newest-to-oldest valid alternating five-pivot sequence. A newer
