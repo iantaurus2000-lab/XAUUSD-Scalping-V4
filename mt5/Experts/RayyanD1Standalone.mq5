@@ -2485,12 +2485,11 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    // so continuation layers require a genuinely newer extreme than the prior fill.
    // No timer, reversal wait, or tick-count confirmation is used.
 
-   // Rubber-band entry model: measure live M5 stretch from Open to the
-   // developing Low/High, then enter while price is STILL near that extreme.
-   // Do not wait for a rejection wick, pullback, reversal tick, or 2-tick retreat.
-   // The final-40-second blackout is enforced above. Before that window,
-   // enter immediately on the first live tick satisfying the rubber-band extreme:
-   // no reversal tick, rejection wick, pullback, or prolonged weakening wait.
+   // M5 candle colour is a hard entry condition:
+   // BUY only while the live M5 candle is RED; SELL only while it is GREEN.
+   // First let the matching extreme form, then require price to retreat at least
+   // two tradable ticks from that extreme while the candle still has its required colour.
+   // This is an extreme-weakening confirmation, not a timer or tick-count pattern.
    bool sellFresh=(powerMomentumLastSellHigh[index]<=0.0||
                    candleHigh>=powerMomentumLastSellHigh[index]+ts);
    bool buyFresh=(powerMomentumLastBuyLow[index]<=0.0||
@@ -2534,10 +2533,13 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
                                  askLocation>=D1_EXTREME_SELL_ASK_EDGE);
    bool buyCandleStructure=candleRed;
    bool sellCandleStructure=candleGreen;
-   bool buyReady=(entryDirection>0&&buyFresh&&buyExtremeDistribution&&buyCandleStructure&&buyN<cap);
-   bool sellReady=(entryDirection<0&&sellFresh&&sellExtremeDistribution&&sellCandleStructure&&sellN<cap);
-   // Entry readiness is governed by the live rubber-band stretch and edge location.
-   // Recovery/retreat values below are diagnostics only and never delay the order.
+   double weakeningDistance=2.0*ts;
+   bool buyExtremeWeakening=(buyBidRecovery>=weakeningDistance&&buyAskRecovery>=weakeningDistance);
+   bool sellExtremeWeakening=(sellBidRetreat>=weakeningDistance&&sellAskRetreat>=weakeningDistance);
+   bool buyReady=(entryDirection>0&&buyFresh&&buyExtremeDistribution&&buyCandleStructure&&
+                  buyExtremeWeakening&&buyN<cap);
+   bool sellReady=(entryDirection<0&&sellFresh&&sellExtremeDistribution&&sellCandleStructure&&
+                   sellExtremeWeakening&&sellN<cap);
    double buyScore=buyOpenExtension+lowerWick/range+
                    buyBidRecovery/range+buyAskRecovery/range;
    double sellScore=sellOpenExtension+upperWick/range+
@@ -2556,7 +2558,10 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
             DoubleToString(buyAskRecovery/range*100.0,1)+"%"+
          " | SELL pullback diagnostic B/A="+DoubleToString(sellBidRetreat/range*100.0,1)+"/"+
             DoubleToString(sellAskRetreat/range*100.0,1)+"%"+
-         " | rubberStretch=70% first-layer-only; continuation=new-extreme+BidAsk-edge; no-reversal-wait"+
+         " | M5 colour gate=BUY RED/SELL GREEN"+
+         " | extreme weakening BUY="+DoubleToString(MathMin(buyBidRecovery,buyAskRecovery)/ts,1)+
+            "t SELL="+DoubleToString(MathMin(sellBidRetreat,sellAskRetreat)/ts,1)+"t (need 2t)"+
+         " | rubberStretch=70% first-layer-only; continuation=new-extreme+BidAsk-edge"+
          " | spread(info)="+DoubleToString((tick.ask-tick.bid)/ts,1)+"t"+
          " | layers="+IntegerToString(total)+"/"+IntegerToString(cap),barTime);
       return;
@@ -2700,7 +2705,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
          string(side>0?"BUY on RED candle near Low":"SELL on GREEN candle near High")+
          " | layer="+IntegerToString(total+1)+"/"+IntegerToString(cap)+
          " | live M5 range="+DoubleToString(range/ts,1)+" ticks"+
-         " | confirm=live-candle-extreme-weakening (no warm-up/tick-count wait)",barTime);
+         " | confirm=correct-M5-colour + 2-tick-extreme-weakening",barTime);
    }else{
       Print("D1 #95 LIVE-CANDLE ENTRY FAILED ",symbol,
             " side=",(side>0?"BUY_RED_LOW":"SELL_GREEN_HIGH"),
