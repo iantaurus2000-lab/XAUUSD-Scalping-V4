@@ -2425,17 +2425,24 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       powerPublishState(index,"D1_WAIT_DATA","Invalid MT5 point/tick geometry",barTime);
       return;
    }
-   // Entry direction is based on confirmed market structure, not broker-internal flow.
-   // M15 and H1 must agree; disagreement or unavailable structure means WAIT.
+   // H1 is the primary directional authority for POWERFULL entries.
+   // M15 is contextual structure/pullback information only: it can warn that
+   // price is pulling back or temporarily opposing H1, but its direction must
+   // never veto an otherwise valid H1-aligned M5 extreme entry.
    int entryM15=powerConfirmedSwingStructure(symbol,PERIOD_M15);
    int entryH1=powerConfirmedSwingStructure(symbol,PERIOD_H1);
-   int entryDirection=(entryM15!=0&&entryM15==entryH1?entryH1:0);
+   int entryDirection=entryH1;
    if(entryDirection==0){
-      powerPublishState(index,"D1_WAIT_MTF_DIRECTION",
-         "Entry paused: confirmed M15 and H1 structure must agree; M15="+
-         IntegerToString(entryM15)+" H1="+IntegerToString(entryH1),barTime);
+      powerPublishState(index,"D1_WAIT_H1_DIRECTION",
+         "Entry paused: H1 confirmed swing structure is neutral/unavailable; M15 context="+
+         IntegerToString(entryM15),barTime);
       return;
    }
+   string m15Context=(entryM15==entryH1?"M15 aligned":
+                      (entryM15==-entryH1?"M15 pullback/opposing warning":"M15 neutral"));
+   Print("D1 ENTRY BIAS symbol=",symbol," H1=",entryDirection>0?"BULLISH":"BEARISH",
+         " M15=",entryM15," context=",m15Context,
+         " action=H1_authority_M15_nonblocking_M5_extreme_timing");
    if(!powerCfg[index].usePointStops){
       powerPublishState(index,"BLOCKED_SL_POINTS","D1 requires BUY/SELL SL points",barTime);
       return;
