@@ -679,7 +679,7 @@ void powerDashboardRefresh(bool force=false){
    color statusColor=(algoOn?bull:C'245,170,85');
 
    // Solid foreground panel masks all chart candles and objects behind the dashboard.
-   powerDashboardBox(RAYYAN_DASH_PREFIX+"BG",8,18,306,410,panel,C'83,101,125');
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"BG",8,18,306,442,panel,C'83,101,125');
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"TITLE","RAYYAN  /  POWERFULL",19,27,clrWhite,11);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"SYMBOL",symbol,19,47,C'175,195,220',8);
    powerDashboardBox(RAYYAN_DASH_PREFIX+"STATUSBOX",202,25,100,27,
@@ -722,7 +722,7 @@ void powerDashboardRefresh(bool force=false){
    string btn=RAYYAN_DASH_PREFIX+"REFRESH";
    if(ObjectFind(0,btn)<0)ObjectCreate(0,btn,OBJ_BUTTON,0,0,0);
    ObjectSetInteger(0,btn,OBJPROP_CORNER,CORNER_LEFT_UPPER);
-   ObjectSetInteger(0,btn,OBJPROP_XDISTANCE,18);ObjectSetInteger(0,btn,OBJPROP_YDISTANCE,382);
+   ObjectSetInteger(0,btn,OBJPROP_XDISTANCE,18);ObjectSetInteger(0,btn,OBJPROP_YDISTANCE,418);
    ObjectSetInteger(0,btn,OBJPROP_XSIZE,282);ObjectSetInteger(0,btn,OBJPROP_YSIZE,20);
    ObjectSetInteger(0,btn,OBJPROP_ZORDER,10020);
    ObjectSetString(0,btn,OBJPROP_TEXT,"REFRESH DATA");
