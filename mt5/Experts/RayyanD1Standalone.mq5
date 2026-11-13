@@ -570,6 +570,7 @@ void powerDashboardLabel(string name,string value,int x,int y,color clr,int size
    ObjectSetInteger(0,name,OBJPROP_XDISTANCE,x);
    ObjectSetInteger(0,name,OBJPROP_YDISTANCE,y);
    ObjectSetInteger(0,name,OBJPROP_COLOR,clr);
+   ObjectSetInteger(0,name,OBJPROP_ZORDER,10010);
    ObjectSetInteger(0,name,OBJPROP_FONTSIZE,size);
    ObjectSetString(0,name,OBJPROP_FONT,"Arial");
    ObjectSetString(0,name,OBJPROP_TEXT,value);
@@ -585,6 +586,7 @@ void powerDashboardBox(string name,int x,int y,int w,int h,color fill,color edge
    ObjectSetInteger(0,name,OBJPROP_YSIZE,h);
    ObjectSetInteger(0,name,OBJPROP_BGCOLOR,fill);
    ObjectSetInteger(0,name,OBJPROP_COLOR,edge);
+   ObjectSetInteger(0,name,OBJPROP_ZORDER,10000);
    ObjectSetInteger(0,name,OBJPROP_BORDER_COLOR,edge);
    ObjectSetInteger(0,name,OBJPROP_BORDER_TYPE,BORDER_FLAT);
    ObjectSetInteger(0,name,OBJPROP_BACK,false);
@@ -625,6 +627,32 @@ void powerDashboardStats(string symbol,int &entries,int &wins,int &losses,double
       else if(net<0.0){losses++;totalLoss+=net;}
    }
 }
+string powerDashboardDirectionText(int direction){
+   if(direction>0)return "↑ BULLISH";
+   if(direction<0)return "↓ BEARISH";
+   return "— NEUTRAL";
+}
+void powerDashboardOpenPositions(string symbol,color bull,color bear,color neutral){
+   int row=0;
+   for(int i=PositionsTotal()-1;i>=0&&row<4;i--){
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0)continue;
+      if((long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
+      if(PositionGetString(POSITION_SYMBOL)!=symbol)continue;
+      ENUM_POSITION_TYPE side=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      double volume=PositionGetDouble(POSITION_VOLUME);
+      double entry=PositionGetDouble(POSITION_PRICE_OPEN);
+      double net=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
+      string sideText=(side==POSITION_TYPE_BUY?"↑ BUY":"↓ SELL");
+      string line=sideText+"  "+DoubleToString(volume,2)+"  @ "+DoubleToString(entry,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))+
+                  "   "+(net>=0?"+":"")+DoubleToString(net,2);
+      color lineColor=(net>0?bull:(net<0?bear:neutral));
+      powerDashboardLabel(RAYYAN_DASH_PREFIX+"OPEN"+IntegerToString(row),line,27,350+row*17,lineColor,8);
+      row++;
+   }
+   for(int j=row;j<4;j++)ObjectDelete(0,RAYYAN_DASH_PREFIX+"OPEN"+IntegerToString(j));
+   if(row==0)powerDashboardLabel(RAYYAN_DASH_PREFIX+"OPEN0","No open POWERFULL positions",27,350,neutral,8);
+}
 void powerDashboardRefresh(bool force=false){
    if(!StandaloneD1Mode)return;
    uint now=GetTickCount();
@@ -650,7 +678,8 @@ void powerDashboardRefresh(bool force=false){
    color panel=C'20,27,39',card=C'31,42,58',edge=C'65,82,105';
    color statusColor=(algoOn?bull:C'245,170,85');
 
-   powerDashboardBox(RAYYAN_DASH_PREFIX+"BG",8,18,306,326,panel,C'83,101,125');
+   // Solid foreground panel masks all chart candles and objects behind the dashboard.
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"BG",8,18,306,410,panel,C'83,101,125');
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"TITLE","RAYYAN  /  POWERFULL",19,27,clrWhite,11);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"SYMBOL",symbol,19,47,C'175,195,220',8);
    powerDashboardBox(RAYYAN_DASH_PREFIX+"STATUSBOX",202,25,100,27,
@@ -661,9 +690,9 @@ void powerDashboardRefresh(bool force=false){
    powerDashboardBox(RAYYAN_DASH_PREFIX+"M15BOX",18,88,90,43,card,edge);
    powerDashboardBox(RAYYAN_DASH_PREFIX+"H1BOX",114,88,90,43,card,edge);
    powerDashboardBox(RAYYAN_DASH_PREFIX+"H4BOX",210,88,90,43,card,edge);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"M15","M15  "+m15Text,25,103,(m15>0?bull:(m15<0?bear:neutral)),8);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"H1","H1    "+h1Text,121,103,(h1>0?bull:(h1<0?bear:neutral)),8);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"H4","H4    "+h4Text,217,103,(h4>0?bull:(h4<0?bear:neutral)),8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"M15","M15  "+powerDashboardDirectionText(m15),25,103,(m15>0?bull:(m15<0?bear:neutral)),8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"H1","H1    "+powerDashboardDirectionText(h1),121,103,(h1>0?bull:(h1<0?bear:neutral)),8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"H4","H4    "+powerDashboardDirectionText(h4),217,103,(h4>0?bull:(h4<0?bear:neutral)),8);
 
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"STATHEAD","SESSION PERFORMANCE",19,143,C'185,200,220',8);
    powerDashboardBox(RAYYAN_DASH_PREFIX+"WINRATEBOX",18,158,138,51,card,edge);
@@ -693,8 +722,9 @@ void powerDashboardRefresh(bool force=false){
    string btn=RAYYAN_DASH_PREFIX+"REFRESH";
    if(ObjectFind(0,btn)<0)ObjectCreate(0,btn,OBJ_BUTTON,0,0,0);
    ObjectSetInteger(0,btn,OBJPROP_CORNER,CORNER_LEFT_UPPER);
-   ObjectSetInteger(0,btn,OBJPROP_XDISTANCE,18);ObjectSetInteger(0,btn,OBJPROP_YDISTANCE,319);
-   ObjectSetInteger(0,btn,OBJPROP_XSIZE,282);ObjectSetInteger(0,btn,OBJPROP_YSIZE,19);
+   ObjectSetInteger(0,btn,OBJPROP_XDISTANCE,18);ObjectSetInteger(0,btn,OBJPROP_YDISTANCE,382);
+   ObjectSetInteger(0,btn,OBJPROP_XSIZE,282);ObjectSetInteger(0,btn,OBJPROP_YSIZE,20);
+   ObjectSetInteger(0,btn,OBJPROP_ZORDER,10020);
    ObjectSetString(0,btn,OBJPROP_TEXT,"REFRESH DATA");
    ObjectSetInteger(0,btn,OBJPROP_BGCOLOR,C'52,76,105');
    ObjectSetInteger(0,btn,OBJPROP_COLOR,clrWhite);
@@ -702,6 +732,8 @@ void powerDashboardRefresh(bool force=false){
    ObjectSetInteger(0,btn,OBJPROP_FONTSIZE,8);
    ObjectSetInteger(0,btn,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,btn,OBJPROP_HIDDEN,true);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"OPENHEAD","RUNNING ENTRY  /  OPEN POSITIONS",19,326,C'185,200,220',8);
+   powerDashboardOpenPositions(symbol,bull,bear,neutral);
    ChartRedraw(0);
 }
 void OnChartEvent(const int id,const long &lparam,const double &dparam,const string &sparam){
