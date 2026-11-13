@@ -2610,24 +2610,28 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       powerPublishState(index,"D1_WAIT_DATA","Invalid MT5 point/tick geometry",barTime);
       return;
    }
-   // H1 is the primary directional authority for POWERFULL entries.
-   // M15 is contextual structure/pullback information only: it can warn that
-   // price is pulling back or temporarily opposing H1, but its direction must
-   // never veto an otherwise valid H1-aligned M5 extreme entry.
+   // The LIVE H1 candle is the primary directional bias for POWERFULL entries.
+   // Confirmed H1 swing is structural context only and must never block entry.
+   // M15 swing is pullback context only and must never veto a valid M5 extreme.
    int entryM15=powerConfirmedSwingStructure(symbol,PERIOD_M15);
-   int entryH1=powerConfirmedSwingStructure(symbol,PERIOD_H1);
-   int entryDirection=entryH1;
+   int entryH1Swing=powerConfirmedSwingStructure(symbol,PERIOD_H1);
+   int entryH1Live=powerLiveCandleDirection(symbol,PERIOD_H1);
+   int entryDirection=entryH1Live;
    if(entryDirection==0){
-      powerPublishState(index,"D1_WAIT_H1_DIRECTION",
-         "Entry paused: H1 confirmed swing structure is neutral/unavailable; M15 context="+
-         IntegerToString(entryM15),barTime);
+      powerPublishState(index,"D1_WAIT_H1_LIVE_DIRECTION",
+         "Entry paused: live H1 candle is doji/unavailable; H1 swing context="+
+         IntegerToString(entryH1Swing)+" M15 context="+IntegerToString(entryM15),barTime);
       return;
    }
-   string m15Context=(entryM15==entryH1?"M15 aligned":
-                      (entryM15==-entryH1?"M15 pullback/opposing warning":"M15 neutral"));
-   Print("D1 ENTRY BIAS symbol=",symbol," H1=",entryDirection>0?"BULLISH":"BEARISH",
-         " M15=",entryM15," context=",m15Context,
-         " action=H1_authority_M15_nonblocking_M5_extreme_timing");
+   string m15Context=(entryM15==entryDirection?"M15 aligned":
+                      (entryM15==-entryDirection?"M15 pullback/opposing warning":"M15 neutral"));
+   string h1SwingContext=(entryH1Swing==entryDirection?"H1 swing aligned":
+                          (entryH1Swing==-entryDirection?"H1 swing opposing context":"H1 swing neutral"));
+   Print("D1 ENTRY BIAS symbol=",symbol,
+         " H1_LIVE=",entryDirection>0?"BULLISH":"BEARISH",
+         " H1_SWING=",entryH1Swing," (",h1SwingContext,")",
+         " M15_SWING=",entryM15," (",m15Context,")",
+         " action=H1_live_primary_H1_swing_context_only_M15_nonblocking_M5_extreme_timing");
    if(!powerCfg[index].usePointStops){
       powerPublishState(index,"BLOCKED_SL_POINTS","D1 requires BUY/SELL SL points",barTime);
       return;
@@ -2741,7 +2745,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
          "M5 live distribution | range="+DoubleToString(range/ts,1)+"t"+
          " | Open->Low/High="+DoubleToString(buyOpenExtension*100.0,1)+"/"+
             DoubleToString(sellOpenExtension*100.0,1)+"%"+
-         " | MTF direction="+(entryDirection>0?"BUY":"SELL")+
+         " | H1 live bias="+(entryDirection>0?"BUY":"SELL")+" | H1 swing context="+IntegerToString(entryH1Swing)+
           " | Bid/Ask location="+DoubleToString(bidLocation*100.0,1)+"/"+
             DoubleToString(askLocation*100.0,1)+"%"+
          " | wick L/U="+DoubleToString(lowerWick/range*100.0,1)+"/"+
