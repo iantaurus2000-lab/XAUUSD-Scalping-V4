@@ -2683,9 +2683,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
 
    // M5 candle colour is a hard entry condition:
    // BUY only while the live M5 candle is RED; SELL only while it is GREEN.
-   // First let the matching extreme form, then require price to retreat at least
-   // two tradable ticks from that extreme while the candle still has its required colour.
-   // This is an extreme-weakening confirmation, not a timer or tick-count pattern.
+   // Entry is triggered by the first observable weakening from the live wick tip.
+   // No tick-pattern, two-sided Bid/Ask confirmation, or timed waiting is required.
    bool sellFresh=(powerMomentumLastSellHigh[index]<=0.0||
                    candleHigh>=powerMomentumLastSellHigh[index]+ts);
    bool buyFresh=(powerMomentumLastBuyLow[index]<=0.0||
@@ -2707,31 +2706,23 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    bool candleRed=(tick.bid<candleOpen);
    bool candleGreen=(tick.bid>candleOpen);
 
-   // "Rubber tension" is the Open-to-extreme extension as a share of the
-   // current candle range. Enter at >=70% stretch while Bid/Ask remain in
-   // the outer 15-20% zone beside the live Low/High.
-   const double D1_EXTREME_STRETCH_MIN=0.70;
+   // Open-to-extreme distance is measured from the actual current M5 Open.
+   // There is NO 70% threshold: any valid live extreme can qualify.
+   // Keep the entry in the outer wick zone, then act on the first one-tick
+   // Bid retreat from the tip; do not wait for Ask or a tick-reversal pattern.
    const double D1_EXTREME_BUY_BID_EDGE=0.15;
    const double D1_EXTREME_BUY_ASK_EDGE=0.20;
    const double D1_EXTREME_SELL_BID_EDGE=0.85;
    const double D1_EXTREME_SELL_ASK_EDGE=0.80;
-   // Layer 1 must first establish the full 70% Open-to-extreme stretch.
-   // Continuation layers already have an established basket: do not make them
-   // wait for the candle range ratio to stretch again. They still require a
-   // genuinely newer Low/High, the same Bid/Ask edge zone, and candle structure.
-   bool buyStretchReady=(buyN>0||buyOpenExtension>=D1_EXTREME_STRETCH_MIN);
-   bool sellStretchReady=(sellN>0||sellOpenExtension>=D1_EXTREME_STRETCH_MIN);
-   bool buyExtremeDistribution=(buyStretchReady&&
-                                bidLocation<=D1_EXTREME_BUY_BID_EDGE&&
+   bool buyExtremeDistribution=(bidLocation<=D1_EXTREME_BUY_BID_EDGE&&
                                 askLocation<=D1_EXTREME_BUY_ASK_EDGE);
-   bool sellExtremeDistribution=(sellStretchReady&&
-                                 bidLocation>=D1_EXTREME_SELL_BID_EDGE&&
+   bool sellExtremeDistribution=(bidLocation>=D1_EXTREME_SELL_BID_EDGE&&
                                  askLocation>=D1_EXTREME_SELL_ASK_EDGE);
    bool buyCandleStructure=candleRed;
    bool sellCandleStructure=candleGreen;
-   double weakeningDistance=2.0*ts;
-   bool buyExtremeWeakening=(buyBidRecovery>=weakeningDistance&&buyAskRecovery>=weakeningDistance);
-   bool sellExtremeWeakening=(sellBidRetreat>=weakeningDistance&&sellAskRetreat>=weakeningDistance);
+   double weakeningDistance=ts;
+   bool buyExtremeWeakening=(buyBidRecovery>=weakeningDistance);
+   bool sellExtremeWeakening=(sellBidRetreat>=weakeningDistance);
    bool buyReady=(entryDirection>0&&buyFresh&&buyExtremeDistribution&&buyCandleStructure&&
                   buyExtremeWeakening&&buyN<cap);
    bool sellReady=(entryDirection<0&&sellFresh&&sellExtremeDistribution&&sellCandleStructure&&
@@ -2755,8 +2746,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
          " | SELL pullback diagnostic B/A="+DoubleToString(sellBidRetreat/range*100.0,1)+"/"+
             DoubleToString(sellAskRetreat/range*100.0,1)+"%"+
          " | M5 colour gate=BUY RED/SELL GREEN"+
-         " | extreme weakening BUY="+DoubleToString(MathMin(buyBidRecovery,buyAskRecovery)/ts,1)+
-            "t SELL="+DoubleToString(MathMin(sellBidRetreat,sellAskRetreat)/ts,1)+"t (need 2t)"+
+         " | extreme weakening BUY="+DoubleToString(buyBidRecovery/ts,1)+
+            "t SELL="+DoubleToString(sellBidRetreat/ts,1)+"t (need 1 Bid tick)"+
          " | rubberStretch=70% first-layer-only; continuation=new-extreme+BidAsk-edge"+
          " | spread(info)="+DoubleToString((tick.ask-tick.bid)/ts,1)+"t"+
          " | layers="+IntegerToString(total)+"/"+IntegerToString(cap),barTime);
@@ -2901,7 +2892,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
          string(side>0?"BUY on RED candle near Low":"SELL on GREEN candle near High")+
          " | layer="+IntegerToString(total+1)+"/"+IntegerToString(cap)+
          " | live M5 range="+DoubleToString(range/ts,1)+" ticks"+
-         " | confirm=correct-M5-colour + 2-tick-extreme-weakening",barTime);
+         " | confirm=correct-M5-colour + first 1-Bid-tick wick weakening",barTime);
    }else{
       Print("D1 #95 LIVE-CANDLE ENTRY FAILED ",symbol,
             " side=",(side>0?"BUY_RED_LOW":"SELL_GREEN_HIGH"),
