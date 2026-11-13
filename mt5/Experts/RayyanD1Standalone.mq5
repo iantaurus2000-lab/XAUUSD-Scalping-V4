@@ -1868,6 +1868,32 @@ void harmonicZone(string name,datetime t1,double top,datetime t2,double bottom,c
    ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
 }
+void harmonicAppendDetection(string symbol,string pattern,string side,
+                             datetime dTime,double x,double a,double b,double c,double d,
+                             double rAB,double rBC,double rCD,double rAD,
+                             double przLow,double przHigh,int h1){
+   string file="RAYYAN_HARMONIC_DETECTIONS.csv";
+   int h=FileOpen(file,FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_COMMON,';');
+   if(h==INVALID_HANDLE)return;
+   if(FileSize(h)==0)
+      FileWrite(h,"event","time","symbol","timeframe","pattern","direction",
+                "X","A","B","C","D","AB_XA","BC_AB","CD_BC","AD_XA",
+                "PRZ_LOW","PRZ_HIGH","H1_STRUCTURE","evaluation");
+   string key="RHY_"+symbol+"_"+IntegerToString((long)dTime);
+   if(!GlobalVariableCheck(key)){
+      FileSeek(h,0,SEEK_END);
+      int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+      FileWrite(h,"DETECTED",TimeToString(TimeCurrent(),TIME_DATE|TIME_SECONDS),symbol,
+         EnumToString(_Period),pattern,side,
+         DoubleToString(x,digits),DoubleToString(a,digits),DoubleToString(b,digits),
+         DoubleToString(c,digits),DoubleToString(d,digits),
+         DoubleToString(rAB,4),DoubleToString(rBC,4),DoubleToString(rCD,4),DoubleToString(rAD,4),
+         DoubleToString(przLow,digits),DoubleToString(przHigh,digits),
+         (h1>0?"BULLISH":(h1<0?"BEARISH":"NEUTRAL")),"PENDING_MANUAL_REVIEW");
+      GlobalVariableSet(key,(double)TimeCurrent());
+   }
+   FileClose(h);
+}
 void updateHarmonicOverlay(){
    if(!EnableHarmonicOverlay){ clearHarmonicOverlay(); return; }
    int depth=(int)MathMax(2,MathMin(8,HarmonicPivotDepth));
@@ -1875,49 +1901,81 @@ void updateHarmonicOverlay(){
    MqlRates rates[];
    ArraySetAsSeries(rates,true);
    int copied=CopyRates(_Symbol,_Period,0,bars,rates);
-   if(copied<depth*2+30) return;
+   if(copied<depth*2+30)return;
    HarmonicPivot pivots[];
    ArrayResize(pivots,0);
-   // Closed bars only; pivots are confirmed by depth bars on both sides.
+   // Closed bars only; a pivot is confirmed after depth bars on both sides.
    for(int i=depth+1;i<copied-depth;i++){
       bool hi=true,lo=true;
       for(int k=1;k<=depth;k++){
-         if(rates[i].high<=rates[i-k].high || rates[i].high<rates[i+k].high) hi=false;
-         if(rates[i].low>=rates[i-k].low || rates[i].low>rates[i+k].low) lo=false;
+         if(rates[i].high<=rates[i-k].high || rates[i].high<rates[i+k].high)hi=false;
+         if(rates[i].low>=rates[i-k].low || rates[i].low>rates[i+k].low)lo=false;
       }
-      if(hi==lo) continue;
+      if(hi==lo)continue;
       HarmonicPivot p;
-      p.shift=i; p.time=rates[i].time; p.isHigh=hi;
-      p.price=(hi?rates[i].high:rates[i].low);
+      p.shift=i;p.time=rates[i].time;p.isHigh=hi;p.price=(hi?rates[i].high:rates[i].low);
       int n=ArraySize(pivots);
-      if(n>0 && pivots[n-1].isHigh==p.isHigh){
-         bool replace=(p.isHigh ? p.price>pivots[n-1].price : p.price<pivots[n-1].price);
-         if(replace) pivots[n-1]=p;
-      }else{
-         ArrayResize(pivots,n+1); pivots[n]=p;
-      }
+      if(n>0&&pivots[n-1].isHigh==p.isHigh){
+         bool replace=(p.isHigh?p.price>pivots[n-1].price:p.price<pivots[n-1].price);
+         if(replace)pivots[n-1]=p;
+      }else{ArrayResize(pivots,n+1);pivots[n]=p;}
    }
    int n=ArraySize(pivots);
-   if(n<5){ clearHarmonicOverlay(); return; }
-   HarmonicPivot X=pivots[n-5], A=pivots[n-4], B=pivots[n-3], C=pivots[n-2], D=pivots[n-1];
-   double xa=MathAbs(A.price-X.price), ab=MathAbs(B.price-A.price);
-   double bc=MathAbs(C.price-B.price), cd=MathAbs(D.price-C.price), ad=MathAbs(D.price-A.price);
-   if(xa<=_Point*2 || ab<=_Point*2 || bc<=_Point*2){ clearHarmonicOverlay(); return; }
-   double rAB=ab/xa, rBC=bc/ab, rCD=cd/bc, rAD=ad/xa;
-   double tol=MathMax(0.03,MathMin(0.25,HarmonicRatioTolerance));
+   if(n<5){clearHarmonicOverlay();return;}
    string pattern="";
-   bool bullish=(!X.isHigh && A.isHigh && !B.isHigh && C.isHigh && !D.isHigh);
-   bool bearish=(X.isHigh && !A.isHigh && B.isHigh && !C.isHigh && D.isHigh);
-   if(bullish || bearish){
-      if(harmonicNear(rAB,0.618,tol) && harmonicBetween(rBC,0.382-tol,0.886+tol) && harmonicBetween(rCD,1.27-tol,1.618+tol) && harmonicNear(rAD,0.786,tol)) pattern="GARTLEY";
-      else if(harmonicBetween(rAB,0.382-tol,0.500+tol) && harmonicBetween(rBC,0.382-tol,0.886+tol) && harmonicBetween(rCD,1.618-tol,2.618+tol) && harmonicNear(rAD,0.886,tol)) pattern="BAT";
-      else if(harmonicNear(rAB,0.786,tol) && harmonicBetween(rBC,0.382-tol,0.886+tol) && harmonicBetween(rCD,1.618-tol,2.240+tol) && harmonicBetween(rAD,1.27-tol,1.618+tol)) pattern="BUTTERFLY";
-      else if(harmonicBetween(rAB,0.382-tol,0.618+tol) && harmonicBetween(rBC,0.382-tol,0.886+tol) && harmonicBetween(rCD,2.24-tol,3.618+tol) && harmonicNear(rAD,1.618,tol)) pattern="CRAB";
+   bool bullish=false;
+   HarmonicPivot X,A,B,C,D;
+   double xa=0,ab=0,bc=0,cd=0,ad=0,rAB=0,rBC=0,rCD=0,rAD=0;
+   double tol=MathMax(0.03,MathMin(0.25,HarmonicRatioTolerance));
+   // Search newest-to-oldest valid alternating five-pivot sequence. A newer
+   // incomplete/invalid sequence must not hide the most recent valid pattern.
+   for(int q=n-5;q>=0;q--){
+      X=pivots[q];A=pivots[q+1];B=pivots[q+2];C=pivots[q+3];D=pivots[q+4];
+      if(X.isHigh==A.isHigh||A.isHigh==B.isHigh||B.isHigh==C.isHigh||C.isHigh==D.isHigh)continue;
+      xa=MathAbs(A.price-X.price);ab=MathAbs(B.price-A.price);
+      bc=MathAbs(C.price-B.price);cd=MathAbs(D.price-C.price);ad=MathAbs(D.price-A.price);
+      if(xa<=_Point*2||ab<=_Point*2||bc<=_Point*2)continue;
+      rAB=ab/xa;rBC=bc/ab;rCD=cd/bc;rAD=ad/xa;
+      bullish=(!X.isHigh&&A.isHigh&&!B.isHigh&&C.isHigh&&!D.isHigh);
+      bool bearish=(X.isHigh&&!A.isHigh&&B.isHigh&&!C.isHigh&&D.isHigh);
+      if(!bullish&&!bearish)continue;
+      pattern="";
+      if(harmonicNear(rAB,0.618,tol)&&harmonicBetween(rBC,0.382-tol,0.886+tol)&&
+         harmonicBetween(rCD,1.27-tol,1.618+tol)&&harmonicNear(rAD,0.786,tol))pattern="GARTLEY";
+      else if(harmonicBetween(rAB,0.382-tol,0.500+tol)&&harmonicBetween(rBC,0.382-tol,0.886+tol)&&
+         harmonicBetween(rCD,1.618-tol,2.618+tol)&&harmonicNear(rAD,0.886,tol))pattern="BAT";
+      else if(harmonicNear(rAB,0.786,tol)&&harmonicBetween(rBC,0.382-tol,0.886+tol)&&
+         harmonicBetween(rCD,1.618-tol,2.240+tol)&&harmonicBetween(rAD,1.27-tol,1.618+tol))pattern="BUTTERFLY";
+      else if(harmonicBetween(rAB,0.382-tol,0.618+tol)&&harmonicBetween(rBC,0.382-tol,0.886+tol)&&
+         harmonicBetween(rCD,2.24-tol,3.618+tol)&&harmonicNear(rAD,1.618,tol))pattern="CRAB";
+      if(pattern!="")break;
    }
-   if(pattern==""){ clearHarmonicOverlay(); return; }
+   if(pattern==""){clearHarmonicOverlay();return;}
+   // PRZ is the overlap of the XA retracement projection and the BC extension
+   // projection. If they do not overlap, do not draw a fabricated PRZ.
+   double xaRatio=0.786,bcRatio=1.618;
+   if(pattern=="BAT"){xaRatio=0.886;bcRatio=2.0;}
+   else if(pattern=="BUTTERFLY"){xaRatio=1.27;bcRatio=1.618;}
+   else if(pattern=="CRAB"){xaRatio=1.618;bcRatio=2.618;}
+   double xaTarget=(bullish?A.price-xa*xaRatio:A.price+xa*xaRatio);
+   double bcTarget=(bullish?C.price-bc*bcRatio:C.price+bc*bcRatio);
+   double halfXA=xa*MathMax(0.015,tol*0.5);
+   double halfBC=bc*MathMax(0.015,tol*0.5);
+   double xaLo=xaTarget-halfXA,xaHi=xaTarget+halfXA;
+   double bcLo=bcTarget-halfBC,bcHi=bcTarget+halfBC;
+   double przLow=MathMax(xaLo,bcLo),przHigh=MathMin(xaHi,bcHi);
+   if(przLow>przHigh){
+      // Ratios can vary within valid pattern ranges; use midpoint only when
+      // projected bands are close enough to be a meaningful confluence.
+      double gap=MathMax(xaLo,bcLo)-MathMin(xaHi,bcHi);
+      if(gap>xa*tol){clearHarmonicOverlay();return;}
+      double mid=(xaTarget+bcTarget)*0.5;
+      double width=MathMax(_Point*5,gap*0.5);
+      przLow=mid-width;przHigh=mid+width;
+   }
    clearHarmonicOverlay();
    color c=(bullish?C'34,197,94':C'239,68,68');
-   string tag=pattern+(bullish?" BUY":" SELL");
+   string side=(bullish?"BUY":"SELL"),tag=pattern+" "+side;
    harmonicTrend(RAYYAN_HARMONIC_PREFIX+"XA",X.time,X.price,A.time,A.price,c,2);
    harmonicTrend(RAYYAN_HARMONIC_PREFIX+"AB",A.time,A.price,B.time,B.price,c,2);
    harmonicTrend(RAYYAN_HARMONIC_PREFIX+"BC",B.time,B.price,C.time,C.price,c,2);
@@ -1927,10 +1985,18 @@ void updateHarmonicOverlay(){
    harmonicText(RAYYAN_HARMONIC_PREFIX+"B",B.time,B.price,"B",clrGold);
    harmonicText(RAYYAN_HARMONIC_PREFIX+"C",C.time,C.price,"C",clrGold);
    harmonicText(RAYYAN_HARMONIC_PREFIX+"D",D.time,D.price,"D",clrGold);
-   harmonicText(RAYYAN_HARMONIC_PREFIX+"TITLE",D.time,D.price,tag+" | AB/XA "+DoubleToString(rAB,3)+" BC/AB "+DoubleToString(rBC,3)+" CD/BC "+DoubleToString(rCD,3)+" AD/XA "+DoubleToString(rAD,3),c);
-   double zoneHalf=MathMax(_Point*10,xa*0.012);
-   datetime rightTime=TimeCurrent()+(datetime)(PeriodSeconds(_Period)*12);
-   harmonicZone(RAYYAN_HARMONIC_PREFIX+"PRZ",D.time,D.price+zoneHalf,rightTime,D.price-zoneHalf,c);
+   int h1=powerConfirmedSwingStructure(_Symbol,PERIOD_H1);
+   string h1Text=(h1>0?"H1 BULLISH":(h1<0?"H1 BEARISH":"H1 NEUTRAL"));
+   harmonicText(RAYYAN_HARMONIC_PREFIX+"TITLE",D.time,D.price,
+      tag+" | "+h1Text+" | AB/XA "+DoubleToString(rAB,3)+
+      " BC/AB "+DoubleToString(rBC,3)+" CD/BC "+DoubleToString(rCD,3)+
+      " AD/XA "+DoubleToString(rAD,3),c);
+   datetime rightTime=TimeCurrent()+(datetime)(PeriodSeconds(_Period)*18);
+   harmonicZone(RAYYAN_HARMONIC_PREFIX+"PRZ",D.time,przHigh,rightTime,przLow,c);
+   harmonicText(RAYYAN_HARMONIC_PREFIX+"PRZ_LABEL",rightTime,przHigh,
+      "PRZ "+DoubleToString(przLow,_Digits)+" - "+DoubleToString(przHigh,_Digits),c);
+   harmonicAppendDetection(_Symbol,pattern,side,D.time,X.price,A.price,B.price,C.price,D.price,
+                           rAB,rBC,rCD,rAD,przLow,przHigh,h1);
    ChartRedraw(0);
 }
 
