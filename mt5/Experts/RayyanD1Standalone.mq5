@@ -2925,11 +2925,44 @@ int powerConfirmedSwingStructure(string symbol,ENUM_TIMEFRAMES tf){
    if(lowerHigh&&lowerLow)return -1;
    return 0;
 }
+// Dynamic support/resistance from the newest confirmed swing pivot on a
+// closed H1/H4 candle. Levels are recalculated from recent price structure;
+// they are zones/confirmation references, never standalone close commands.
+bool powerLatestSwingLevels(string symbol,ENUM_TIMEFRAMES tf,double &support,double &resistance,double &lastClose){
+   support=0.0;resistance=0.0;lastClose=0.0;
+   MqlRates rates[];ArraySetAsSeries(rates,true);
+   int copied=CopyRates(symbol,tf,1,100,rates);
+   if(copied<12)return false;
+   lastClose=rates[0].close;
+   bool haveSupport=false,haveResistance=false;
+   for(int i=2;i<copied-2&&(!haveSupport||!haveResistance);i++){
+      bool swingHigh=true,swingLow=true;
+      for(int k=1;k<=2;k++){
+         if(rates[i].high<=rates[i-k].high||rates[i].high<=rates[i+k].high)swingHigh=false;
+         if(rates[i].low>=rates[i-k].low||rates[i].low>=rates[i+k].low)swingLow=false;
+      }
+      if(swingHigh&&!haveResistance){resistance=rates[i].high;haveResistance=true;}
+      if(swingLow&&!haveSupport){support=rates[i].low;haveSupport=true;}
+   }
+   return (haveSupport&&haveResistance);
+}
 int powerTrendHoldStructure(string symbol,bool isBuy){
    int h4=powerConfirmedSwingStructure(symbol,PERIOD_H4);
    int h1=powerConfirmedSwingStructure(symbol,PERIOD_H1);
    int side=(isBuy?1:-1);
-   if(h1==-side&&h4==-side)return -side;
+   double s1=0.0,r1=0.0,c1=0.0,s4=0.0,r4=0.0,c4=0.0;
+   bool levels1=powerLatestSwingLevels(symbol,PERIOD_H1,s1,r1,c1);
+   bool levels4=powerLatestSwingLevels(symbol,PERIOD_H4,s4,r4,c4);
+   double zone=2.0*SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+   if(zone<=0.0||!levels1||!levels4)return 0;
+   // A BUY reversal needs both H1 and H4 to confirm bearish structure AND
+   // closed prices to break their dynamic support zones. SELL is symmetric.
+   bool supportBroken=(c1<s1-zone&&c4<s4-zone);
+   bool resistanceBroken=(c1>r1+zone&&c4>r4+zone);
+   if(h1==-side&&h4==-side){
+      if((isBuy&&supportBroken)||(!isBuy&&resistanceBroken))return -side;
+      return 0; // Structure warns, but S/R has not confirmed the break: keep holding.
+   }
    if(h1==side&&h4==side)return side;
    return 0;
 }
