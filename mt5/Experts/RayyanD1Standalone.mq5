@@ -839,7 +839,7 @@ void OnTick(){
 }
 
 void OnTimer(){
-   if(StandaloneD1Mode){ updateHarmonicOverlay(); powerSessionRefresh(); powerDashboardRefresh(false); managePowerfullAllMarkets(false); return; }
+   if(StandaloneD1Mode){ updateHarmonicOverlay(); updateFibo(); powerSessionRefresh(); powerDashboardRefresh(false); managePowerfullAllMarkets(false); return; }
    // Fast quote path: publish changed MT5 ticks without waiting for the OHLC batch.
    // The publisher throttles requests and sends only symbols whose tick changed.
    uint nowMs=GetTickCount();
@@ -2026,7 +2026,8 @@ void drawLevel(string name,double price,color c){
 }
 
 void updateFibo(){
-   if(!onFibo){ObjectDelete(0,"RAYYAN8_FIBO");return;}
+   // Standalone MT5 chart owns its Fibonacci overlay; APK indicator toggles only affect non-standalone mode.
+   if(!onFibo && !StandaloneD1Mode){ObjectDelete(0,"RAYYAN8_FIBO");return;}
    int hi=iHighest(_Symbol,_Period,MODE_HIGH,FiboLookbackBars,1);
    int lo=iLowest(_Symbol,_Period,MODE_LOW,FiboLookbackBars,1);
    if(hi<0||lo<0)return;
