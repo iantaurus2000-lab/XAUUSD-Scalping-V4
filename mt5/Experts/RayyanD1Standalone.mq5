@@ -2965,7 +2965,8 @@ bool powerClosePosition(ulong ticket,string reason){
    if(ok&&(rc==TRADE_RETCODE_DONE||rc==TRADE_RETCODE_DONE_PARTIAL)){
       Print("POWERFULL CLOSE OK symbol=",symbol," ticket=",ticket," reason=",reason," retcode=",rc);
       string suffix=IntegerToString((long)ticket);
-      string keys[12]={"PW_HMODE_","PW_HBAR_","PW_PEAK_","PW_RISK_ARM_",
+      string keys[15]={"PW_HMODE_","PW_HBAR_","PW_PEAK_","PW_PEAK_NET_",
+                      "PW_LR_WAS_NEG_","PW_LR_PEAK_NET_","PW_RISK_ARM_",
                       "PW_RISK_ADVERSE_","PW_RISK_RECOVERY_","PW_RISK_LASTPX_",
                       "PW_RISK_REC_TICKS_","PW_A5_ARM_","PW_A5_ADVERSE_COUNT_",
                       "PW_A5_LAST_BAR_","PW_A5_COOLDOWN_"};
@@ -3169,7 +3170,7 @@ bool powerManageTrendHold(int index,const MqlTick &tick){
    if(ts<=0.0)return false;
    // TREND_HOLD only records the favorable extreme. No 30% giveback or
    // short-window tick-flow exit is permitted; structural reversal is handled
-   // by powerManagePositions after H1 and H4 both confirm against the ticket.
+   // by powerManagePositions using dynamic H1/H4 structure and S/R.
    for(int i=PositionsTotal()-1;i>=0;i--){
       ulong ticket=PositionGetTicket(i);
       if(ticket==0||!PositionSelectByTicket(ticket)||
@@ -3184,7 +3185,7 @@ bool powerManageTrendHold(int index,const MqlTick &tick){
       double peak=GlobalVariableGet(peakKey);
       if(isBuy?executable>peak+ts*0.1:executable<peak-ts*0.1)
          GlobalVariableSet(peakKey,executable);
-      powerTrendHoldStructure(symbol,isBuy); // M15 warning; H1+H4 confirmation only.
+      powerTrendHoldStructure(symbol,isBuy); // Dynamic H1/H4 structure and S/R context.
    }
    return false;
 }
@@ -3220,7 +3221,7 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       double hard=(powerCfg[index].usePointStops?slPts*point:powerCfg[index].stopPips*powerCfg[index].pipSize);
       double adverse=(isBuy?entry-executable:executable-entry);
       if(hard>0.0&&adverse+point*0.1>=hard){powerClosePosition(ticket,"HARD_LOSS_GUARD");continue;}
-      string suffix=IntegerToString((long)ticket),modeKey="PW_HMODE_"+suffix;
+      string modeKey="PW_HMODE_"+suffix;
       string lossSinceKey="PW_RISK_ARM_"+suffix;
       int mode=(GlobalVariableCheck(modeKey)?(int)GlobalVariableGet(modeKey):0);
       double net=powerProjectedNet(ticket);
