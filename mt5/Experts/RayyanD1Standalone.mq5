@@ -1892,11 +1892,13 @@ void harmonicZone(string name,datetime t1,double top,datetime t2,double bottom,c
    if(ObjectFind(0,name)<0) ObjectCreate(0,name,OBJ_RECTANGLE,0,t1,top,t2,bottom);
    else { ObjectMove(0,name,0,t1,top); ObjectMove(0,name,1,t2,bottom); }
    ObjectSetInteger(0,name,OBJPROP_COLOR,c);
-   ObjectSetInteger(0,name,OBJPROP_STYLE,STYLE_DOT);
+   ObjectSetInteger(0,name,OBJPROP_STYLE,STYLE_SOLID);
    ObjectSetInteger(0,name,OBJPROP_WIDTH,1);
    ObjectSetInteger(0,name,OBJPROP_FILL,true);
    ObjectSetInteger(0,name,OBJPROP_BACK,true);
+   ObjectSetInteger(0,name,OBJPROP_ZORDER,0);
    ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,name,OBJPROP_SELECTED,false);
    ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
 }
 void harmonicAppendDetection(string symbol,string pattern,string side,
@@ -2056,18 +2058,39 @@ void drawLevel(string name,double price,color c){
    ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
 }
 
+#define RAYYAN_FIBO_ZONE_PREFIX "RAYYAN8_FIBO_ZONE_"
+void fiboZone(string name,datetime leftTime,datetime rightTime,double pA,double pB,color zoneColor){
+   double top=MathMax(pA,pB),bottom=MathMin(pA,pB);
+   if(ObjectFind(0,name)<0) ObjectCreate(0,name,OBJ_RECTANGLE,0,leftTime,top,rightTime,bottom);
+   else { ObjectMove(0,name,0,leftTime,top); ObjectMove(0,name,1,rightTime,bottom); }
+   ObjectSetInteger(0,name,OBJPROP_COLOR,zoneColor);
+   ObjectSetInteger(0,name,OBJPROP_STYLE,STYLE_SOLID);
+   ObjectSetInteger(0,name,OBJPROP_WIDTH,1);
+   ObjectSetInteger(0,name,OBJPROP_FILL,true);
+   ObjectSetInteger(0,name,OBJPROP_BACK,true);
+   ObjectSetInteger(0,name,OBJPROP_ZORDER,0);
+   ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,name,OBJPROP_SELECTED,false);
+   ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
+}
+void clearFiboZones(){
+   int total=ObjectsTotal(0,0,-1);
+   for(int i=total-1;i>=0;i--){
+      string name=ObjectName(0,i,0,-1);
+      if(StringFind(name,RAYYAN_FIBO_ZONE_PREFIX)==0)ObjectDelete(0,name);
+   }
+}
 void updateFibo(){
-   // Standalone MT5 chart owns its Fibonacci overlay; APK indicator toggles only affect non-standalone mode.
-   if(!onFibo && !StandaloneD1Mode){ObjectDelete(0,"RAYYAN8_FIBO");return;}
+   // Fibonacci is a visual background layer only; it must never cover chart controls or trade information.
+   if(!onFibo && !StandaloneD1Mode){
+      ObjectDelete(0,"RAYYAN8_FIBO");clearFiboZones();return;
+   }
    int hi=iHighest(_Symbol,_Period,MODE_HIGH,FiboLookbackBars,1);
    int lo=iLowest(_Symbol,_Period,MODE_LOW,FiboLookbackBars,1);
    if(hi<0||lo<0)return;
    datetime th=iTime(_Symbol,_Period,hi),tl=iTime(_Symbol,_Period,lo);
    double ph=iHigh(_Symbol,_Period,hi),pl=iLow(_Symbol,_Period,lo);
-   // Anchor the 0% level at the most recent swing extreme:
-   // bullish impulse: 0% at high and retrace downward toward the older low;
-   // bearish impulse: 0% at low and retrace upward toward the older high.
-   // This orientation matches SignalEngine's BUY high-range*ratio / SELL low+range*ratio.
+   // Keep the 0% anchor at the most recent swing extreme, matching SignalEngine orientation.
    bool highIsRecent=(th>tl);
    datetime t1=highIsRecent?th:tl;
    datetime t2=highIsRecent?tl:th;
@@ -2081,15 +2104,29 @@ void updateFibo(){
    }
    ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_COLOR,clrGold);
    ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_RAY_RIGHT,true);
-   // Keep chart levels aligned with SignalEngine's M1 retracement and TP2 extension.
-   ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_LEVELS,8);
-   // -27.2% extends beyond the 0% swing extreme (127.2% target).
+   ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_BACK,true);
+   ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_ZORDER,0);
+   ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_SELECTED,false);
+   ObjectSetInteger(0,"RAYYAN8_FIBO",OBJPROP_HIDDEN,true);
+   // Retracement bands: colored areas are drawn behind candles, Fibonacci lines and all foreground UI.
    double levels[]={0.0,0.236,0.382,0.5,0.618,0.786,1.0,-0.272};
    string labels[]={"0","23.6","38.2","50","61.8","78.6","100","127.2 TP2"};
    for(int i=0;i<8;i++){
       ObjectSetDouble(0,"RAYYAN8_FIBO",OBJPROP_LEVELVALUE,i,levels[i]);
       ObjectSetString(0,"RAYYAN8_FIBO",OBJPROP_LEVELTEXT,i,labels[i]);
    }
+   datetime leftTime=(datetime)MathMin((long)t1,(long)t2);
+   datetime rightTime=TimeCurrent()+(datetime)(PeriodSeconds(_Period)*24);
+   double p236=p1+(p2-p1)*0.236;
+   double p382=p1+(p2-p1)*0.382;
+   double p500=p1+(p2-p1)*0.500;
+   double p618=p1+(p2-p1)*0.618;
+   double p786=p1+(p2-p1)*0.786;
+   fiboZone(RAYYAN_FIBO_ZONE_PREFIX+"236_382",leftTime,rightTime,p236,p382,C'40,90,150');
+   fiboZone(RAYYAN_FIBO_ZONE_PREFIX+"382_500",leftTime,rightTime,p382,p500,C'35,120,115');
+   fiboZone(RAYYAN_FIBO_ZONE_PREFIX+"500_618",leftTime,rightTime,p500,p618,C'150,115,35');
+   fiboZone(RAYYAN_FIBO_ZONE_PREFIX+"618_786",leftTime,rightTime,p618,p786,C'145,75,55');
 }
 
 
