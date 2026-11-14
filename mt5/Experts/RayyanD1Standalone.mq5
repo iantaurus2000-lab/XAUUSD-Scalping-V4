@@ -3041,7 +3041,6 @@ bool powerManageLossRescue(int index,const MqlTick &tick){
    string symbol=powerSymbols[index];
    ulong chosenTicket=0;
    double chosenDistance=DBL_MAX,chosenNet=0.0,chosenPeak=0.0,chosenTarget=0.0;
-   string chosenReason="";
    for(int i=PositionsTotal()-1;i>=0;i--){
       ulong ticket=PositionGetTicket(i);
       if(ticket==0||!PositionSelectByTicket(ticket)||
@@ -3053,31 +3052,32 @@ bool powerManageLossRescue(int index,const MqlTick &tick){
       bool isBuy=((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
       double net=powerProjectedNet(ticket),volume=PositionGetDouble(POSITION_VOLUME);
       double target=powerLossRescueTargetNet(volume);
-      string wasLossKey="PW_LR_WAS_NEG_"+suffix,peakKey="PW_LR_PEAK_NET_"+suffix;
+      string wasLossKey="PW_LR_WAS_NEG_"+suffix;
+      string peakKey="PW_PEAK_NET_"+suffix;
       if(net<=0.0){
-         if(!GlobalVariableCheck(wasLossKey)){
-            GlobalVariableSet(wasLossKey,1.0);GlobalVariableSet(peakKey,0.0);
-         }
+         if(!GlobalVariableCheck(wasLossKey))GlobalVariableSet(wasLossKey,1.0);
          continue;
       }
-      if(!GlobalVariableCheck(wasLossKey)||GlobalVariableGet(wasLossKey)<=0.5)continue;
-      double peak=(GlobalVariableCheck(peakKey)?GlobalVariableGet(peakKey):0.0);
+      // Shared peak is recorded from the moment the position is opened,
+      // including profit earned before LOSS_RESCUE became active.
+      double peak=(GlobalVariableCheck(peakKey)?GlobalVariableGet(peakKey):net);
       if(net>peak){peak=net;GlobalVariableSet(peakKey,peak);}
-      // Meaningful recovery: retain at least 55% of peak net profit (45% retracement).
+      // Protect a meaningful positive peak: close only after 45% giveback,
+      // retaining 55% of the recorded peak. No immediate close on first
+      // positive recovery and no candle-change exit.
       if(target>=DBL_MAX||peak<target||net>peak*0.55)continue;
       double entry=PositionGetDouble(POSITION_PRICE_OPEN);
       double executable=(isBuy?tick.bid:tick.ask),distance=MathAbs(entry-executable);
       if(distance<chosenDistance){
          chosenDistance=distance;chosenTicket=ticket;chosenNet=net;chosenPeak=peak;chosenTarget=target;
-         chosenReason="LOSS_RESCUE_PROFIT_LOCK_45_PERCENT";
       }
    }
    if(chosenTicket==0)return false;
    Print("POWERFULL LOSS_RESCUE EXIT READY symbol=",symbol," ticket=",chosenTicket,
-         " net=",DoubleToString(chosenNet,2)," peak_net=",DoubleToString(chosenPeak,2),
+         " net=",DoubleToString(chosenNet,2)," peak_net_since_entry=",DoubleToString(chosenPeak,2),
          " min_profit=",DoubleToString(chosenTarget,2)," giveback=45% retained=55%",
-         " reason=",chosenReason);
-   powerClosePosition(chosenTicket,chosenReason);
+         " reason=LOSS_RESCUE_SHARED_PEAK_PROFIT_LOCK");
+   powerClosePosition(chosenTicket,"LOSS_RESCUE_SHARED_PEAK_45_PERCENT");
    return true;
 }
 
@@ -3137,6 +3137,10 @@ bool powerLatestSwingLevels(string symbol,ENUM_TIMEFRAMES tf,double &support,dou
    return (haveSupport&&haveResistance);
 }
 int powerTrendHoldStructure(string symbol,bool isBuy){
+   // FINAL MANAGEMENT PRINCIPLE:
+   // H1 is the early warning / rescue trigger; H4 is the higher-timeframe
+   // context. Dynamic swing S/R is recalculated from the latest confirmed
+   // closed-candle pivots, so the levels follow the market structure.
    int h4=powerConfirmedSwingStructure(symbol,PERIOD_H4);
    int h1=powerConfirmedSwingStructure(symbol,PERIOD_H1);
    int side=(isBuy?1:-1);
@@ -3145,15 +3149,16 @@ int powerTrendHoldStructure(string symbol,bool isBuy){
    bool levels4=powerLatestSwingLevels(symbol,PERIOD_H4,s4,r4,c4);
    double zone=2.0*SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
    if(zone<=0.0||!levels1||!levels4)return 0;
-   // A BUY reversal needs both H1 and H4 to confirm bearish structure AND
-   // closed prices to break their dynamic support zones. SELL is symmetric.
-   bool supportBroken=(c1<s1-zone&&c4<s4-zone);
-   bool resistanceBroken=(c1>r1+zone&&c4>r4+zone);
-   if(h1==-side&&h4==-side){
-      if((isBuy&&supportBroken)||(!isBuy&&resistanceBroken))return -side;
-      return 0; // Structure warns, but S/R has not confirmed the break: keep holding.
-   }
-   if(h1==side&&h4==side)return side;
+   bool h1SupportBroken=(isBuy?c1<s1-zone:c1>r1+zone);
+   bool h4SupportBroken=(isBuy?c4<s4-zone:c4>r4+zone);
+   // Earlier LOSS_RESCUE: H1 structure reversal plus its dynamic S/R break
+   // is sufficient. If H4 also confirms, that strengthens the reversal;
+   // H4 is not allowed to delay rescue after H1 has confirmed.
+   if(h1==-side&&h1SupportBroken)return -side;
+   if(h1==-side&&h4==-side&&h4SupportBroken)return -side;
+   // TREND_HOLD is retained only while both timeframe structures support
+   // the position and neither dynamic structure boundary has been broken.
+   if(h1==side&&h4==side&&!h1SupportBroken&&!h4SupportBroken)return side;
    return 0;
 }
 
@@ -3196,6 +3201,21 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
          (long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
       bool isBuy=((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
       double entry=PositionGetDouble(POSITION_PRICE_OPEN),executable=(isBuy?tick.bid:tick.ask);
+      // FINAL: record favorable price and net-profit peaks from position open,
+      // regardless of TREND_HOLD / LOSS_RESCUE mode, so mode changes never
+      // discard profit already achieved.
+      string suffix=IntegerToString((long)ticket);
+      string peakPriceKey="PW_PEAK_"+suffix;
+      if(!GlobalVariableCheck(peakPriceKey))GlobalVariableSet(peakPriceKey,entry);
+      double peakPrice=GlobalVariableGet(peakPriceKey);
+      double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+      if(isBuy?executable>peakPrice+tickSize*0.1:executable<peakPrice-tickSize*0.1)
+         GlobalVariableSet(peakPriceKey,executable);
+      double currentNet=powerProjectedNet(ticket);
+      string peakNetKey="PW_PEAK_NET_"+suffix;
+      if(!GlobalVariableCheck(peakNetKey))GlobalVariableSet(peakNetKey,MathMax(0.0,currentNet));
+      double peakNet=GlobalVariableGet(peakNetKey);
+      if(currentNet>peakNet){peakNet=currentNet;GlobalVariableSet(peakNetKey,peakNet);}
       int slPts=(isBuy?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
       double hard=(powerCfg[index].usePointStops?slPts*point:powerCfg[index].stopPips*powerCfg[index].pipSize);
       double adverse=(isBuy?entry-executable:executable-entry);
