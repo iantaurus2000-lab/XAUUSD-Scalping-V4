@@ -662,7 +662,7 @@ void powerDashboardOpenPositions(string symbol,color bull,color bear,color neutr
 void powerDashboardRefresh(bool force=false){
    if(!StandaloneD1Mode)return;
    uint now=GetTickCount();
-   if(!force&&powerDashboardLastMs>0&&(uint)(now-powerDashboardLastMs)<250)return;
+   if(!force&&powerDashboardLastMs>0&&(uint)(now-powerDashboardLastMs)<100)return;
    powerDashboardLastMs=now;
    string symbol=(StringLen(StandaloneSymbol)>0?StandaloneSymbol:_Symbol);
    bool algoOn=powerAlgoTradingEnabled();
@@ -685,7 +685,7 @@ void powerDashboardRefresh(bool force=false){
    color statusColor=(algoOn?bull:C'245,170,85');
 
    // Solid foreground panel masks all chart candles and objects behind the dashboard.
-   powerDashboardBox(RAYYAN_DASH_PREFIX+"BG",8,18,306,442,panel,C'83,101,125');
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"BG",8,18,306,500,panel,C'83,101,125');
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"TITLE","RAYYAN  /  POWERFULL",19,27,clrWhite,11);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"SYMBOL",symbol,19,47,C'175,195,220',8);
    powerDashboardBox(RAYYAN_DASH_PREFIX+"STATUSBOX",202,25,100,27,
@@ -720,15 +720,15 @@ void powerDashboardRefresh(bool force=false){
 
    powerDashboardBox(RAYYAN_DASH_PREFIX+"PROFITBOX",18,270,138,43,C'24,61,51',C'52,125,94');
    powerDashboardBox(RAYYAN_DASH_PREFIX+"LOSSVALBOX",164,270,136,43,C'69,39,45',C'143,69,78');
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PROFIT","TOTAL PROFIT",27,277,C'185,220,200',8);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PROFITVAL",DoubleToString(totalProfit,2),27,291,bull,11);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PROFIT","CLOSED SESSION PROFIT",27,277,C'185,220,200',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PROFITVAL",DoubleToString(totalProfit,2),27,291,bull,12);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSS","TOTAL LOSS",173,277,C'230,190,195',8);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSSVAL",DoubleToString(totalLoss,2),173,291,bear,11);
 
    string btn=RAYYAN_DASH_PREFIX+"REFRESH";
    if(ObjectFind(0,btn)<0)ObjectCreate(0,btn,OBJ_BUTTON,0,0,0);
    ObjectSetInteger(0,btn,OBJPROP_CORNER,CORNER_LEFT_UPPER);
-   ObjectSetInteger(0,btn,OBJPROP_XDISTANCE,18);ObjectSetInteger(0,btn,OBJPROP_YDISTANCE,418);
+   ObjectSetInteger(0,btn,OBJPROP_XDISTANCE,18);ObjectSetInteger(0,btn,OBJPROP_YDISTANCE,480);
    ObjectSetInteger(0,btn,OBJPROP_XSIZE,282);ObjectSetInteger(0,btn,OBJPROP_YSIZE,20);
    ObjectSetInteger(0,btn,OBJPROP_ZORDER,10020);
    ObjectSetString(0,btn,OBJPROP_TEXT,"REFRESH DATA");
@@ -740,6 +740,37 @@ void powerDashboardRefresh(bool force=false){
    ObjectSetInteger(0,btn,OBJPROP_HIDDEN,true);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"OPENHEAD","RUNNING ENTRY  /  OPEN POSITIONS",19,326,C'185,200,220',8);
    powerDashboardOpenPositions(symbol,bull,bear,neutral);
+
+   // Live floating P/L and layer count are read directly from MT5 positions.
+   int openLayers=0;
+   double floatingNet=0.0;
+   for(int p=PositionsTotal()-1;p>=0;p--){
+      ulong ticket=PositionGetTicket(p);
+      if(ticket==0)continue;
+      if((long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
+      if(PositionGetString(POSITION_SYMBOL)!=symbol)continue;
+      openLayers++;
+      floatingNet+=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
+   }
+   string layerName=RAYYAN_DASH_PREFIX+"LAYERS_TOP_RIGHT";
+   if(ObjectFind(0,layerName)<0)ObjectCreate(0,layerName,OBJ_LABEL,0,0,0);
+   ObjectSetInteger(0,layerName,OBJPROP_CORNER,CORNER_RIGHT_UPPER);
+   ObjectSetInteger(0,layerName,OBJPROP_XDISTANCE,18);
+   ObjectSetInteger(0,layerName,OBJPROP_YDISTANCE,18);
+   ObjectSetInteger(0,layerName,OBJPROP_COLOR,clrWhite);
+   ObjectSetInteger(0,layerName,OBJPROP_FONTSIZE,12);
+   ObjectSetInteger(0,layerName,OBJPROP_ZORDER,10030);
+   ObjectSetString(0,layerName,OBJPROP_FONT,"Arial Bold");
+   ObjectSetString(0,layerName,OBJPROP_TEXT,"OPEN LAYERS  "+IntegerToString(openLayers)+"/"+IntegerToString(MathMax(1,StandaloneMaxLayers)));
+   ObjectSetInteger(0,layerName,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,layerName,OBJPROP_HIDDEN,true);
+
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"FLOATBOX",18,430,282,42,
+      (floatingNet>=0?C'24,61,51':C'69,39,45'),(floatingNet>=0?C'52,125,94':C'143,69,78'));
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"FLOATHEAD","LIVE FLOATING P/L  (MT5)",27,434,C'220,225,235',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"FLOATVALUE",
+      (floatingNet>=0?"+":"")+DoubleToString(floatingNet,2),27,447,
+      (floatingNet>0?bull:(floatingNet<0?bear:neutral)),18);
    ChartRedraw(0);
 }
 void OnChartEvent(const int id,const long &lparam,const double &dparam,const string &sparam){
