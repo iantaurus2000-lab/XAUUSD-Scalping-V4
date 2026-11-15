@@ -1313,22 +1313,22 @@ void updateChartCountdown(){
    int remain=(int)MathMax(0,periodSeconds-(serverNow-bar));
    string label=StringFormat("%02d:%02d",remain/60,remain%60);
    const string name="RAYYAN_MT5_BAR_TIMER";
-   if(ObjectFind(0,name)<0){
-      if(!ObjectCreate(0,name,OBJ_LABEL,0,0,0)){
-         Print("RAYYAN TIMER CREATE FAILED err=",GetLastError()); return;
-      }
-      ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_RIGHT_LOWER);
-      ObjectSetInteger(0,name,OBJPROP_ANCHOR,ANCHOR_RIGHT_LOWER);
-      ObjectSetInteger(0,name,OBJPROP_XDISTANCE,18);
-      ObjectSetInteger(0,name,OBJPROP_YDISTANCE,18);
-      ObjectSetInteger(0,name,OBJPROP_COLOR,clrWhite);
-      ObjectSetInteger(0,name,OBJPROP_FONTSIZE,10);
-      ObjectSetInteger(0,name,OBJPROP_ZORDER,10060);
-      ObjectSetInteger(0,name,OBJPROP_BACK,false);
-      ObjectSetString(0,name,OBJPROP_FONT,"Arial");
-      ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
-      ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
+   if(ObjectFind(0,name)<0 && !ObjectCreate(0,name,OBJ_LABEL,0,0,0)){
+      Print("RAYYAN TIMER CREATE FAILED err=",GetLastError()); return;
    }
+   // Re-apply every property on every refresh so an existing chart object
+   // also moves to the requested corner after an EA update/reinitialization.
+   ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_RIGHT_LOWER);
+   ObjectSetInteger(0,name,OBJPROP_ANCHOR,ANCHOR_RIGHT_LOWER);
+   ObjectSetInteger(0,name,OBJPROP_XDISTANCE,18);
+   ObjectSetInteger(0,name,OBJPROP_YDISTANCE,18);
+   ObjectSetInteger(0,name,OBJPROP_COLOR,clrWhite);
+   ObjectSetInteger(0,name,OBJPROP_FONTSIZE,10);
+   ObjectSetInteger(0,name,OBJPROP_ZORDER,10060);
+   ObjectSetInteger(0,name,OBJPROP_BACK,false);
+   ObjectSetString(0,name,OBJPROP_FONT,"Arial");
+   ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
    ObjectSetString(0,name,OBJPROP_TEXT,label);
 }
 
