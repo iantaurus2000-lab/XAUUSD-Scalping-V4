@@ -297,7 +297,7 @@ string powerSessionCandlePath(ulong positionId){return powerSessionPath(position
 void powerWriteLossRescueLog(ulong ticket,string symbol,bool isBuy,double net,double peakNet,
                              double peakPrice,double executable,double pullbackTicks,
                              int adverseTicks,string eventName){
-   if(ticket==0)return;
+   if(ticket==0||!PositionSelectByTicket(ticket))return;
    ulong positionId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
    string folder=powerSessionFolderForPosition(positionId);
    if(folder=="")folder=(powerSessionActive?powerSessionFolder:POWERFULL_REPORT_DIR);
@@ -798,7 +798,9 @@ void powerDashboardRefresh(bool force=false){
       if((long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
       if(PositionGetString(POSITION_SYMBOL)!=symbol)continue;
       openLayers++;
-      floatingNet+=powerProjectedNet(ticket);
+      // Keep dashboard refresh lightweight (100 ms cadence): live broker
+      // floating P/L is displayed directly; fee-adjusted net remains in logs/reports.
+      floatingNet+=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
       string peakKey="PW_PEAK_NET_"+IntegerToString((long)ticket);
       if(GlobalVariableCheck(peakKey))peakFloatingNet+=GlobalVariableGet(peakKey);
    }
@@ -817,7 +819,7 @@ void powerDashboardRefresh(bool force=false){
 
    powerDashboardBox(RAYYAN_DASH_PREFIX+"FLOATBOX",18,430,282,42,
       (floatingNet>=0?C'24,61,51':C'69,39,45'),(floatingNet>=0?C'52,125,94':C'143,69,78'));
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"FLOATHEAD","LIVE NET P/L",27,433,C'220,225,235',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"FLOATHEAD","LIVE FLOAT P/L (MT5)",27,433,C'220,225,235',8);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"FLOATVALUE",
       (floatingNet>=0?"+":"")+DoubleToString(floatingNet,2),27,445,
       (floatingNet>0?bull:(floatingNet<0?bear:neutral)),17);
@@ -3176,9 +3178,15 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
       if(GlobalVariableCheck(adverseKey))adverseTicks=(int)GlobalVariableGet(adverseKey);
       if(hasPreviousTick&&previousExecutable>0.0){
          double signedMove=(isBuy?previousExecutable-executable:executable-previousExecutable);
-         adverseMoveTicks=MathAbs(executable-previousExecutable)/tickSize;
-         if(signedMove>=tickSize*0.5)adverseTicks++;
-         else if(signedMove<=-tickSize*0.5)adverseTicks=0;
+         // Only movement against the open position counts as a reversal.
+         // A two-tick recovery in the favorable direction must not trigger exit.
+         if(signedMove>=tickSize*0.5){
+            adverseMoveTicks=signedMove/tickSize;
+            adverseTicks++;
+         }else if(signedMove<=-tickSize*0.5){
+            adverseTicks=0;
+            adverseMoveTicks=0.0;
+         }
       }
       if(pullbackTicks<0.5)adverseTicks=0;
       GlobalVariableSet(adverseKey,(double)adverseTicks);
