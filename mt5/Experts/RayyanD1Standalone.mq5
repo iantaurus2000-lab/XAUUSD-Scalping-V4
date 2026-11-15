@@ -171,7 +171,7 @@ bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick
 int powerConfirmedSwingStructure(string symbol,ENUM_TIMEFRAMES timeframe);
 void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double candleOpen,
                           bool candleJustChanged,bool hasPreviousTick,double previousBid,double previousAsk);
-bool powerManageLossRescue(int index,const MqlTick &tick);
+bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,double previousBid,double previousAsk);
 bool powerManageTrendHold(int index,const MqlTick &tick);
 void powerRefreshAnalysisReports();
 void powerWriteAnalysisReport(string targetPath,datetime sessionStart=0);
@@ -253,7 +253,7 @@ void powerSessionWriteSummary(string folder,datetime started,datetime ended){
       "<h1>RAYYAN POWERFULL Test Session</h1><p>Session ID: "+powerSessionStamp(started)+
       "</p><p>Start: "+TimeToString(started,TIME_DATE|TIME_SECONDS)+
       "</p><p>Algo Trading OFF: "+(ended>0?TimeToString(ended,TIME_DATE|TIME_SECONDS):"ACTIVE")+
-      "</p><p>See LOSS_ANALYSIS.html, LOSS_RECORDER.csv, ENTRY_CANDLE_LOG.csv and OPEN_POSITIONS.csv.</p>"+
+      "</p><p>See LOSS_ANALYSIS.html, LOSS_RECORDER.csv, ENTRY_CANDLE_LOG.csv, OPEN_POSITIONS.csv and LOSS_RESCUE_MONITOR.csv.</p>"+
       "<p>Late closing deals remain assigned to their original position session.</p></body></html>";
    FileWriteString(h,html); FileClose(h);
    int a=FileOpen(folder+"\\LOSS_ANALYSIS.html",FILE_WRITE|FILE_TXT|FILE_ANSI);
@@ -294,6 +294,39 @@ void powerSessionRefresh(){
 }
 string powerSessionLossPath(ulong positionId){return powerSessionPath(positionId,"LOSS_RECORDER.csv");}
 string powerSessionCandlePath(ulong positionId){return powerSessionPath(positionId,"ENTRY_CANDLE_LOG.csv");}
+void powerWriteLossRescueLog(ulong ticket,string symbol,bool isBuy,double net,double peakNet,
+                             double peakPrice,double executable,double pullbackTicks,
+                             int adverseTicks,string eventName){
+   if(ticket==0)return;
+   ulong positionId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+   string folder=powerSessionFolderForPosition(positionId);
+   if(folder=="")folder=(powerSessionActive?powerSessionFolder:POWERFULL_REPORT_DIR);
+   if(folder=="")return;
+   FolderCreate(folder);
+   string filePath=folder+"\\LOSS_RESCUE_MONITOR.csv";
+   int h=FileOpen(filePath,FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,';');
+   if(h==INVALID_HANDLE)
+      h=FileOpen(filePath,FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,';');
+   if(h==INVALID_HANDLE){
+      Print("POWERFULL LOSS_RESCUE LOG OPEN FAILED path=",filePath," err=",GetLastError());
+      return;
+   }
+   if(FileSize(h)==0)
+      FileWrite(h,"time","symbol","ticket","position_id","side","volume","entry_price",
+         "market_price","current_net","peak_net_since_entry","giveback_from_peak",
+         "peak_pullback_ticks","adverse_tick_count","mode","event");
+   FileSeek(h,0,SEEK_END);
+   int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+   double volume=PositionGetDouble(POSITION_VOLUME);
+   double entry=PositionGetDouble(POSITION_PRICE_OPEN);
+   int mode=(int)GlobalVariableGet("PW_HMODE_"+IntegerToString((long)ticket));
+   FileWrite(h,TimeToString(TimeCurrent(),TIME_DATE|TIME_SECONDS),symbol,(string)ticket,(string)positionId,
+      (isBuy?"BUY":"SELL"),DoubleToString(volume,2),DoubleToString(entry,digits),
+      DoubleToString(executable,digits),DoubleToString(net,2),DoubleToString(peakNet,2),
+      DoubleToString(peakNet-net,2),DoubleToString(pullbackTicks,1),(string)adverseTicks,
+      (mode==POWERFULL_MODE_LOSS_RESCUE?"LOSS_RESCUE":"TREND_HOLD"),eventName);
+   FileClose(h);
+}
 
 string powerReportSide(ENUM_DEAL_TYPE type){
    if(type==DEAL_TYPE_BUY)return "BUY";
@@ -386,7 +419,9 @@ void powerWriteAnalysisReport(string targetPath,datetime sessionStart){
    int h=FileOpen(targetPath,FILE_WRITE|FILE_TXT|FILE_ANSI);
    if(h==INVALID_HANDLE){Print("POWERFULL REPORT HTML OPEN FAILED path=",targetPath," err=",GetLastError());return;}
    int entries=0,exits=0,wins=0,losses=0;
-   double gross=0.0,net=0.0;
+   double gross=0.0,net=0.0,totalSwap=0.0,totalCommission=0.0,totalFee=0.0;
+   double bestExit=0.0,worstExit=0.0;
+   bool haveExit=false;
    string rows="";
    for(int i=0;i<HistoryDealsTotal();i++){
       ulong deal=HistoryDealGetTicket(i);
@@ -406,13 +441,17 @@ void powerWriteAnalysisReport(string targetPath,datetime sessionStart){
       double dealNet=profit+swap+commission+fee;
       if(en==DEAL_ENTRY_IN||en==DEAL_ENTRY_INOUT)entries++;
       if(en==DEAL_ENTRY_OUT||en==DEAL_ENTRY_OUT_BY||en==DEAL_ENTRY_INOUT){
-         exits++;gross+=profit;net+=dealNet;
+         exits++;gross+=profit;totalSwap+=swap;totalCommission+=commission;totalFee+=fee;net+=dealNet;
          if(dealNet>0.0)wins++;else if(dealNet<0.0)losses++;
+         if(!haveExit){bestExit=dealNet;worstExit=dealNet;haveExit=true;}
+         else{bestExit=MathMax(bestExit,dealNet);worstExit=MathMin(worstExit,dealNet);}
       }
       rows+="<tr><td>"+TimeToString((datetime)HistoryDealGetInteger(deal,DEAL_TIME),TIME_DATE|TIME_MINUTES)+
-         "</td><td>"+symbol+"</td><td>"+EnumToString(en)+"</td><td>"+powerReportSide(side)+
-         "</td><td>"+DoubleToString(HistoryDealGetDouble(deal,DEAL_VOLUME),2)+
+         "</td><td>"+(string)positionId+"</td><td>"+symbol+"</td><td>"+EnumToString(en)+
+         "</td><td>"+powerReportSide(side)+"</td><td>"+DoubleToString(HistoryDealGetDouble(deal,DEAL_VOLUME),2)+
          "</td><td>"+DoubleToString(HistoryDealGetDouble(deal,DEAL_PRICE),(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))+
+         "</td><td>"+DoubleToString(profit,2)+"</td><td>"+DoubleToString(swap,2)+
+         "</td><td>"+DoubleToString(commission,2)+"</td><td>"+DoubleToString(fee,2)+
          "</td><td>"+DoubleToString(dealNet,2)+"</td><td>"+
          EnumToString((ENUM_DEAL_REASON)HistoryDealGetInteger(deal,DEAL_REASON))+"</td></tr>";
    }
@@ -421,14 +460,23 @@ void powerWriteAnalysisReport(string targetPath,datetime sessionStart){
       "<title>Rayyan POWERFULL Analysis</title><style>body{font-family:Arial,sans-serif;margin:18px;color:#202124;background:#f7f8fa}"+
       ".cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px}.card{background:#fff;border:1px solid #ddd;border-radius:8px;padding:12px}"+
       ".value{font-size:21px;font-weight:bold;margin-top:5px}table{border-collapse:collapse;width:100%;background:#fff;margin-top:12px}"+
-      "th,td{border:1px solid #ddd;padding:8px;text-align:left;font-size:13px}th{background:#eef1f5}.tablewrap{overflow-x:auto}</style></head><body>"+
+      "th,td{border:1px solid #ddd;padding:8px;text-align:left;font-size:13px;white-space:nowrap}th{background:#eef1f5}.tablewrap{overflow-x:auto}</style></head><body>"+
       "<h1>Rayyan POWERFULL — Loss Analysis</h1><p>Period: "+(sessionStart>0?"ON/OFF session "+powerSessionStamp(sessionStart):"Last 90 days")+
       " | Generated: "+TimeToString(to,TIME_DATE|TIME_SECONDS)+"</p><div class='cards'>"+
-      "<div class='card'>Entry<div class='value'>"+IntegerToString(entries)+"</div></div><div class='card'>Exit<div class='value'>"+IntegerToString(exits)+"</div></div>"+
-      "<div class='card'>Winrate (exit deals)<div class='value'>"+DoubleToString(winRate,2)+"%</div></div>"+
+      "<div class='card'>Entry<div class='value'>"+IntegerToString(entries)+"</div></div>"+
+      "<div class='card'>Exit<div class='value'>"+IntegerToString(exits)+"</div></div>"+
+      "<div class='card'>Winrate<div class='value'>"+DoubleToString(winRate,2)+"%</div></div>"+
       "<div class='card'>Win / Loss<div class='value'>"+IntegerToString(wins)+" / "+IntegerToString(losses)+"</div></div>"+
-      "<div class='card'>Gross<div class='value'>"+DoubleToString(gross,2)+"</div></div><div class='card'>Net<div class='value'>"+DoubleToString(net,2)+"</div></div></div>"+
-      "<div class='tablewrap'><table><thead><tr><th>Time</th><th>Symbol</th><th>Entry</th><th>Side</th><th>Volume</th><th>Price</th><th>Net</th><th>Reason</th></tr></thead><tbody>"+
+      "<div class='card'>Gross Profit<div class='value'>"+DoubleToString(gross,2)+"</div></div>"+
+      "<div class='card'>Swap<div class='value'>"+DoubleToString(totalSwap,2)+"</div></div>"+
+      "<div class='card'>Commission<div class='value'>"+DoubleToString(totalCommission,2)+"</div></div>"+
+      "<div class='card'>Fee<div class='value'>"+DoubleToString(totalFee,2)+"</div></div>"+
+      "<div class='card'>Net Profit<div class='value'>"+DoubleToString(net,2)+"</div></div>"+
+      "<div class='card'>Best Exit<div class='value'>"+(haveExit?DoubleToString(bestExit,2):"0.00")+"</div></div>"+
+      "<div class='card'>Worst Exit<div class='value'>"+(haveExit?DoubleToString(worstExit,2):"0.00")+"</div></div></div>"+
+      "<p>Per-ticket live rescue, current net, peak net, and price reversal: LOSS_RESCUE_MONITOR.csv</p>"+
+      "<div class='tablewrap'><table><thead><tr><th>Time</th><th>Position ID</th><th>Symbol</th><th>Deal</th><th>Side</th>"+
+      "<th>Volume</th><th>Price</th><th>Gross</th><th>Swap</th><th>Commission</th><th>Fee</th><th>Net</th><th>Reason</th></tr></thead><tbody>"+
       rows+"</tbody></table></div></body></html>";
    FileWriteString(h,html);
    FileFlush(h);
@@ -743,14 +791,16 @@ void powerDashboardRefresh(bool force=false){
 
    // Live floating P/L and layer count are read directly from MT5 positions.
    int openLayers=0;
-   double floatingNet=0.0;
+   double floatingNet=0.0,peakFloatingNet=0.0;
    for(int p=PositionsTotal()-1;p>=0;p--){
       ulong ticket=PositionGetTicket(p);
       if(ticket==0)continue;
       if((long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
       if(PositionGetString(POSITION_SYMBOL)!=symbol)continue;
       openLayers++;
-      floatingNet+=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
+      floatingNet+=powerProjectedNet(ticket);
+      string peakKey="PW_PEAK_NET_"+IntegerToString((long)ticket);
+      if(GlobalVariableCheck(peakKey))peakFloatingNet+=GlobalVariableGet(peakKey);
    }
    string layerName=RAYYAN_DASH_PREFIX+"LAYERS_TOP_RIGHT";
    if(ObjectFind(0,layerName)<0)ObjectCreate(0,layerName,OBJ_LABEL,0,0,0);
@@ -767,10 +817,14 @@ void powerDashboardRefresh(bool force=false){
 
    powerDashboardBox(RAYYAN_DASH_PREFIX+"FLOATBOX",18,430,282,42,
       (floatingNet>=0?C'24,61,51':C'69,39,45'),(floatingNet>=0?C'52,125,94':C'143,69,78'));
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"FLOATHEAD","LIVE FLOATING P/L  (MT5)",27,434,C'220,225,235',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"FLOATHEAD","LIVE NET P/L",27,433,C'220,225,235',8);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"FLOATVALUE",
-      (floatingNet>=0?"+":"")+DoubleToString(floatingNet,2),27,447,
-      (floatingNet>0?bull:(floatingNet<0?bear:neutral)),18);
+      (floatingNet>=0?"+":"")+DoubleToString(floatingNet,2),27,445,
+      (floatingNet>0?bull:(floatingNet<0?bear:neutral)),17);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PEAKHEAD","PEAK NET",182,433,C'220,225,235',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PEAKVALUE",
+      (peakFloatingNet>=0?"+":"")+DoubleToString(peakFloatingNet,2),182,447,
+      (peakFloatingNet>0?bull:(peakFloatingNet<0?bear:neutral)),13);
    ChartRedraw(0);
 }
 void OnChartEvent(const int id,const long &lparam,const double &dparam,const string &sparam){
@@ -3034,11 +3088,12 @@ bool powerClosePosition(ulong ticket,string reason){
    if(ok&&(rc==TRADE_RETCODE_DONE||rc==TRADE_RETCODE_DONE_PARTIAL)){
       Print("POWERFULL CLOSE OK symbol=",symbol," ticket=",ticket," reason=",reason," retcode=",rc);
       string suffix=IntegerToString((long)ticket);
-      string keys[15]={"PW_HMODE_","PW_HBAR_","PW_PEAK_","PW_PEAK_NET_",
+      string keys[17]={"PW_HMODE_","PW_HBAR_","PW_PEAK_","PW_PEAK_NET_",
                       "PW_LR_WAS_NEG_","PW_LR_PEAK_NET_","PW_RISK_ARM_",
                       "PW_RISK_ADVERSE_","PW_RISK_RECOVERY_","PW_RISK_LASTPX_",
                       "PW_RISK_REC_TICKS_","PW_A5_ARM_","PW_A5_ADVERSE_COUNT_",
-                      "PW_A5_LAST_BAR_","PW_A5_COOLDOWN_"};
+                      "PW_A5_LAST_BAR_","PW_A5_COOLDOWN_",
+                      "PW_LR_ADVERSE_TICKS_","PW_LR_LOG_MS_"};
       for(int k=0;k<ArraySize(keys);k++){
          string key=keys[k]+suffix;
          if(GlobalVariableCheck(key))GlobalVariableDel(key);
@@ -3084,33 +3139,14 @@ bool powerA6StructureBreak(string symbol,ENUM_TIMEFRAMES tf,bool isBuy,int lookb
    }
    return (isBuy?lastClose<boundary:lastClose>boundary);
 }
-// Convert USD target into the trading account currency using broker FX symbols.
-double powerUsdToAccountRate(){
-   string account=AccountInfoString(ACCOUNT_CURRENCY);
-   if(account=="USD")return 1.0;
-   if(account=="")return 0.0;
-   for(int i=0;i<SymbolsTotal(false);i++){
-      string fx=SymbolName(i,false);
-      if(fx==""||!SymbolSelect(fx,true))continue;
-      string base=SymbolInfoString(fx,SYMBOL_CURRENCY_BASE);
-      string quote=SymbolInfoString(fx,SYMBOL_CURRENCY_PROFIT);
-      MqlTick q;
-      if(!SymbolInfoTick(fx,q)||q.bid<=0.0||q.ask<=0.0)continue;
-      if(base=="USD"&&quote==account)return q.bid;
-      if(base==account&&quote=="USD")return 1.0/q.ask;
-   }
-   return 0.0; // Do not guess an exchange rate.
-}
-double powerLossRescueTargetNet(double volume){
-   double rate=powerUsdToAccountRate();
-   if(rate<=0.0)return DBL_MAX;
-   return rate*(volume/0.01); // USD 1 per 0.01 lot, scaled linearly.
-}
-bool powerManageLossRescue(int index,const MqlTick &tick){
+bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,double previousBid,double previousAsk){
    if(index<0||index>=ArraySize(powerSymbols))return false;
    string symbol=powerSymbols[index];
-   ulong chosenTicket=0;
-   double chosenDistance=DBL_MAX,chosenNet=0.0,chosenPeak=0.0,chosenTarget=0.0;
+   double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+   if(tickSize<=0.0)return false;
+   bool closedAny=false;
+   int closedCount=0;
+   uint nowMs=GetTickCount();
    for(int i=PositionsTotal()-1;i>=0;i--){
       ulong ticket=PositionGetTicket(i);
       if(ticket==0||!PositionSelectByTicket(ticket)||
@@ -3120,35 +3156,75 @@ bool powerManageLossRescue(int index,const MqlTick &tick){
       string modeKey="PW_HMODE_"+suffix;
       if(!GlobalVariableCheck(modeKey)||(int)GlobalVariableGet(modeKey)!=POWERFULL_MODE_LOSS_RESCUE)continue;
       bool isBuy=((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
-      double net=powerProjectedNet(ticket),volume=PositionGetDouble(POSITION_VOLUME);
-      double target=powerLossRescueTargetNet(volume);
-      string wasLossKey="PW_LR_WAS_NEG_"+suffix;
-      string peakKey="PW_PEAK_NET_"+suffix;
-      if(net<=0.0){
-         if(!GlobalVariableCheck(wasLossKey))GlobalVariableSet(wasLossKey,1.0);
-         continue;
+      double executable=(isBuy?tick.bid:tick.ask);
+      double net=powerProjectedNet(ticket);
+      string peakNetKey="PW_PEAK_NET_"+suffix;
+      double peakNet=(GlobalVariableCheck(peakNetKey)?GlobalVariableGet(peakNetKey):MathMax(0.0,net));
+      bool newPeak=false;
+      if(net>peakNet){peakNet=net;GlobalVariableSet(peakNetKey,peakNet);newPeak=true;}
+      string peakPriceKey="PW_PEAK_"+suffix;
+      double peakPrice=(GlobalVariableCheck(peakPriceKey)?GlobalVariableGet(peakPriceKey):PositionGetDouble(POSITION_PRICE_OPEN));
+      if(isBuy?executable>peakPrice:executable<peakPrice){
+         peakPrice=executable;GlobalVariableSet(peakPriceKey,peakPrice);
       }
-      // Shared peak is recorded from the moment the position is opened,
-      // including profit earned before LOSS_RESCUE became active.
-      double peak=(GlobalVariableCheck(peakKey)?GlobalVariableGet(peakKey):net);
-      if(net>peak){peak=net;GlobalVariableSet(peakKey,peak);}
-      // Protect a meaningful positive peak: close only after 45% giveback,
-      // retaining 55% of the recorded peak. No immediate close on first
-      // positive recovery and no candle-change exit.
-      if(target>=DBL_MAX||peak<target||net>peak*0.55)continue;
-      double entry=PositionGetDouble(POSITION_PRICE_OPEN);
-      double executable=(isBuy?tick.bid:tick.ask),distance=MathAbs(entry-executable);
-      if(distance<chosenDistance){
-         chosenDistance=distance;chosenTicket=ticket;chosenNet=net;chosenPeak=peak;chosenTarget=target;
+      double pullbackTicks=(isBuy?(peakPrice-executable):(executable-peakPrice))/tickSize;
+      if(pullbackTicks<0.0)pullbackTicks=0.0;
+      double previousExecutable=(isBuy?previousBid:previousAsk);
+      double adverseMoveTicks=0.0;
+      int adverseTicks=0;
+      string adverseKey="PW_LR_ADVERSE_TICKS_"+suffix;
+      if(GlobalVariableCheck(adverseKey))adverseTicks=(int)GlobalVariableGet(adverseKey);
+      if(hasPreviousTick&&previousExecutable>0.0){
+         double signedMove=(isBuy?previousExecutable-executable:executable-previousExecutable);
+         adverseMoveTicks=MathAbs(executable-previousExecutable)/tickSize;
+         if(signedMove>=tickSize*0.5)adverseTicks++;
+         else if(signedMove<=-tickSize*0.5)adverseTicks=0;
+      }
+      if(pullbackTicks<0.5)adverseTicks=0;
+      GlobalVariableSet(adverseKey,(double)adverseTicks);
+      // Live quote reversal; no fixed target/giveback and no delayed H1/M15 close confirmation.
+      bool reversalConfirmed=(net>0.0&&pullbackTicks>=2.0&&
+                             (adverseTicks>=2||adverseMoveTicks>=2.0));
+      string logKey="PW_LR_LOG_MS_"+suffix;
+      bool logDue=(!GlobalVariableCheck(logKey)||
+                   (uint)(nowMs-(uint)GlobalVariableGet(logKey))>=1000);
+      if(newPeak||reversalConfirmed||logDue){
+         string eventName=(reversalConfirmed?"PROFIT_REVERSAL_EXIT_SIGNAL":
+                           (net<=0.0?"LOSS_ZONE_MONITOR":
+                            (newPeak?"NEW_NET_PROFIT_PEAK":"PROFIT_RECOVERY_MONITOR")));
+         double giveback=MathMax(0.0,peakNet-net);
+         Print("POWERFULL LOSS_RESCUE MONITOR symbol=",symbol," ticket=",ticket,
+            " side=",(isBuy?"BUY":"SELL"),
+            " current_net=",DoubleToString(net,2),
+            " peak_net_since_entry=",DoubleToString(peakNet,2),
+            " giveback_from_peak=",DoubleToString(giveback,2),
+            " executable_price=",DoubleToString(executable,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " peak_price=",DoubleToString(peakPrice,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " pullback_ticks=",DoubleToString(pullbackTicks,1),
+            " adverse_ticks=",adverseTicks,
+            " adverse_move_ticks=",DoubleToString(adverseMoveTicks,1),
+            " decision=",eventName);
+         powerWriteLossRescueLog(ticket,symbol,isBuy,net,peakNet,peakPrice,executable,
+                                  pullbackTicks,adverseTicks,eventName);
+         GlobalVariableSet(logKey,(double)nowMs);
+      }
+      if(!reversalConfirmed)continue;
+      Print("POWERFULL LOSS_RESCUE EXIT REQUEST symbol=",symbol," ticket=",ticket,
+            " current_net=",DoubleToString(net,2),
+            " peak_net_since_entry=",DoubleToString(peakNet,2),
+            " giveback=",DoubleToString(MathMax(0.0,peakNet-net),2),
+            " pullback_ticks=",DoubleToString(pullbackTicks,1),
+            " adverse_ticks=",adverseTicks,
+            " reason=LIVE_PEAK_REVERSAL_NET_POSITIVE");
+      if(powerClosePosition(ticket,"LOSS_RESCUE_LIVE_PEAK_REVERSAL_NET_POSITIVE")){
+         closedAny=true;closedCount++;
+      }else{
+         powerWriteLossRescueLog(ticket,symbol,isBuy,net,peakNet,peakPrice,executable,
+                                 pullbackTicks,adverseTicks,"CLOSE_REQUEST_FAILED");
       }
    }
-   if(chosenTicket==0)return false;
-   Print("POWERFULL LOSS_RESCUE EXIT READY symbol=",symbol," ticket=",chosenTicket,
-         " net=",DoubleToString(chosenNet,2)," peak_net_since_entry=",DoubleToString(chosenPeak,2),
-         " min_profit=",DoubleToString(chosenTarget,2)," giveback=45% retained=55%",
-         " reason=LOSS_RESCUE_SHARED_PEAK_PROFIT_LOCK");
-   powerClosePosition(chosenTicket,"LOSS_RESCUE_SHARED_PEAK_45_PERCENT");
-   return true;
+   if(closedAny)Print("POWERFULL LOSS_RESCUE CLOSED COUNT symbol=",symbol," count=",closedCount);
+   return closedAny;
 }
 
 // Confirmed market structure: two closed candles on each side of a swing pivot.
@@ -3207,28 +3283,14 @@ bool powerLatestSwingLevels(string symbol,ENUM_TIMEFRAMES tf,double &support,dou
    return (haveSupport&&haveResistance);
 }
 int powerTrendHoldStructure(string symbol,bool isBuy){
-   // FINAL MANAGEMENT PRINCIPLE:
-   // H1 is the early warning / rescue trigger; H4 is the higher-timeframe
-   // context. Dynamic swing S/R is recalculated from the latest confirmed
-   // closed-candle pivots, so the levels follow the market structure.
-   int h4=powerConfirmedSwingStructure(symbol,PERIOD_H4);
+   // Only confirmed H1/H4 swing structure participates in mode transitions.
+   // M5/M15 candle color and dynamic S/R levels never veto TREND_HOLD.
+   // Mixed or unavailable structure returns 0, preserving the current mode.
    int h1=powerConfirmedSwingStructure(symbol,PERIOD_H1);
+   int h4=powerConfirmedSwingStructure(symbol,PERIOD_H4);
    int side=(isBuy?1:-1);
-   double s1=0.0,r1=0.0,c1=0.0,s4=0.0,r4=0.0,c4=0.0;
-   bool levels1=powerLatestSwingLevels(symbol,PERIOD_H1,s1,r1,c1);
-   bool levels4=powerLatestSwingLevels(symbol,PERIOD_H4,s4,r4,c4);
-   double zone=2.0*SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
-   if(zone<=0.0||!levels1||!levels4)return 0;
-   bool h1SupportBroken=(isBuy?c1<s1-zone:c1>r1+zone);
-   bool h4SupportBroken=(isBuy?c4<s4-zone:c4>r4+zone);
-   // Earlier LOSS_RESCUE: H1 structure reversal plus its dynamic S/R break
-   // is sufficient. If H4 also confirms, that strengthens the reversal;
-   // H4 is not allowed to delay rescue after H1 has confirmed.
-   if(h1==-side&&h1SupportBroken)return -side;
-   if(h1==-side&&h4==-side&&h4SupportBroken)return -side;
-   // TREND_HOLD is retained only while both timeframe structures support
-   // the position and neither dynamic structure boundary has been broken.
-   if(h1==side&&h4==side&&!h1SupportBroken&&!h4SupportBroken)return side;
+   if(h1==side&&h4==side)return side;
+   if(h1==-side&&h4==-side)return -side;
    return 0;
 }
 
@@ -3271,15 +3333,13 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
          (long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
       bool isBuy=((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
       double entry=PositionGetDouble(POSITION_PRICE_OPEN),executable=(isBuy?tick.bid:tick.ask);
-      // FINAL: record favorable price and net-profit peaks from position open,
-      // regardless of TREND_HOLD / LOSS_RESCUE mode, so mode changes never
-      // discard profit already achieved.
+      // Preserve favorable price and net-profit peaks from the first observed
+      // tick, independent of TREND_HOLD / LOSS_RESCUE mode.
       string suffix=IntegerToString((long)ticket);
       string peakPriceKey="PW_PEAK_"+suffix;
       if(!GlobalVariableCheck(peakPriceKey))GlobalVariableSet(peakPriceKey,entry);
       double peakPrice=GlobalVariableGet(peakPriceKey);
-      double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
-      if(isBuy?executable>peakPrice+tickSize*0.1:executable<peakPrice-tickSize*0.1)
+      if(isBuy?executable>peakPrice+ts*0.1:executable<peakPrice-ts*0.1)
          GlobalVariableSet(peakPriceKey,executable);
       double currentNet=powerProjectedNet(ticket);
       string peakNetKey="PW_PEAK_NET_"+suffix;
@@ -3289,46 +3349,57 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       int slPts=(isBuy?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
       double hard=(powerCfg[index].usePointStops?slPts*point:powerCfg[index].stopPips*powerCfg[index].pipSize);
       double adverse=(isBuy?entry-executable:executable-entry);
-      if(hard>0.0&&adverse+point*0.1>=hard){powerClosePosition(ticket,"HARD_LOSS_GUARD");continue;}
+      if(hard>0.0&&adverse+point*0.1>=hard){
+         Print("POWERFULL HARD LOSS GUARD symbol=",symbol," ticket=",ticket,
+            " current_net=",DoubleToString(currentNet,2),
+            " peak_net_since_entry=",DoubleToString(peakNet,2),
+            " adverse_price_distance=",DoubleToString(adverse,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " hard_limit=",DoubleToString(hard,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)));
+         powerClosePosition(ticket,"HARD_LOSS_GUARD");
+         continue;
+      }
       string modeKey="PW_HMODE_"+suffix;
-      string lossSinceKey="PW_RISK_ARM_"+suffix;
+      string adverseKey="PW_LR_ADVERSE_TICKS_"+suffix;
       int mode=(GlobalVariableCheck(modeKey)?(int)GlobalVariableGet(modeKey):0);
-      double net=powerProjectedNet(ticket);
       int side=(isBuy?1:-1),structure=powerTrendHoldStructure(symbol,isBuy);
-      // If H1+H4 turn back in this position's direction, restore TREND_HOLD.
-      if(mode==POWERFULL_MODE_LOSS_RESCUE&&structure==side){
-         GlobalVariableSet(modeKey,(double)POWERFULL_MODE_TREND_HOLD);
-         if(GlobalVariableCheck(lossSinceKey))GlobalVariableDel(lossSinceKey);
-         Print("POWERFULL MODE symbol=",symbol," ticket=",ticket,
-               " mode=TREND_HOLD reason=H1_H4_structure_returned_to_position_direction",
-               " projected_net=",DoubleToString(net,2)," action=continue_trend_hold");
+      // Hysteresis protects TREND_HOLD: LOSS_RESCUE ends only after BOTH
+      // H1 and H4 again confirm the position direction. Mixed structure
+      // preserves the existing mode instead of repeatedly switching.
+      if(mode==POWERFULL_MODE_LOSS_RESCUE){
+         if(structure==side){
+            GlobalVariableSet(modeKey,(double)POWERFULL_MODE_TREND_HOLD);
+            if(GlobalVariableCheck(adverseKey))GlobalVariableDel(adverseKey);
+            Print("POWERFULL MODE symbol=",symbol," ticket=",ticket,
+               " mode=TREND_HOLD reason=H1_AND_H4_STRUCTURE_SUPPORTS_POSITION_AGAIN",
+               " current_net=",DoubleToString(currentNet,2),
+               " peak_net_since_entry=",DoubleToString(peakNet,2),
+               " action=hold_trend_no_profit_trail_exit");
+         }
          continue;
       }
       if(mode==POWERFULL_MODE_TREND_HOLD){
          if(structure==-side){
             GlobalVariableSet(modeKey,(double)POWERFULL_MODE_LOSS_RESCUE);
+            if(GlobalVariableCheck(adverseKey))GlobalVariableDel(adverseKey);
             Print("POWERFULL MODE symbol=",symbol," ticket=",ticket,
-                  " mode=LOSS_RESCUE reason=confirmed_H1_H4_structure_reversal",
-                  " projected_net=",DoubleToString(net,2),
-                  " action=monitor_recovery_peak_and_lock_45_percent_giveback");
+               " mode=LOSS_RESCUE reason=H1_AND_H4_CONFIRMED_SWING_REVERSAL",
+               " current_net=",DoubleToString(currentNet,2),
+               " peak_net_since_entry=",DoubleToString(peakNet,2),
+               " action=live_tick_peak_reversal_profit_capture");
          }
          continue;
       }
-      if(mode!=POWERFULL_MODE_LOSS_RESCUE&&structure==side){
-         GlobalVariableSet(modeKey,(double)POWERFULL_MODE_TREND_HOLD);
-         if(GlobalVariableCheck(lossSinceKey))GlobalVariableDel(lossSinceKey);
-         Print("POWERFULL MODE symbol=",symbol," ticket=",ticket,
-               " mode=TREND_HOLD reason=H1_H4_structure_supports_position");
-         continue;
-      }
-      if(mode!=POWERFULL_MODE_LOSS_RESCUE&&structure==-side){
-         GlobalVariableSet(modeKey,(double)POWERFULL_MODE_LOSS_RESCUE);
-         Print("POWERFULL MODE symbol=",symbol," ticket=",ticket,
-               " mode=LOSS_RESCUE reason=confirmed_H1_H4_structure_opposes_position",
-               " projected_net=",DoubleToString(net,2));
-      }
+      // New tickets default to TREND_HOLD; simultaneous H1/H4 opposition
+      // is the only initial condition that starts LOSS_RESCUE.
+      int initialMode=(structure==-side?POWERFULL_MODE_LOSS_RESCUE:POWERFULL_MODE_TREND_HOLD);
+      GlobalVariableSet(modeKey,(double)initialMode);
+      Print("POWERFULL MODE INIT symbol=",symbol," ticket=",ticket,
+         " mode=",(initialMode==POWERFULL_MODE_LOSS_RESCUE?"LOSS_RESCUE":"TREND_HOLD"),
+         " h1_h4_structure=",structure,
+         " current_net=",DoubleToString(currentNet,2),
+         " peak_net_since_entry=",DoubleToString(peakNet,2));
    }
-   if(powerManageLossRescue(index,tick))return;
+   if(powerManageLossRescue(index,tick,hasPreviousTick,previousBid,previousAsk))return;
    powerManageTrendHold(index,tick);
 }
 
