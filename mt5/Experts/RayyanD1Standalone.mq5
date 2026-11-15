@@ -264,7 +264,7 @@ void powerSessionWriteSummary(string folder,datetime started,datetime ended){
       "<h1>RAYYAN POWERFULL Test Session</h1><p>Session ID: "+powerSessionStamp(started)+
       "</p><p>Start: "+TimeToString(started,TIME_DATE|TIME_SECONDS)+
       "</p><p>Algo Trading OFF: "+(ended>0?TimeToString(ended,TIME_DATE|TIME_SECONDS):"ACTIVE")+
-      "</p><p>See LOSS_ANALYSIS.html, LOSS_RECORDER.csv, ENTRY_CANDLE_LOG.csv, OPEN_POSITIONS.csv and LOSS_RESCUE_MONITOR.csv.</p>"+
+      "</p><p>See LOSS_ANALYSIS.html, LOSS_RECORDER.csv, ENTRY_CANDLE_LOG.csv, OPEN_POSITIONS.csv and LOSS_RESCUE_MONITOR_V2.csv.</p>"+
       "<p>Late closing deals remain assigned to their original position session.</p></body></html>";
    FileWriteString(h,html); FileClose(h);
    int a=FileOpen(folder+"\\LOSS_ANALYSIS.html",FILE_WRITE|FILE_TXT|FILE_ANSI);
@@ -314,7 +314,7 @@ void powerWriteLossRescueLog(ulong ticket,string symbol,bool isBuy,double net,do
    if(folder=="")folder=(powerSessionActive?powerSessionFolder:POWERFULL_REPORT_DIR);
    if(folder=="")return;
    FolderCreate(folder);
-   string filePath=folder+"\\LOSS_RESCUE_MONITOR.csv";
+   string filePath=folder+"\\LOSS_RESCUE_MONITOR_V2.csv";
    int h=FileOpen(filePath,FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,';');
    if(h==INVALID_HANDLE)
       h=FileOpen(filePath,FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,';');
@@ -389,7 +389,7 @@ void powerAppendDealRecord(ulong deal){
    if(FileSize(h)==0)
       FileWrite(h,"time","deal_ticket","position_id","symbol","entry_type","side","volume","price",
                 "sl_points_setting","sl_price_distance","actual_sl_price","sl_state",
-                "deal_profit","swap","commission","fee","net","reason","comment","deal_magic");
+                "deal_profit","swap","commission","fee","net","reason","comment");
    FileSeek(h,0,SEEK_END);
    ulong rowStartSize=FileSize(h);
    double profit=HistoryDealGetDouble(deal,DEAL_PROFIT);
@@ -406,7 +406,7 @@ void powerAppendDealRecord(ulong deal){
       DoubleToString(commission,2),DoubleToString(fee,2),
       DoubleToString(profit+swap+commission+fee,2),
       EnumToString((ENUM_DEAL_REASON)HistoryDealGetInteger(deal,DEAL_REASON)),
-      HistoryDealGetString(deal,DEAL_COMMENT),(string)dealMagic);
+      HistoryDealGetString(deal,DEAL_COMMENT));
    FileFlush(h);
    bool rowSaved=(rowWritten>0&&FileSize(h)>rowStartSize);
    FileClose(h);
@@ -497,7 +497,7 @@ void powerWriteAnalysisReport(string targetPath,datetime sessionStart){
       "<div class='card'>Net Realized<div class='value'>"+DoubleToString(net,2)+"</div></div>"+
       "<div class='card'>Best Position Net<div class='value'>"+(haveClosed?DoubleToString(bestTrade,2):"0.00")+"</div></div>"+
       "<div class='card'>Worst Position Net<div class='value'>"+(haveClosed?DoubleToString(worstTrade,2):"0.00")+"</div></div></div>"+
-      "<p>Per-ticket projected net, peak net and live rescue decision: LOSS_RESCUE_MONITOR.csv</p>"+
+      "<p>Per-ticket projected net, peak net and live rescue decision: LOSS_RESCUE_MONITOR_V2.csv</p>"+
       "<div class='tablewrap'><table><thead><tr><th>Time</th><th>Position ID</th><th>Symbol</th><th>Deal</th><th>Side</th>"+
       "<th>Volume</th><th>Price</th><th>Gross</th><th>Swap</th><th>Commission</th><th>Fee</th><th>Net/Deal</th><th>Reason</th></tr></thead><tbody>"+
       rows+"</tbody></table></div></body></html>";
@@ -628,10 +628,16 @@ void powerCaptureEntryCandle(ulong deal){
 void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &request,const MqlTradeResult &result){
    if(trans.type!=TRADE_TRANSACTION_DEAL_ADD||trans.deal==0)return;
    if(!HistoryDealSelect(trans.deal))return;
-   if((long)HistoryDealGetInteger(trans.deal,DEAL_MAGIC)!=POWERFULL_MAGIC)return;
+   long dealMagic=(long)HistoryDealGetInteger(trans.deal,DEAL_MAGIC);
+   ulong positionId=(ulong)HistoryDealGetInteger(trans.deal,DEAL_POSITION_ID);
+   bool trackedPowerfullPosition=GlobalVariableCheck("PW_SID_"+(string)positionId);
+   // Accept a non-EA deal magic only for a position previously linked to
+   // POWERFULL. This captures manual exits without admitting unrelated trades.
+   if(dealMagic!=POWERFULL_MAGIC&&!trackedPowerfullPosition)return;
    powerSessionRefresh();
    powerAppendDealRecord(trans.deal);
-   powerCaptureEntryCandle(trans.deal); // Post-confirmation diagnostics; never gates or delays an order.
+   if(dealMagic==POWERFULL_MAGIC)
+      powerCaptureEntryCandle(trans.deal); // Entry diagnostics only; never gates or delays an order.
 }
 
 
