@@ -3475,7 +3475,8 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
             " pullback_ticks=",DoubleToString(pullbackTicks,1),
             " loss_progress=",DoubleToString(lossProgress*100.0,1),"% ",
             " m5_structure=",m5Structure," m15_structure=",m15Structure,
-            " live_m5_extreme_pressure=",liveExtremePressure,\n            " m5_break=",m5Break," m15_break=",m15Break,
+            " live_m5_extreme_pressure=",liveExtremePressure,
+            " m5_break=",m5Break," m15_break=",m15Break,
             " adverse_ticks=",adverseTicks," decision=",eventName);
          powerWriteLossRescueLog(ticket,symbol,isBuy,net,peakNet,peakPrice,executable,
                                   pullbackTicks,adverseTicks,eventName);
