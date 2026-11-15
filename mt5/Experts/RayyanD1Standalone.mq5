@@ -823,10 +823,10 @@ void powerDashboardRefresh(bool force=false){
 
    powerDashboardBox(RAYYAN_DASH_PREFIX+"PROFITBOX",18,270,138,43,C'24,61,51',C'52,125,94');
    powerDashboardBox(RAYYAN_DASH_PREFIX+"LOSSVALBOX",164,270,136,43,C'69,39,45',C'143,69,78');
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PROFIT","CLOSED SESSION PROFIT",27,277,C'185,220,200',8);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PROFITVAL",DoubleToString(totalProfit,2),27,291,bull,12);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSS","TOTAL LOSS",173,277,C'230,190,195',8);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSSVAL",DoubleToString(totalLoss,2),173,291,bear,11);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PROFIT","TOTAL PROFIT",27,277,C'185,220,200',9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PROFITVAL",DoubleToString(totalProfit,2),27,291,bull,13);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSS","TOTAL LOSS",173,277,C'230,190,195',9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSSVAL",DoubleToString(totalLoss,2),173,291,bear,13);
 
    string btn=RAYYAN_DASH_PREFIX+"REFRESH";
    if(ObjectFind(0,btn)<0)ObjectCreate(0,btn,OBJ_BUTTON,0,0,0);
@@ -981,7 +981,11 @@ void OnTick(){
 }
 
 void OnTimer(){
-   if(StandaloneD1Mode){ updateHarmonicOverlay(); updateFibo(); powerSessionRefresh(); powerDashboardRefresh(false); managePowerfullAllMarkets(false); return; }
+   if(StandaloneD1Mode){
+      updateChartCountdown(); // Display-only candle timer; never gates trade management.
+      updateHarmonicOverlay(); updateFibo(); powerSessionRefresh();
+      powerDashboardRefresh(false); managePowerfullAllMarkets(false); return;
+   }
    // Fast quote path: publish changed MT5 ticks without waiting for the OHLC batch.
    // The publisher throttles requests and sends only symbols whose tick changed.
    uint nowMs=GetTickCount();
@@ -1310,12 +1314,13 @@ void updateChartCountdown(){
       if(!ObjectCreate(0,name,OBJ_LABEL,0,0,0)){
          Print("RAYYAN TIMER CREATE FAILED err=",GetLastError()); return;
       }
-      ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_RIGHT_UPPER);
-      ObjectSetInteger(0,name,OBJPROP_ANCHOR,ANCHOR_RIGHT_UPPER);
-      ObjectSetInteger(0,name,OBJPROP_XDISTANCE,12);
-      ObjectSetInteger(0,name,OBJPROP_YDISTANCE,20);
+      ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_LEFT_LOWER);
+      ObjectSetInteger(0,name,OBJPROP_ANCHOR,ANCHOR_LEFT_LOWER);
+      ObjectSetInteger(0,name,OBJPROP_XDISTANCE,18);
+      ObjectSetInteger(0,name,OBJPROP_YDISTANCE,18);
       ObjectSetInteger(0,name,OBJPROP_COLOR,clrWhite);
       ObjectSetInteger(0,name,OBJPROP_FONTSIZE,10);
+      ObjectSetInteger(0,name,OBJPROP_ZORDER,10040);
       ObjectSetString(0,name,OBJPROP_FONT,"Arial");
       ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
       ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
