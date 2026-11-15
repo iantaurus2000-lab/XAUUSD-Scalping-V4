@@ -67,8 +67,6 @@ input int PowerfullFridayCloseMinute=30;
 #define POWERFULL_MAGIC 4104451
 #define POWERFULL_MODE_TREND_HOLD 1
 #define POWERFULL_MODE_LOSS_RESCUE 2
-#define POWERFULL_MIN_TREND_HOLD_SECONDS (3*5*60)
-#define POWERFULL_LOSS_RESCUE_ARM_SECONDS (3*5*60)
 #define POWERFULL_HISTORY_LIMIT 105120
 #define POWERFULL_CONFIG_TIMEOUT_MS 300
 #define POWERFULL_STATUS_TIMEOUT_MS 100
@@ -3282,8 +3280,8 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
                                              tick.ask>liveM5[0].open+tickSize*2.0));
       bool m5Against=(m5LiveAgainst||m5Structure==-side);
       bool m15Against=(m15Structure==-side);
-      bool m5Break=powerA6StructureBreak(symbol,PERIOD_M5,isBuy,12);
-      bool m15Break=powerA6StructureBreak(symbol,PERIOD_M15,isBuy,8);
+      bool m5Break=(isBuy?m5BreakBuy:m5BreakSell);
+      bool m15Break=(isBuy?m15BreakBuy:m15BreakSell);
       bool structuralInvalidation=(m5Break&&(m15Break||m15Against));
       bool structuralRecovery=(m5Structure==side&&m15Structure==side&&!m5LiveAgainst);
       string adverseKey="PW_LR_ADVERSE_TICKS_"+suffix;
@@ -3443,6 +3441,12 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
    ArraySetAsSeries(liveM5,true); ArraySetAsSeries(liveM15,true);
    bool haveM5=(CopyRates(symbol,PERIOD_M5,0,1,liveM5)==1);
    bool haveM15=(CopyRates(symbol,PERIOD_M15,0,1,liveM15)==1);
+   int m5StructureNow=powerConfirmedSwingStructure(symbol,PERIOD_M5);
+   int m15StructureNow=powerConfirmedSwingStructure(symbol,PERIOD_M15);
+   bool m5BreakBuy=powerA6StructureBreak(symbol,PERIOD_M5,true,12);
+   bool m5BreakSell=powerA6StructureBreak(symbol,PERIOD_M5,false,12);
+   bool m15BreakBuy=powerA6StructureBreak(symbol,PERIOD_M15,true,8);
+   bool m15BreakSell=powerA6StructureBreak(symbol,PERIOD_M15,false,8);
    for(int i=PositionsTotal()-1;i>=0;i--){
       ulong ticket=PositionGetTicket(i);
       if(ticket==0||!PositionSelectByTicket(ticket)||PositionGetString(POSITION_SYMBOL)!=symbol||
@@ -3474,8 +3478,8 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       int mode=(GlobalVariableCheck(modeKey)?(int)GlobalVariableGet(modeKey):0);
       int side=(isBuy?1:-1);
       int structure=consensusStructure; // H1/H4 macro consensus.
-      int m5Structure=powerConfirmedSwingStructure(symbol,PERIOD_M5);
-      int m15Structure=powerConfirmedSwingStructure(symbol,PERIOD_M15);
+      int m5Structure=m5StructureNow;
+      int m15Structure=m15StructureNow;
       bool m5LiveAgainst=(haveM5&&(isBuy?tick.bid<liveM5[0].open-ts*2.0:
                                              tick.ask>liveM5[0].open+ts*2.0));
       bool m5Against=(m5LiveAgainst||m5Structure==-side);
