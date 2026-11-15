@@ -346,17 +346,23 @@ string powerReportSide(ENUM_DEAL_TYPE type){
 }
 void powerAppendDealRecord(ulong deal){
    if(deal==0||!HistoryDealSelect(deal))return;
-   if((long)HistoryDealGetInteger(deal,DEAL_MAGIC)!=POWERFULL_MAGIC)return;
+   long dealMagic=(long)HistoryDealGetInteger(deal,DEAL_MAGIC);
    ulong positionId=(ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID);
    string dealSessionFolder=powerSessionFolderForPosition(positionId);
+   // Entry must come from POWERFULL; after its position ID is linked to a
+   // POWERFULL session, later manual exits are included regardless of deal magic.
+   if(dealMagic!=POWERFULL_MAGIC&&dealSessionFolder=="")return;
    if(powerSessionDealSeen(deal))return;
    ENUM_DEAL_ENTRY dealEntry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
    if(dealEntry==DEAL_ENTRY_IN||dealEntry==DEAL_ENTRY_INOUT){
-      if(!powerSessionActive)return;
-      GlobalVariableSet("PW_SID_"+(string)positionId,(double)powerSessionStart);
-      dealSessionFolder=powerSessionFolder;
+      if(dealSessionFolder==""){
+         if(dealMagic!=POWERFULL_MAGIC||!powerSessionActive)return;
+         GlobalVariableSet("PW_SID_"+(string)positionId,(double)powerSessionStart);
+         dealSessionFolder=powerSessionFolder;
+      }
+      // Preserve an existing position's original ON/OFF session mapping.
    }else if(dealSessionFolder=="")return;
-   ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
+   ENUM_DEAL_ENTRY entry=dealEntry;
    ENUM_DEAL_TYPE type=(ENUM_DEAL_TYPE)HistoryDealGetInteger(deal,DEAL_TYPE);
    datetime when=(datetime)HistoryDealGetInteger(deal,DEAL_TIME);
    string symbol=HistoryDealGetString(deal,DEAL_SYMBOL);
@@ -383,7 +389,7 @@ void powerAppendDealRecord(ulong deal){
    if(FileSize(h)==0)
       FileWrite(h,"time","deal_ticket","position_id","symbol","entry_type","side","volume","price",
                 "sl_points_setting","sl_price_distance","actual_sl_price","sl_state",
-                "deal_profit","swap","commission","fee","net","reason","comment");
+                "deal_profit","swap","commission","fee","net","reason","comment","deal_magic");
    FileSeek(h,0,SEEK_END);
    ulong rowStartSize=FileSize(h);
    double profit=HistoryDealGetDouble(deal,DEAL_PROFIT);
@@ -400,7 +406,7 @@ void powerAppendDealRecord(ulong deal){
       DoubleToString(commission,2),DoubleToString(fee,2),
       DoubleToString(profit+swap+commission+fee,2),
       EnumToString((ENUM_DEAL_REASON)HistoryDealGetInteger(deal,DEAL_REASON)),
-      HistoryDealGetString(deal,DEAL_COMMENT));
+      HistoryDealGetString(deal,DEAL_COMMENT),(string)dealMagic);
    FileFlush(h);
    bool rowSaved=(rowWritten>0&&FileSize(h)>rowStartSize);
    FileClose(h);
@@ -408,20 +414,12 @@ void powerAppendDealRecord(ulong deal){
       Print("POWERFULL REPORT CSV WRITE FAILED deal=",deal," file=",powerSessionLossPath(positionId));
       return;
    }
-   // Mark only after the row was flushed. Failed writes can be retried.
    powerSessionMarkDealSeen(deal);
-   int statsSymbolIndex=-1;for(int si=0;si<ArraySize(powerSymbols);si++)if(powerSymbols[si]==symbol){statsSymbolIndex=si;break;}
+   int statsSymbolIndex=-1;
+   for(int si=0;si<ArraySize(powerSymbols);si++)if(powerSymbols[si]==symbol){statsSymbolIndex=si;break;}
    if(statsSymbolIndex>=0)powerDashboardStatsCalcMs[statsSymbolIndex]=0;
    powerRefreshAnalysisReports();
    if(entry==DEAL_ENTRY_OUT||entry==DEAL_ENTRY_OUT_BY||entry==DEAL_ENTRY_INOUT){
-      bool stillOpen=false;
-      for(int q=PositionsTotal()-1;q>=0;q--){
-         ulong qt=PositionGetTicket(q);
-         if(qt>0&&PositionSelectByTicket(qt)&&
-            (ulong)PositionGetInteger(POSITION_IDENTIFIER)==positionId&&
-            (long)PositionGetInteger(POSITION_MAGIC)==POWERFULL_MAGIC){stillOpen=true;break;}
-      }
-      // Preserve original session mapping for late close deals and report refreshes.
       if(dealSessionFolder!="")powerSessionWriteOpenPositions(dealSessionFolder);
    }
 }
@@ -440,10 +438,13 @@ void powerWriteAnalysisReport(string targetPath,datetime sessionStart){
    string rows="";
    for(int i=0;i<HistoryDealsTotal();i++){
       ulong deal=HistoryDealGetTicket(i);
-      if(deal==0||(long)HistoryDealGetInteger(deal,DEAL_MAGIC)!=POWERFULL_MAGIC)continue;
+      if(deal==0)continue;
       ulong positionId=(ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID);
-      if(sessionStart>0){string sk="PW_SID_"+(string)positionId;
-         if(!GlobalVariableCheck(sk)||(datetime)GlobalVariableGet(sk)!=sessionStart)continue;}
+      string sessionKey="PW_SID_"+(string)positionId;
+      bool trackedPosition=GlobalVariableCheck(sessionKey);
+      long dealMagic=(long)HistoryDealGetInteger(deal,DEAL_MAGIC);
+      if(dealMagic!=POWERFULL_MAGIC&&!trackedPosition)continue;
+      if(sessionStart>0&&(!trackedPosition||(datetime)GlobalVariableGet(sessionKey)!=sessionStart))continue;
       string symbol=HistoryDealGetString(deal,DEAL_SYMBOL);
       ENUM_DEAL_ENTRY en=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
       ENUM_DEAL_TYPE side=(ENUM_DEAL_TYPE)HistoryDealGetInteger(deal,DEAL_TYPE);
@@ -698,10 +699,11 @@ void powerDashboardStats(string symbol,int &entries,int &wins,int &losses,double
    ulong positionIds[];double positionNet[];bool positionHasExit[],positionStillOpen[];
    for(int i=0;i<HistoryDealsTotal();i++){
       ulong deal=HistoryDealGetTicket(i);
-      if(deal==0||(long)HistoryDealGetInteger(deal,DEAL_MAGIC)!=POWERFULL_MAGIC||
-         HistoryDealGetString(deal,DEAL_SYMBOL)!=symbol)continue;
-      ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
+      if(deal==0||HistoryDealGetString(deal,DEAL_SYMBOL)!=symbol)continue;
       ulong pid=(ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID);
+      string sessionKey="PW_SID_"+(string)pid;
+      if(!GlobalVariableCheck(sessionKey)||(datetime)GlobalVariableGet(sessionKey)!=powerSessionStart)continue;
+      ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
       int idx=-1;for(int p=0;p<ArraySize(positionIds);p++)if(positionIds[p]==pid){idx=p;break;}
       if(idx<0){idx=ArraySize(positionIds);ArrayResize(positionIds,idx+1);ArrayResize(positionNet,idx+1);
          ArrayResize(positionHasExit,idx+1);ArrayResize(positionStillOpen,idx+1);
@@ -866,7 +868,7 @@ void powerDashboardRefresh(bool force=false){
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"FLOATVALUE",
       (floatingNet>=0?"+":"")+DoubleToString(floatingNet,2),27,445,
       (floatingNet>0?bull:(floatingNet<0?bear:neutral)),17);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PEAKHEAD","PEAK NET",182,433,C'220,225,235',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PEAKHEAD","SUM OF TICKET PEAKS",182,433,C'220,225,235',8);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"PEAKVALUE",
       (peakFloatingNet>=0?"+":"")+DoubleToString(peakFloatingNet,2),182,447,
       (peakFloatingNet>0?bull:(peakFloatingNet<0?bear:neutral)),13);
