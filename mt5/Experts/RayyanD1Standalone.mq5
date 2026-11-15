@@ -2833,19 +2833,15 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    int entryM15=powerConfirmedSwingStructure(symbol,PERIOD_M15);
    int entryH1Swing=powerConfirmedSwingStructure(symbol,PERIOD_H1);
    int entryH1Live=powerLiveCandleDirection(symbol,PERIOD_H1);
+   // H1 doji is neutral, not an entry blocker. A coloured H1 candle must
+   // agree with the requested side; neutral H1 allows the M5 extreme signal.
    int entryDirection=entryH1Live;
-   if(entryDirection==0){
-      powerPublishState(index,"D1_WAIT_H1_LIVE_DIRECTION",
-         "Entry paused: live H1 candle is doji/unavailable; H1 swing context="+
-         IntegerToString(entryH1Swing)+" M15 context="+IntegerToString(entryM15),barTime);
-      return;
-   }
    string m15Context=(entryM15==entryDirection?"M15 aligned":
                       (entryM15==-entryDirection?"M15 pullback/opposing warning":"M15 neutral"));
    string h1SwingContext=(entryH1Swing==entryDirection?"H1 swing aligned":
                           (entryH1Swing==-entryDirection?"H1 swing opposing context":"H1 swing neutral"));
    Print("D1 ENTRY BIAS symbol=",symbol,
-         " H1_LIVE=",entryDirection>0?"BULLISH":"BEARISH",
+         " H1_LIVE=",entryDirection>0?"BULLISH":(entryDirection<0?"BEARISH":"DOJI_NEUTRAL"),
          " H1_SWING=",entryH1Swing," (",h1SwingContext,")",
          " M15_SWING=",entryM15," (",m15Context,")",
          " action=H1_live_primary_H1_swing_context_only_M15_nonblocking_M5_extreme_timing");
@@ -2903,9 +2899,9 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    // Entry is triggered by the first observable weakening from the live wick tip.
    // No tick-pattern, two-sided Bid/Ask confirmation, or timed waiting is required.
    bool sellFresh=(powerMomentumLastSellHigh[index]<=0.0||
-                   candleHigh>=powerMomentumLastSellHigh[index]+ts);
+                   candleHigh>powerMomentumLastSellHigh[index]);
    bool buyFresh=(powerMomentumLastBuyLow[index]<=0.0||
-                  candleLow<=powerMomentumLastBuyLow[index]-ts);
+                  candleLow<powerMomentumLastBuyLow[index]);
 
    double upperWick=candleHigh-MathMax(candleOpen,tick.bid);
    double lowerWick=MathMin(candleOpen,tick.bid)-candleLow;
@@ -2923,26 +2919,18 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    bool candleRed=(tick.bid<candleOpen);
    bool candleGreen=(tick.bid>candleOpen);
 
-   // Open-to-extreme distance is measured from the actual current M5 Open.
-   // There is NO 70% threshold: any valid live extreme can qualify.
-   // Keep the entry in the outer wick zone, then act on the first one-tick
-   // Bid retreat from the tip; do not wait for Ask or a tick-reversal pattern.
-   const double D1_EXTREME_BUY_BID_EDGE=0.15;
-   const double D1_EXTREME_BUY_ASK_EDGE=0.20;
-   const double D1_EXTREME_SELL_BID_EDGE=0.85;
-   const double D1_EXTREME_SELL_ASK_EDGE=0.80;
-   bool buyExtremeDistribution=(bidLocation<=D1_EXTREME_BUY_BID_EDGE&&
-                                askLocation<=D1_EXTREME_BUY_ASK_EDGE);
-   bool sellExtremeDistribution=(bidLocation>=D1_EXTREME_SELL_BID_EDGE&&
-                                 askLocation>=D1_EXTREME_SELL_ASK_EDGE);
+   // Entry is anchored to the actual M5 Open and the live Low/High extreme.
+   // No percentage-distribution threshold and no fixed tick-distance threshold.
+   // A first observable retreat from the wick tip is sufficient confirmation.
    bool buyCandleStructure=candleRed;
    bool sellCandleStructure=candleGreen;
-   double weakeningDistance=ts;
-   bool buyExtremeWeakening=(buyBidRecovery>=weakeningDistance);
-   bool sellExtremeWeakening=(sellBidRetreat>=weakeningDistance);
-   bool buyReady=(entryDirection>0&&buyFresh&&buyExtremeDistribution&&buyCandleStructure&&
+   bool buyExtremeWeakening=(buyBidRecovery>0.0);
+   bool sellExtremeWeakening=(sellBidRetreat>0.0);
+   bool buyH1Aligned=(entryDirection>=0);
+   bool sellH1Aligned=(entryDirection<=0);
+   bool buyReady=(buyH1Aligned&&buyFresh&&buyCandleStructure&&
                   buyExtremeWeakening&&buyN<cap);
-   bool sellReady=(entryDirection<0&&sellFresh&&sellExtremeDistribution&&sellCandleStructure&&
+   bool sellReady=(sellH1Aligned&&sellFresh&&sellCandleStructure&&
                    sellExtremeWeakening&&sellN<cap);
    double buyScore=buyOpenExtension+lowerWick/range+
                    buyBidRecovery/range+buyAskRecovery/range;
@@ -2963,9 +2951,9 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
          " | SELL pullback diagnostic B/A="+DoubleToString(sellBidRetreat/range*100.0,1)+"/"+
             DoubleToString(sellAskRetreat/range*100.0,1)+"%"+
          " | M5 colour gate=BUY RED/SELL GREEN"+
-         " | extreme weakening BUY="+DoubleToString(buyBidRecovery/ts,1)+
-            "t SELL="+DoubleToString(sellBidRetreat/ts,1)+"t (need 1 Bid tick)"+
-         " | rubberStretch=70% first-layer-only; continuation=new-extreme+BidAsk-edge"+
+         " | extreme retreat BUY="+(buyExtremeWeakening?"YES":"NO")+
+            " SELL="+(sellExtremeWeakening?"YES":"NO")+
+         " | entry rule=actual M5 Open-to-Low/High extreme; continuation=strictly newer extreme"+
          " | spread(info)="+DoubleToString((tick.ask-tick.bid)/ts,1)+"t"+
          " | layers="+IntegerToString(total)+"/"+IntegerToString(cap),barTime);
       return;
