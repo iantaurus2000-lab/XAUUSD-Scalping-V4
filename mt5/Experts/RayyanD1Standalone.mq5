@@ -3643,6 +3643,26 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       bool m5Break=(isBuy?m5BreakBuy:m5BreakSell);
       bool m15Break=(isBuy?m15BreakBuy:m15BreakSell);
       double lossProgress=(hard>0.0?MathMax(0.0,adverse)/hard:0.0);
+
+      // PEAK PROFIT GUARD: protect every position, including TREND_HOLD.
+      // A fresh favorable extreme updates peakNet above before this test, so
+      // renewed trend strength automatically resets the drawdown calculation.
+      // Exit only after >=45% net-profit giveback AND live/structural weakening.
+      double peakGiveback=(peakNet>0.0?MathMax(0.0,(peakNet-currentNet)/peakNet):0.0);
+      bool trendWeakening=(m5Against&&(m5Break||m15Against||m15Break));
+      bool peakProfitGuard=(peakNet>0.0&&peakGiveback>=0.45&&trendWeakening);
+      if(peakProfitGuard){
+         Print("POWERFULL PEAK PROFIT GUARD symbol=",symbol," ticket=",ticket,
+            " peak_net=",DoubleToString(peakNet,2),
+            " current_net=",DoubleToString(currentNet,2),
+            " giveback=",DoubleToString(peakGiveback*100.0,1),"% ",
+            " m5_structure=",m5Structure," m15_structure=",m15Structure,
+            " m5_break=",m5Break," m15_break=",m15Break,
+            " action=CLOSE_PROTECT_REMAINING_PROFIT");
+         if(powerClosePosition(ticket,"PEAK_PROFIT_GUARD_45PCT_TREND_WEAKENING"))continue;
+         Print("POWERFULL PEAK PROFIT GUARD CLOSE FAILED symbol=",symbol," ticket=",ticket);
+      }
+
       // Early warning: M5 pressure plus M15 confirmation or rising SL exposure.
       // H1/H4 remains macro context and cannot veto a clear local risk signal.
       bool localRisk=(m5Against&&(m15Against||m15Break||lossProgress>=0.25))||
