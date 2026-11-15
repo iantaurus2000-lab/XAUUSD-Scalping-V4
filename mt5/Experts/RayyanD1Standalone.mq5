@@ -3600,6 +3600,13 @@ void managePowerfullSymbol(int index){
                         " ms; server SL stays active and new actions wait for a fresh tick",0);
       return;
    }
+   // This EA services several symbols from one chart's OnTick. Do not rerun
+   // history/position management for a symbol if its executable quote did
+   // not change; every changed Bid/Ask snapshot still passes immediately.
+   double quoteTickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+   if(powerLastTickMs[index]>0&&quoteTickSize>0.0&&
+      MathAbs(tick.bid-powerLastBid[index])<quoteTickSize*0.1&&
+      MathAbs(tick.ask-powerLastAsk[index])<quoteTickSize*0.1)return;
    // Prefer MT5's current M5 candle, but never let missing OHLC history or APK chart
    // freshness block D1. Maintain a fallback candle directly from this symbol's live ticks.
    datetime tickTime=(datetime)(tick.time_msc/1000);
