@@ -751,7 +751,7 @@ void powerDashboardOpenPositions(string symbol,color bull,color bear,color neutr
       ENUM_POSITION_TYPE side=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
       double volume=PositionGetDouble(POSITION_VOLUME);
       double entry=PositionGetDouble(POSITION_PRICE_OPEN);
-      double net=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
+      double net=PositionGetDouble(POSITION_PROFIT); // Match MT5 Trade-tab Profit column exactly.
       string sideText=(side==POSITION_TYPE_BUY?"↑ BUY":"↓ SELL");
       string line=sideText+"  "+DoubleToString(volume,2)+"  @ "+DoubleToString(entry,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))+
                   "   "+(net>=0?"+":"")+DoubleToString(net,2);
@@ -765,7 +765,7 @@ void powerDashboardOpenPositions(string symbol,color bull,color bear,color neutr
 void powerDashboardRefresh(bool force=false){
    if(!StandaloneD1Mode)return;
    uint now=GetTickCount();
-   if(!force&&powerDashboardLastMs>0&&(uint)(now-powerDashboardLastMs)<100)return;
+   if(!force&&powerDashboardLastMs>0&&(uint)(now-powerDashboardLastMs)<50)return;
    powerDashboardLastMs=now;
    string symbol=(StringLen(StandaloneSymbol)>0?StandaloneSymbol:_Symbol);
    bool algoOn=powerAlgoTradingEnabled();
@@ -853,9 +853,9 @@ void powerDashboardRefresh(bool force=false){
       if((long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
       if(PositionGetString(POSITION_SYMBOL)!=symbol)continue;
       openLayers++;
-      // Keep dashboard refresh lightweight (100 ms cadence): live broker
-      // floating P/L is displayed directly; fee-adjusted net remains in logs/reports.
-      floatingNet+=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
+      // Dashboard values are read live; refresh throttle is 50 ms on ticks and 100 ms on timer.
+      // Swap/commission remain separate from the MT5 Profit field and report net.
+      floatingNet+=PositionGetDouble(POSITION_PROFIT); // Exact MT5 Trade-tab Profit field.
       string peakKey="PW_PEAK_NET_"+IntegerToString((long)ticket);
       if(GlobalVariableCheck(peakKey))peakFloatingNet+=GlobalVariableGet(peakKey);
    }
