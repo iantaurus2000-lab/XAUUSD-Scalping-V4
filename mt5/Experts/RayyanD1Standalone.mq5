@@ -417,7 +417,10 @@ void powerAppendDealRecord(ulong deal){
    powerSessionMarkDealSeen(deal);
    int statsSymbolIndex=-1;
    for(int si=0;si<ArraySize(powerSymbols);si++)if(powerSymbols[si]==symbol){statsSymbolIndex=si;break;}
-   if(statsSymbolIndex>=0)powerDashboardStatsCalcMs[statsSymbolIndex]=0;
+   if(statsSymbolIndex>=0){
+      powerDashboardStatsCalcMs[statsSymbolIndex]=0;
+      powerStatsCalcMs[statsSymbolIndex]=0;
+   }
    powerRefreshAnalysisReports();
    if(entry==DEAL_ENTRY_OUT||entry==DEAL_ENTRY_OUT_BY||entry==DEAL_ENTRY_INOUT){
       if(dealSessionFolder!="")powerSessionWriteOpenPositions(dealSessionFolder);
@@ -3087,23 +3090,37 @@ void powerClosedDealStats(string symbol,int &wins,int &losses,int &closed){
       wins=powerStatsWins[idx];losses=powerStatsLosses[idx];closed=powerStatsClosed[idx];return;
    }
    wins=0;losses=0;closed=0;
-   datetime to=TimeCurrent();
-   datetime from=to-30*86400;
+   datetime to=TimeCurrent(),from=to-30*86400;
    if(!HistorySelect(from,to))return;
-   for(int i=HistoryDealsTotal()-1;i>=0;i--){
-      ulong deal=HistoryDealGetTicket(i);
-      if(deal==0)continue;
-      if((long)HistoryDealGetInteger(deal,DEAL_MAGIC)!=POWERFULL_MAGIC)continue;
+   ulong positionIds[];double positionNet[];bool positionHasExit[],positionStillOpen[];
+   for(int i=0;i<HistoryDealsTotal();i++){
+      ulong deal=HistoryDealGetTicket(i);if(deal==0)continue;
       if(HistoryDealGetString(deal,DEAL_SYMBOL)!=symbol)continue;
+      ulong pid=(ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID);
+      string sessionKey="PW_SID_"+(string)pid;
+      bool tracked=GlobalVariableCheck(sessionKey);
+      long dealMagic=(long)HistoryDealGetInteger(deal,DEAL_MAGIC);
+      if(dealMagic!=POWERFULL_MAGIC&&!tracked)continue;
+      int pidx=-1;for(int p=0;p<ArraySize(positionIds);p++)if(positionIds[p]==pid){pidx=p;break;}
+      if(pidx<0){pidx=ArraySize(positionIds);ArrayResize(positionIds,pidx+1);ArrayResize(positionNet,pidx+1);
+         ArrayResize(positionHasExit,pidx+1);ArrayResize(positionStillOpen,pidx+1);
+         positionIds[pidx]=pid;positionNet[pidx]=0.0;positionHasExit[pidx]=false;positionStillOpen[pidx]=false;}
+      positionNet[pidx]+=HistoryDealGetDouble(deal,DEAL_PROFIT)+HistoryDealGetDouble(deal,DEAL_SWAP)+
+                         HistoryDealGetDouble(deal,DEAL_COMMISSION)+HistoryDealGetDouble(deal,DEAL_FEE);
       ENUM_DEAL_ENTRY entry=(ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal,DEAL_ENTRY);
-      if(entry!=DEAL_ENTRY_OUT&&entry!=DEAL_ENTRY_OUT_BY)continue;
-      double net=HistoryDealGetDouble(deal,DEAL_PROFIT)+HistoryDealGetDouble(deal,DEAL_SWAP)+
-                 HistoryDealGetDouble(deal,DEAL_COMMISSION)+HistoryDealGetDouble(deal,DEAL_FEE);
-      if(net>0.0)wins++;
-      else if(net<0.0)losses++;
+      if(entry==DEAL_ENTRY_OUT||entry==DEAL_ENTRY_OUT_BY||entry==DEAL_ENTRY_INOUT)
+         positionHasExit[pidx]=true;
    }
+   for(int p=PositionsTotal()-1;p>=0;p--){ulong ticket=PositionGetTicket(p);
+      if(ticket==0||!PositionSelectByTicket(ticket)||(long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC||
+         PositionGetString(POSITION_SYMBOL)!=symbol)continue;
+      ulong pid=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      for(int q=0;q<ArraySize(positionIds);q++)if(positionIds[q]==pid){positionStillOpen[q]=true;break;}}
+   for(int q=0;q<ArraySize(positionIds);q++){if(!positionHasExit[q]||positionStillOpen[q])continue;
+      if(positionNet[q]>0.0)wins++;else if(positionNet[q]<0.0)losses++;}
    closed=wins+losses;
-   if(idx>=0){powerStatsWins[idx]=wins;powerStatsLosses[idx]=losses;powerStatsClosed[idx]=closed;powerStatsCalcMs[idx]=GetTickCount();}
+   if(idx>=0){powerStatsWins[idx]=wins;powerStatsLosses[idx]=losses;powerStatsClosed[idx]=closed;
+      powerStatsCalcMs[idx]=GetTickCount();}
 }
 
 double powerProjectedNet(ulong ticket){
