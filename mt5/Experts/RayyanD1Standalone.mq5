@@ -315,8 +315,11 @@ void powerWriteLossRescueLog(ulong ticket,string symbol,bool isBuy,double net,do
    if(folder=="")return;
    FolderCreate(folder);
    string filePath=folder+"\\LOSS_RESCUE_MONITOR_V2.csv";
+   bool monitorFileExists=FileIsExist(filePath);
    int h=FileOpen(filePath,FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,';');
-   if(h==INVALID_HANDLE)
+   // FILE_WRITE truncates an existing file. Use it only to create a new log;
+   // never fall back to it when an existing monitor file cannot be opened.
+   if(h==INVALID_HANDLE&&!monitorFileExists)
       h=FileOpen(filePath,FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,';');
    if(h==INVALID_HANDLE){
       Print("POWERFULL LOSS_RESCUE LOG OPEN FAILED path=",filePath," err=",GetLastError());
