@@ -324,7 +324,7 @@ void powerWriteLossRescueLog(ulong ticket,string symbol,bool isBuy,double net,do
    }
    if(FileSize(h)==0)
       FileWrite(h,"time","symbol","ticket","position_id","side","volume","entry_price",
-         "market_price","current_net","peak_net_since_entry","giveback_from_peak",
+         "market_price","projected_net","peak_net_tracked","giveback_from_peak",
          "peak_pullback_ticks","adverse_tick_count","mode","event");
    FileSeek(h,0,SEEK_END);
    int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
@@ -3391,7 +3391,7 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       string modeKey="PW_HMODE_"+suffix,adverseKey="PW_LR_ADVERSE_TICKS_"+suffix;
       int mode=(GlobalVariableCheck(modeKey)?(int)GlobalVariableGet(modeKey):0);
       int side=(isBuy?1:-1);
-      int structure=(consensusStructure==0?0:(isBuy?consensusStructure:-consensusStructure));
+      int structure=consensusStructure; // Native market direction: +1 bullish, -1 bearish.
       if(mode==POWERFULL_MODE_LOSS_RESCUE){
          if(structure==side){
             GlobalVariableSet(modeKey,(double)POWERFULL_MODE_TREND_HOLD);
