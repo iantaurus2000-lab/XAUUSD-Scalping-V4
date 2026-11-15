@@ -3486,8 +3486,8 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       bool m15Against=(m15Structure==-side||
                        (haveM15&&(isBuy?tick.bid<liveM15[0].open-ts*2.0:
                                               tick.ask>liveM15[0].open+ts*2.0)));
-      bool m5Break=powerA6StructureBreak(symbol,PERIOD_M5,isBuy,12);
-      bool m15Break=powerA6StructureBreak(symbol,PERIOD_M15,isBuy,8);
+      bool m5Break=(isBuy?m5BreakBuy:m5BreakSell);
+      bool m15Break=(isBuy?m15BreakBuy:m15BreakSell);
       double lossProgress=(hard>0.0?MathMax(0.0,adverse)/hard:0.0);
       // Early warning: M5 pressure plus M15 confirmation or rising SL exposure.
       // H1/H4 remains macro context and cannot veto a clear local risk signal.
