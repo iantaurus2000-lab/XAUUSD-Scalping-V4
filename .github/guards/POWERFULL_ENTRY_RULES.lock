@@ -1,0 +1,316 @@
+// === BEGIN LOCKED POWERFULL ENTRY RULES: USER AUTHORIZATION REQUIRED FOR ANY CHANGE ===
+void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
+                             double candleOpen,double candleHigh,double candleLow,
+                             double askHigh,double askLow,
+                             bool hasPreviousTick,double previousBid,double previousAsk){
+   if(index<0||index>=ArraySize(powerSymbols))return;
+   string symbol=powerSymbols[index];
+
+   // M5 closing safety window: do not open a new BUY/SELL during the final 40 seconds.
+   // This is a pre-close blackout only; it is NOT a 40-second warm-up after a new bar.
+   long tickSeconds=(long)(tick.time_msc/1000);
+   long candleElapsed=(long)(tickSeconds-(long)barTime);
+   if(barTime>0&&candleElapsed>=260&&candleElapsed<300){
+      powerPublishState(index,"D1_FINAL_40S_NO_ENTRY",
+         "New entries paused during the final 40 seconds of the current M5 candle; existing positions remain managed",barTime);
+      return;
+   }
+
+   if(DemoOnly&&AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO){
+      powerPublishState(index,"BLOCKED_REAL_ACCOUNT",
+         "D1 standalone is restricted to a demo account while DemoOnly=true",barTime);
+      return;
+   }
+
+   double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+   double ts=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+   // Spread is informational only; it is never an entry filter or blocker.
+   if(point<=0.0||ts<=0.0){
+      powerPublishState(index,"D1_WAIT_DATA","Invalid MT5 point/tick geometry",barTime);
+      return;
+   }
+   // The LIVE H1 candle is the primary directional bias for POWERFULL entries.
+   // Confirmed H1 swing is structural context only and must never block entry.
+   // M15 swing is pullback context only and must never veto a valid M5 extreme.
+   int entryM15=powerConfirmedSwingStructure(symbol,PERIOD_M15);
+   int entryH1Swing=powerConfirmedSwingStructure(symbol,PERIOD_H1);
+   int entryH1Live=powerLiveCandleDirection(symbol,PERIOD_H1);
+   // LOCKED POWERFULL RULE: H1 must be coloured and agree with the M5 extreme.
+   // H1 doji/neutral is a hard no-entry state; wait for a green or red H1 candle.
+   int entryDirection=entryH1Live;
+   if(entryDirection==0){
+      powerPublishState(index,"D1_WAIT_H1_COLOUR",
+         "Entry locked: wait for H1 GREEN for BUY or H1 RED for SELL; H1 doji cannot enter",barTime);
+      return;
+   }
+   string m15Context=(entryM15==entryDirection?"M15 aligned":
+                      (entryM15==-entryDirection?"M15 pullback/opposing warning":"M15 neutral"));
+   string h1SwingContext=(entryH1Swing==entryDirection?"H1 swing aligned":
+                          (entryH1Swing==-entryDirection?"H1 swing opposing context":"H1 swing neutral"));
+   Print("D1 ENTRY BIAS symbol=",symbol,
+         " H1_LIVE=",entryDirection>0?"BULLISH":(entryDirection<0?"BEARISH":"DOJI_NEUTRAL"),
+         " H1_SWING=",entryH1Swing," (",h1SwingContext,")",
+         " M15_SWING=",entryM15," (",m15Context,")",
+         " action=H1_live_primary_H1_swing_context_only_M15_nonblocking_M5_extreme_timing");
+   if(!powerCfg[index].usePointStops){
+      powerPublishState(index,"BLOCKED_SL_POINTS","D1 requires BUY/SELL SL points",barTime);
+      return;
+   }
+
+   ENUM_ACCOUNT_MARGIN_MODE mm=(ENUM_ACCOUNT_MARGIN_MODE)AccountInfoInteger(ACCOUNT_MARGIN_MODE);
+   if((mm!=ACCOUNT_MARGIN_MODE_RETAIL_HEDGING||AccountInfoInteger(ACCOUNT_HEDGE_ALLOWED)==0)&&
+      powerCfg[index].maxLayers>1){
+      powerPublishState(index,"BLOCKED_NETTING_ACCOUNT","D1 layers require hedging mode",barTime);
+      return;
+   }
+
+   int total=0,buyN=0,sellN=0;
+   for(int p=PositionsTotal()-1;p>=0;p--){
+      ulong ticket=PositionGetTicket(p);
+      if(ticket==0||PositionGetString(POSITION_SYMBOL)!=symbol||
+         (long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
+      total++;
+      ENUM_POSITION_TYPE ps=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      if(ps==POSITION_TYPE_BUY)buyN++;
+      else if(ps==POSITION_TYPE_SELL)sellN++;
+   }
+
+   int cap=MathMax(1,MathMin(5,powerCfg[index].maxLayers));
+   if(total>=cap){
+      powerPublishState(index,"D1_LAYER_CAP",
+         "Layer cap "+IntegerToString(total)+"/"+IntegerToString(cap),barTime);
+      return;
+   }
+   if(buyN>0&&sellN>0){
+      powerPublishState(index,"D1_MIXED_SIDE_GUARD",
+         "Both directions already exist; no additional entries until the basket is resolved",barTime);
+      return;
+   }
+
+   // No warm-up timer: evaluate the current M5 candle as soon as live OHLC is valid.
+
+   double range=candleHigh-candleLow;
+   if(range<=0.0){
+      powerPublishState(index,"D1_CANDLE_BUILDING",
+         "Waiting for current M5 candle to establish its live High/Low",barTime);
+      return;
+   }
+
+   // Reset only the live candle OHLC measurement at a new M5 bar.
+   // Last successful BUY Low / SELL High remains persistent across candle changes,
+   // so continuation layers require a genuinely newer extreme than the prior fill.
+   // No timer, reversal wait, or tick-count confirmation is used.
+
+   // M5 candle colour is a hard entry condition:
+   // BUY only while the live M5 candle is RED; SELL only while it is GREEN.
+   // Entry is triggered by the first observable weakening from the live wick tip.
+   // No tick-pattern, two-sided Bid/Ask confirmation, or timed waiting is required.
+   bool sellFresh=(powerMomentumLastSellHigh[index]<=0.0||
+                   candleHigh>powerMomentumLastSellHigh[index]);
+   bool buyFresh=(powerMomentumLastBuyLow[index]<=0.0||
+                  candleLow<powerMomentumLastBuyLow[index]);
+
+   double upperWick=candleHigh-MathMax(candleOpen,tick.bid);
+   double lowerWick=MathMin(candleOpen,tick.bid)-candleLow;
+   // Retraction values are diagnostics only; they are NOT entry conditions.
+   double buyBidRecovery=tick.bid-candleLow;
+   double buyAskRecovery=tick.ask-askLow;
+   double sellBidRetreat=candleHigh-tick.bid;
+   double sellAskRetreat=askHigh-tick.ask;
+
+   double buyOpenExtension=(candleOpen-candleLow)/range;
+   double sellOpenExtension=(candleHigh-candleOpen)/range;
+   double bidLocation=(tick.bid-candleLow)/range;
+   double askLocation=(tick.ask-candleLow)/range;
+
+   bool candleRed=(tick.bid<candleOpen);
+   bool candleGreen=(tick.bid>candleOpen);
+
+   // Entry is anchored to the actual M5 Open and the live Low/High extreme.
+   // No percentage-distribution threshold and no fixed tick-distance threshold.
+   // A first observable retreat from the wick tip is sufficient confirmation.
+   bool buyCandleStructure=candleRed;
+   bool sellCandleStructure=candleGreen;
+   bool buyExtremeWeakening=(buyBidRecovery>0.0);
+   bool sellExtremeWeakening=(sellBidRetreat>0.0);
+   bool buyH1Aligned=(entryDirection>0);
+   bool sellH1Aligned=(entryDirection<0);
+   bool buyReady=(buyH1Aligned&&buyFresh&&buyCandleStructure&&
+                  buyExtremeWeakening&&buyN<cap);
+   bool sellReady=(sellH1Aligned&&sellFresh&&sellCandleStructure&&
+                   sellExtremeWeakening&&sellN<cap);
+   double buyScore=buyOpenExtension+lowerWick/range+
+                   buyBidRecovery/range+buyAskRecovery/range;
+   double sellScore=sellOpenExtension+upperWick/range+
+                    sellBidRetreat/range+sellAskRetreat/range;
+   if(!buyReady&&!sellReady){
+      powerPublishState(index,"D1_LIVE_CANDLE_DISTRIBUTION",
+         "M5 live distribution | range="+DoubleToString(range/ts,1)+"t"+
+         " | Open->Low/High="+DoubleToString(buyOpenExtension*100.0,1)+"/"+
+            DoubleToString(sellOpenExtension*100.0,1)+"%"+
+         " | H1 live bias="+(entryDirection>0?"BUY":(entryDirection<0?"SELL":"DOJI_NEUTRAL"))+" | H1 swing context="+IntegerToString(entryH1Swing)+
+          " | Bid/Ask location="+DoubleToString(bidLocation*100.0,1)+"/"+
+            DoubleToString(askLocation*100.0,1)+"%"+
+         " | wick L/U="+DoubleToString(lowerWick/range*100.0,1)+"/"+
+            DoubleToString(upperWick/range*100.0,1)+"%"+
+         " | pullback diagnostic BUY B/A="+DoubleToString(buyBidRecovery/range*100.0,1)+"/"+
+            DoubleToString(buyAskRecovery/range*100.0,1)+"%"+
+         " | SELL pullback diagnostic B/A="+DoubleToString(sellBidRetreat/range*100.0,1)+"/"+
+            DoubleToString(sellAskRetreat/range*100.0,1)+"%"+
+         " | M5 colour gate=BUY RED/SELL GREEN"+
+         " | extreme retreat BUY="+(buyExtremeWeakening?"YES":"NO")+
+            " SELL="+(sellExtremeWeakening?"YES":"NO")+
+         " | entry rule=actual M5 Open-to-Low/High extreme; continuation=strictly newer extreme"+
+         " | spread(info)="+DoubleToString((tick.ask-tick.bid)/ts,1)+"t"+
+         " | layers="+IntegerToString(total)+"/"+IntegerToString(cap),barTime);
+      return;
+   }
+   // Add layers only in the existing basket's direction; no opposite-side hedge.
+   if(buyN>0)sellReady=false;
+   if(sellN>0)buyReady=false;
+   if(!buyReady&&!sellReady)return;
+
+   int side=(buyReady?1:-1);
+   int slPts=(side>0?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
+   double slDist=slPts*point;
+   double minStop=SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL)*point;
+   if(slPts<=0||slDist+1e-10<minStop+ts){
+      powerPublishState(index,"BLOCKED_SL_POINTS","SL below broker stop distance",barTime);
+      return;
+   }
+
+   double lot=powerCfg[index].lot;
+   double minLot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
+   double maxLot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MAX);
+   double step=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+   if(step<=0.0||lot<minLot-1e-8||lot>maxLot+1e-8){
+      powerPublishState(index,"BLOCKED_LOT","Configured lot outside broker limits",barTime);
+      return;
+   }
+
+   // BUY executes at Ask; SELL executes at Bid after the live M5 extreme signal.
+   double px=(side>0?tick.ask:tick.bid);
+   double sl=(side>0?powerFloorToTick(symbol,px-slDist):powerCeilToTick(symbol,px+slDist));
+   ENUM_ORDER_TYPE marginOrderType=(side>0?ORDER_TYPE_BUY:ORDER_TYPE_SELL);
+
+   // Use MT5's full request pre-check instead of OrderCalcMargin's isolated estimate.
+   // OrderCheck evaluates the proposed deal against the account's current positions,
+   // margin and broker request rules; this avoids a false BLOCKED_MARGIN_CALC result.
+   long fillingModes=SymbolInfoInteger(symbol,SYMBOL_FILLING_MODE);
+   long executionMode=SymbolInfoInteger(symbol,SYMBOL_TRADE_EXEMODE);
+   ENUM_ORDER_TYPE_FILLING filling=ORDER_FILLING_RETURN;
+   if((fillingModes&SYMBOL_FILLING_FOK)!=0)
+      filling=ORDER_FILLING_FOK;
+   else if((fillingModes&SYMBOL_FILLING_IOC)!=0)
+      filling=ORDER_FILLING_IOC;
+   else if(executionMode==SYMBOL_TRADE_EXECUTION_MARKET){
+      powerPublishState(index,"BLOCKED_FILLING_MODE","No supported FOK/IOC filling mode for Market Execution",barTime);
+      Print("D1 ORDER CHECK BLOCK symbol=",symbol," reason=NO_SUPPORTED_FILLING_MODE",
+            " filling_modes=",fillingModes," execution_mode=",executionMode);
+      return;
+   }
+
+   MqlTradeRequest marginRequest={};
+   MqlTradeCheckResult marginCheck={};
+   marginRequest.action=TRADE_ACTION_DEAL;
+   marginRequest.magic=POWERFULL_MAGIC;
+   marginRequest.symbol=symbol;
+   marginRequest.volume=lot;
+   marginRequest.type=marginOrderType;
+   marginRequest.price=px;
+   marginRequest.sl=sl;
+   marginRequest.deviation=(ulong)powerCfg[index].deviationPoints;
+   marginRequest.type_filling=filling;
+   marginRequest.type_time=ORDER_TIME_GTC;
+   marginRequest.comment=(side>0?"D1-A5-LIVE-RED-LOW-BUY":"D1-A5-LIVE-GREEN-HIGH-SELL");
+
+   ResetLastError();
+   bool marginCheckOk=OrderCheck(marginRequest,marginCheck);
+   int marginCheckError=GetLastError();
+   if(!marginCheckOk||!MathIsValidNumber(marginCheck.margin_free)||marginCheck.margin_free<0.0){
+      powerPublishState(index,"BLOCKED_INSUFFICIENT_MARGIN",
+         "MT5 OrderCheck rejected the proposed deal or projected free margin is negative",barTime);
+      Print("D1 ORDER CHECK FAILED symbol=",symbol," side=",(side>0?"BUY":"SELL"),
+            " lot=",DoubleToString(lot,2)," price=",DoubleToString(px,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " check_ok=",(marginCheckOk?"true":"false"),
+            " retcode=",marginCheck.retcode,
+            " required_margin=",DoubleToString(marginCheck.margin,2),
+            " projected_free_margin=",DoubleToString(marginCheck.margin_free,2),
+            " projected_equity=",DoubleToString(marginCheck.equity,2),
+            " margin_level=",DoubleToString(marginCheck.margin_level,2),
+            " comment=",marginCheck.comment,
+            " err=",marginCheckError);
+      return;
+   }
+   powerTrade.SetExpertMagicNumber(POWERFULL_MAGIC);
+   powerTrade.SetDeviationInPoints(powerCfg[index].deviationPoints);
+   powerTrade.SetTypeFillingBySymbol(symbol);
+   powerTrade.SetAsyncMode(false);
+   ResetLastError();
+   bool sent=(side>0?
+      powerTrade.Buy(lot,symbol,0.0,sl,0.0,"D1-A5-LIVE-RED-LOW-BUY"):
+      powerTrade.Sell(lot,symbol,0.0,sl,0.0,"D1-A5-LIVE-GREEN-HIGH-SELL"));
+   uint rc=powerTrade.ResultRetcode();
+
+   if(sent&&(rc==TRADE_RETCODE_DONE||rc==TRADE_RETCODE_PLACED||
+             rc==TRADE_RETCODE_DONE_PARTIAL)){
+      // Verify the broker-side SL on the newly opened POWERFULL position.
+      ulong verifiedTicket=0;
+      long newestPositionMs=-1;
+      double actualSL=0.0;
+      for(int p=PositionsTotal()-1;p>=0;p--){
+         ulong pt=PositionGetTicket(p);
+         if(pt==0||!PositionSelectByTicket(pt))continue;
+         if(PositionGetString(POSITION_SYMBOL)!=symbol||
+            (long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
+         ENUM_POSITION_TYPE pside=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+         if((side>0&&pside!=POSITION_TYPE_BUY)||(side<0&&pside!=POSITION_TYPE_SELL))continue;
+         long openedMs=PositionGetInteger(POSITION_TIME_MSC);
+         if(openedMs>=newestPositionMs){
+            newestPositionMs=openedMs;
+            verifiedTicket=pt;
+            actualSL=PositionGetDouble(POSITION_SL);
+         }
+      }
+      if(verifiedTicket>0&&(actualSL<=0.0||MathAbs(actualSL-sl)>ts*0.5)){
+         ResetLastError();
+         bool modified=powerTrade.PositionModify(verifiedTicket,sl,0.0);
+         uint modifyRc=powerTrade.ResultRetcode();
+         if(PositionSelectByTicket(verifiedTicket))actualSL=PositionGetDouble(POSITION_SL);
+         Print("D1 SL VERIFY symbol=",symbol," ticket=",verifiedTicket,
+            " modify=",modified," retcode=",modifyRc,
+            " requestedSL=",DoubleToString(sl,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " actualSL=",DoubleToString(actualSL,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " status=",(actualSL>0.0&&MathAbs(actualSL-sl)<=ts*0.5?"VERIFIED":"CHECK_REQUIRED"),
+            " err=",GetLastError());
+      }else if(verifiedTicket==0){
+         Print("D1 SL VERIFY PENDING symbol=",symbol," side=",(side>0?"BUY":"SELL"),
+               " deal=",powerTrade.ResultDeal()," requestedSL=",
+               DoubleToString(sl,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)));
+      }
+      if(side>0)powerMomentumLastBuyLow[index]=candleLow;
+      else powerMomentumLastSellHigh[index]=candleHigh;
+      powerMomentumLastEntryBar[index]=barTime;
+      Print("D1 A5 LIVE-CANDLE ENTRY OK ",symbol,
+            " side=",(side>0?"BUY_RED_LOW":"SELL_GREEN_HIGH"),
+            " layer=",total+1,"/",cap,
+            " liveRangeTicks=",DoubleToString(range/ts,1),
+            " rubberStretchScore=",DoubleToString(side>0?buyScore:sellScore,3),
+            " Digits=",(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS),
+            " Point=",DoubleToString(point,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)+2),
+            " SL=",slPts," POINT (price distance=",DoubleToString(slDist,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " price=",DoubleToString(sl,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),") retcode=",rc);
+      powerPublishState(index,"D1_95_LIVE_CANDLE_ENTRY_SENT",
+         string(side>0?"BUY on RED candle near Low":"SELL on GREEN candle near High")+
+         " | layer="+IntegerToString(total+1)+"/"+IntegerToString(cap)+
+         " | live M5 range="+DoubleToString(range/ts,1)+" ticks"+
+         " | confirm=correct-M5-colour + first 1-Bid-tick wick weakening",barTime);
+   }else{
+      Print("D1 #95 LIVE-CANDLE ENTRY FAILED ",symbol,
+            " side=",(side>0?"BUY_RED_LOW":"SELL_GREEN_HIGH"),
+            " retcode=",rc," desc=",powerTrade.ResultRetcodeDescription());
+      powerPublishState(index,"D1_95_LIVE_CANDLE_ENTRY_FAILED",
+         powerTrade.ResultRetcodeDescription(),barTime);
+   }
+}
+// === END LOCKED POWERFULL ENTRY RULES ===

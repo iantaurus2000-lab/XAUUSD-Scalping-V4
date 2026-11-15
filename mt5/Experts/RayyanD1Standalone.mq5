@@ -2797,6 +2797,7 @@ bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick
    powerPublishState(index,"PENDING_PLACED",EnumToString(type)+" at projected range level; expires at M5 close",barTime);
    return true;
 }
+// === BEGIN LOCKED POWERFULL ENTRY RULES: USER AUTHORIZATION REQUIRED FOR ANY CHANGE ===
 void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
                              double candleOpen,double candleHigh,double candleLow,
                              double askHigh,double askLow,
@@ -2833,9 +2834,14 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    int entryM15=powerConfirmedSwingStructure(symbol,PERIOD_M15);
    int entryH1Swing=powerConfirmedSwingStructure(symbol,PERIOD_H1);
    int entryH1Live=powerLiveCandleDirection(symbol,PERIOD_H1);
-   // H1 doji is neutral, not an entry blocker. A coloured H1 candle must
-   // agree with the requested side; neutral H1 allows the M5 extreme signal.
+   // LOCKED POWERFULL RULE: H1 must be coloured and agree with the M5 extreme.
+   // H1 doji/neutral is a hard no-entry state; wait for a green or red H1 candle.
    int entryDirection=entryH1Live;
+   if(entryDirection==0){
+      powerPublishState(index,"D1_WAIT_H1_COLOUR",
+         "Entry locked: wait for H1 GREEN for BUY or H1 RED for SELL; H1 doji cannot enter",barTime);
+      return;
+   }
    string m15Context=(entryM15==entryDirection?"M15 aligned":
                       (entryM15==-entryDirection?"M15 pullback/opposing warning":"M15 neutral"));
    string h1SwingContext=(entryH1Swing==entryDirection?"H1 swing aligned":
@@ -2926,8 +2932,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    bool sellCandleStructure=candleGreen;
    bool buyExtremeWeakening=(buyBidRecovery>0.0);
    bool sellExtremeWeakening=(sellBidRetreat>0.0);
-   bool buyH1Aligned=(entryDirection>=0);
-   bool sellH1Aligned=(entryDirection<=0);
+   bool buyH1Aligned=(entryDirection>0);
+   bool sellH1Aligned=(entryDirection<0);
    bool buyReady=(buyH1Aligned&&buyFresh&&buyCandleStructure&&
                   buyExtremeWeakening&&buyN<cap);
    bool sellReady=(sellH1Aligned&&sellFresh&&sellCandleStructure&&
@@ -3106,6 +3112,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
          powerTrade.ResultRetcodeDescription(),barTime);
    }
 }
+// === END LOCKED POWERFULL ENTRY RULES ===
 
 void powerClosedDealStats(string symbol,int &wins,int &losses,int &closed){
    int idx=-1;for(int k=0;k<ArraySize(powerSymbols);k++)if(powerSymbols[k]==symbol){idx=k;break;}

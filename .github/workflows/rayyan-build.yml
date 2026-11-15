@@ -73,6 +73,27 @@ jobs:
         with:
           ref: RAYYAN
 
+      - name: Guard locked POWERFULL entry rules
+        shell: pwsh
+        run: |
+          $source = Get-Content 'mt5/Experts/RayyanD1Standalone.mq5' -Raw
+          $lock = Get-Content '.github/guards/POWERFULL_ENTRY_RULES.lock' -Raw
+          $pattern = '(?s)// === BEGIN LOCKED POWERFULL ENTRY RULES: USER AUTHORIZATION REQUIRED FOR ANY CHANGE ===.*?// === END LOCKED POWERFULL ENTRY RULES ==='
+          $match = [regex]::Match($source, $pattern)
+          if (-not $match.Success) {
+            Write-Warning 'POWERFULL ENTRY RULES LOCK MISSING. Build blocked pending explicit user authorization.'
+            throw 'Locked POWERFULL entry function markers were removed.'
+          }
+          $actual = $match.Value.Replace("`r`n","`n").TrimEnd()
+          $expected = $lock.Replace("`r`n","`n").TrimEnd()
+          if ($actual -cne $expected) {
+            Write-Warning 'LOCKED POWERFULL ENTRY RULES WERE CHANGED OR EXTRA ENTRY CONDITIONS WERE ADDED.'
+            Write-Warning 'BUY=M5 RED extreme Low + H1 GREEN; SELL=M5 GREEN extreme High + H1 RED; H1 doji waits.'
+            Write-Warning 'No new numeric threshold, indicator, distance, or entry filter is authorized.'
+            throw 'Build blocked: explicit user authorization is required before changing locked entry rules.'
+          }
+          Write-Host 'POWERFULL ENTRY RULES LOCK VERIFIED. No unauthorized changes detected.'
+
       - name: Install MetaTrader 5 / MetaEditor
         shell: pwsh
         run: |
