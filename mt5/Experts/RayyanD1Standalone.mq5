@@ -12,7 +12,9 @@ input bool StandaloneD1Mode=true;
 input string StandaloneSymbol="";
 input double StandaloneLot=0.01;
 input int StandaloneSLBuyPoints=0;
-input int StandaloneSLSellPoints=0;
+input int StandaloneSLSellPoints=0; // Legacy point settings; POWERFULL uses the USD input below.
+input double PowerfullStopLossUSD=0.0; // Maximum gross loss per POWERFULL position, entered in USD. Zero blocks new entries.
+input bool EnableEAReports=true; // ON/OFF: HTML, CSV and entry-candle screenshot reports only.
 input int StandaloneMaxLayers=5; // configurable 1..5; A6 default allows five layers
 // POWERFULL final: no time-based entry warm-up.
 input int PollSeconds=1;
@@ -215,6 +217,7 @@ string powerSessionFolderForPosition(ulong positionId){
    return ""; // Do not mix pre-session positions into a new ON session.
 }
 string powerSessionPath(ulong positionId,string leaf){
+   if(!EnableEAReports)return "";
    string folder=powerSessionFolderForPosition(positionId);
    if(folder=="")return "";
    FolderCreate(folder); FolderCreate(folder+"\\SCREENSHOTS");
@@ -227,7 +230,7 @@ void powerSessionMarkDealSeen(ulong deal){
    if(deal>0)GlobalVariableSet("PW_DEAL_"+(string)deal,(double)TimeCurrent());
 }
 void powerSessionWriteOpenPositions(string folder){
-   if(folder=="")return;
+   if(!EnableEAReports||folder=="")return;
    int h=FileOpen(folder+"\\OPEN_POSITIONS.csv",FILE_WRITE|FILE_CSV|FILE_ANSI,';');
    if(h==INVALID_HANDLE)return;
    FileWrite(h,"ticket","position_id","symbol","side","volume","open_price","sl","gross_floating","swap","projected_net","peak_net_tracked","peak_price","mode");
@@ -255,7 +258,7 @@ void powerSessionWriteOpenPositions(string folder){
    FileClose(h);
 }
 void powerSessionWriteSummary(string folder,datetime started,datetime ended){
-   if(folder=="")return;
+   if(!EnableEAReports||folder=="")return;
    int h=FileOpen(folder+"\\SESSION_SUMMARY.html",FILE_WRITE|FILE_TXT|FILE_ANSI);
    if(h==INVALID_HANDLE)return;
    string html="<!doctype html><html><head><meta charset='utf-8'><title>RAYYAN Session</title></head><body>"+
@@ -274,8 +277,10 @@ void powerSessionStartNew(){
    powerSessionId=powerSessionStamp(powerSessionStart);
    powerSessionFolder=powerSessionFolderFromStart(powerSessionStart);
    powerLastSessionFolder=powerSessionFolder;
-   FolderCreate(POWERFULL_REPORT_DIR); FolderCreate(powerSessionFolder);
-   FolderCreate(powerSessionFolder+"\\SCREENSHOTS");
+   if(EnableEAReports){
+      FolderCreate(POWERFULL_REPORT_DIR); FolderCreate(powerSessionFolder);
+      FolderCreate(powerSessionFolder+"\\SCREENSHOTS");
+   }
    powerSessionActive=true; GlobalVariableSet("PW_ACTIVE_SESSION_START",(double)powerSessionStart);
    Print("RAYYAN SESSION START id=",powerSessionId," folder=",powerSessionFolder);
    powerSessionWriteOpenPositions(powerSessionFolder);
@@ -306,7 +311,7 @@ string powerSessionCandlePath(ulong positionId){return powerSessionPath(position
 void powerWriteLossRescueLog(ulong ticket,string symbol,bool isBuy,double net,double peakNet,
                              double peakPrice,double executable,double pullbackTicks,
                              int adverseTicks,string eventName){
-   if(ticket==0||!PositionSelectByTicket(ticket))return;
+   if(!EnableEAReports||ticket==0||!PositionSelectByTicket(ticket))return;
    ulong positionId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
    string folder=powerSessionFolderForPosition(positionId);
    if(folder=="")folder=(powerSessionActive?powerSessionFolder:POWERFULL_REPORT_DIR);
@@ -367,10 +372,7 @@ void powerAppendDealRecord(ulong deal){
    ENUM_DEAL_TYPE type=(ENUM_DEAL_TYPE)HistoryDealGetInteger(deal,DEAL_TYPE);
    datetime when=(datetime)HistoryDealGetInteger(deal,DEAL_TIME);
    string symbol=HistoryDealGetString(deal,DEAL_SYMBOL);
-   double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
    int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
-   bool positionBuy=((entry==DEAL_ENTRY_OUT||entry==DEAL_ENTRY_OUT_BY)?(type==DEAL_TYPE_SELL):(type==DEAL_TYPE_BUY));
-   int slPoints=(positionBuy?StandaloneSLBuyPoints:StandaloneSLSellPoints);
    double actualSL=0.0;
    string slState="NOT_AVAILABLE_AFTER_CLOSE";
    if(entry==DEAL_ENTRY_IN||entry==DEAL_ENTRY_INOUT){
@@ -385,11 +387,18 @@ void powerAppendDealRecord(ulong deal){
          break;
       }
    }
+   if(!EnableEAReports){
+      powerSessionMarkDealSeen(deal);
+      int statsSymbolIndex=-1;
+      for(int si=0;si<ArraySize(powerSymbols);si++)if(powerSymbols[si]==symbol){statsSymbolIndex=si;break;}
+      if(statsSymbolIndex>=0){powerDashboardStatsCalcMs[statsSymbolIndex]=0;powerStatsCalcMs[statsSymbolIndex]=0;}
+      return;
+   }
    int h=FileOpen(powerSessionLossPath(positionId),FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,';');
    if(h==INVALID_HANDLE){Print("POWERFULL REPORT CSV OPEN FAILED err=",GetLastError());return;}
    if(FileSize(h)==0)
       FileWrite(h,"time","deal_ticket","position_id","symbol","entry_type","side","volume","price",
-                "sl_points_setting","sl_price_distance","actual_sl_price","sl_state",
+                "sl_usd_setting","sl_price_distance","actual_sl_price","sl_state",
                 "deal_profit","swap","commission","fee","net","reason","comment");
    FileSeek(h,0,SEEK_END);
    ulong rowStartSize=FileSize(h);
@@ -401,7 +410,8 @@ void powerAppendDealRecord(ulong deal){
       EnumToString(entry),powerReportSide(type),
       DoubleToString(HistoryDealGetDouble(deal,DEAL_VOLUME),8),
       DoubleToString(HistoryDealGetDouble(deal,DEAL_PRICE),digits),
-      slPoints,DoubleToString(slPoints*point,digits),
+      DoubleToString(PowerfullStopLossUSD,2),
+      (actualSL>0.0?DoubleToString(MathAbs(HistoryDealGetDouble(deal,DEAL_PRICE)-actualSL),digits):""),
       (actualSL>0.0?DoubleToString(actualSL,digits):""),
       slState,DoubleToString(profit,2),DoubleToString(swap,2),
       DoubleToString(commission,2),DoubleToString(fee,2),
@@ -428,7 +438,7 @@ void powerAppendDealRecord(ulong deal){
    }
 }
 void powerWriteAnalysisReport(string targetPath,datetime sessionStart){
-   if(targetPath=="")return;
+   if(!EnableEAReports||targetPath=="")return;
    datetime to=TimeCurrent(),from=to-90*86400;
    if(!HistorySelect(from,to))return;
    int h=FileOpen(targetPath,FILE_WRITE|FILE_TXT|FILE_ANSI);
@@ -509,6 +519,7 @@ void powerWriteAnalysisReport(string targetPath,datetime sessionStart){
 }
 
 void powerRefreshAnalysisReports(){
+   if(!EnableEAReports)return;
    FolderCreate(POWERFULL_REPORT_DIR);
    powerWriteAnalysisReport(POWERFULL_ANALYSIS_FILE,0);
    string sessionFolder=(powerSessionActive?powerSessionFolder:powerLastSessionFolder);
@@ -532,6 +543,7 @@ void powerRefreshAnalysisReports(){
 }
 
 void powerCaptureEntryCandle(ulong deal){
+   if(!EnableEAReports)return;
    // Observational recorder only: this function runs after MT5 confirms an entry deal.
    if(deal==0||!HistoryDealSelect(deal))return;
    if((long)HistoryDealGetInteger(deal,DEAL_MAGIC)!=POWERFULL_MAGIC)return;
@@ -908,12 +920,12 @@ int OnInit(){
          Print("D1 STANDALONE CONFIG ERROR: symbol unavailable: ",directSymbol);
          return(INIT_FAILED);
       }
-      powerCfg[0].enabled=(StandaloneLot>0.0&&StandaloneSLBuyPoints>0&&StandaloneSLSellPoints>0
-         &&StandaloneMaxLayers>=1&&StandaloneMaxLayers<=5);
+      powerCfg[0].enabled=(StandaloneLot>0.0&&PowerfullStopLossUSD>0.0
+          &&StandaloneMaxLayers>=1&&StandaloneMaxLayers<=5);
       powerCfg[0].lot=StandaloneLot;
       powerCfg[0].pipSize=SymbolInfoDouble(directSymbol,SYMBOL_POINT);
       powerCfg[0].lotStep=SymbolInfoDouble(directSymbol,SYMBOL_VOLUME_STEP);
-      powerCfg[0].usePointStops=true;
+      powerCfg[0].usePointStops=false;
       powerCfg[0].slEntry1Points=StandaloneSLBuyPoints;
       powerCfg[0].slEntry2Points=StandaloneSLSellPoints;
       powerCfg[0].maxLayers=StandaloneMaxLayers;
@@ -921,16 +933,16 @@ int OnInit(){
       powerCfg[0].minHoldCandles=0;
       powerCfg[0].reason=(powerCfg[0].enabled?"STANDALONE_READY":"STANDALONE_CONFIG_INVALID");
       powerConfigReceivedMs[0]=1;
-      FolderCreate(POWERFULL_REPORT_DIR);
+      if(EnableEAReports)FolderCreate(POWERFULL_REPORT_DIR);
       // Session reports are generated only inside the active Algo Trading session.
       int symbolDigits=(int)SymbolInfoInteger(directSymbol,SYMBOL_DIGITS);
       double symbolPoint=SymbolInfoDouble(directSymbol,SYMBOL_POINT);
       Print("D1 STANDALONE MODE symbol=",directSymbol," lot=",DoubleToString(StandaloneLot,2),
          " Digits=",symbolDigits," Point=",DoubleToString(symbolPoint,symbolDigits+2),
-         " SLbuy=",StandaloneSLBuyPoints," POINT (price distance=",DoubleToString(StandaloneSLBuyPoints*symbolPoint,symbolDigits),")",
-         " SLsell=",StandaloneSLSellPoints," POINT (price distance=",DoubleToString(StandaloneSLSellPoints*symbolPoint,symbolDigits),")",
-         " maxLayers=",StandaloneMaxLayers," enabled=",powerCfg[0].enabled,
-         " | SL inputs use POINT only; no pip conversion");
+         " SL_USD_per_position=",DoubleToString(PowerfullStopLossUSD,2),
+          " maxLayers=",StandaloneMaxLayers," enabled=",powerCfg[0].enabled,
+          " reports=",(EnableEAReports?"ON":"OFF"),
+          " | SL cash conversion uses MT5 OrderCalcProfit");
    }else{
       for(int i=0;i<ArraySize(powerSymbols);i++){
          if(powerSymbols[i]=="")continue;
@@ -956,7 +968,7 @@ int OnInit(){
    if(StandaloneD1Mode) Print("RAYYAN D1 STANDALONE READY: no Gateway/WebRequest calls will be made.");
    else Print("RAYYAN4 START Gateway=",GatewayUrl," Symbol=",AllowedSymbol,
          " trade queue=/next indicator queue=/indicator_next");
-   if(StandaloneD1Mode){FolderCreate(POWERFULL_REPORT_DIR);powerSessionRefresh();}
+   if(StandaloneD1Mode){if(EnableEAReports)FolderCreate(POWERFULL_REPORT_DIR);powerSessionRefresh();}
    return(INIT_SUCCEEDED);
 }
 void OnDeinit(const int r){
@@ -2797,6 +2809,99 @@ bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick
    powerPublishState(index,"PENDING_PLACED",EnumToString(type)+" at projected range level; expires at M5 close",barTime);
    return true;
 }
+// Convert USD risk to the account deposit currency. Missing conversion data fails closed.
+bool powerUsdToAccountAmount(double usdAmount,double &accountAmount,string &conversionInfo,string &reason){
+   accountAmount=0.0; conversionInfo=""; reason="";
+   if(!MathIsValidNumber(usdAmount)||usdAmount<=0.0){reason="PowerfullStopLossUSD must be greater than zero";return false;}
+   string accountCurrency=AccountInfoString(ACCOUNT_CURRENCY);
+   if(accountCurrency=="USD"){accountAmount=usdAmount;conversionInfo="USD account";return true;}
+   if(StringLen(accountCurrency)!=3){reason="Unsupported account currency code: "+accountCurrency;return false;}
+   int totalSymbols=SymbolsTotal(false);
+   for(int i=0;i<totalSymbols;i++){
+      string fxSymbol=SymbolName(i,false); if(fxSymbol=="")continue;
+      string baseCurrency=SymbolInfoString(fxSymbol,SYMBOL_CURRENCY_BASE);
+      string quoteCurrency=SymbolInfoString(fxSymbol,SYMBOL_CURRENCY_PROFIT);
+      bool usdToAccount=(baseCurrency=="USD"&&quoteCurrency==accountCurrency);
+      bool accountToUsd=(baseCurrency==accountCurrency&&quoteCurrency=="USD");
+      if(!usdToAccount&&!accountToUsd)continue;
+      if(!SymbolSelect(fxSymbol,true))continue;
+      MqlTick fxTick; ZeroMemory(fxTick); if(!SymbolInfoTick(fxSymbol,fxTick))continue;
+      double rate=0.0;
+      if(usdToAccount&&fxTick.bid>0.0)rate=fxTick.bid;
+      else if(accountToUsd&&fxTick.ask>0.0)rate=1.0/fxTick.ask;
+      if(rate<=0.0||!MathIsValidNumber(rate))continue;
+      accountAmount=usdAmount*rate; conversionInfo=fxSymbol+" rate="+DoubleToString(rate,8);
+      return (accountAmount>0.0&&MathIsValidNumber(accountAmount));
+   }
+   reason="No live direct USD/"+accountCurrency+" conversion quote is available";return false;
+}
+bool powerEstimateStopLoss(string symbol,int side,double volume,double entryPrice,long distanceTicks,
+                           double tickSize,double &candidateSL,double &lossAccountCurrency){
+   candidateSL=0.0;lossAccountCurrency=0.0;if(distanceTicks<1||tickSize<=0.0)return false;
+   candidateSL=(side>0?powerFloorToTick(symbol,entryPrice-(double)distanceTicks*tickSize):
+                         powerCeilToTick(symbol,entryPrice+(double)distanceTicks*tickSize));
+   if(candidateSL<=0.0||!MathIsValidNumber(candidateSL))return false;
+   ENUM_ORDER_TYPE orderType=(side>0?ORDER_TYPE_BUY:ORDER_TYPE_SELL);
+   double calculatedProfit=0.0;ResetLastError();
+   if(!OrderCalcProfit(orderType,symbol,volume,entryPrice,candidateSL,calculatedProfit))return false;
+   if(!MathIsValidNumber(calculatedProfit)||calculatedProfit>=0.0)return false;
+   lossAccountCurrency=-calculatedProfit;return (lossAccountCurrency>0.0&&MathIsValidNumber(lossAccountCurrency));
+}
+// Find the widest broker-tick-aligned stop at or below requested USD risk.
+// A broker minimum stop wider than the budget blocks entry; risk is never silently widened.
+bool powerBuildUsdStopLoss(string symbol,int side,double volume,double entryPrice,double requestedUsd,
+                           double &slPrice,double &slDistance,double &actualLossAccountCurrency,
+                           double &targetAccountCurrency,string &detail){
+   slPrice=0.0;slDistance=0.0;actualLossAccountCurrency=0.0;targetAccountCurrency=0.0;detail="";
+   double point=SymbolInfoDouble(symbol,SYMBOL_POINT),tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+   if(point<=0.0||tickSize<=0.0||entryPrice<=0.0){detail="Invalid symbol tick geometry or entry price";return false;}
+   string conversionInfo="",conversionError="";
+   if(!powerUsdToAccountAmount(requestedUsd,targetAccountCurrency,conversionInfo,conversionError)){detail=conversionError;return false;}
+   double brokerStopDistance=(double)SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL)*point;
+   long minimumTicks=(long)MathCeil((brokerStopDistance+tickSize)/tickSize-1e-10);
+   if(minimumTicks<1)minimumTicks=1;
+   long lowTicks=minimumTicks,highTicks=minimumTicks;
+   double minSL=0.0,minLoss=0.0;
+   if(!powerEstimateStopLoss(symbol,side,volume,entryPrice,minimumTicks,tickSize,minSL,minLoss)){
+      detail="MT5 OrderCalcProfit could not estimate minimum legal SL";return false;
+   }
+   double tolerance=MathMax(0.000001,targetAccountCurrency*0.000001);
+   if(minLoss>targetAccountCurrency+tolerance){
+      detail="Broker minimum stop would risk "+DoubleToString(minLoss,2)+" "+
+         AccountInfoString(ACCOUNT_CURRENCY)+"; budget is "+DoubleToString(targetAccountCurrency,2)+
+         ". Entry blocked; SL will not be widened.";return false;
+   }
+   bool bracketFound=false;
+   for(int attempt=0;attempt<40;attempt++){
+      if(highTicks>50000000L)break;
+      highTicks*=2;double testSL=0.0,testLoss=0.0;
+      if(!powerEstimateStopLoss(symbol,side,volume,entryPrice,highTicks,tickSize,testSL,testLoss)){
+         detail="MT5 could not evaluate wider USD SL candidate";return false;
+      }
+      if(testLoss>targetAccountCurrency){bracketFound=true;break;}
+      lowTicks=highTicks;
+   }
+   if(!bracketFound){detail="Could not safely bracket requested USD risk";return false;}
+   while(highTicks-lowTicks>1){
+      long middleTicks=lowTicks+(highTicks-lowTicks)/2;double testSL=0.0,testLoss=0.0;
+      if(!powerEstimateStopLoss(symbol,side,volume,entryPrice,middleTicks,tickSize,testSL,testLoss)){
+         detail="OrderCalcProfit failed during USD SL precision search";return false;
+      }
+      if(testLoss<=targetAccountCurrency+tolerance)lowTicks=middleTicks;else highTicks=middleTicks;
+   }
+   if(!powerEstimateStopLoss(symbol,side,volume,entryPrice,lowTicks,tickSize,slPrice,actualLossAccountCurrency)){
+      detail="OrderCalcProfit failed while verifying final USD SL";return false;
+   }
+   slDistance=MathAbs(entryPrice-slPrice);
+   if(actualLossAccountCurrency>targetAccountCurrency+tolerance||slDistance<=0.0){
+      detail="Final tick-aligned SL exceeded USD risk; entry blocked";return false;
+   }
+   detail="USD "+DoubleToString(requestedUsd,2)+" | "+AccountInfoString(ACCOUNT_CURRENCY)+
+      " budget "+DoubleToString(targetAccountCurrency,2)+" | estimated loss "+
+      DoubleToString(actualLossAccountCurrency,2)+" | "+conversionInfo;
+   return true;
+}
+
 // === BEGIN LOCKED POWERFULL ENTRY RULES: USER AUTHORIZATION REQUIRED FOR ANY CHANGE ===
 void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
                              double candleOpen,double candleHigh,double candleLow,
@@ -2851,8 +2956,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
          " H1_SWING=",entryH1Swing," (",h1SwingContext,")",
          " M15_SWING=",entryM15," (",m15Context,")",
          " action=H1_live_primary_H1_swing_context_only_M15_nonblocking_M5_extreme_timing");
-   if(!powerCfg[index].usePointStops){
-      powerPublishState(index,"BLOCKED_SL_POINTS","D1 requires BUY/SELL SL points",barTime);
+   if(!MathIsValidNumber(PowerfullStopLossUSD)||PowerfullStopLossUSD<=0.0){
+      powerPublishState(index,"BLOCKED_SL_USD","Set PowerfullStopLossUSD in MT5 Inputs; zero disables new POWERFULL entries",barTime);
       return;
    }
 
@@ -2970,14 +3075,6 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    if(!buyReady&&!sellReady)return;
 
    int side=(buyReady?1:-1);
-   int slPts=(side>0?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
-   double slDist=slPts*point;
-   double minStop=SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL)*point;
-   if(slPts<=0||slDist+1e-10<minStop+ts){
-      powerPublishState(index,"BLOCKED_SL_POINTS","SL below broker stop distance",barTime);
-      return;
-   }
-
    double lot=powerCfg[index].lot;
    double minLot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
    double maxLot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MAX);
@@ -2986,10 +3083,16 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       powerPublishState(index,"BLOCKED_LOT","Configured lot outside broker limits",barTime);
       return;
    }
-
    // BUY executes at Ask; SELL executes at Bid after the live M5 extreme signal.
    double px=(side>0?tick.ask:tick.bid);
-   double sl=(side>0?powerFloorToTick(symbol,px-slDist):powerCeilToTick(symbol,px+slDist));
+   double sl=0.0,slDist=0.0,slAccountLoss=0.0,slAccountBudget=0.0;string slDetail="";
+   if(!powerBuildUsdStopLoss(symbol,side,lot,px,PowerfullStopLossUSD,
+                             sl,slDist,slAccountLoss,slAccountBudget,slDetail)){
+      powerPublishState(index,"BLOCKED_SL_USD",slDetail,barTime);
+      Print("D1 USD SL BLOCK symbol=",symbol," side=",(side>0?"BUY":"SELL"),
+            " lot=",DoubleToString(lot,8)," requestedUSD=",DoubleToString(PowerfullStopLossUSD,2),
+            " reason=",slDetail);return;
+   }
    ENUM_ORDER_TYPE marginOrderType=(side>0?ORDER_TYPE_BUY:ORDER_TYPE_SELL);
 
    // Use MT5's full request pre-check instead of OrderCalcMargin's isolated estimate.
@@ -3097,8 +3200,11 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
             " rubberStretchScore=",DoubleToString(side>0?buyScore:sellScore,3),
             " Digits=",(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS),
             " Point=",DoubleToString(point,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)+2),
-            " SL=",slPts," POINT (price distance=",DoubleToString(slDist,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
-            " price=",DoubleToString(sl,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),") retcode=",rc);
+             " SL_USD=",DoubleToString(PowerfullStopLossUSD,2),
+             " estimated_account_loss=",DoubleToString(slAccountLoss,2),
+             " account_budget=",DoubleToString(slAccountBudget,2),
+             " price_distance=",DoubleToString(slDist,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+             " SL_price=",DoubleToString(sl,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),") retcode=",rc);
       powerPublishState(index,"D1_95_LIVE_CANDLE_ENTRY_SENT",
          string(side>0?"BUY on RED candle near Low":"SELL on GREEN candle near High")+
          " | layer="+IntegerToString(total+1)+"/"+IntegerToString(cap)+
@@ -3302,7 +3408,9 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
       double pullbackTicks=(isBuy?(peakPrice-executable):(executable-peakPrice))/tickSize;
       if(pullbackTicks<0.0)pullbackTicks=0.0;
       int slPts=(isBuy?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
-      double hard=(powerCfg[index].usePointStops?slPts*point:powerCfg[index].stopPips*powerCfg[index].pipSize);
+      double brokerSL=PositionGetDouble(POSITION_SL);
+      double legacyHard=(powerCfg[index].usePointStops?slPts*point:powerCfg[index].stopPips*powerCfg[index].pipSize);
+      double hard=(brokerSL>0.0?MathAbs(entryPrice-brokerSL):legacyHard);
       double adverse=(isBuy?entryPrice-executable:executable-entryPrice);
       double lossProgress=(hard>0.0?MathMax(0.0,adverse)/hard:0.0);
       bool m5LiveAgainst=(haveM5&&(isBuy?tick.bid<liveM5[0].open-tickSize*2.0:
@@ -3494,7 +3602,9 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       if(currentNet>peakNet){peakNet=currentNet;GlobalVariableSet(peakNetKey,peakNet);}
       GlobalVariableSet("PW_NET_LIVE_"+suffix,currentNet);
       int slPts=(isBuy?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
-      double hard=(powerCfg[index].usePointStops?slPts*point:powerCfg[index].stopPips*powerCfg[index].pipSize);
+      double brokerSL=PositionGetDouble(POSITION_SL);
+      double legacyHard=(powerCfg[index].usePointStops?slPts*point:powerCfg[index].stopPips*powerCfg[index].pipSize);
+      double hard=(brokerSL>0.0?MathAbs(entry-brokerSL):legacyHard);
       double adverse=(isBuy?entry-executable:executable-entry);
       if(hard>0.0&&adverse+point*0.1>=hard){
          Print("POWERFULL HARD LOSS GUARD symbol=",symbol," ticket=",ticket,
