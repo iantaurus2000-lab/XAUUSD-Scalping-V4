@@ -3239,9 +3239,12 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
    if(index<0||index>=ArraySize(powerSymbols))return false;
    string symbol=powerSymbols[index];
    double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
-   if(tickSize<=0.0)return false;
+   double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+   if(tickSize<=0.0||point<=0.0)return false;
    MqlRates liveM5[]; ArraySetAsSeries(liveM5,true);
    bool haveM5=(CopyRates(symbol,PERIOD_M5,0,1,liveM5)==1);
+   int m5Structure=powerConfirmedSwingStructure(symbol,PERIOD_M5);
+   int m15Structure=powerConfirmedSwingStructure(symbol,PERIOD_M15);
    bool closedAny=false;
    int closedCount=0;
    uint nowMs=GetTickCount();
@@ -3254,35 +3257,41 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
       string modeKey="PW_HMODE_"+suffix;
       if(!GlobalVariableCheck(modeKey)||(int)GlobalVariableGet(modeKey)!=POWERFULL_MODE_LOSS_RESCUE)continue;
       bool isBuy=((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
+      int side=(isBuy?1:-1);
       double executable=(isBuy?tick.bid:tick.ask);
+      double entryPrice=PositionGetDouble(POSITION_PRICE_OPEN);
+      double net=powerProjectedNet(ticket);
       string liveNetKey="PW_NET_LIVE_"+suffix;
-      double net=(GlobalVariableCheck(liveNetKey)?GlobalVariableGet(liveNetKey):powerProjectedNet(ticket));
+      if(GlobalVariableCheck(liveNetKey))net=GlobalVariableGet(liveNetKey);
       string peakNetKey="PW_PEAK_NET_"+suffix;
       double peakNet=(GlobalVariableCheck(peakNetKey)?GlobalVariableGet(peakNetKey):MathMax(0.0,net));
       bool newPeak=false;
       if(net>peakNet){peakNet=net;GlobalVariableSet(peakNetKey,peakNet);newPeak=true;}
       string peakPriceKey="PW_PEAK_"+suffix;
-      double peakPrice=(GlobalVariableCheck(peakPriceKey)?GlobalVariableGet(peakPriceKey):PositionGetDouble(POSITION_PRICE_OPEN));
+      double peakPrice=(GlobalVariableCheck(peakPriceKey)?GlobalVariableGet(peakPriceKey):entryPrice);
       if(isBuy?executable>peakPrice:executable<peakPrice){
          peakPrice=executable;GlobalVariableSet(peakPriceKey,peakPrice);
       }
       double pullbackTicks=(isBuy?(peakPrice-executable):(executable-peakPrice))/tickSize;
       if(pullbackTicks<0.0)pullbackTicks=0.0;
-      double entryPrice=PositionGetDouble(POSITION_PRICE_OPEN);
-      double favorableExcursionTicks=(isBuy?(peakPrice-entryPrice):(entryPrice-peakPrice))/tickSize;
-      if(favorableExcursionTicks<0.0)favorableExcursionTicks=0.0;
-      double requiredPullbackTicks=MathMax(2.0,favorableExcursionTicks*0.45);
-      bool m5Against=(haveM5&&(isBuy?tick.bid<liveM5[0].open-tickSize*2.0:tick.ask>liveM5[0].open+tickSize*2.0));
-      long heldSeconds=(long)(TimeCurrent()-(datetime)PositionGetInteger(POSITION_TIME));
+      int slPts=(isBuy?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
+      double hard=(powerCfg[index].usePointStops?slPts*point:powerCfg[index].stopPips*powerCfg[index].pipSize);
+      double adverse=(isBuy?entryPrice-executable:executable-entryPrice);
+      double lossProgress=(hard>0.0?MathMax(0.0,adverse)/hard:0.0);
+      bool m5LiveAgainst=(haveM5&&(isBuy?tick.bid<liveM5[0].open-tickSize*2.0:
+                                             tick.ask>liveM5[0].open+tickSize*2.0));
+      bool m5Against=(m5LiveAgainst||m5Structure==-side);
+      bool m15Against=(m15Structure==-side);
+      bool m5Break=powerA6StructureBreak(symbol,PERIOD_M5,isBuy,12);
+      bool m15Break=powerA6StructureBreak(symbol,PERIOD_M15,isBuy,8);
+      bool structuralInvalidation=(m5Break&&(m15Break||m15Against));
+      bool structuralRecovery=(m5Structure==side&&m15Structure==side&&!m5LiveAgainst);
+      string adverseKey="PW_LR_ADVERSE_TICKS_"+suffix;
+      int adverseTicks=(GlobalVariableCheck(adverseKey)?(int)GlobalVariableGet(adverseKey):0);
       double previousExecutable=(isBuy?previousBid:previousAsk);
       double adverseMoveTicks=0.0;
-      int adverseTicks=0;
-      string adverseKey="PW_LR_ADVERSE_TICKS_"+suffix;
-      if(GlobalVariableCheck(adverseKey))adverseTicks=(int)GlobalVariableGet(adverseKey);
       if(hasPreviousTick&&previousExecutable>0.0){
          double signedMove=(isBuy?previousExecutable-executable:executable-previousExecutable);
-         // Only movement against the open position counts as a reversal.
-         // A two-tick recovery in the favorable direction must not trigger exit.
          if(signedMove>=tickSize*0.5){
             adverseMoveTicks=signedMove/tickSize;
             adverseTicks++;
@@ -3293,52 +3302,56 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
       }
       if(pullbackTicks<0.5||!m5Against)adverseTicks=0;
       GlobalVariableSet(adverseKey,(double)adverseTicks);
-      // Close only after minimum three M5 candles, live M5 countertrend,
-      // positive projected net and 45% retracement of favorable price excursion.
-      bool reversalConfirmed=(net>0.0&&heldSeconds>=POWERFULL_MIN_TREND_HOLD_SECONDS&&
-                             m5Against&&pullbackTicks>=requiredPullbackTicks&&
-                             (adverseTicks>=2||adverseMoveTicks>=2.0));
       string logKey="PW_LR_LOG_MS_"+suffix;
       bool logDue=(!GlobalVariableCheck(logKey)||
                    (uint)(nowMs-(uint)GlobalVariableGet(logKey))>=1000);
-      if(reversalConfirmed||logDue){
-         string eventName=(reversalConfirmed?"PROFIT_REVERSAL_EXIT_SIGNAL":
-                           (net<=0.0?"LOSS_ZONE_MONITOR":
-                            (newPeak?"NEW_NET_PROFIT_PEAK":"PROFIT_RECOVERY_MONITOR")));
-         double giveback=MathMax(0.0,peakNet-net);
+      // In a loss zone, first look for recovery. A close is permitted only after
+      // both timeframes confirm a structural break and price is already deep in risk.
+      bool lossZone=(net<=0.0);
+      bool rescueExitLoss=(lossZone&&structuralInvalidation&&lossProgress>=0.70);
+      bool profitableReversal=(net>0.0&&pullbackTicks>=2.0&&m5Against&&
+                               (adverseTicks>=2||adverseMoveTicks>=2.0));
+      string eventName="LOSS_ZONE_WAIT_RECOVERY";
+      if(structuralRecovery)eventName="LOSS_ZONE_RECOVERY_CONFIRMED";
+      else if(rescueExitLoss)eventName="LOSS_ZONE_STRUCTURAL_INVALIDATION";
+      else if(profitableReversal)eventName="PROFIT_REVERSAL_EXIT_SIGNAL";
+      else if(net>0.0)eventName=(newPeak?"NEW_NET_PROFIT_PEAK":"PROFIT_RECOVERY_MONITOR");
+      if(logDue||rescueExitLoss||profitableReversal){
          Print("POWERFULL LOSS_RESCUE MONITOR symbol=",symbol," ticket=",ticket,
             " side=",(isBuy?"BUY":"SELL"),
             " projected_net=",DoubleToString(net,2),
             " peak_net_tracked=",DoubleToString(peakNet,2),
-            " giveback_from_peak=",DoubleToString(giveback,2),
             " executable_price=",DoubleToString(executable,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
             " peak_price=",DoubleToString(peakPrice,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
             " pullback_ticks=",DoubleToString(pullbackTicks,1),
-            " required_pullback_ticks=",DoubleToString(requiredPullbackTicks,1),
-            " held_seconds=",heldSeconds," m5_against=",m5Against,
-            " adverse_ticks=",adverseTicks,
-            " adverse_move_ticks=",DoubleToString(adverseMoveTicks,1),
-            " decision=",eventName);
+            " loss_progress=",DoubleToString(lossProgress*100.0,1),"% ",
+            " m5_structure=",m5Structure," m15_structure=",m15Structure,
+            " m5_break=",m5Break," m15_break=",m15Break,
+            " adverse_ticks=",adverseTicks," decision=",eventName);
          powerWriteLossRescueLog(ticket,symbol,isBuy,net,peakNet,peakPrice,executable,
                                   pullbackTicks,adverseTicks,eventName);
          GlobalVariableSet(logKey,(double)nowMs);
       }
-      if(!reversalConfirmed)continue;
-      Print("POWERFULL LOSS_RESCUE EXIT REQUEST symbol=",symbol," ticket=",ticket,
+      if(structuralRecovery){
+         GlobalVariableSet(modeKey,(double)POWERFULL_MODE_TREND_HOLD);
+         if(GlobalVariableCheck(adverseKey))GlobalVariableDel(adverseKey);
+         Print("POWERFULL LOSS_RESCUE RECOVERY symbol=",symbol," ticket=",ticket,
             " projected_net=",DoubleToString(net,2),
-            " peak_net_tracked=",DoubleToString(peakNet,2),
-            " giveback=",DoubleToString(MathMax(0.0,peakNet-net),2),
-            " pullback_ticks=",DoubleToString(pullbackTicks,1),
-            " required_pullback_ticks=",DoubleToString(requiredPullbackTicks,1),
-            " held_seconds=",heldSeconds," m5_against=",m5Against,
-            " adverse_ticks=",adverseTicks,
-            " reason=ADAPTIVE_45_PERCENT_RETRACE_NET_POSITIVE");
-      if(powerClosePosition(ticket,"LOSS_RESCUE_ADAPTIVE_45_PERCENT_RETRACE")){
-         closedAny=true;closedCount++;
-      }else{
-         powerWriteLossRescueLog(ticket,symbol,isBuy,net,peakNet,peakPrice,executable,
-                                 pullbackTicks,adverseTicks,"CLOSE_REQUEST_FAILED");
+            " action=RETURN_TO_TREND_HOLD_NO_CLOSE");
+         continue;
       }
+      if(!rescueExitLoss&&!profitableReversal)continue;
+      string closeReason=(rescueExitLoss?"LOSS_RESCUE_LOSS_ZONE_STRUCTURAL_INVALIDATION":
+                                            "LOSS_RESCUE_PROFIT_REVERSAL");
+      Print("POWERFULL LOSS_RESCUE EXIT REQUEST symbol=",symbol," ticket=",ticket,
+         " projected_net=",DoubleToString(net,2),
+         " loss_progress=",DoubleToString(lossProgress*100.0,1),"% ",
+         " m5_structure=",m5Structure," m15_structure=",m15Structure,
+         " m5_break=",m5Break," m15_break=",m15Break,
+         " reason=",closeReason);
+      if(powerClosePosition(ticket,closeReason)){closedAny=true;closedCount++;}
+      else powerWriteLossRescueLog(ticket,symbol,isBuy,net,peakNet,peakPrice,executable,
+                                   pullbackTicks,adverseTicks,"CLOSE_REQUEST_FAILED");
    }
    if(closedAny)Print("POWERFULL LOSS_RESCUE CLOSED COUNT symbol=",symbol," count=",closedCount);
    return closedAny;
@@ -3460,22 +3473,32 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       string modeKey="PW_HMODE_"+suffix,adverseKey="PW_LR_ADVERSE_TICKS_"+suffix;
       int mode=(GlobalVariableCheck(modeKey)?(int)GlobalVariableGet(modeKey):0);
       int side=(isBuy?1:-1);
-      int structure=consensusStructure; // +1 bullish, -1 bearish; symmetric for BUY and SELL.
-      bool m5Against=(haveM5&&(isBuy?tick.bid<liveM5[0].open-ts*2.0:tick.ask>liveM5[0].open+ts*2.0));
-      bool m15Against=(haveM15&&(isBuy?tick.bid<liveM15[0].open-ts*2.0:tick.ask>liveM15[0].open+ts*2.0));
+      int structure=consensusStructure; // H1/H4 macro consensus.
+      int m5Structure=powerConfirmedSwingStructure(symbol,PERIOD_M5);
+      int m15Structure=powerConfirmedSwingStructure(symbol,PERIOD_M15);
+      bool m5LiveAgainst=(haveM5&&(isBuy?tick.bid<liveM5[0].open-ts*2.0:
+                                             tick.ask>liveM5[0].open+ts*2.0));
+      bool m5Against=(m5LiveAgainst||m5Structure==-side);
+      bool m15Against=(m15Structure==-side||
+                       (haveM15&&(isBuy?tick.bid<liveM15[0].open-ts*2.0:
+                                              tick.ask>liveM15[0].open+ts*2.0)));
+      bool m5Break=powerA6StructureBreak(symbol,PERIOD_M5,isBuy,12);
+      bool m15Break=powerA6StructureBreak(symbol,PERIOD_M15,isBuy,8);
       double lossProgress=(hard>0.0?MathMax(0.0,adverse)/hard:0.0);
-      // H1/H4 is macro context, not a veto: local pressure or SL proximity can arm rescue.
-      bool localRisk=(m5Against&&lossProgress>=0.45)||
-                     (m5Against&&m15Against&&(currentNet<=0.0||lossProgress>=0.20));
+      // Early warning: M5 pressure plus M15 confirmation or rising SL exposure.
+      // H1/H4 remains macro context and cannot veto a clear local risk signal.
+      bool localRisk=(m5Against&&(m15Against||m15Break||lossProgress>=0.25))||
+                     (m5Break&&(m15Against||m15Break));
+      bool localRecovery=(m5Structure==side&&m15Structure==side&&!m5LiveAgainst);
       bool rescueRequired=(structure==-side||localRisk);
       if(mode==POWERFULL_MODE_LOSS_RESCUE){
-         if(structure==side&&!m5Against&&!m15Against){
+         if(localRecovery||(structure==side&&!m5Against&&!m15Against)){
             GlobalVariableSet(modeKey,(double)POWERFULL_MODE_TREND_HOLD);
             if(GlobalVariableCheck(adverseKey))GlobalVariableDel(adverseKey);
             Print("POWERFULL MODE symbol=",symbol," ticket=",ticket,
-               " mode=TREND_HOLD reason=H1_AND_H4_STRUCTURE_SUPPORTS_POSITION_AGAIN",
+               " mode=TREND_HOLD reason=",(localRecovery?"M5_M15_RECOVERY_CONFIRMED":"H1_H4_STRUCTURE_SUPPORTS_POSITION_AGAIN"),
                " projected_net=",DoubleToString(currentNet,2)," peak_net_tracked=",DoubleToString(peakNet,2),
-               " action=hold_trend_no_profit_trail_exit");
+               " action=hold_position_for_recovery_no_forced_close");
          }
          continue;
       }
@@ -3496,7 +3519,9 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       GlobalVariableSet(modeKey,(double)initialMode);
       Print("POWERFULL MODE INIT symbol=",symbol," ticket=",ticket,
          " mode=",(initialMode==POWERFULL_MODE_LOSS_RESCUE?"LOSS_RESCUE":"TREND_HOLD"),
-         " h1_h4_structure=",structure," m5_against=",m5Against," m15_against=",m15Against,
+         " h1_h4_structure=",structure," m5_structure=",m5Structure," m15_structure=",m15Structure,
+         " m5_against=",m5Against," m15_against=",m15Against,
+         " m5_break=",m5Break," m15_break=",m15Break,
          " sl_progress=",DoubleToString(lossProgress*100.0,1),"% projected_net=",DoubleToString(currentNet,2),
          " peak_net_tracked=",DoubleToString(peakNet,2));
    }
