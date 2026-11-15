@@ -655,7 +655,8 @@ void powerDashboardLabel(string name,string value,int x,int y,color clr,int size
    ObjectSetInteger(0,name,OBJPROP_XDISTANCE,x);
    ObjectSetInteger(0,name,OBJPROP_YDISTANCE,y);
    ObjectSetInteger(0,name,OBJPROP_COLOR,clr);
-   ObjectSetInteger(0,name,OBJPROP_ZORDER,10010);
+   ObjectSetInteger(0,name,OBJPROP_ZORDER,10050);
+   ObjectSetInteger(0,name,OBJPROP_BACK,false);
    ObjectSetInteger(0,name,OBJPROP_FONTSIZE,size);
    ObjectSetString(0,name,OBJPROP_FONT,"Arial");
    ObjectSetString(0,name,OBJPROP_TEXT,value);
@@ -671,7 +672,7 @@ void powerDashboardBox(string name,int x,int y,int w,int h,color fill,color edge
    ObjectSetInteger(0,name,OBJPROP_YSIZE,h);
    ObjectSetInteger(0,name,OBJPROP_BGCOLOR,fill);
    ObjectSetInteger(0,name,OBJPROP_COLOR,edge);
-   ObjectSetInteger(0,name,OBJPROP_ZORDER,10000);
+   ObjectSetInteger(0,name,OBJPROP_ZORDER,10050);
    ObjectSetInteger(0,name,OBJPROP_BORDER_COLOR,edge);
    ObjectSetInteger(0,name,OBJPROP_BORDER_TYPE,BORDER_FLAT);
    ObjectSetInteger(0,name,OBJPROP_BACK,false);
@@ -833,7 +834,8 @@ void powerDashboardRefresh(bool force=false){
    ObjectSetInteger(0,btn,OBJPROP_CORNER,CORNER_LEFT_UPPER);
    ObjectSetInteger(0,btn,OBJPROP_XDISTANCE,18);ObjectSetInteger(0,btn,OBJPROP_YDISTANCE,480);
    ObjectSetInteger(0,btn,OBJPROP_XSIZE,282);ObjectSetInteger(0,btn,OBJPROP_YSIZE,20);
-   ObjectSetInteger(0,btn,OBJPROP_ZORDER,10020);
+   ObjectSetInteger(0,btn,OBJPROP_ZORDER,10050);
+   ObjectSetInteger(0,btn,OBJPROP_BACK,false);
    ObjectSetString(0,btn,OBJPROP_TEXT,"REFRESH DATA");
    ObjectSetInteger(0,btn,OBJPROP_BGCOLOR,C'52,76,105');
    ObjectSetInteger(0,btn,OBJPROP_COLOR,clrWhite);
@@ -866,7 +868,8 @@ void powerDashboardRefresh(bool force=false){
    ObjectSetInteger(0,layerName,OBJPROP_YDISTANCE,18);
    ObjectSetInteger(0,layerName,OBJPROP_COLOR,clrWhite);
    ObjectSetInteger(0,layerName,OBJPROP_FONTSIZE,12);
-   ObjectSetInteger(0,layerName,OBJPROP_ZORDER,10030);
+   ObjectSetInteger(0,layerName,OBJPROP_ZORDER,10050);
+   ObjectSetInteger(0,layerName,OBJPROP_BACK,false);
    ObjectSetString(0,layerName,OBJPROP_FONT,"Arial Bold");
    ObjectSetString(0,layerName,OBJPROP_TEXT,"OPEN LAYERS  "+IntegerToString(openLayers)+"/"+IntegerToString(MathMax(1,StandaloneMaxLayers)));
    ObjectSetInteger(0,layerName,OBJPROP_SELECTABLE,false);
@@ -1301,26 +1304,27 @@ void processTradeQueue(){
 
 // Native MT5 candle countdown displayed in the captured chart and updated each timer pass.
 void updateChartCountdown(){
-   datetime bar=iTime(_Symbol,_Period,0);
-   int periodSeconds=PeriodSeconds(_Period);
+   datetime bar=iTime(_Symbol,PERIOD_M5,0);
+   int periodSeconds=PeriodSeconds(PERIOD_M5);
    if(bar<=0 || periodSeconds<=0) return;
    // TimeTradeServer is terminal-estimated between ticks; the display timer does not gate entries.
    datetime serverNow=TimeTradeServer();
    if(serverNow<=0)serverNow=TimeCurrent();
    int remain=(int)MathMax(0,periodSeconds-(serverNow-bar));
-   string label=StringFormat("%s  %02d:%02d",EnumToString(_Period),remain/60,remain%60);
+   string label=StringFormat("%02d:%02d",remain/60,remain%60);
    const string name="RAYYAN_MT5_BAR_TIMER";
    if(ObjectFind(0,name)<0){
       if(!ObjectCreate(0,name,OBJ_LABEL,0,0,0)){
          Print("RAYYAN TIMER CREATE FAILED err=",GetLastError()); return;
       }
-      ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_LEFT_LOWER);
-      ObjectSetInteger(0,name,OBJPROP_ANCHOR,ANCHOR_LEFT_LOWER);
+      ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_RIGHT_LOWER);
+      ObjectSetInteger(0,name,OBJPROP_ANCHOR,ANCHOR_RIGHT_LOWER);
       ObjectSetInteger(0,name,OBJPROP_XDISTANCE,18);
       ObjectSetInteger(0,name,OBJPROP_YDISTANCE,18);
       ObjectSetInteger(0,name,OBJPROP_COLOR,clrWhite);
       ObjectSetInteger(0,name,OBJPROP_FONTSIZE,10);
-      ObjectSetInteger(0,name,OBJPROP_ZORDER,10040);
+      ObjectSetInteger(0,name,OBJPROP_ZORDER,10060);
+      ObjectSetInteger(0,name,OBJPROP_BACK,false);
       ObjectSetString(0,name,OBJPROP_FONT,"Arial");
       ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
       ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
@@ -1991,6 +1995,8 @@ void harmonicTrend(string name,datetime t1,double p1,datetime t2,double p2,color
    ObjectSetInteger(0,name,OBJPROP_WIDTH,width);
    ObjectSetInteger(0,name,OBJPROP_RAY_RIGHT,false);
    ObjectSetInteger(0,name,OBJPROP_RAY_LEFT,false);
+   ObjectSetInteger(0,name,OBJPROP_BACK,false);
+   ObjectSetInteger(0,name,OBJPROP_ZORDER,10);
    ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
 }
@@ -2001,6 +2007,8 @@ void harmonicText(string name,datetime t,double p,string label,color c){
    ObjectSetInteger(0,name,OBJPROP_COLOR,c);
    ObjectSetInteger(0,name,OBJPROP_FONTSIZE,8);
    ObjectSetInteger(0,name,OBJPROP_ANCHOR,ANCHOR_LEFT_LOWER);
+   ObjectSetInteger(0,name,OBJPROP_BACK,false);
+   ObjectSetInteger(0,name,OBJPROP_ZORDER,10);
    ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
 }
@@ -2069,6 +2077,13 @@ void updateHarmonicOverlay(){
          if(replace)pivots[n-1]=p;
       }else{ArrayResize(pivots,n+1);pivots[n]=p;}
    }
+   // CopyRates is series-indexed (0 = newest), so pivots were collected newest-first.
+   // Reverse once so X-A-B-C-D follows chronological time from left to right.
+   for(int left=0,right=ArraySize(pivots)-1;left<right;left++,right--){
+      HarmonicPivot swap=pivots[left];
+      pivots[left]=pivots[right];
+      pivots[right]=swap;
+   }
    int n=ArraySize(pivots);
    if(n<5){clearHarmonicOverlay();return;}
    string pattern="";
@@ -2117,13 +2132,9 @@ void updateHarmonicOverlay(){
    double bcLo=bcTarget-halfBC,bcHi=bcTarget+halfBC;
    double przLow=MathMax(xaLo,bcLo),przHigh=MathMin(xaHi,bcHi);
    if(przLow>przHigh){
-      // Ratios can vary within valid pattern ranges; use midpoint only when
-      // projected bands are close enough to be a meaningful confluence.
-      double gap=MathMax(xaLo,bcLo)-MathMin(xaHi,bcHi);
-      if(gap>xa*tol){clearHarmonicOverlay();return;}
-      double mid=(xaTarget+bcTarget)*0.5;
-      double width=MathMax(_Point*5,gap*0.5);
-      przLow=mid-width;przHigh=mid+width;
+      // No overlap means no valid Potential Reversal Zone: never invent a target zone.
+      clearHarmonicOverlay();
+      return;
    }
    clearHarmonicOverlay();
    color c=(bullish?C'34,197,94':C'239,68,68');
@@ -2201,12 +2212,30 @@ void updateFibo(){
    if(!onFibo && !StandaloneD1Mode){
       ObjectDelete(0,"RAYYAN8_FIBO");clearFiboZones();return;
    }
-   int hi=iHighest(_Symbol,_Period,MODE_HIGH,FiboLookbackBars,1);
-   int lo=iLowest(_Symbol,_Period,MODE_LOW,FiboLookbackBars,1);
-   if(hi<0||lo<0)return;
-   datetime th=iTime(_Symbol,_Period,hi),tl=iTime(_Symbol,_Period,lo);
-   double ph=iHigh(_Symbol,_Period,hi),pl=iLow(_Symbol,_Period,lo);
-   // Keep the 0% anchor at the most recent swing extreme, matching SignalEngine orientation.
+   int depth=(int)MathMax(2,MathMin(8,HarmonicPivotDepth));
+   int lookback=(int)MathMax(30,MathMin(600,FiboLookbackBars));
+   int highShift=-1,lowShift=-1;
+   // Use confirmed local swing pivots only, not arbitrary highest/lowest bars.
+   // Series index 0 is newest, so the first confirmed pivot found is the latest.
+   for(int i=depth+1;i<lookback-depth;i++){
+      bool isHigh=true,isLow=true;
+      double candidateHigh=iHigh(_Symbol,_Period,i);
+      double candidateLow=iLow(_Symbol,_Period,i);
+      for(int k=1;k<=depth;k++){
+         if(candidateHigh<=iHigh(_Symbol,_Period,i-k) ||
+            candidateHigh<iHigh(_Symbol,_Period,i+k))isHigh=false;
+         if(candidateLow>=iLow(_Symbol,_Period,i-k) ||
+            candidateLow>iLow(_Symbol,_Period,i+k))isLow=false;
+      }
+      if(isHigh&&highShift<0)highShift=i;
+      if(isLow&&lowShift<0)lowShift=i;
+      if(highShift>=0&&lowShift>=0)break;
+   }
+   if(highShift<0||lowShift<0||highShift==lowShift)return;
+   datetime th=iTime(_Symbol,_Period,highShift),tl=iTime(_Symbol,_Period,lowShift);
+   double ph=iHigh(_Symbol,_Period,highShift),pl=iLow(_Symbol,_Period,lowShift);
+   if(th<=0||tl<=0||ph<=pl)return;
+   // Anchor 0% at the most recent confirmed swing extreme.
    bool highIsRecent=(th>tl);
    datetime t1=highIsRecent?th:tl;
    datetime t2=highIsRecent?tl:th;
