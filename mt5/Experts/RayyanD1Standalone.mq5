@@ -3280,8 +3280,8 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
                                              tick.ask>liveM5[0].open+tickSize*2.0));
       bool m5Against=(m5LiveAgainst||m5Structure==-side);
       bool m15Against=(m15Structure==-side);
-      bool m5Break=powerA6StructureBreak(symbol,PERIOD_M5,isBuy,12);
-      bool m15Break=powerA6StructureBreak(symbol,PERIOD_M15,isBuy,8);
+      bool m5Break=(isBuy?m5BreakBuy:m5BreakSell);
+      bool m15Break=(isBuy?m15BreakBuy:m15BreakSell);
       bool structuralInvalidation=(m5Break&&(m15Break||m15Against));
       bool structuralRecovery=(m5Structure==side&&m15Structure==side&&!m5LiveAgainst);
       string adverseKey="PW_LR_ADVERSE_TICKS_"+suffix;
