@@ -3420,6 +3420,17 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
       bool m5Break=powerA6StructureBreak(symbol,PERIOD_M5,isBuy,12);
       bool m15Break=powerA6StructureBreak(symbol,PERIOD_M15,isBuy,8);
       bool structuralInvalidation=(m5Break&&(m15Break||m15Against));
+      // Live M5 rescue scan: use the still-forming candle's actual extreme.
+      // BUY risk is measured at the live Bid low; SELL risk at the live Bid high.
+      // This is tick-driven and does not wait for the M5 candle to close.
+      bool liveExtremePressure=false;
+      if(haveM5){
+         double liveExtreme=(isBuy?liveM5[0].low:liveM5[0].high);
+         double liveQuote=(isBuy?tick.bid:tick.bid);
+         liveExtremePressure=(isBuy?
+            (liveQuote<=liveExtreme+tickSize*1.0):
+            (liveQuote>=liveExtreme-tickSize*1.0));
+      }
       bool structuralRecovery=(m5Structure==side&&m15Structure==side&&!m5LiveAgainst);
       string adverseKey="PW_LR_ADVERSE_TICKS_"+suffix;
       int adverseTicks=(GlobalVariableCheck(adverseKey)?(int)GlobalVariableGet(adverseKey):0);
@@ -3440,15 +3451,18 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
       string logKey="PW_LR_LOG_MS_"+suffix;
       bool logDue=(!GlobalVariableCheck(logKey)||
                    (uint)(nowMs-(uint)GlobalVariableGet(logKey))>=1000);
-      // In a loss zone, first look for recovery. A close is permitted only after
-      // both timeframes confirm a structural break and price is already deep in risk.
+      // In a loss zone, scan the live M5 candle on every tick. Require the
+      // candle to remain against the position, price to press its live extreme,
+      // at least two consecutive adverse ticks, and >=70% SL exposure.
+      // M15/H1/H4 remain context; they cannot delay this local emergency exit.
       bool lossZone=(net<=0.0);
-      bool rescueExitLoss=(lossZone&&structuralInvalidation&&lossProgress>=0.70);
+      bool rescueExitLoss=(lossZone&&m5LiveAgainst&&liveExtremePressure&&
+                           adverseTicks>=2&&lossProgress>=0.70);
       bool profitableReversal=(net>0.0&&pullbackTicks>=2.0&&m5Against&&
                                (adverseTicks>=2||adverseMoveTicks>=2.0));
       string eventName="LOSS_ZONE_WAIT_RECOVERY";
       if(structuralRecovery)eventName="LOSS_ZONE_RECOVERY_CONFIRMED";
-      else if(rescueExitLoss)eventName="LOSS_ZONE_STRUCTURAL_INVALIDATION";
+      else if(rescueExitLoss)eventName="LOSS_ZONE_LIVE_M5_EXTREME_PRESSURE";
       else if(profitableReversal)eventName="PROFIT_REVERSAL_EXIT_SIGNAL";
       else if(net>0.0)eventName=(newPeak?"NEW_NET_PROFIT_PEAK":"PROFIT_RECOVERY_MONITOR");
       if(logDue||rescueExitLoss||profitableReversal){
@@ -3461,7 +3475,7 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
             " pullback_ticks=",DoubleToString(pullbackTicks,1),
             " loss_progress=",DoubleToString(lossProgress*100.0,1),"% ",
             " m5_structure=",m5Structure," m15_structure=",m15Structure,
-            " m5_break=",m5Break," m15_break=",m15Break,
+            " live_m5_extreme_pressure=",liveExtremePressure,\n            " m5_break=",m5Break," m15_break=",m15Break,
             " adverse_ticks=",adverseTicks," decision=",eventName);
          powerWriteLossRescueLog(ticket,symbol,isBuy,net,peakNet,peakPrice,executable,
                                   pullbackTicks,adverseTicks,eventName);
@@ -3476,7 +3490,7 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
          continue;
       }
       if(!rescueExitLoss&&!profitableReversal)continue;
-      string closeReason=(rescueExitLoss?"LOSS_RESCUE_LOSS_ZONE_STRUCTURAL_INVALIDATION":
+      string closeReason=(rescueExitLoss?"LOSS_RESCUE_LIVE_M5_EXTREME_PRESSURE":
                                             "LOSS_RESCUE_PROFIT_REVERSAL");
       Print("POWERFULL LOSS_RESCUE EXIT REQUEST symbol=",symbol," ticket=",ticket,
          " projected_net=",DoubleToString(net,2),
