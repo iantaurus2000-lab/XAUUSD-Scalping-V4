@@ -2941,7 +2941,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
          "M5 live distribution | range="+DoubleToString(range/ts,1)+"t"+
          " | Open->Low/High="+DoubleToString(buyOpenExtension*100.0,1)+"/"+
             DoubleToString(sellOpenExtension*100.0,1)+"%"+
-         " | H1 live bias="+(entryDirection>0?"BUY":"SELL")+" | H1 swing context="+IntegerToString(entryH1Swing)+
+         " | H1 live bias="+(entryDirection>0?"BUY":(entryDirection<0?"SELL":"DOJI_NEUTRAL"))+" | H1 swing context="+IntegerToString(entryH1Swing)+
           " | Bid/Ask location="+DoubleToString(bidLocation*100.0,1)+"/"+
             DoubleToString(askLocation*100.0,1)+"%"+
          " | wick L/U="+DoubleToString(lowerWick/range*100.0,1)+"/"+
@@ -2981,7 +2981,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       return;
    }
 
-   // BUY executes at Ask; SELL executes at Bid. Signal location remains candle-distribution based.
+   // BUY executes at Ask; SELL executes at Bid after the live M5 extreme signal.
    double px=(side>0?tick.ask:tick.bid);
    double sl=(side>0?powerFloorToTick(symbol,px-slDist):powerCeilToTick(symbol,px+slDist));
    ENUM_ORDER_TYPE marginOrderType=(side>0?ORDER_TYPE_BUY:ORDER_TYPE_SELL);
