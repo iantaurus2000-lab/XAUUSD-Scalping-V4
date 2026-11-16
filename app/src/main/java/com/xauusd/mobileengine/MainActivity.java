@@ -170,7 +170,7 @@ public class MainActivity extends Activity {
     void buildUI(){
         chartFullscreen=false;
         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
-        getWindow().getDecorView().setSystemUiVisibility(defaultSystemUiVisibility);
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY|View.SYSTEM_UI_FLAG_LAYOUT_STABLE|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
         buildControlHome();
         startGateway();
         updateControlDashboard();
@@ -180,104 +180,117 @@ public class MainActivity extends Activity {
     private FrameLayout homeFrame;
     private View drawerScrim;
     private LinearLayout sideDrawer;
+    private float dashboardScale=1f;
+
+    private int dashH(float value){return Math.round(uiDp(value)*dashboardScale);}
 
     private void buildControlHome(){
         controlValues.clear();
+        float density=getResources().getDisplayMetrics().density;
+        int screenDp=Math.round(getResources().getDisplayMetrics().heightPixels/density);
+        dashboardScale=Math.max(1.0f,Math.min(1.48f,(screenDp-72f)/430f));
+
         FrameLayout frame=new FrameLayout(this);
-        frame.setBackgroundColor(bg);
+        frame.setBackgroundColor(Color.rgb(2,8,16));
 
         LinearLayout root=new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(bg);
+        root.setBackgroundColor(Color.rgb(2,8,16));
 
+        // Full-bleed EA-inspired header: title, symbol, live EA state and open-layer count.
         LinearLayout header=new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(uiDp(12),uiDp(3),uiDp(12),uiDp(3));
-        header.setBackgroundColor(Color.rgb(3,17,29));
-        LinearLayout heading=new LinearLayout(this);
-        heading.setOrientation(LinearLayout.VERTICAL);
-        TextView title=tv("RAYYAN / POWERFULL",17);
+        header.setPadding(uiDp(13),dashH(5),uiDp(12),dashH(5));
+        header.setBackground(new android.graphics.drawable.GradientDrawable(
+            android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
+            new int[]{Color.rgb(5,26,44),Color.rgb(4,13,25)}));
+        LinearLayout titleColumn=new LinearLayout(this);
+        titleColumn.setOrientation(LinearLayout.VERTICAL);
+        TextView title=tv("RAYYAN  /  POWERFULL",17);
         title.setTypeface(null,Typeface.BOLD);
         title.setTextColor(Color.WHITE);
-        TextView algo=tv("ALGO STATUS • MT5",9);
-        algo.setTextColor(Color.rgb(0,210,220));
-        heading.addView(title,new LinearLayout.LayoutParams(-1,uiDp(24)));
-        heading.addView(algo,new LinearLayout.LayoutParams(-1,uiDp(16)));
-        header.addView(heading,new LinearLayout.LayoutParams(0,-2,1));
-        TextView symbol=tv(mt5SymbolForMarket(selectedMarket),12);
-        symbol.setTypeface(null,Typeface.BOLD);
-        symbol.setTextColor(Color.WHITE);
-        header.addView(symbol,new LinearLayout.LayoutParams(-2,uiDp(38)));
-        root.addView(header,new LinearLayout.LayoutParams(-1,uiDp(44)));
+        TextView symbol=tv(mt5SymbolForMarket(selectedMarket),10);
+        symbol.setTextColor(Color.rgb(158,190,214));
+        titleColumn.addView(title,new LinearLayout.LayoutParams(-1,dashH(25)));
+        titleColumn.addView(symbol,new LinearLayout.LayoutParams(-1,dashH(18)));
+        header.addView(titleColumn,new LinearLayout.LayoutParams(0,-2,1));
 
-        LinearLayout chartAction=new LinearLayout(this);
-        chartAction.setPadding(uiDp(10),uiDp(4),uiDp(10),uiDp(3));
-        Button chartButton=btn("▥  BUKA CHART MT5 NATIVE");
-        chartButton.setTextSize(13);
-        chartButton.setTypeface(null,Typeface.BOLD);
-        chartButton.setBackground(roundBg(Color.rgb(0,105,150),10));
-        chartAction.addView(chartButton,new LinearLayout.LayoutParams(-1,uiDp(38)));
-        chartButton.setOnClickListener(v->openChartFullscreen());
-        root.addView(chartAction,new LinearLayout.LayoutParams(-1,uiDp(45)));
+        LinearLayout statusBox=new LinearLayout(this);
+        statusBox.setOrientation(LinearLayout.VERTICAL);
+        statusBox.setGravity(Gravity.CENTER);
+        statusBox.setPadding(uiDp(10),dashH(3),uiDp(10),dashH(3));
+        statusBox.setBackground(roundBg(Color.rgb(20,55,52),10));
+        TextView statusTitle=tv("ALGO STATUS",8);
+        statusTitle.setTextColor(Color.rgb(175,205,210));
+        TextView statusValue=tv("SYNC...",12);
+        statusValue.setTypeface(null,Typeface.BOLD);
+        statusValue.setTextColor(Color.rgb(65,220,150));
+        statusBox.addView(statusTitle,new LinearLayout.LayoutParams(-1,dashH(14)));
+        statusBox.addView(statusValue,new LinearLayout.LayoutParams(-1,dashH(20)));
+        controlValues.put("algo_status",statusValue);
+        header.addView(statusBox,new LinearLayout.LayoutParams(uiDp(105),dashH(42)));
+        root.addView(header,new LinearLayout.LayoutParams(-1,dashH(56)));
 
+        // Dashboard body follows the same hierarchy and labels as the EA chart panel.
         LinearLayout body=new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
-        body.setPadding(uiDp(10),uiDp(2),uiDp(10),uiDp(4));
+        body.setPadding(uiDp(12),dashH(7),uiDp(12),dashH(5));
+        body.setBackgroundColor(Color.rgb(2,8,16));
 
         addControlSection(body,"LIVE CANDLE DIRECTION");
         addControlGrid(body,new String[][]{{"m15","M15"},{ "h1","H1"},{ "h4","H4"}});
         addControlSection(body,"SESSION PERFORMANCE");
-        addControlGrid(body,new String[][]{{"wins","WIN"},{"losses","LOSS"},{"winrate","WINRATE"}});
-        addControlSection(body,"TRADE SUMMARY");
+        addControlGrid(body,new String[][]{{"winrate","WINRATE"},{"wins","WIN"},{"losses","LOSS"}});
         addControlGrid(body,new String[][]{{"total_entry","TOTAL ENTRY"},{"closed","CLOSED TRADES"}});
         addControlGrid(body,new String[][]{{"total_profit","TOTAL PROFIT"},{"total_loss","TOTAL LOSS"}});
         addControlSection(body,"RUNNING ENTRY  /  OPEN POSITIONS");
-        addControlValueCard(body,"running","Menunggu data posisi MT5...");
+        addControlValueCard(body,"running","Menunggu data posisi dari MT5...");
         addControlGrid(body,new String[][]{{"floating","LIVE FLOAT P/L (MT5)"},{"peaks","SUM OF TICKET PEAKS"}});
 
         LinearLayout refreshRow=new LinearLayout(this);
-        refreshRow.setPadding(0,uiDp(4),0,0);
-        Button refresh=btn("↻  REFRESH DATA");
+        refreshRow.setPadding(0,dashH(5),0,0);
+        Button refresh=btn("↻   REFRESH DATA");
         refresh.setTextSize(12);
-        refreshRow.addView(refresh,new LinearLayout.LayoutParams(-1,uiDp(34)));
+        refresh.setTypeface(null,Typeface.BOLD);
+        refresh.setBackground(roundBg(Color.rgb(23,75,111),10));
+        refreshRow.addView(refresh,new LinearLayout.LayoutParams(-1,dashH(40)));
         refresh.setOnClickListener(v->updateControlDashboard());
-        body.addView(refreshRow,new LinearLayout.LayoutParams(-1,uiDp(38)));
+        body.addView(refreshRow,new LinearLayout.LayoutParams(-1,dashH(45)));
+
+        // A quiet footer fills the lower edge without adding fake market values.
+        View divider=new View(this);
+        divider.setBackgroundColor(Color.rgb(22,68,91));
+        body.addView(divider,new LinearLayout.LayoutParams(-1,uiDp(1)));
+        TextView footer=tv("MT5 NATIVE DATA  •  POWERFULL EA CONTROL PANEL",8);
+        footer.setTextColor(Color.rgb(105,143,166));
+        footer.setGravity(Gravity.CENTER);
+        body.addView(footer,new LinearLayout.LayoutParams(-1,dashH(25)));
         root.addView(body,new LinearLayout.LayoutParams(-1,0,1));
 
         frame.addView(root,new FrameLayout.LayoutParams(-1,-1));
+
         drawerScrim=new View(this);
-        drawerScrim.setBackgroundColor(0x99000000);
+        drawerScrim.setBackgroundColor(0xB8000710);
         drawerScrim.setVisibility(View.GONE);
         drawerScrim.setOnClickListener(v->closeSideDrawer());
         frame.addView(drawerScrim,new FrameLayout.LayoutParams(-1,-1));
 
-        sideDrawer=new LinearLayout(this);
-        sideDrawer.setOrientation(LinearLayout.VERTICAL);
-        sideDrawer.setPadding(uiDp(12),uiDp(18),uiDp(12),uiDp(12));
-        sideDrawer.setBackground(roundBg(Color.rgb(4,20,34),0));
-        sideDrawer.setElevation(uiDp(12));
-        TextView drawerTitle=tv("RAYYAN MENU",16);
-        drawerTitle.setTypeface(null,Typeface.BOLD);
-        drawerTitle.setTextColor(Color.CYAN);
-        sideDrawer.addView(drawerTitle,new LinearLayout.LayoutParams(-1,uiDp(48)));
-        addDrawerAction("MARKET",()->showMarketDialog());
-        addDrawerAction("POWERFULL",()->showPowerfullDialog());
-        addDrawerAction("ORDERS / HISTORY",()->showLogDialog("ORDERS / HISTORY"));
-        addDrawerAction("SETTINGS",()->showSettingsPanel(sideDrawer));
-        Button close=btn("TUTUP MENU");
-        close.setBackground(roundBg(Color.rgb(35,55,75),10));
-        sideDrawer.addView(close,new LinearLayout.LayoutParams(-1,uiDp(42)));
-        close.setOnClickListener(v->closeSideDrawer());
-        FrameLayout.LayoutParams drawerParams=new FrameLayout.LayoutParams(uiDp(260),-1,Gravity.LEFT);
-        frame.addView(sideDrawer,drawerParams);
-        sideDrawer.setTranslationX(-uiDp(260));
-        sideDrawer.setVisibility(View.GONE);
+        buildSlidingSettingsMenu(frame);
 
-        View edgeHandle=new View(this);
-        edgeHandle.setBackground(roundBg(Color.rgb(0,105,150),8));
-        FrameLayout.LayoutParams edgeParams=new FrameLayout.LayoutParams(uiDp(7),uiDp(76),Gravity.LEFT|Gravity.CENTER_VERTICAL);
-        frame.addView(edgeHandle,edgeParams);
-        edgeHandle.setOnClickListener(v->openSideDrawer());
+        // Wide transparent touch target: a tap anywhere along the left edge opens the drawer.
+        View edgeTapZone=new View(this);
+        edgeTapZone.setBackgroundColor(Color.TRANSPARENT);
+        FrameLayout.LayoutParams edgeParams=new FrameLayout.LayoutParams(uiDp(38),-1,Gravity.LEFT|Gravity.CENTER_VERTICAL);
+        frame.addView(edgeTapZone,edgeParams);
+        edgeTapZone.setOnTouchListener((v,event)->{
+            if(event.getAction()==MotionEvent.ACTION_UP){openSideDrawer();return true;}
+            return true;
+        });
+        View edgeAccent=new View(this);
+        edgeAccent.setBackground(roundBg(Color.rgb(0,190,215),8));
+        FrameLayout.LayoutParams accentParams=new FrameLayout.LayoutParams(uiDp(4),dashH(82),Gravity.LEFT|Gravity.CENTER_VERTICAL);
+        frame.addView(edgeAccent,accentParams);
+        edgeAccent.setClickable(false);
 
         setContentView(frame);
         mainRoot=frame;
@@ -287,15 +300,116 @@ public class MainActivity extends Activity {
         requestNotificationPermission();
     }
 
-    private void addDrawerAction(String label,Runnable action){
-        Button item=btn(label);
-        item.setGravity(Gravity.CENTER_VERTICAL|Gravity.LEFT);
-        item.setPadding(uiDp(12),0,uiDp(8),0);
-        item.setBackground(roundBg(Color.rgb(7,34,55),10));
-        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,uiDp(46));
-        lp.setMargins(0,0,0,uiDp(8));
-        sideDrawer.addView(item,lp);
-        item.setOnClickListener(v->{closeSideDrawer();action.run();});
+    private void buildSlidingSettingsMenu(FrameLayout frame){
+        sideDrawer=new LinearLayout(this);
+        sideDrawer.setOrientation(LinearLayout.VERTICAL);
+        sideDrawer.setPadding(uiDp(14),dashH(13),uiDp(12),dashH(10));
+        sideDrawer.setBackground(new android.graphics.drawable.GradientDrawable(
+            android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+            new int[]{Color.rgb(5,35,56),Color.rgb(2,12,24)}));
+        sideDrawer.setElevation(uiDp(18));
+
+        LinearLayout drawerHeader=new LinearLayout(this);
+        drawerHeader.setGravity(Gravity.CENTER_VERTICAL);
+        drawerHeader.setPadding(0,0,0,dashH(8));
+        LinearLayout drawerHeading=new LinearLayout(this);
+        drawerHeading.setOrientation(LinearLayout.VERTICAL);
+        TextView drawerTitle=tv("RAYYAN MENU",17);
+        drawerTitle.setTypeface(null,Typeface.BOLD);
+        drawerTitle.setTextColor(Color.CYAN);
+        TextView drawerSub=tv("PENGATURAN & FITUR MT5",9);
+        drawerSub.setTextColor(Color.rgb(145,180,202));
+        drawerHeading.addView(drawerTitle,new LinearLayout.LayoutParams(-1,dashH(24)));
+        drawerHeading.addView(drawerSub,new LinearLayout.LayoutParams(-1,dashH(17)));
+        drawerHeader.addView(drawerHeading,new LinearLayout.LayoutParams(0,-2,1));
+        Button close=btn("✕");
+        close.setTextSize(16);
+        close.setBackground(roundBg(Color.rgb(15,57,78),9));
+        drawerHeader.addView(close,new LinearLayout.LayoutParams(uiDp(42),dashH(40)));
+        close.setOnClickListener(v->closeSideDrawer());
+        sideDrawer.addView(drawerHeader,new LinearLayout.LayoutParams(-1,dashH(52)));
+
+        View line=new View(this);
+        line.setBackgroundColor(Color.rgb(25,91,121));
+        sideDrawer.addView(line,new LinearLayout.LayoutParams(-1,uiDp(1)));
+
+        ScrollView menuScroll=new ScrollView(this);
+        menuScroll.setFillViewport(false);
+        menuScroll.setVerticalScrollBarEnabled(false);
+        LinearLayout menuContent=new LinearLayout(this);
+        menuContent.setOrientation(LinearLayout.VERTICAL);
+        menuContent.setPadding(0,dashH(5),0,dashH(8));
+        menuScroll.addView(menuContent);
+        sideDrawer.addView(menuScroll,new LinearLayout.LayoutParams(-1,0,1));
+
+        addDrawerSection(menuContent,"MARKET & CHART");
+        addDrawerItem(menuContent,"◈","MARKET","Pilih instrumen MT5","market");
+        addDrawerItem(menuContent,"⌖","CHART LIVE MT5","Buka chart native","chart");
+        addDrawerItem(menuContent,"⌁","HARMONIC + FIBONACCI","Pola harga dan level swing","harmonic_fibo");
+
+        addDrawerSection(menuContent,"TRADING POWERFULL");
+        addDrawerItem(menuContent,"⚡","POWERFULL EA","Status, ON/OFF dan parameter EA","powerfull");
+        addDrawerItem(menuContent,"▤","ORDERS / HISTORY","Posisi aktif dan riwayat transaksi","orders");
+        addDrawerItem(menuContent,"⇄","GATEWAY / MT5 SYNC","Koneksi, antrean dan ACK","gateway");
+        addDrawerItem(menuContent,"◒","RISK MANAGEMENT","Informasi pengelolaan risiko","risk");
+
+        addDrawerSection(menuContent,"PENGATURAN");
+        addDrawerItem(menuContent,"⚙","SETTINGS","Pengaturan aplikasi","settings");
+        addDrawerItem(menuContent,"◐","TEMA APLIKASI","Tema gelap atau terang","settings_theme");
+        addDrawerItem(menuContent,"✉","TELEGRAM","Notifikasi Telegram","settings_telegram");
+        addDrawerItem(menuContent,"♧","NOTIFIKASI","Pengaturan notifikasi","settings_notifications");
+        addDrawerItem(menuContent,"▧","LOG SISTEM","Catatan aktivitas aplikasi","settings_logs");
+
+        TextView drawerFooter=tv("POWERFULL DIKENDALIKAN EA MT5",8);
+        drawerFooter.setTextColor(Color.rgb(112,154,177));
+        drawerFooter.setGravity(Gravity.CENTER);
+        sideDrawer.addView(drawerFooter,new LinearLayout.LayoutParams(-1,dashH(28)));
+
+        int drawerWidth=Math.min(uiDp(330),Math.round(getResources().getDisplayMetrics().widthPixels*0.88f));
+        FrameLayout.LayoutParams drawerParams=new FrameLayout.LayoutParams(drawerWidth,-1,Gravity.LEFT);
+        frame.addView(sideDrawer,drawerParams);
+        sideDrawer.setTranslationX(-drawerWidth);
+        sideDrawer.setVisibility(View.GONE);
+    }
+
+    private void addDrawerSection(LinearLayout parent,String label){
+        TextView heading=tv(label,9);
+        heading.setTypeface(null,Typeface.BOLD);
+        heading.setTextColor(Color.rgb(0,205,225));
+        heading.setPadding(uiDp(3),dashH(7),uiDp(3),dashH(2));
+        parent.addView(heading,new LinearLayout.LayoutParams(-1,dashH(27)));
+    }
+
+    private void addDrawerItem(LinearLayout parent,String icon,String title,String subtitle,String action){
+        LinearLayout item=new LinearLayout(this);
+        item.setOrientation(LinearLayout.HORIZONTAL);
+        item.setGravity(Gravity.CENTER_VERTICAL);
+        item.setPadding(uiDp(8),dashH(4),uiDp(7),dashH(4));
+        item.setBackground(roundBg(Color.rgb(8,32,51),10));
+        TextView glyph=tv(icon,18);
+        glyph.setTextColor(Color.rgb(0,220,180));
+        glyph.setGravity(Gravity.CENTER);
+        item.addView(glyph,new LinearLayout.LayoutParams(uiDp(32),-1));
+        LinearLayout labels=new LinearLayout(this);
+        labels.setOrientation(LinearLayout.VERTICAL);
+        TextView name=tv(title,11);
+        name.setTypeface(null,Typeface.BOLD);
+        name.setTextColor(Color.WHITE);
+        TextView detail=tv(subtitle,8);
+        detail.setTextColor(Color.rgb(146,175,194));
+        labels.addView(name,new LinearLayout.LayoutParams(-1,dashH(17)));
+        labels.addView(detail,new LinearLayout.LayoutParams(-1,dashH(15)));
+        item.addView(labels,new LinearLayout.LayoutParams(0,-2,1));
+        TextView arrow=tv("›",20);
+        arrow.setTextColor(Color.CYAN);
+        item.addView(arrow,new LinearLayout.LayoutParams(uiDp(18),-1));
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dashH(48));
+        lp.setMargins(0,uiDp(2),0,uiDp(2));
+        parent.addView(item,lp);
+        item.setOnClickListener(v->{
+            closeSideDrawer();
+            controlRefreshHandler.postDelayed(()->handleMenuAction(action),190);
+        });
     }
 
     private void openSideDrawer(){
@@ -303,14 +417,16 @@ public class MainActivity extends Activity {
         drawerOpen=true;
         drawerScrim.setVisibility(View.VISIBLE);
         sideDrawer.setVisibility(View.VISIBLE);
-        sideDrawer.setTranslationX(-uiDp(260));
-        sideDrawer.animate().translationX(0).setDuration(220).start();
+        sideDrawer.bringToFront();
+        sideDrawer.setTranslationX(-sideDrawer.getLayoutParams().width);
+        sideDrawer.animate().translationX(0).setDuration(165).start();
     }
 
     private void closeSideDrawer(){
         if(sideDrawer==null||!drawerOpen)return;
         drawerOpen=false;
-        sideDrawer.animate().translationX(-uiDp(260)).setDuration(180)
+        int width=sideDrawer.getLayoutParams().width;
+        sideDrawer.animate().translationX(-width).setDuration(135)
             .withEndAction(()->{if(!drawerOpen){sideDrawer.setVisibility(View.GONE);drawerScrim.setVisibility(View.GONE);}})
             .start();
     }
@@ -319,8 +435,8 @@ public class MainActivity extends Activity {
         TextView heading=tv(label,9);
         heading.setTypeface(null,Typeface.BOLD);
         heading.setTextColor(Color.rgb(0,205,225));
-        heading.setPadding(uiDp(3),uiDp(2),uiDp(3),0);
-        parent.addView(heading,new LinearLayout.LayoutParams(-1,uiDp(19)));
+        heading.setPadding(uiDp(3),dashH(3),uiDp(3),0);
+        parent.addView(heading,new LinearLayout.LayoutParams(-1,dashH(21)));
     }
 
     private void addControlGrid(LinearLayout parent,String[][] cells){
@@ -328,29 +444,29 @@ public class MainActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         for(String[] cell:cells){
             LinearLayout card=controlMetricCard(cell[0],cell[1]);
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,uiDp(43),1);
-            lp.setMargins(uiDp(2),uiDp(1),uiDp(2),uiDp(1));
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dashH(47),1);
+            lp.setMargins(uiDp(3),uiDp(2),uiDp(3),uiDp(2));
             row.addView(card,lp);
         }
-        parent.addView(row,new LinearLayout.LayoutParams(-1,uiDp(45)));
+        parent.addView(row,new LinearLayout.LayoutParams(-1,dashH(51)));
     }
 
     private LinearLayout controlMetricCard(String key,String label){
         LinearLayout card=new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(uiDp(7),uiDp(2),uiDp(7),uiDp(2));
-        card.setBackground(roundBg(Color.rgb(7,30,47),8));
+        card.setPadding(uiDp(9),dashH(3),uiDp(7),dashH(3));
+        card.setBackground(roundBg(Color.rgb(12,29,45),9));
         TextView name=tv(label,8);
         name.setTypeface(null,Typeface.BOLD);
         name.setTextColor(Color.rgb(0,205,225));
-        TextView value=tv("--",12);
+        TextView value=tv("--",13);
         value.setTypeface(null,Typeface.BOLD);
         value.setTextColor(Color.WHITE);
         value.setSingleLine(true);
         value.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        card.addView(name,new LinearLayout.LayoutParams(-1,uiDp(15)));
-        card.addView(value,new LinearLayout.LayoutParams(-1,uiDp(20)));
+        card.addView(name,new LinearLayout.LayoutParams(-1,dashH(16)));
+        card.addView(value,new LinearLayout.LayoutParams(-1,dashH(22)));
         controlValues.put(key,value);
         return card;
     }
@@ -358,8 +474,8 @@ public class MainActivity extends Activity {
     private void addControlValueCard(LinearLayout parent,String key,String initial){
         LinearLayout card=new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(uiDp(8),uiDp(3),uiDp(8),uiDp(3));
-        card.setBackground(roundBg(Color.rgb(7,30,47),8));
+        card.setPadding(uiDp(9),dashH(4),uiDp(9),dashH(4));
+        card.setBackground(roundBg(Color.rgb(12,29,45),9));
         TextView value=tv(initial,10);
         value.setTextColor(Color.WHITE);
         value.setGravity(Gravity.CENTER_VERTICAL);
@@ -368,7 +484,7 @@ public class MainActivity extends Activity {
         value.setEllipsize(android.text.TextUtils.TruncateAt.END);
         card.addView(value,new LinearLayout.LayoutParams(-1,-1));
         controlValues.put(key,value);
-        parent.addView(card,new LinearLayout.LayoutParams(-1,uiDp(48)));
+        parent.addView(card,new LinearLayout.LayoutParams(-1,dashH(56)));
     }
 
     private void setControlValue(String key,String value){
@@ -384,6 +500,7 @@ public class MainActivity extends Activity {
         long stateAt=gp.getLong("powerfull_state_at_"+symbol,0L);
         boolean fresh=stateAt>0L&&now>=stateAt&&now-stateAt<=8000L;
         String statusText=fresh?gp.getString("powerfull_status_"+symbol,"UNKNOWN"):"MENUNGGU / DATA EA STALE";
+        setControlValue("algo_status",fresh?statusText:"MENUNGGU MT5");
         setControlValue("m15","Data arah candle belum dikirim Gateway");
         setControlValue("h1","Data arah candle belum dikirim Gateway");
         setControlValue("h4","Data arah candle belum dikirim Gateway");
@@ -531,7 +648,7 @@ public class MainActivity extends Activity {
     private void closeChartFullscreen(){
         chartFullscreen=false;
         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
-        getWindow().getDecorView().setSystemUiVisibility(defaultSystemUiVisibility);
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY|View.SYSTEM_UI_FLAG_LAYOUT_STABLE|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
         buildUI();
     }
 
