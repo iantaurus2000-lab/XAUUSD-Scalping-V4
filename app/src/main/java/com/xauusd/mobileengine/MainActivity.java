@@ -162,8 +162,10 @@ public class MainActivity extends Activity {
         chartFullscreen=false;
         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         getWindow().getDecorView().setSystemUiVisibility(defaultSystemUiVisibility);
-        buildParameterHome();
+        buildChartDashboard();
         startGateway();
+        selectTimeframe(selectedTf,false);
+        load(interval(selectedTf),selectedTf);
     }
 
     private void buildParameterHome(){
@@ -242,24 +244,24 @@ public class MainActivity extends Activity {
     }
 
     private void openChartFullscreen(){
+        if(chart==null){buildChartDashboard();}
         chartFullscreen=true;
         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
-        buildChartDashboard();
         ViewGroup oldParent=(chart!=null&&chart.getParent() instanceof ViewGroup)?(ViewGroup)chart.getParent():null;
         if(oldParent!=null)oldParent.removeView(chart);
         FrameLayout screen=new FrameLayout(this); screen.setBackgroundColor(Color.BLACK);
         LinearLayout column=new LinearLayout(this); column.setOrientation(LinearLayout.VERTICAL);
         LinearLayout top=new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL);
-        top.setPadding(uiDp(6),0,uiDp(6),0); top.setBackgroundColor(Color.rgb(3,13,23));
-        Button back=btn("‹  PARAMETER"); back.setTextSize(11);
-        top.addView(back,new LinearLayout.LayoutParams(uiDp(112),uiDp(38)));
+        top.setPadding(uiDp(8),0,uiDp(8),0); top.setBackgroundColor(Color.rgb(3,13,23));
+        Button back=btn("‹ KEMBALI"); back.setTextSize(11);
+        top.addView(back,new LinearLayout.LayoutParams(uiDp(104),uiDp(38)));
         TextView label=tv(selectedMarket+"  •  MT5 NATIVE CHART",13);label.setTypeface(null,Typeface.BOLD);
         top.addView(label,new LinearLayout.LayoutParams(0,uiDp(38),1));
         Button live=btn("● LIVE"); live.setTextSize(10); top.addView(live,new LinearLayout.LayoutParams(uiDp(72),uiDp(38)));
         back.setOnClickListener(v->closeChartFullscreen());
         live.setOnClickListener(v->{if(chart!=null){chart.goLive();selectTimeframe(selectedTf,false);}});
         column.addView(top,new LinearLayout.LayoutParams(-1,uiDp(42)));
-        column.addView(chart,new LinearLayout.LayoutParams(-1,0,1));
+        if(chart!=null)column.addView(chart,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout tf=new LinearLayout(this);tf.setGravity(Gravity.CENTER);
         for(String timeframe:new String[]{"M1","M5","M15","H1","H4","D1"}){
             Button b=btn(timeframe); b.setTextSize(11); tf.addView(b,new LinearLayout.LayoutParams(0,uiDp(38),1));
@@ -329,9 +331,12 @@ public class MainActivity extends Activity {
 
         // CHART TOOLS
         LinearLayout layers=new LinearLayout(this);layers.setPadding(4,3,4,3);layers.setBackgroundColor(Color.rgb(3,14,24));
-        String[] ls={"⇄ Bid/Ask","▤ Order","◎ Posisi"};
-        for(String s:ls){
-            Button b=btn(s);b.setTextSize(9);layers.addView(b,new LinearLayout.LayoutParams(0,38,1));bindQuickLayer(b,s);
+        String[] ls={"⇄ Bid/Ask","▤ Order","◎ Posisi","INPUTS","⛶ LANDSCAPE"};
+        for(String label:ls){
+            Button b=btn(label);b.setTextSize(9);layers.addView(b,new LinearLayout.LayoutParams(0,38,1));
+            if("INPUTS".equals(label))b.setOnClickListener(v->showPowerfullDialog());
+            else if(label.contains("LANDSCAPE"))b.setOnClickListener(v->openChartFullscreen());
+            else bindQuickLayer(b,label);
         }
         root.addView(layers);
 
