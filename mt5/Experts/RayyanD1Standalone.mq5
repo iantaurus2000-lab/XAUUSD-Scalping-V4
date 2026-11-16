@@ -3637,7 +3637,9 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       // renewed trend strength automatically resets the drawdown calculation.
       // Exit only after >=15% net-profit giveback AND live/structural weakening.
       double peakGiveback=(peakNet>0.0?MathMax(0.0,(peakNet-currentNet)/peakNet):0.0);
-      bool trendWeakening=(m5Against&&(m5Break||m15Against||m15Break));
+      // Profit protection must also respect TREND_HOLD: do not close while
+      // H1/H4 still support the position or M15 is neutral/doji.
+      bool trendWeakening=(structure==-side&&m5Against&&m15Against&&(m5Break||m15Break));
       bool peakProfitGuard=(peakNet>0.0&&peakGiveback>=0.15&&trendWeakening);
       if(peakProfitGuard){
          Print("POWERFULL PEAK PROFIT GUARD symbol=",symbol," ticket=",ticket,
