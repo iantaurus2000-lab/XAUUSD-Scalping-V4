@@ -1033,7 +1033,7 @@ public class MainActivity extends Activity {
         if("confidence".equals(action))showConfidenceDialog();
         else if("market".equals(action)||"settings_market".equals(action))showMarketDialog();
         else if("chart".equals(action)){if(chart!=null)chart.goLive();}
-        else if("indicators".equals(action)||"settings_indicators".equals(action))showIndicatorDialog();
+        else if("indicators".equals(action)||"settings_indicators".equals(action)||"harmonic_fibo".equals(action))showIndicatorDialog();
         else if("signal".equals(action))showSignalDialog();
         else if("gateway".equals(action)||"settings_gateway".equals(action))showGatewayAckDiagnostics();
         else if("orders".equals(action)||"settings_logs".equals(action))showLogDialog("ORDERS / SYSTEM LOG");
@@ -1412,22 +1412,35 @@ public class MainActivity extends Activity {
             if(tp1View!=null)tp1View.setText("TP1\\nEA");
             if(tp2View!=null)tp2View.setText("TP2\\nEA");
         }
+        // Legacy EMA, S/R, RSI, MACD, ATR and APK signal overlays are permanently disabled.
         chart.setShowEMA50(false);
         chart.setShowEMA200(false);
         chart.setShowSR(false);
-        chart.setShowFibo(false);
         chart.setShowRSI(false);
         chart.setShowATR(false);
         chart.setShowMACD(false);
         chart.setShowSignals(false);
         chart.setShowWickBos(false);
-        chart.setShowTradeLevels(false);
-        chart.setShowPosition(true);
+        chart.setShowFibo(prefs.getBoolean("fibo",true));
+        chart.setShowHarmonic(prefs.getBoolean("harmonic",true));
+        chart.setShowTradeLevels(ind("orders",true));
+        chart.setShowPosition(ind("position",true));
         chart.setShowBidAsk(ind("bidask",true));
     }
 
     void loadIndicatorSettings(){
-        chart.setShowSignals(ind("signals",true));chart.setShowWickBos(ind("wickbos",true));chart.setShowTradeLevels(ind("orders",true));chart.setShowPosition(ind("position",true));chart.setShowBidAsk(ind("bidask",true));
+        // Clear persisted legacy indicator preferences so old overlays cannot return.
+        prefs.edit().putBoolean("ema50",false).putBoolean("ema200",false).putBoolean("sr",false)
+            .putBoolean("rsi",false).putBoolean("macd",false).putBoolean("atr",false)
+            .putBoolean("signals",false).putBoolean("wickbos",false)
+            .putBoolean("fibo",true).putBoolean("harmonic",true).apply();
+        if(chart!=null){
+            chart.setShowSignals(false);chart.setShowWickBos(false);
+            chart.setShowEMA50(false);chart.setShowEMA200(false);chart.setShowSR(false);
+            chart.setShowRSI(false);chart.setShowMACD(false);chart.setShowATR(false);
+            chart.setShowFibo(true);chart.setShowHarmonic(true);
+            chart.setShowTradeLevels(ind("orders",true));chart.setShowPosition(ind("position",true));chart.setShowBidAsk(ind("bidask",true));
+        }
         applyStrategyIndicatorProfile();
         queueNativeIndicatorState();
     }
@@ -1494,20 +1507,32 @@ public class MainActivity extends Activity {
     }
 
     void showIndicatorDialog(){
-        final String[] names={"Bid / Ask","Entry / SL / TP","Posisi"};
-        final String[] keys={"bidask","orders","position"};
-        final String[] icons={"⇄","▤","◎"};
+        final String[] names={"Harmonic Pattern","Fibonacci","Bid / Ask","Entry / SL / TP","Posisi"};
+        final String[] keys={"harmonic","fibo","bidask","orders","position"};
+        final String[] icons={"⌁","⌖","⇄","▤","◎"};
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(22,16,22,14);box.setBackground(roundBg(Color.rgb(3,18,30),16));
-        TextView title=tv("CHART DISPLAY",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        TextView title=tv("CHART • PRICE STRUCTURE",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
         box.addView(title,new LinearLayout.LayoutParams(-1,40));
-        TextView note=tv("Indikator strategi STANDAR/EXCELLENT dihapus. POWERFULL dikelola EA MT5.",12);
-        note.setTextColor(Color.LTGRAY);box.addView(note,new LinearLayout.LayoutParams(-1,48));
+        TextView note=tv("Hanya Harmonic Pattern dan Fibonacci untuk analisis harga. Data Bid/Ask dan level transaksi MT5 tetap tersedia.",12);
+        note.setTextColor(Color.LTGRAY);box.addView(note,new LinearLayout.LayoutParams(-1,52));
         for(int i=0;i<names.length;i++){final int index=i;LinearLayout row=new LinearLayout(this);
             row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(8,8,8,8);
             TextView label=tv(icons[i]+"  "+names[i],14);row.addView(label,new LinearLayout.LayoutParams(0,48,1));
-            Switch sw=new Switch(this);sw.setChecked(ind(keys[i],true));row.addView(sw);
-            sw.setOnCheckedChangeListener((button,on)->{setInd(keys[index],on);applyStrategyIndicatorProfile();queueNativeIndicatorState();});
+            Switch sw=new Switch(this);
+            boolean defaultOn=index<2||index==2||index==3||index==4;
+            sw.setChecked(prefs.getBoolean(keys[i],defaultOn));row.addView(sw);
+            sw.setOnCheckedChangeListener((button,on)->{
+                prefs.edit().putBoolean(keys[index],on).apply();
+                if(chart!=null){
+                    chart.setShowHarmonic(prefs.getBoolean("harmonic",true));
+                    chart.setShowFibo(prefs.getBoolean("fibo",true));
+                    chart.setShowBidAsk(prefs.getBoolean("bidask",true));
+                    chart.setShowTradeLevels(prefs.getBoolean("orders",true));
+                    chart.setShowPosition(prefs.getBoolean("position",true));
+                }
+                queueNativeIndicatorState();
+            });
             box.addView(row,new LinearLayout.LayoutParams(-1,56));
         }
         new AlertDialog.Builder(this).setView(box).setPositiveButton("SELESAI",null).show();
