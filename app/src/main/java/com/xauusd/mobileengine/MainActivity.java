@@ -159,6 +159,9 @@ public class MainActivity extends Activity {
     private boolean chartFullscreen=false;
     private final Handler controlRefreshHandler=new Handler(Looper.getMainLooper());
     private final Map<String,TextView> controlValues=new HashMap<>();
+    private final Map<String,LinearLayout> controlCards=new HashMap<>();
+    private final TextView[] layerSlotViews=new TextView[5];
+    private final LinearLayout[] layerSlotCards=new LinearLayout[5];
     private final Runnable controlRefreshRunnable=new Runnable(){
         @Override public void run(){
             if(!visible||chartFullscreen)return;
@@ -187,9 +190,10 @@ public class MainActivity extends Activity {
 
     private void buildControlHome(){
         controlValues.clear();
+        controlCards.clear();
         float density=getResources().getDisplayMetrics().density;
         int screenDp=Math.round(getResources().getDisplayMetrics().heightPixels/density);
-        dashboardScale=Math.max(1.0f,Math.min(1.48f,(screenDp-72f)/430f));
+        dashboardScale=Math.max(0.82f,Math.min(1.34f,(screenDp-36f)/540f));
 
         FrameLayout frame=new FrameLayout(this);
         frame.setBackgroundColor(Color.rgb(2,8,16));
@@ -249,18 +253,8 @@ public class MainActivity extends Activity {
         addControlGrid(body,new String[][]{{"total_entry","TOTAL ENTRY"},{"closed","CLOSED TRADES"}});
         addControlGrid(body,new String[][]{{"total_profit","TOTAL PROFIT"},{"total_loss","TOTAL LOSS"}});
         addControlSection(body,"RUNNING ENTRY  /  OPEN POSITIONS");
-        addControlValueCard(body,"running","Menunggu data posisi dari MT5...");
+        addLayerStackCard(body);
         addControlGrid(body,new String[][]{{"floating","LIVE FLOAT P/L (MT5)"},{"peaks","SUM OF TICKET PEAKS"}});
-
-        LinearLayout refreshRow=new LinearLayout(this);
-        refreshRow.setPadding(0,dashH(5),0,0);
-        Button refresh=btn("↻   REFRESH DATA");
-        refresh.setTextSize(12);
-        refresh.setTypeface(null,Typeface.BOLD);
-        refresh.setBackground(roundBg(Color.rgb(23,75,111),10));
-        refreshRow.addView(refresh,new LinearLayout.LayoutParams(-1,dashH(40)));
-        refresh.setOnClickListener(v->updateControlDashboard());
-        body.addView(refreshRow,new LinearLayout.LayoutParams(-1,dashH(45)));
 
         // A quiet footer fills the lower edge without adding fake market values.
         View divider=new View(this);
@@ -475,7 +469,43 @@ public class MainActivity extends Activity {
         card.addView(name,new LinearLayout.LayoutParams(-1,dashH(16)));
         card.addView(value,new LinearLayout.LayoutParams(-1,dashH(22)));
         controlValues.put(key,value);
+        controlCards.put(key,card);
         return card;
+    }
+
+    private void addLayerStackCard(LinearLayout parent){
+        LinearLayout outer=new LinearLayout(this);
+        outer.setOrientation(LinearLayout.VERTICAL);
+        outer.setPadding(uiDp(7),dashH(5),uiDp(7),dashH(5));
+        outer.setBackground(roundBg(Color.rgb(8,22,36),11));
+        for(int i=0;i<5;i++){
+            LinearLayout slot=new LinearLayout(this);
+            slot.setGravity(Gravity.CENTER_VERTICAL);
+            slot.setPadding(uiDp(9),0,uiDp(8),0);
+            slot.setBackground(roundBg(Color.rgb(17,31,45),7));
+            TextView label=tv("LAYER "+(i+1),9);
+            label.setTypeface(null,Typeface.BOLD);
+            label.setTextColor(Color.rgb(132,157,178));
+            TextView state=tv("KOSONG",9);
+            state.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+            state.setTypeface(null,Typeface.BOLD);
+            state.setTextColor(Color.rgb(105,129,148));
+            slot.addView(label,new LinearLayout.LayoutParams(0,dashH(21),1));
+            slot.addView(state,new LinearLayout.LayoutParams(uiDp(112),dashH(21)));
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dashH(22));
+            lp.setMargins(0,uiDp(1),0,uiDp(1));
+            outer.addView(slot,lp);
+            layerSlotCards[i]=slot;
+            layerSlotViews[i]=state;
+        }
+        parent.addView(outer,new LinearLayout.LayoutParams(-1,dashH(126)));
+    }
+
+    private void setControlCardTone(String key,int background,int foreground){
+        LinearLayout card=controlCards.get(key);
+        TextView value=controlValues.get(key);
+        if(card!=null)card.setBackground(roundBg(background,9));
+        if(value!=null)value.setTextColor(foreground);
     }
 
     private void addControlValueCard(LinearLayout parent,String key,String initial){
@@ -508,9 +538,9 @@ public class MainActivity extends Activity {
         boolean fresh=stateAt>0L&&now>=stateAt&&now-stateAt<=8000L;
         String statusText=fresh?gp.getString("powerfull_status_"+symbol,"UNKNOWN"):"MENUNGGU / DATA EA STALE";
         setControlValue("algo_status",fresh?statusText:"MENUNGGU MT5");
-        setControlValue("m15","Data arah candle belum dikirim Gateway");
-        setControlValue("h1","Data arah candle belum dikirim Gateway");
-        setControlValue("h4","Data arah candle belum dikirim Gateway");
+        updateDirectionCard("M15",symbol,"m15");
+        updateDirectionCard("H1",symbol,"h1");
+        updateDirectionCard("H4",symbol,"h4");
 
         int wins=gp.getInt("powerfull_wins_"+symbol,0);
         int losses=gp.getInt("powerfull_losses_"+symbol,0);
@@ -526,21 +556,60 @@ public class MainActivity extends Activity {
         setControlValue("total_entry",fresh?String.valueOf(total):"--");
         setControlValue("closed",fresh?String.valueOf(closed):"--");
 
-        String kind=gp.getString("powerfull_order_kind_"+symbol,"NONE");
-        String side=gp.getString("powerfull_order_side_"+symbol,"");
-        String ticket=gp.getString("powerfull_order_ticket_"+symbol,"");
-        String entry=gp.getString("powerfull_order_entry_"+symbol,"");
-        String running="EA: "+statusText+"\nPosisi aktif: "+(fresh?positions:"--")+
-            " • Pending: "+(fresh?pending:"--");
-        if(fresh&&!"NONE".equals(kind)){
-            running+="\n"+kind+" "+side+" • Ticket "+(ticket.isEmpty()?"--":ticket)+
-                " • Entry "+(entry.isEmpty()?"--":entry);
-        }
-        setControlValue("running",running);
-        setControlValue("total_profit",fresh?"Belum tersedia dari Gateway":"--");
-        setControlValue("total_loss",fresh?"Belum tersedia dari Gateway":"--");
+        String side=gp.getString("powerfull_order_side_"+symbol,"").toUpperCase(Locale.US);
+        updateLayerSlots(fresh?positions:0,side,fresh,pending);
+        setControlValue("total_profit",fresh?"--":"--");
+        setControlValue("total_loss",fresh?"--":"--");
+        setControlCardTone("total_profit",Color.rgb(8,76,48),Color.rgb(106,255,174));
+        setControlCardTone("total_loss",Color.rgb(83,24,35),Color.rgb(255,132,145));
         setControlValue("floating",fresh?"Belum tersedia dari Gateway":"Menunggu data MT5...");
         setControlValue("peaks",fresh?"Belum tersedia dari Gateway":"Menunggu data MT5...");
+    }
+
+    private void updateDirectionCard(String timeframe,String symbol,String key){
+        Candle[] bars=readNativeMt5Bars(selectedMarket,timeframe,3);
+        if(bars==null||bars.length==0){
+            setControlValue(key,"—  MENUNGGU MT5");
+            setControlCardTone(key,Color.rgb(24,34,47),Color.rgb(157,177,194));
+            return;
+        }
+        Candle current=bars[bars.length-1];
+        if(current.c>current.o){
+            setControlValue(key,"↑  BULLISH");
+            setControlCardTone(key,Color.rgb(8,76,48),Color.rgb(106,255,174));
+        }else if(current.c<current.o){
+            setControlValue(key,"↓  BEARISH");
+            setControlCardTone(key,Color.rgb(83,24,35),Color.rgb(255,132,145));
+        }else{
+            setControlValue(key,"→  NEUTRAL");
+            setControlCardTone(key,Color.rgb(38,48,59),Color.rgb(205,218,228));
+        }
+    }
+
+    private void updateLayerSlots(int positions,String side,boolean fresh,int pending){
+        int active=Math.min(5,Math.max(0,positions));
+        boolean bullish="BUY".equals(side)||"BULLISH".equals(side);
+        boolean bearish="SELL".equals(side)||"BEARISH".equals(side);
+        for(int i=0;i<5;i++){
+            boolean on=fresh&&i<active;
+            if(!on){
+                layerSlotViews[i].setText(fresh?"STANDBY":"MENUNGGU DATA");
+                layerSlotViews[i].setTextColor(Color.rgb(105,129,148));
+                layerSlotCards[i].setBackground(roundBg(Color.rgb(17,31,45),7));
+            }else if(bullish){
+                layerSlotViews[i].setText("●  BUY  /  AKTIF");
+                layerSlotViews[i].setTextColor(Color.rgb(106,255,174));
+                layerSlotCards[i].setBackground(roundBg(Color.rgb(8,76,48),7));
+            }else if(bearish){
+                layerSlotViews[i].setText("●  SELL  /  AKTIF");
+                layerSlotViews[i].setTextColor(Color.rgb(255,132,145));
+                layerSlotCards[i].setBackground(roundBg(Color.rgb(83,24,35),7));
+            }else{
+                layerSlotViews[i].setText("●  AKTIF");
+                layerSlotViews[i].setTextColor(Color.rgb(224,235,244));
+                layerSlotCards[i].setBackground(roundBg(Color.rgb(38,48,59),7));
+            }
+        }
     }
 
     private int parseControlInt(String value){
