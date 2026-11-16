@@ -55,8 +55,8 @@ public final class RayyanMenuLayout {
 
     public static void showMain(Activity host, String market, String timeframe, ActionHandler actions) {
         LinearLayout root = base(host);
-        addHero(host, root, "RAYYAN • MENU UTAMA", market + "   /   TIMEFRAME " + timeframe,
-                "Pilih fungsi • tombol dibuat lebih besar");
+        addHero(host, root, "RAYYAN • TRADING", market + "   /   " + timeframe,
+                "Menu samping • chart native MT5");
         ScrollView scroll = new ScrollView(host);
         scroll.setFillViewport(false);
         LinearLayout content = new LinearLayout(host);
@@ -67,35 +67,33 @@ public final class RayyanMenuLayout {
 
         addSection(host, content, "MARKET & CHART");
         addItems(host, content, Arrays.asList(
-            new Item("◈", "Market", "Pilih XAUUSD, BTCUSD, atau ETHUSD", "market"),
-            new Item("⌖", "Chart", "Kembali ke chart live", "chart"),
-            new Item("◉", "Tampilan Live Chart", "Chart native: OHLC MT5 + Bid/Ask live", "live_chart"),
-            new Item("▦", "Tampilan Chart", "Atur tampilan chart dan level transaksi", "indicators")
+            new Item("◈", "Market", "Pilih instrumen MT5", "market"),
+            new Item("⌖", "Chart Live", "Kembali ke chart native MT5", "chart"),
+            new Item("◉", "Harmonic + Fibonacci", "Pola harga dan level swing", "harmonic_fibo")
         ), actions);
 
-        addSection(host, content, "SMART AUTO ENTRY & KONEKSI");
+        addSection(host, content, "TRADING POWERFULL");
         addItems(host, content, Arrays.asList(
-            new Item("⇄", "Gateway / Queue / ACK", "Status EA, antrean, dan konfirmasi MT5", "gateway"),
-            new Item("▤", "Orders / History", "Log dan riwayat aktivitas aplikasi", "orders"),
-            new Item("⚡", "SMART AUTO-POWERFULL", "Proyeksi rentang 3–5 candle M5 • entry saat candle baru", "powerfull")
+            new Item("⚡", "POWERFULL EA", "Status, ON/OFF, dan parameter EA MT5", "powerfull"),
+            new Item("▤", "Orders / History", "Posisi terbuka dan riwayat", "orders"),
+            new Item("⇄", "Gateway / MT5 Sync", "Koneksi, antrean, dan ACK", "gateway"),
+            new Item("◒", "Risk Management", "Informasi pengelolaan risiko", "risk")
         ), actions);
 
-        addSection(host, content, "ALAT & PENGATURAN");
+        addSection(host, content, "PENGATURAN");
         addItems(host, content, Arrays.asList(
-            new Item("⚡", "POWERFULL", "Kontrol strategi EA MT5 dan parameternya", "powerfull"),
-            new Item("◒", "Risk Management", "Informasi kontrol risiko", "risk"),
-            new Item("✉", "Telegram", "Token bot dan Chat ID", "telegram"),
-            new Item("♧", "Notifikasi", "Aktif/nonaktifkan notifikasi aplikasi", "notifications"),
-            new Item("⚙", "Settings", "Pengaturan tampilan dan sistem", "settings")
+            new Item("⚙", "Settings", "Tema dan preferensi aplikasi", "settings"),
+            new Item("✉", "Telegram", "Notifikasi Telegram", "telegram"),
+            new Item("♧", "Notifikasi", "Notifikasi aplikasi", "notifications")
         ), actions);
-        addFooter(host, root, "Mesin STANDAR dan EXCELLENT dinonaktifkan. POWERFULL tetap dikendalikan EA MT5.");
-        showDialog(host, root, "rayyan_main_menu");
+        addFooter(host, root, "Indikator lama dihapus dari tampilan. POWERFULL tetap dikendalikan EA MT5.");
+        showDialog(host, root, "rayyan_main_drawer");
     }
 
     public static void showSettings(Activity host, String market, String timeframe, ActionHandler actions) {
         LinearLayout root = base(host);
-        addHero(host, root, "RAYYAN • SETTINGS", market + "   /   TIMEFRAME " + timeframe,
-                "Pusat pengaturan • pilih salah satu menu");
+        addHero(host, root, "RAYYAN • SETTINGS", market + "   /   " + timeframe,
+                "Pengaturan aplikasi dan chart");
         ScrollView scroll = new ScrollView(host);
         LinearLayout content = new LinearLayout(host);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -103,22 +101,22 @@ public final class RayyanMenuLayout {
         scroll.addView(content);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
 
-        addSection(host, content, "TAMPILAN & MARKET");
+        addSection(host, content, "TAMPILAN");
         addItems(host, content, Arrays.asList(
-            new Item("◐", "Tema Aplikasi", "Default Theme, Dark Professional, atau Light Professional", "settings_theme"),
-            new Item("▦", "Tampilan Chart", "Atur layer chart non-strategi", "settings_indicators"),
-            new Item("◈", "Pilih Market", "XAUUSD, BTCUSD, atau ETHUSD", "settings_market"),
-            new Item("⚡", "POWERFULL", "Kontrol strategi EA MT5 dan parameternya", "powerfull")
+            new Item("◐", "Tema Aplikasi", "Tema gelap atau terang", "settings_theme"),
+            new Item("◈", "Market", "Pilih instrumen MT5", "settings_market"),
+            new Item("⌖", "Harmonic + Fibonacci", "Tampilkan pola dan level swing", "harmonic_fibo")
         ), actions);
         addSection(host, content, "KONEKSI & NOTIFIKASI");
         addItems(host, content, Arrays.asList(
-            new Item("⇄", "Gateway / Queue / ACK", "Periksa status EA dan antrean; tidak mengirim order", "settings_gateway"),
+            new Item("⚡", "POWERFULL EA", "Kontrol EA MT5", "powerfull"),
+            new Item("⇄", "Gateway / MT5 Sync", "Status koneksi dan ACK", "settings_gateway"),
             new Item("✉", "Telegram", "Token bot dan Chat ID", "settings_telegram"),
-            new Item("♧", "Notifikasi", "Aktif/nonaktifkan notifikasi aplikasi", "settings_notifications"),
-            new Item("▤", "Log Sistem", "Lihat catatan aktivitas aplikasi", "settings_logs")
+            new Item("♧", "Notifikasi", "Pengaturan notifikasi", "settings_notifications"),
+            new Item("▤", "Log Sistem", "Catatan aktivitas aplikasi", "settings_logs")
         ), actions);
-        addFooter(host, root, "Setiap menu menyimpan pengaturan fitur terkait; koneksi hanya diubah melalui menu koneksi.");
-        showDialog(host, root, "rayyan_settings");
+        addFooter(host, root, "Chart memakai OHLC dan Bid/Ask dari MT5.");
+        showDialog(host, root, "rayyan_settings_drawer");
     }
 
     private static LinearLayout base(Activity host) {
@@ -216,22 +214,26 @@ public final class RayyanMenuLayout {
             if (window != null) {
                 window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
                 int screenWidth = host.getResources().getDisplayMetrics().widthPixels;
-                int screenHeight = host.getResources().getDisplayMetrics().heightPixels;
-                int width = Math.min(screenWidth - dp(host, 24), dp(host, 480));
-                int height = Math.min(screenHeight - dp(host, 88), dp(host, 760));
-                window.setLayout(Math.max(dp(host, 300), width), Math.max(dp(host, 420), height));
+                int drawerWidth = Math.min(dp(host, 340), Math.round(screenWidth * 0.86f));
+                window.setGravity(Gravity.START | Gravity.TOP);
+                window.setLayout(drawerWidth, WindowManager.LayoutParams.MATCH_PARENT);
+                window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+                WindowManager.LayoutParams params = window.getAttributes();
+                params.dimAmount = 0.48f;
+                params.gravity = Gravity.START | Gravity.TOP;
+                window.setAttributes(params);
+                window.setWindowAnimations(android.R.style.Animation_Activity);
                 window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
             }
         });
         dialog.show();
-        // Re-apply sizing after show; older Android themes may reset layout dimensions.
         Window window = dialog.getWindow();
         if (window != null) {
             window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             int sw = host.getResources().getDisplayMetrics().widthPixels;
-            int sh = host.getResources().getDisplayMetrics().heightPixels;
-            window.setLayout(Math.min(sw - dp(host, 24), dp(host, 480)),
-                    Math.min(sh - dp(host, 88), dp(host, 760)));
+            window.setGravity(Gravity.START | Gravity.TOP);
+            window.setLayout(Math.min(dp(host, 340), Math.round(sw * 0.86f)),
+                    WindowManager.LayoutParams.MATCH_PARENT);
         }
     }
 
