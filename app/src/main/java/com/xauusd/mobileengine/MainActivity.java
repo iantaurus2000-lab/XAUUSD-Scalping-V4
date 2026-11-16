@@ -156,7 +156,134 @@ public class MainActivity extends Activity {
         buildUI();
     }
 
+    private boolean chartFullscreen=false;
+
     void buildUI(){
+        chartFullscreen=false;
+        setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        getWindow().getDecorView().setSystemUiVisibility(defaultSystemUiVisibility);
+        buildParameterHome();
+        startGateway();
+    }
+
+    private void buildParameterHome(){
+        LinearLayout root=new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.rgb(8,12,18));
+        LinearLayout header=new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(uiDp(16),uiDp(12),uiDp(16),uiDp(12));
+        header.setBackgroundColor(Color.rgb(18,25,35));
+        TextView title=tv("RAYYAN D1 STANDALONE",18);
+        title.setTypeface(null,Typeface.BOLD);
+        title.setTextColor(Color.WHITE);
+        header.addView(title,new LinearLayout.LayoutParams(0,uiDp(34),1));
+        TextView tag=tv("INPUTS",11); tag.setTextColor(Color.CYAN);
+        header.addView(tag,new LinearLayout.LayoutParams(-2,uiDp(34)));
+        root.addView(header,new LinearLayout.LayoutParams(-1,uiDp(58)));
+        LinearLayout actions=new LinearLayout(this); actions.setPadding(uiDp(12),uiDp(8),uiDp(12),uiDp(8));
+        Button chartButton=btn("▥  BUKA CHART MT5  •  LANDSCAPE");
+        chartButton.setTextSize(13); chartButton.setTypeface(null,Typeface.BOLD);
+        chartButton.setBackground(roundBg(Color.rgb(0,105,150),12));
+        actions.addView(chartButton,new LinearLayout.LayoutParams(-1,uiDp(48)));
+        chartButton.setOnClickListener(v->openChartFullscreen());
+        root.addView(actions,new LinearLayout.LayoutParams(-1,-2));
+        ScrollView scroll=new ScrollView(this); scroll.setFillViewport(false);
+        LinearLayout list=new LinearLayout(this); list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(uiDp(12),uiDp(2),uiDp(12),uiDp(16));
+        addParameterSection(list,"GATEWAY & MARKET",new String[][]{
+            {"GatewayUrl","URL Gateway MT5"},{"AllowedSymbol","XAUUSDm"},{"DemoOnly","true"}});
+        addParameterSection(list,"STANDALONE D1",new String[][]{
+            {"StandaloneD1Mode","true"},{"StandaloneSymbol","(otomatis / kosong)"},{"StandaloneLot","0.01"},
+            {"StandaloneSLBuyPoints","0"},{"StandaloneSLSellPoints","0"}});
+        addParameterSection(list,"POWERFULL",new String[][]{
+            {"PowerfullStopLossUSD","0.0"},{"StandaloneMaxLayers","5"},{"PollSeconds","1"}});
+        addParameterSection(list,"REPORTS",new String[][]{{"EnableEAReports","true"}});
+        addParameterSection(list,"CHART",new String[][]{
+            {"SRLookbackBars","80"},{"FiboLookbackBars","60"},{"EnableHarmonicOverlay","true"},
+            {"HarmonicLookbackBars","260"},{"HarmonicPivotDepth","3"},{"HarmonicRatioTolerance","0.12"}});
+        addParameterSection(list,"PROFIT PROTECTION",new String[][]{
+            {"EnableTP2RetraceProtection","true"},{"TP1FallbackRiskMultiple","2.0"}});
+        addParameterSection(list,"WEEKEND",new String[][]{
+            {"PowerfullCloseBeforeWeekend","true"},{"PowerfullFridayCloseHour","21"},
+            {"PowerfullFridayCloseMinute","30"}});
+        scroll.addView(list); root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        LinearLayout bottom=new LinearLayout(this); bottom.setGravity(Gravity.CENTER_VERTICAL);
+        bottom.setPadding(uiDp(10),uiDp(6),uiDp(10),uiDp(6)); bottom.setBackgroundColor(Color.rgb(13,20,29));
+        Button market=btn("MARKET"); Button reports=btn("REPORTS"); Button settings=btn("SETTINGS");
+        bottom.addView(market,new LinearLayout.LayoutParams(0,uiDp(42),1));
+        bottom.addView(reports,new LinearLayout.LayoutParams(0,uiDp(42),1));
+        bottom.addView(settings,new LinearLayout.LayoutParams(0,uiDp(42),1));
+        market.setOnClickListener(v->showMarketDialog());
+        reports.setOnClickListener(v->showLogDialog("ORDERS / HISTORY"));
+        settings.setOnClickListener(v->showSettingsPanel(settings));
+        root.addView(bottom,new LinearLayout.LayoutParams(-1,uiDp(54)));
+        setContentView(root); mainRoot=root; applyCurrentAppTheme();
+        requestNotificationPermission();
+    }
+
+    private void addParameterSection(LinearLayout parent,String heading,String[][] values){
+        TextView section=tv(heading,11); section.setTextColor(Color.rgb(0,205,225));
+        section.setTypeface(null,Typeface.BOLD); section.setPadding(uiDp(4),uiDp(12),uiDp(4),uiDp(5));
+        parent.addView(section,new LinearLayout.LayoutParams(-1,uiDp(34)));
+        LinearLayout card=new LinearLayout(this); card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(uiDp(12),uiDp(4),uiDp(12),uiDp(4));
+        card.setBackground(roundBg(Color.rgb(18,25,35),10));
+        for(int i=0;i<values.length;i++){
+            LinearLayout row=new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
+            TextView name=tv(values[i][0],12); name.setTextColor(Color.rgb(220,226,234));
+            TextView value=tv(values[i][1],12); value.setTextColor(Color.WHITE); value.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+            row.addView(name,new LinearLayout.LayoutParams(0,uiDp(38),1));
+            row.addView(value,new LinearLayout.LayoutParams(uiDp(150),uiDp(38)));
+            card.addView(row,new LinearLayout.LayoutParams(-1,uiDp(38)));
+            if(i<values.length-1){View line=new View(this);line.setBackgroundColor(Color.rgb(42,53,67));card.addView(line,new LinearLayout.LayoutParams(-1,uiDp(1)));}
+        }
+        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2); cp.setMargins(0,0,0,uiDp(4)); parent.addView(card,cp);
+    }
+
+    private void openChartFullscreen(){
+        chartFullscreen=true;
+        setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        buildChartDashboard();
+        ViewGroup oldParent=(chart!=null&&chart.getParent() instanceof ViewGroup)?(ViewGroup)chart.getParent():null;
+        if(oldParent!=null)oldParent.removeView(chart);
+        FrameLayout screen=new FrameLayout(this); screen.setBackgroundColor(Color.BLACK);
+        LinearLayout column=new LinearLayout(this); column.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout top=new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL);
+        top.setPadding(uiDp(6),0,uiDp(6),0); top.setBackgroundColor(Color.rgb(3,13,23));
+        Button back=btn("‹  PARAMETER"); back.setTextSize(11);
+        top.addView(back,new LinearLayout.LayoutParams(uiDp(112),uiDp(38)));
+        TextView label=tv(selectedMarket+"  •  MT5 NATIVE CHART",13);label.setTypeface(null,Typeface.BOLD);
+        top.addView(label,new LinearLayout.LayoutParams(0,uiDp(38),1));
+        Button live=btn("● LIVE"); live.setTextSize(10); top.addView(live,new LinearLayout.LayoutParams(uiDp(72),uiDp(38)));
+        back.setOnClickListener(v->closeChartFullscreen());
+        live.setOnClickListener(v->{if(chart!=null){chart.goLive();selectTimeframe(selectedTf,false);}});
+        column.addView(top,new LinearLayout.LayoutParams(-1,uiDp(42)));
+        column.addView(chart,new LinearLayout.LayoutParams(-1,0,1));
+        LinearLayout tf=new LinearLayout(this);tf.setGravity(Gravity.CENTER);
+        for(String timeframe:new String[]{"M1","M5","M15","H1","H4","D1"}){
+            Button b=btn(timeframe); b.setTextSize(11); tf.addView(b,new LinearLayout.LayoutParams(0,uiDp(38),1));
+            b.setOnClickListener(v->selectTimeframe(timeframe,true));
+        }
+        column.addView(tf,new LinearLayout.LayoutParams(-1,uiDp(42)));
+        screen.addView(column,new FrameLayout.LayoutParams(-1,-1));
+        setContentView(screen);
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY|View.SYSTEM_UI_FLAG_LAYOUT_STABLE|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+    }
+
+    private void closeChartFullscreen(){
+        chartFullscreen=false;
+        setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        getWindow().getDecorView().setSystemUiVisibility(defaultSystemUiVisibility);
+        buildUI();
+    }
+
+    @Override public void onBackPressed(){
+        if(chartFullscreen){closeChartFullscreen();return;}
+        super.onBackPressed();
+    }
+
+    private void buildChartDashboard(){
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(bg);
 
         // HEADER / SPREAD / TIMEFRAME UI is isolated in RayyanUiLayout.
