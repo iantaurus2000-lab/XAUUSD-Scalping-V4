@@ -150,7 +150,8 @@ public class CandleChartView extends View {
     public void setShowEMA50(boolean v){showEMA50=v;invalidate();}
     public void setShowEMA200(boolean v){showEMA200=v;invalidate();}
     public void setShowSR(boolean v){showSR=v;invalidate();}
-    public void setShowFibo(boolean v){showFibo=v;invalidate();}\n    public void setShowHarmonic(boolean v){showHarmonic=v;invalidate();}
+    public void setShowFibo(boolean v){showFibo=v;invalidate();}
+    public void setShowHarmonic(boolean v){showHarmonic=v;invalidate();}
     /** Levels are ratios: 23.6% is 0.236, and -27% is -0.27. */
     public void setFibonacciLevels(double[] levels){
         if(levels==null||levels.length==0)return;
