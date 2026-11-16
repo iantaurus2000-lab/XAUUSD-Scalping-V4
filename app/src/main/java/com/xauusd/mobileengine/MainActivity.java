@@ -157,15 +157,220 @@ public class MainActivity extends Activity {
     }
 
     private boolean chartFullscreen=false;
+    private final Handler controlRefreshHandler=new Handler(Looper.getMainLooper());
+    private final Map<String,TextView> controlValues=new HashMap<>();
+    private final Runnable controlRefreshRunnable=new Runnable(){
+        @Override public void run(){
+            if(!visible||chartFullscreen)return;
+            updateControlDashboard();
+            controlRefreshHandler.postDelayed(this,1000L);
+        }
+    };
 
     void buildUI(){
         chartFullscreen=false;
         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         getWindow().getDecorView().setSystemUiVisibility(defaultSystemUiVisibility);
-        buildChartDashboard();
+        buildControlHome();
         startGateway();
-        selectTimeframe(selectedTf,false);
-        load(interval(selectedTf),selectedTf);
+        updateControlDashboard();
+    }
+
+    private void buildControlHome(){
+        LinearLayout root=new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(bg);
+
+        LinearLayout header=new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(uiDp(14),uiDp(8),uiDp(14),uiDp(8));
+        header.setBackgroundColor(Color.rgb(3,17,29));
+        LinearLayout heading=new LinearLayout(this);
+        heading.setOrientation(LinearLayout.VERTICAL);
+        TextView title=tv("RAYYAN / POWERFULL",18);
+        title.setTypeface(null,Typeface.BOLD);
+        title.setTextColor(Color.WHITE);
+        TextView algo=tv("ALGO STATUS • MT5",10);
+        algo.setTextColor(Color.rgb(0,210,220));
+        heading.addView(title,new LinearLayout.LayoutParams(-1,uiDp(28)));
+        heading.addView(algo,new LinearLayout.LayoutParams(-1,uiDp(20)));
+        header.addView(heading,new LinearLayout.LayoutParams(0,-2,1));
+        TextView symbol=tv(mt5SymbolForMarket(selectedMarket),12);
+        symbol.setTypeface(null,Typeface.BOLD);
+        symbol.setTextColor(Color.WHITE);
+        header.addView(symbol,new LinearLayout.LayoutParams(-2,uiDp(42)));
+        root.addView(header,new LinearLayout.LayoutParams(-1,uiDp(58)));
+
+        LinearLayout chartAction=new LinearLayout(this);
+        chartAction.setPadding(uiDp(12),uiDp(8),uiDp(12),uiDp(5));
+        Button chartButton=btn("▥  BUKA CHART MT5 NATIVE");
+        chartButton.setTextSize(14);
+        chartButton.setTypeface(null,Typeface.BOLD);
+        chartButton.setBackground(roundBg(Color.rgb(0,105,150),12));
+        chartAction.addView(chartButton,new LinearLayout.LayoutParams(-1,uiDp(48)));
+        chartButton.setOnClickListener(v->openChartFullscreen());
+        root.addView(chartAction,new LinearLayout.LayoutParams(-1,-2));
+
+        ScrollView scroll=new ScrollView(this);
+        scroll.setFillViewport(false);
+        LinearLayout body=new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(uiDp(12),uiDp(4),uiDp(12),uiDp(12));
+
+        addControlSection(body,"LIVE CANDLE DIRECTION");
+        addControlGrid(body,new String[][]{{"m15","M15"},{"h1","H1"},{"h4","H4"}});
+        addControlSection(body,"SESSION PERFORMANCE");
+        addControlGrid(body,new String[][]{{"wins","WIN"},{"losses","LOSS"},{"winrate","WINRATE"}});
+        addControlSection(body,"TRADE SUMMARY");
+        addControlGrid(body,new String[][]{{"total_entry","TOTAL ENTRY"},{"closed","CLOSED TRADES"}});
+        addControlGrid(body,new String[][]{{"total_profit","TOTAL PROFIT"},{"total_loss","TOTAL LOSS"}});
+        addControlSection(body,"RUNNING ENTRY / OPEN POSITIONS");
+        addControlValueCard(body,"running","Menunggu data posisi MT5...");
+        addControlSection(body,"LIVE FLOAT P/L (MT5)");
+        addControlValueCard(body,"floating","Menunggu data floating P/L MT5...");
+        addControlSection(body,"SUM OF TICKET PEAKS");
+        addControlValueCard(body,"peaks","Menunggu data ticket peak MT5...");
+
+        LinearLayout refreshRow=new LinearLayout(this);
+        refreshRow.setPadding(0,uiDp(10),0,uiDp(4));
+        Button refresh=btn("↻  REFRESH DATA");
+        refresh.setTextSize(13);
+        refreshRow.addView(refresh,new LinearLayout.LayoutParams(-1,uiDp(44)));
+        refresh.setOnClickListener(v->updateControlDashboard());
+        body.addView(refreshRow);
+
+        TextView source=tv("Semua nilai ditampilkan dari laporan MT5/Gateway. Data yang belum dikirim EA tidak dibuat-buat.",10);
+        source.setTextColor(Color.LTGRAY);
+        source.setGravity(Gravity.CENTER);
+        source.setPadding(uiDp(8),uiDp(6),uiDp(8),uiDp(8));
+        body.addView(source,new LinearLayout.LayoutParams(-1,-2));
+        scroll.addView(body);
+        root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+
+        LinearLayout nav=new LinearLayout(this);
+        nav.setPadding(uiDp(5),uiDp(5),uiDp(5),uiDp(5));
+        nav.setBackgroundColor(Color.rgb(2,12,22));
+        String[] actions={"MARKET","POWERFULL","ORDERS","SETTINGS"};
+        for(String action:actions){
+            Button b=btn(action);
+            b.setTextSize(10);
+            nav.addView(b,new LinearLayout.LayoutParams(0,uiDp(44),1));
+            if("MARKET".equals(action))b.setOnClickListener(v->showMarketDialog());
+            else if("POWERFULL".equals(action))b.setOnClickListener(v->showPowerfullDialog());
+            else if("ORDERS".equals(action))b.setOnClickListener(v->showLogDialog("ORDERS / HISTORY"));
+            else b.setOnClickListener(v->showSettingsPanel(b));
+        }
+        root.addView(nav,new LinearLayout.LayoutParams(-1,uiDp(54)));
+        setContentView(root);
+        mainRoot=root;
+        applyCurrentAppTheme();
+        requestNotificationPermission();
+    }
+
+    private void addControlSection(LinearLayout parent,String label){
+        TextView heading=tv(label,11);
+        heading.setTypeface(null,Typeface.BOLD);
+        heading.setTextColor(Color.rgb(0,205,225));
+        heading.setPadding(uiDp(3),uiDp(10),uiDp(3),uiDp(5));
+        parent.addView(heading,new LinearLayout.LayoutParams(-1,uiDp(32)));
+    }
+
+    private void addControlGrid(LinearLayout parent,String[][] cells){
+        LinearLayout row=new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        for(String[] cell:cells){
+            LinearLayout card=controlMetricCard(cell[0],cell[1]);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,uiDp(66),1);
+            lp.setMargins(uiDp(2),uiDp(2),uiDp(2),uiDp(2));
+            row.addView(card,lp);
+        }
+        parent.addView(row,new LinearLayout.LayoutParams(-1,uiDp(70)));
+    }
+
+    private LinearLayout controlMetricCard(String key,String label){
+        LinearLayout card=new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(uiDp(9),uiDp(5),uiDp(9),uiDp(5));
+        card.setBackground(roundBg(Color.rgb(7,30,47),10));
+        TextView name=tv(label,9);
+        name.setTypeface(null,Typeface.BOLD);
+        name.setTextColor(Color.rgb(0,205,225));
+        TextView value=tv("--",15);
+        value.setTypeface(null,Typeface.BOLD);
+        value.setTextColor(Color.WHITE);
+        value.setSingleLine(true);
+        value.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        card.addView(name,new LinearLayout.LayoutParams(-1,uiDp(20)));
+        card.addView(value,new LinearLayout.LayoutParams(-1,uiDp(28)));
+        controlValues.put(key,value);
+        return card;
+    }
+
+    private void addControlValueCard(LinearLayout parent,String key,String initial){
+        LinearLayout card=new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(uiDp(10),uiDp(7),uiDp(10),uiDp(7));
+        card.setBackground(roundBg(Color.rgb(7,30,47),10));
+        TextView value=tv(initial,12);
+        value.setTextColor(Color.WHITE);
+        value.setGravity(Gravity.CENTER_VERTICAL);
+        value.setMinLines(2);
+        card.addView(value,new LinearLayout.LayoutParams(-1,-2));
+        controlValues.put(key,value);
+        parent.addView(card,new LinearLayout.LayoutParams(-1,-2));
+    }
+
+    private void setControlValue(String key,String value){
+        TextView view=controlValues.get(key);
+        if(view!=null)view.setText(value==null||value.trim().isEmpty()?"--":value);
+    }
+
+    private void updateControlDashboard(){
+        if(controlValues.isEmpty())return;
+        SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        String symbol=mt5SymbolForMarket(selectedMarket);
+        long now=System.currentTimeMillis();
+        long stateAt=gp.getLong("powerfull_state_at_"+symbol,0L);
+        boolean fresh=stateAt>0L&&now>=stateAt&&now-stateAt<=8000L;
+        String statusText=fresh?gp.getString("powerfull_status_"+symbol,"UNKNOWN"):"MENUNGGU / DATA EA STALE";
+        setControlValue("m15","Data arah candle belum dikirim Gateway");
+        setControlValue("h1","Data arah candle belum dikirim Gateway");
+        setControlValue("h4","Data arah candle belum dikirim Gateway");
+
+        int wins=gp.getInt("powerfull_wins_"+symbol,0);
+        int losses=gp.getInt("powerfull_losses_"+symbol,0);
+        int closed=gp.getInt("powerfull_closed_deals_"+symbol,0);
+        int positions=parseControlInt(gp.getString("powerfull_positions_"+symbol,"0"));
+        int pending=parseControlInt(gp.getString("powerfull_pending_"+symbol,"0"));
+        int total=wins+losses+positions+pending;
+        double winrate=(wins+losses)>0?100.0*wins/(wins+losses):0.0;
+        setControlValue("wins",fresh?String.valueOf(wins):"--");
+        setControlValue("losses",fresh?String.valueOf(losses):"--");
+        setControlValue("winrate",fresh?String.format(Locale.US,"%.1f%%",winrate):"--");
+        setControlValue("total_entry",fresh?String.valueOf(total):"--");
+        setControlValue("closed",fresh?String.valueOf(closed):"--");
+
+        String kind=gp.getString("powerfull_order_kind_"+symbol,"NONE");
+        String side=gp.getString("powerfull_order_side_"+symbol,"");
+        String ticket=gp.getString("powerfull_order_ticket_"+symbol,"");
+        String entry=gp.getString("powerfull_order_entry_"+symbol,"");
+        String running="EA: "+statusText+"\nPosisi aktif: "+(fresh?positions:"--")+
+            " • Pending: "+(fresh?pending:"--");
+        if(fresh&&!"NONE".equals(kind)){
+            running+="\n"+kind+" "+side+" • Ticket "+(ticket.isEmpty()?"--":ticket)+
+                " • Entry "+(entry.isEmpty()?"--":entry);
+        }
+        setControlValue("running",running);
+        setControlValue("total_profit",fresh?"Belum tersedia dari Gateway":"--");
+        setControlValue("total_loss",fresh?"Belum tersedia dari Gateway":"--");
+        setControlValue("floating",fresh?"Belum tersedia dari Gateway":"Menunggu data MT5...");
+        setControlValue("peaks",fresh?"Belum tersedia dari Gateway":"Menunggu data MT5...");
+    }
+
+    private int parseControlInt(String value){
+        try{return Math.max(0,Integer.parseInt(value==null||value.isEmpty()?"0":value));}
+        catch(Exception ignored){return 0;}
     }
 
     private void buildParameterHome(){
@@ -972,8 +1177,20 @@ public class MainActivity extends Activity {
             requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},1001);
     }
 
-    @Override protected void onResume(){ super.onResume(); visible=true; }
-    @Override protected void onPause(){ visible=false; super.onPause(); }
+    @Override protected void onResume(){
+        super.onResume();
+        visible=true;
+        if(!chartFullscreen){
+            updateControlDashboard();
+            controlRefreshHandler.removeCallbacks(controlRefreshRunnable);
+            controlRefreshHandler.postDelayed(controlRefreshRunnable,1000L);
+        }
+    }
+    @Override protected void onPause(){
+        visible=false;
+        controlRefreshHandler.removeCallbacks(controlRefreshRunnable);
+        super.onPause();
+    }
 
     void showMenu(View anchor){
         RayyanMenuLayout.showMain(this,selectedMarket,selectedTf,this::handleMenuAction);
@@ -2038,5 +2255,6 @@ public class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy(){
+        controlRefreshHandler.removeCallbacks(controlRefreshRunnable);
         chartMirrorHandler.removeCallbacks(chartMirrorRefresh);signalUiHandler.removeCallbacks(entryBlinkRunnable);if(ex!=null)ex.shutdownNow();if(candleRefresh!=null)candleRefresh.shutdownNow();super.onDestroy();}
 }
