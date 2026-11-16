@@ -801,28 +801,7 @@ public class MainActivity extends Activity {
 
 
     private void queueBlockDiagnostic(String reason){
-        return; // Legacy Smart Auto notification lifecycle removed.
-        String code="GENERAL";
-        if(reason.startsWith("quote/chart stale"))code="QUOTE_STALE";
-        else if(reason.startsWith("invalid side"))code="INVALID_SIDE";
-        else if(reason.startsWith("invalid order"))code="INVALID_VALUES";
-        else if(reason.startsWith("BUY LIMIT entry"))code="BUY_LIMIT_PRICE";
-        else if(reason.startsWith("BUY geometry"))code="BUY_LIMIT_GEOMETRY";
-        else if(reason.startsWith("SELL LIMIT entry"))code="SELL_LIMIT_PRICE";
-        else if(reason.startsWith("SELL geometry"))code="SELL_LIMIT_GEOMETRY";
-        else if(reason.startsWith("queue stale"))code="QUEUE_STALE";
-        else if(reason.startsWith("gateway queue busy"))code="QUEUE_BUSY";
-        else if(reason.startsWith("exception"))code="QUEUE_EXCEPTION";
-        long candle=System.currentTimeMillis();
-        try{
-            if(chart!=null&&!chart.isEmpty()){
-                Candle[] bars=chart.getDataSnapshot();
-                if(bars!=null&&bars.length>0)candle=bars[bars.length-1].t;
-            }
-        }catch(Exception ignored){}
-        SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
-        autoDiagnostic(p,"QUEUE_BLOCK_"+code+"|"+selectedMarket+"|"+candle,
-            "QUEUE_REJECTED • "+reason+" • command not queued • market="+selectedMarket);
+        // Legacy APK Smart Auto diagnostics were removed; POWERFULL diagnostics are owned by the MT5 EA.
     }
 
 
@@ -1339,7 +1318,7 @@ public class MainActivity extends Activity {
             TextView icon=tv(icons[i],22);icon.setTextColor(Color.rgb(0,225,180));icon.setGravity(Gravity.CENTER);row.addView(icon,new LinearLayout.LayoutParams(42,-1));
             LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setGravity(Gravity.CENTER_VERTICAL);TextView name=tv(market,16);name.setTextColor(Color.WHITE);name.setTypeface(null,Typeface.BOLD);labels.addView(name);TextView sub=tv(details[i],12);sub.setTextColor(Color.LTGRAY);labels.addView(sub);row.addView(labels,new LinearLayout.LayoutParams(0,-1,1));
             TextView mark=tv(selected?"✓ ACTIVE":"SELECT  ›",10);mark.setTextColor(selected?Color.rgb(0,235,160):Color.CYAN);row.addView(mark);
-            row.setOnClickListener(v->{if(market.equals(selectedMarket)){d.dismiss();return;}selectedMarket=market;lastHeaderPrice=Double.NaN;lastSpreadLabel="";m1Data=new Candle[0];m5Data=new Candle[0];if(priceView!=null){priceView.setText("--");priceView.setTextColor(Color.CYAN);}if(spreadView!=null)spreadView.setText("SPREAD --");prefs.edit().putString("market",selectedMarket).apply();applyStrategyIndicatorProfile();queueNativeIndicatorState();if(marketTitle!=null)marketTitle.setText(selectedMarket);if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));if(chart!=null){chart.setMarket(selectedMarket);chart.setData(new Candle[0]);chart.clearQuote();chart.setPositionEntryLevel(0);}if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);lastSignal=null;resetEntryReadyUi("menunggu data market");d.dismiss();load(interval(selectedTf),selectedTf);AppLog.add(this,"MARKET","selected "+selectedMarket+" • MT5 OHLC + symbol Bid/Ask synchronized");});
+            row.setOnClickListener(v->{if(market.equals(selectedMarket)){d.dismiss();return;}selectedMarket=market;lastHeaderPrice=Double.NaN;lastSpreadLabel="";m1Data=new Candle[0];m5Data=new Candle[0];if(priceView!=null){priceView.setText("--");priceView.setTextColor(Color.CYAN);}if(spreadView!=null)spreadView.setText("SPREAD --");prefs.edit().putString("market",selectedMarket).apply();applyStrategyIndicatorProfile();queueNativeIndicatorState();if(marketTitle!=null)marketTitle.setText(selectedMarket);if(marketSubtitle!=null)marketSubtitle.setText(marketDescription(selectedMarket));if(chart!=null){chart.setMarket(selectedMarket);chart.setData(new Candle[0]);chart.clearQuote();chart.setPositionEntryLevel(0);}if(signalSummary!=null)signalSummary.setText(selectedMarket+" • "+selectedTf+"\nMenunggu data market...");if(status!=null)status.setText("● MENGHUBUNGKAN • "+selectedMarket);resetEntryReadyUi("menunggu data market");d.dismiss();load(interval(selectedTf),selectedTf);AppLog.add(this,"MARKET","selected "+selectedMarket+" • MT5 OHLC + symbol Bid/Ask synchronized");});
         }
         d.show();if(d.getWindow()!=null){d.getWindow().setBackgroundDrawableResource(android.R.color.transparent);d.getWindow().setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-36,430),-2);}
     }
@@ -1426,7 +1405,7 @@ public class MainActivity extends Activity {
             lastAppliedStrategyProfile=profileKey;
             chart.setSignalLevels("BUY",0,0,0,0,false);
             resetEntryReadyUi("POWERFULL EA • tanpa indikator strategi APK");
-            lastSignal=null;
+            
             if(signalSummary!=null)signalSummary.setText(selectedMarket+" • POWERFULL EA");
             if(entryView!=null)entryView.setText("ENTRY\\nEA");
             if(slView!=null)slView.setText("SL\\nEA");
