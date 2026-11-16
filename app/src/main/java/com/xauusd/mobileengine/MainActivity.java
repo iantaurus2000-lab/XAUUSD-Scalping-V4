@@ -180,6 +180,7 @@ public class MainActivity extends Activity {
     private FrameLayout homeFrame;
     private View drawerScrim;
     private LinearLayout sideDrawer;
+    private View edgeTapZone;
     private float dashboardScale=1f;
 
     private int dashH(float value){return Math.round(uiDp(value)*dashboardScale);}
@@ -225,10 +226,14 @@ public class MainActivity extends Activity {
         TextView statusValue=tv("SYNC...",12);
         statusValue.setTypeface(null,Typeface.BOLD);
         statusValue.setTextColor(Color.rgb(65,220,150));
-        statusBox.addView(statusTitle,new LinearLayout.LayoutParams(-1,dashH(14)));
-        statusBox.addView(statusValue,new LinearLayout.LayoutParams(-1,dashH(20)));
+        TextView layerValue=tv("OPEN LAYERS  --",8);
+        layerValue.setTextColor(Color.rgb(190,210,225));
+        statusBox.addView(statusTitle,new LinearLayout.LayoutParams(-1,dashH(13)));
+        statusBox.addView(statusValue,new LinearLayout.LayoutParams(-1,dashH(18)));
+        statusBox.addView(layerValue,new LinearLayout.LayoutParams(-1,dashH(14)));
         controlValues.put("algo_status",statusValue);
-        header.addView(statusBox,new LinearLayout.LayoutParams(uiDp(105),dashH(42)));
+        controlValues.put("layers",layerValue);
+        header.addView(statusBox,new LinearLayout.LayoutParams(uiDp(116),dashH(47)));
         root.addView(header,new LinearLayout.LayoutParams(-1,dashH(56)));
 
         // Dashboard body follows the same hierarchy and labels as the EA chart panel.
@@ -278,7 +283,7 @@ public class MainActivity extends Activity {
         buildSlidingSettingsMenu(frame);
 
         // Wide transparent touch target: a tap anywhere along the left edge opens the drawer.
-        View edgeTapZone=new View(this);
+        edgeTapZone=new View(this);
         edgeTapZone.setBackgroundColor(Color.TRANSPARENT);
         FrameLayout.LayoutParams edgeParams=new FrameLayout.LayoutParams(uiDp(38),-1,Gravity.LEFT|Gravity.CENTER_VERTICAL);
         frame.addView(edgeTapZone,edgeParams);
@@ -416,6 +421,7 @@ public class MainActivity extends Activity {
         if(sideDrawer==null||drawerOpen)return;
         drawerOpen=true;
         drawerScrim.setVisibility(View.VISIBLE);
+        if(edgeTapZone!=null)edgeTapZone.setVisibility(View.GONE);
         sideDrawer.setVisibility(View.VISIBLE);
         sideDrawer.bringToFront();
         sideDrawer.setTranslationX(-sideDrawer.getLayoutParams().width);
@@ -425,6 +431,7 @@ public class MainActivity extends Activity {
     private void closeSideDrawer(){
         if(sideDrawer==null||!drawerOpen)return;
         drawerOpen=false;
+        if(edgeTapZone!=null)edgeTapZone.setVisibility(View.VISIBLE);
         int width=sideDrawer.getLayoutParams().width;
         sideDrawer.animate().translationX(-width).setDuration(135)
             .withEndAction(()->{if(!drawerOpen){sideDrawer.setVisibility(View.GONE);drawerScrim.setVisibility(View.GONE);}})
@@ -501,6 +508,7 @@ public class MainActivity extends Activity {
         boolean fresh=stateAt>0L&&now>=stateAt&&now-stateAt<=8000L;
         String statusText=fresh?gp.getString("powerfull_status_"+symbol,"UNKNOWN"):"MENUNGGU / DATA EA STALE";
         setControlValue("algo_status",fresh?statusText:"MENUNGGU MT5");
+        setControlValue("layers",fresh?"OPEN LAYERS  "+positions:"OPEN LAYERS  --");
         setControlValue("m15","Data arah candle belum dikirim Gateway");
         setControlValue("h1","Data arah candle belum dikirim Gateway");
         setControlValue("h4","Data arah candle belum dikirim Gateway");
@@ -1549,7 +1557,7 @@ public class MainActivity extends Activity {
         RayyanMenuLayout.dismissActive();
         if("confidence".equals(action))showConfidenceDialog();
         else if("market".equals(action)||"settings_market".equals(action))showMarketDialog();
-        else if("chart".equals(action)){if(chart!=null)chart.goLive();}
+        else if("chart".equals(action)){openChartFullscreen();}
         else if("indicators".equals(action)||"settings_indicators".equals(action)||"harmonic_fibo".equals(action))showIndicatorDialog();
         else if("signal".equals(action))showSignalDialog();
         else if("gateway".equals(action)||"settings_gateway".equals(action))showGatewayAckDiagnostics();
