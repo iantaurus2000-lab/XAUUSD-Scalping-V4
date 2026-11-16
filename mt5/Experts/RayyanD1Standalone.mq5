@@ -4,16 +4,16 @@ CTrade trade;
 CTrade powerTrade; // isolated order manager: legacy CTrade state/magic remains untouched
 #define RAYYAN_MAGIC 4104407
 
-input string GatewayUrl="";
+input string GatewayUrl="http://100.103.185.17:8787";
 input string AllowedSymbol="XAUUSDm";
 input bool DemoOnly=true;
 // Standalone test mode: trades directly from MT5 ticks and never calls the APK Gateway.
-input bool StandaloneD1Mode=true;
+input bool StandaloneD1Mode=false; // Gateway EA: keep OFF; standalone trading uses RayyanD1Standalone.ex5.
 input string StandaloneSymbol="";
 input double StandaloneLot=0.01;
 input int StandaloneSLBuyPoints=0;
 input int StandaloneSLSellPoints=0; // Legacy point settings; POWERFULL uses the USD input below.
-input double PowerfullStopLossUSD=0.0; // Maximum gross loss per POWERFULL position, entered in USD. Zero blocks new entries.
+input double PowerfullStopLossUSD=0.0; // Standalone fallback only; Gateway mode reads per-market Stop Loss USD from APK.
 input bool EnableEAReports=true; // ON/OFF: HTML, CSV and entry-candle screenshot reports only.
 input int StandaloneMaxLayers=5; // configurable 1..5; A6 default allows five layers
 // POWERFULL final: no time-based entry warm-up.
@@ -88,6 +88,7 @@ struct PowerfullConfig {
    double lot;
    double pipSize;
    double stopPips;
+   double stopLossUSD;
    double lotStep;
    int minDistancePoints;
    int deviationPoints;
@@ -923,6 +924,7 @@ int OnInit(){
       powerCfg[0].enabled=(StandaloneLot>0.0&&PowerfullStopLossUSD>0.0
           &&StandaloneMaxLayers>=1&&StandaloneMaxLayers<=5);
       powerCfg[0].lot=StandaloneLot;
+      powerCfg[0].stopLossUSD=PowerfullStopLossUSD;
       powerCfg[0].pipSize=SymbolInfoDouble(directSymbol,SYMBOL_POINT);
       powerCfg[0].lotStep=SymbolInfoDouble(directSymbol,SYMBOL_VOLUME_STEP);
       powerCfg[0].usePointStops=false;
@@ -2341,6 +2343,7 @@ bool powerRefreshConfig(int index){
    double lot=StringToDouble(field(body,"lot"));
    double pip=StringToDouble(field(body,"pip"));
    double stop=StringToDouble(field(body,"stopPips"));
+   double stopLossUSD=StringToDouble(field(body,"stopLossUSD"));
    string reason=field(body,"reason");
    bool requested=(field(body,"enabled")=="1");
    string buyFlag=field(body,"buyLimit");
@@ -2360,7 +2363,7 @@ bool powerRefreshConfig(int index){
    string pendingLimitFlag=field(body,"pendingLimit");
    string maxLayersText=field(body,"maxLayers");
    bool pendingLimitEnabled=(pendingLimitFlag=="1");
-   int maxLayers=(maxLayersText==""?3:(int)StringToInteger(maxLayersText));
+   int maxLayers=(maxLayersText==""?5:(int)StringToInteger(maxLayersText));
    bool buyEnabled=(buyFlag==""||buyFlag=="1");
    bool sellEnabled=(sellFlag==""||sellFlag=="1");
    bool reforecastEnabled=(reforecastFlag==""||reforecastFlag=="1");
@@ -2381,6 +2384,7 @@ bool powerRefreshConfig(int index){
    bool valid=MathIsValidNumber(lot)&&lot+1e-8>=minLot
       &&MathIsValidNumber(pip)&&pip>0.0
       &&MathIsValidNumber(stop)&&stop>=0.0
+      &&MathIsValidNumber(stopLossUSD)&&stopLossUSD>0.0
       &&MathIsValidNumber(lotStep)&&lotStep>0.0
       &&minDistance>=0&&minDistance<=100000
       &&deviation>=0&&deviation<=10000
@@ -2411,7 +2415,8 @@ bool powerRefreshConfig(int index){
    powerCfg[index].lot=lot;
    powerCfg[index].pipSize=pip;
    powerCfg[index].stopPips=stop;
-   powerCfg[index].reason=(reason!=""?reason:(!requested?"DISABLED":(valid?"READY":"CONFIG_INVALID")));
+   powerCfg[index].stopLossUSD=stopLossUSD;
+   powerCfg[index].reason=(reason!=""?reason:(!requested?"DISABLED":(stopLossUSD<=0.0?"STOP_LOSS_USD_REQUIRED":(valid?"READY":"CONFIG_INVALID"))));
    powerConfigReceivedMs[index]=GetTickCount();
    if(valid&&MathAbs(pip-oldPipSize)>1e-12){
       powerModelGood[index]=false;
@@ -2956,8 +2961,10 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
          " H1_SWING=",entryH1Swing," (",h1SwingContext,")",
          " M15_SWING=",entryM15," (",m15Context,")",
          " action=H1_live_primary_H1_swing_context_only_M15_nonblocking_M5_extreme_timing");
-   if(!MathIsValidNumber(PowerfullStopLossUSD)||PowerfullStopLossUSD<=0.0){
-      powerPublishState(index,"BLOCKED_SL_USD","Set PowerfullStopLossUSD in MT5 Inputs; zero disables new POWERFULL entries",barTime);
+   double requestedStopLossUSD=(StandaloneD1Mode?PowerfullStopLossUSD:powerCfg[index].stopLossUSD);
+   if(!MathIsValidNumber(requestedStopLossUSD)||requestedStopLossUSD<=0.0){
+      string slSource=(StandaloneD1Mode?"Set PowerfullStopLossUSD in MT5 Inputs":"Set Stop Loss USD in APK POWERFULL parameters");
+      powerPublishState(index,"BLOCKED_SL_USD",slSource+"; zero disables new POWERFULL entries",barTime);
       return;
    }
 
@@ -3086,11 +3093,11 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    // BUY executes at Ask; SELL executes at Bid after the live M5 extreme signal.
    double px=(side>0?tick.ask:tick.bid);
    double sl=0.0,slDist=0.0,slAccountLoss=0.0,slAccountBudget=0.0;string slDetail="";
-   if(!powerBuildUsdStopLoss(symbol,side,lot,px,PowerfullStopLossUSD,
+   if(!powerBuildUsdStopLoss(symbol,side,lot,px,requestedStopLossUSD,
                              sl,slDist,slAccountLoss,slAccountBudget,slDetail)){
       powerPublishState(index,"BLOCKED_SL_USD",slDetail,barTime);
       Print("D1 USD SL BLOCK symbol=",symbol," side=",(side>0?"BUY":"SELL"),
-            " lot=",DoubleToString(lot,8)," requestedUSD=",DoubleToString(PowerfullStopLossUSD,2),
+            " lot=",DoubleToString(lot,8)," requestedUSD=",DoubleToString(requestedStopLossUSD,2),
             " reason=",slDetail);return;
    }
    ENUM_ORDER_TYPE marginOrderType=(side>0?ORDER_TYPE_BUY:ORDER_TYPE_SELL);
@@ -3200,7 +3207,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
             " rubberStretchScore=",DoubleToString(side>0?buyScore:sellScore,3),
             " Digits=",(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS),
             " Point=",DoubleToString(point,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)+2),
-             " SL_USD=",DoubleToString(PowerfullStopLossUSD,2),
+             " SL_USD=",DoubleToString(requestedStopLossUSD,2),
              " estimated_account_loss=",DoubleToString(slAccountLoss,2),
              " account_budget=",DoubleToString(slAccountBudget,2),
              " price_distance=",DoubleToString(slDist,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),

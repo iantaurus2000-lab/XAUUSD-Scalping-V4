@@ -1731,15 +1731,13 @@ public class MainActivity extends Activity {
         fields.setBackground(roundBg(Color.rgb(3,18,30),16));
         TextView title=tv("SMART AUTO-POWERFULL • PENGATURAN",16);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
         fields.addView(title,new LinearLayout.LayoutParams(-1,uiDp(42)));
-        TextView note=tv("A5 Distribution Entry: BUY di candle merah dekat Low; SELL di candle hijau dekat High. EA membaca posisi harga pada range M5, body/wick, ATR, spread dan konfirmasi Bid/Ask. Layer 1–5.",11);
+        TextView note=tv("D1 Human Price Extreme: BUY pada candle M5 merah dekat Low saat H1 hijau; SELL pada M5 hijau dekat High saat H1 merah. Market order, tanpa LIMIT/forecast ATR; maksimal 5 layer. SL USD dihitung per posisi.",11);
         note.setTextColor(Color.LTGRAY);note.setGravity(Gravity.TOP|Gravity.START);
-        fields.addView(note,new LinearLayout.LayoutParams(-1,uiDp(58)));
+        fields.addView(note,new LinearLayout.LayoutParams(-1,uiDp(72)));
         EditText lot=addEaParameter(fields,"Initial Lot",String.format(Locale.US,"%.2f",gp.getFloat("powerfull_lot_"+symbol,(float)Math.max(minLotForSymbol(symbol),lotForMarket()))),true);
         EditText profitLock=addEaParameter(fields,"Profit Lock Minimum Points",Integer.toString(gp.getInt("powerfull_min_profit_lock_points_"+symbol,5)),false);
-        EditText confirmMs=addEaParameter(fields,"D1 Tick Turn Confirmation (ms)",Integer.toString(gp.getInt("powerfull_d1_turn_confirm_ms_"+symbol,500)),false);
-        EditText maxLayers=addEaParameter(fields,"Maximum Layers (1–5)",Integer.toString(gp.getInt("powerfull_max_layers_"+symbol,3)),false);
-        EditText slBuy=addEaParameter(fields,"SL BUY Points (wajib > 0)",Integer.toString(gp.getInt("powerfull_sl_buy_points_"+symbol,0)),false);
-        EditText slSell=addEaParameter(fields,"SL SELL Points (wajib > 0)",Integer.toString(gp.getInt("powerfull_sl_sell_points_"+symbol,0)),false);
+        EditText maxLayers=addEaParameter(fields,"Maximum Layers (1–5)",Integer.toString(gp.getInt("powerfull_max_layers_"+symbol,5)),false);
+        EditText stopLossUsd=addEaParameter(fields,"Maximum Loss per Position (USD)",String.format(Locale.US,"%.2f",gp.getFloat("powerfull_stop_loss_usd_"+symbol,0.0f)),false);
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(false);scroll.addView(fields);
         LinearLayout wrapper=new LinearLayout(this);wrapper.setOrientation(LinearLayout.VERTICAL);
         wrapper.addView(scroll,new LinearLayout.LayoutParams(-1,0,1f));
@@ -1754,40 +1752,37 @@ public class MainActivity extends Activity {
             try{
                 double vLot=Double.parseDouble(lot.getText().toString().trim().replace(',','.'));
                 int vLock=Integer.parseInt(profitLock.getText().toString().trim());
-                int vConfirmMs=Integer.parseInt(confirmMs.getText().toString().trim());
                 int vMaxLayers=Integer.parseInt(maxLayers.getText().toString().trim());
-                int vSlBuy=Integer.parseInt(slBuy.getText().toString().trim());
-                int vSlSell=Integer.parseInt(slSell.getText().toString().trim());
+                double vStopLossUsd=Double.parseDouble(stopLossUsd.getText().toString().trim().replace(',','.'));
                 if(!Double.isFinite(vLot)||vLot<minLotForSymbol(symbol)
-                    ||vLock<0||vLock>100000||vConfirmMs<250||vConfirmMs>5000
-                    ||vMaxLayers<1||vMaxLayers>5||vSlBuy<=0||vSlSell<=0
-                    ||vSlBuy>100000000||vSlSell>100000000){
-                    Toast.makeText(this,"Periksa Lot, konfirmasi tick 250–5000 ms, layer 1–5, dan SL BUY/SELL wajib lebih dari 0.",Toast.LENGTH_LONG).show();return;
+                    ||vLock<0||vLock>100000||vMaxLayers<1||vMaxLayers>5
+                    ||!Double.isFinite(vStopLossUsd)||vStopLossUsd<=0.0){
+                    Toast.makeText(this,"Periksa Lot, layer 1–5, dan batas kerugian USD per posisi harus lebih dari 0.",Toast.LENGTH_LONG).show();return;
                 }
                 double point=preferenceDouble(gp,"broker_quote_point_"+symbol,0.0);
                 double pip=gp.getFloat("powerfull_pip_size_"+symbol,(float)(point>0?point:0.01));
                 gp.edit().putFloat("powerfull_lot_"+symbol,(float)vLot)
                     .putInt("powerfull_min_profit_lock_points_"+symbol,vLock)
-                    .putInt("powerfull_d1_turn_confirm_ms_"+symbol,vConfirmMs)
                     .putInt("powerfull_max_layers_"+symbol,vMaxLayers)
-                    .putInt("powerfull_sl_buy_points_"+symbol,vSlBuy)
-                    .putInt("powerfull_sl_sell_points_"+symbol,vSlSell)
+                    .putFloat("powerfull_stop_loss_usd_"+symbol,(float)vStopLossUsd)
                     .putFloat("powerfull_pip_size_"+symbol,(float)pip)
                     .putBoolean("powerfull_buy_limit_"+symbol,true).putBoolean("powerfull_sell_limit_"+symbol,true)
                     .putBoolean("powerfull_quick_profit_"+symbol,true).putBoolean("powerfull_cross_candle_"+symbol,true)
+                    .remove("powerfull_d1_turn_confirm_ms_"+symbol)
+                    .remove("powerfull_sl_buy_points_"+symbol)
+                    .remove("powerfull_sl_sell_points_"+symbol)
                     .remove("powerfull_tick_samples_"+symbol)
                     .remove("powerfull_pending_seconds_"+symbol)
                     .remove("powerfull_distribution_lookback_"+symbol)
                     .remove("powerfull_range_offset_fraction_"+symbol)
                     .remove("powerfull_momentum_points_"+symbol)
                     .apply();
-                AppLog.add(this,"POWERFULL","D1 parameters saved symbol="+symbol+" lot="+vLot+" maxLayers="+vMaxLayers+" confirmMs="+vConfirmMs+" SLbuy="+vSlBuy+" SLsell="+vSlSell);
+                AppLog.add(this,"POWERFULL","D1 parameters saved symbol="+symbol+" lot="+vLot+" maxLayers="+vMaxLayers+" stopLossUSD="+vStopLossUsd);
                 Toast.makeText(this,"Parameter POWERFULL disimpan",Toast.LENGTH_SHORT).show();d.dismiss();
             }catch(Exception e){Toast.makeText(this,"Periksa kembali semua parameter angka.",Toast.LENGTH_LONG).show();}
         });
         showSizedDialog(d,0.90f,460);
     }
-
 
     private int uiDp(float value){return Math.round(value*getResources().getDisplayMetrics().density);}
 

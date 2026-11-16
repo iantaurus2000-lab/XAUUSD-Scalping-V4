@@ -60,6 +60,7 @@ jobs:
           name: Rayyan-POWERFULL-MQ5-source
           path: |
             mt5/Experts/Rayyan4GatewayEA.mq5
+            mt5/Experts/RayyanD1Standalone.mq5
           if-no-files-found: error
           retention-days: 14
 
@@ -224,6 +225,7 @@ jobs:
             $binary = Join-Path $experts ($item.Name + '.ex5')
             if (-not (Test-Path $binary)) { throw "EA compile did not produce $binary." }
             Copy-Item $binary (Join-Path 'build\ea' ($item.Name + '.ex5')) -Force
+            Copy-Item $source (Join-Path 'build\ea' ($item.Name + '.mq5')) -Force
             Copy-Item $log (Join-Path 'build\ea' ($item.Name + '.log')) -Force
           }
 

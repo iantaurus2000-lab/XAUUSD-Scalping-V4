@@ -354,12 +354,12 @@ public final class GatewayService extends Service {
         SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         String suffix=symbol;
         boolean requested=p.getBoolean("powerfull_enabled_"+suffix,false);
-        int d1TurnConfirmMs=p.getInt("powerfull_d1_turn_confirm_ms_"+suffix,500);
-        int maxLayers=p.getInt("powerfull_max_layers_"+suffix,3);
+        int maxLayers=p.getInt("powerfull_max_layers_"+suffix,5);
         boolean reforecast=p.getBoolean("powerfull_reforecast_"+suffix,true);
         boolean quickProfit=p.getBoolean("powerfull_quick_profit_"+suffix,true);
         boolean crossCandle=p.getBoolean("powerfull_cross_candle_"+suffix,true);
         double lot=p.getFloat("powerfull_lot_"+suffix,0.0f);
+        double stopLossUSD=p.getFloat("powerfull_stop_loss_usd_"+suffix,0.0f);
         double lotStep=0.01;
         double brokerPoint=0.0; try { brokerPoint=Double.parseDouble(p.getString("broker_quote_point_"+suffix,"0")); } catch(Exception ignored) {}
         double pip=p.getFloat("powerfull_pip_size_"+suffix,(float)(brokerPoint>0.0?brokerPoint:0.01));
@@ -370,21 +370,19 @@ public final class GatewayService extends Service {
         int minProfitLockPoints=p.getInt("powerfull_min_profit_lock_points_"+suffix,5);
         int minDistancePoints=30;
         int deviationPoints=20;
-        int slBuyPoints=p.getInt("powerfull_sl_buy_points_"+suffix,0);
-        int slSellPoints=p.getInt("powerfull_sl_sell_points_"+suffix,0);
         double minimumLot=("BTCUSDm".equals(symbol)||"ETHUSDm".equals(symbol))?0.10:0.01;
         boolean valid=Double.isFinite(lot)&&lot>=minimumLot
+            &&Double.isFinite(stopLossUSD)&&stopLossUSD>0.0
             &&Double.isFinite(lotStep)&&lotStep>0.0&&Double.isFinite(pip)&&pip>0.0
             &&minDistancePoints>=0&&minDistancePoints<=100000&&deviationPoints>=0&&deviationPoints<=10000
-            &&slBuyPoints>0&&slSellPoints>0&&d1TurnConfirmMs>=250&&d1TurnConfirmMs<=5000
-            &&maxLayers>=1&&maxLayers<=3&&minProfitLockPoints>=0&&minProfitLockPoints<=100000;
+            &&maxLayers>=1&&maxLayers<=5&&minProfitLockPoints>=0&&minProfitLockPoints<=100000;
         boolean enabled=requested&&valid;
-        String reason=enabled?"READY":(!requested?"DISABLED":((slBuyPoints<=0||slSellPoints<=0)?"SL_POINTS_REQUIRED":"CONFIG_INVALID"));
+        String reason=enabled?"READY":(!requested?"DISABLED":(stopLossUSD<=0.0?"STOP_LOSS_USD_REQUIRED":"CONFIG_INVALID"));
         return "symbol="+symbol
             +";enabled="+(enabled?"1":"0")
             +";buyLimit=1;sellLimit=1;pendingLimit=0"
-            +";d1TurnConfirmMs="+d1TurnConfirmMs
             +";maxLayers="+maxLayers
+            +";stopLossUSD="+String.format(Locale.US,"%.2f",stopLossUSD)
             +";reforecast="+(reforecast?"1":"0")
             +";quickProfit="+(quickProfit?"1":"0")
             +";crossCandleHold="+(crossCandle?"1":"0")
@@ -394,8 +392,6 @@ public final class GatewayService extends Service {
             +";stopPips="+String.format(Locale.US,"%.2f",stopPips)
             +";minDistancePoints="+minDistancePoints
             +";deviationPoints="+deviationPoints
-            +";slEntry1Points="+slBuyPoints
-            +";slEntry2Points="+slSellPoints
             +";maxPendingATR="+String.format(Locale.US,"%.2f",maxPendingATR)
             +";minHoldCandles="+minHoldCandles
             +";reversalATRFactor="+String.format(Locale.US,"%.2f",reversalATRFactor)
