@@ -3372,10 +3372,13 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
    if(index<0||index>=ArraySize(powerSymbols))return false;
    string symbol=powerSymbols[index];
    double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
-   double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
-   if(tickSize<=0.0||point<=0.0)return false;
-   MqlRates liveM5[]; ArraySetAsSeries(liveM5,true);
+   if(tickSize<=0.0)return false;
+   MqlRates liveM5[],liveM15[];
+   ArraySetAsSeries(liveM5,true); ArraySetAsSeries(liveM15,true);
    bool haveM5=(CopyRates(symbol,PERIOD_M5,0,1,liveM5)==1);
+   bool haveM15=(CopyRates(symbol,PERIOD_M15,0,1,liveM15)==1);
+   int h1Structure=powerConfirmedSwingStructure(symbol,PERIOD_H1);
+   int h4Structure=powerConfirmedSwingStructure(symbol,PERIOD_H4);
    int m5Structure=powerConfirmedSwingStructure(symbol,PERIOD_M5);
    int m15Structure=powerConfirmedSwingStructure(symbol,PERIOD_M15);
    bool closedAny=false;
@@ -3392,116 +3395,95 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
       bool isBuy=((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
       int side=(isBuy?1:-1);
       double executable=(isBuy?tick.bid:tick.ask);
-      double entryPrice=PositionGetDouble(POSITION_PRICE_OPEN);
+      double entry=PositionGetDouble(POSITION_PRICE_OPEN);
+      double brokerSL=PositionGetDouble(POSITION_SL);
+      string peakPriceKey="PW_PEAK_"+suffix;
+      double peakPrice=(GlobalVariableCheck(peakPriceKey)?GlobalVariableGet(peakPriceKey):entry);
+      double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+      int slPts=(isBuy?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
+      double legacyHard=(powerCfg[index].usePointStops?slPts*point:powerCfg[index].stopPips*powerCfg[index].pipSize);
+      double hard=(brokerSL>0.0?MathAbs(entry-brokerSL):legacyHard);
+      double slBoundary=(brokerSL>0.0?brokerSL:(isBuy?entry-hard:entry+hard));
+      bool lossZone=(hard>0.0&&
+         (isBuy?(executable<peakPrice-tickSize*0.1&&executable>slBoundary+tickSize*0.1):
+                (executable>peakPrice+tickSize*0.1&&executable<slBoundary-tickSize*0.1)));
+      bool m5LiveAgainst=(haveM5&&(isBuy?tick.bid<liveM5[0].open-tickSize*2.0:
+                                             tick.ask>liveM5[0].open+tickSize*2.0));
+      bool m15LiveAgainst=(haveM15&&(isBuy?tick.bid<liveM15[0].open-tickSize*2.0:
+                                               tick.ask>liveM15[0].open+tickSize*2.0));
+      bool m5Against=(m5Structure==-side||m5LiveAgainst);
+      bool m15Against=(m15Structure==-side||m15LiveAgainst);
+      bool m5Break=powerA6StructureBreak(symbol,PERIOD_M5,isBuy,12);
+      // A confirmed reversal requires BOTH H1 and H4 to oppose the position,
+      // plus M15 confirmation and M5 pressure/break. A doji/neutral M15 is not confirmation.
+      bool macroAgainst=(h1Structure==-side&&h4Structure==-side);
+      bool failureConfirmed=(macroAgainst&&m15Against&&(m5Against||m5Break));
+      string armedKey="PW_LR_ARMED_"+suffix;
+      string frozenKey="PW_LR_EXTREME_"+suffix;
+      if(!failureConfirmed){
+         GlobalVariableSet(modeKey,(double)POWERFULL_MODE_TREND_HOLD);
+         if(GlobalVariableCheck(armedKey))GlobalVariableDel(armedKey);
+         if(GlobalVariableCheck(frozenKey))GlobalVariableDel(frozenKey);
+         Print("POWERFULL LOSS_RESCUE HOLD symbol=",symbol," ticket=",ticket,
+            " h1=",h1Structure," h4=",h4Structure," m15_against=",m15Against,
+            " m5_against=",m5Against," action=TREND_HOLD_NO_CLOSE");
+         continue;
+      }
+      if(!lossZone){
+         // Keep monitoring, but do not arm the recovery-exit trigger until price
+         // is actually between the favorable candle extreme and the SL boundary.
+         continue;
+      }
+      if(!GlobalVariableCheck(armedKey)||GlobalVariableGet(armedKey)<0.5){
+         GlobalVariableSet(frozenKey,peakPrice);
+         GlobalVariableSet(armedKey,1.0);
+         Print("POWERFULL LOSS_RESCUE ARMED symbol=",symbol," ticket=",ticket,
+            " side=",(isBuy?"BUY":"SELL"),
+            " loss_zone_from_extreme=",DoubleToString(peakPrice,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " sl_boundary=",DoubleToString(slBoundary,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " h1=",h1Structure," h4=",h4Structure," m15=",m15Structure,
+            " action=WAIT_FOR_PRICE_TO_RECOVER_PAST_FROZEN_EXTREME");
+      }
+      double frozenExtreme=GlobalVariableGet(frozenKey);
+      // BUY closes only after executable Bid rises one tick above its frozen
+      // post-entry high. SELL closes only after executable Ask falls one tick
+      // below its frozen post-entry low. The broker SL remains the hard backstop.
+      double closeTrigger=(isBuy?frozenExtreme+tickSize:frozenExtreme-tickSize);
+      bool crossed=(isBuy?executable>=closeTrigger:executable<=closeTrigger);
+      string logKey="PW_LR_LOG_MS_"+suffix;
+      bool logDue=(!GlobalVariableCheck(logKey)||
+                   (uint)(nowMs-(uint)GlobalVariableGet(logKey))>=1000);
       double net=powerProjectedNet(ticket);
       string liveNetKey="PW_NET_LIVE_"+suffix;
       if(GlobalVariableCheck(liveNetKey))net=GlobalVariableGet(liveNetKey);
       string peakNetKey="PW_PEAK_NET_"+suffix;
       double peakNet=(GlobalVariableCheck(peakNetKey)?GlobalVariableGet(peakNetKey):MathMax(0.0,net));
-      bool newPeak=false;
-      if(net>peakNet){peakNet=net;GlobalVariableSet(peakNetKey,peakNet);newPeak=true;}
-      string peakPriceKey="PW_PEAK_"+suffix;
-      double peakPrice=(GlobalVariableCheck(peakPriceKey)?GlobalVariableGet(peakPriceKey):entryPrice);
-      if(isBuy?executable>peakPrice:executable<peakPrice){
-         peakPrice=executable;GlobalVariableSet(peakPriceKey,peakPrice);
-      }
-      double pullbackTicks=(isBuy?(peakPrice-executable):(executable-peakPrice))/tickSize;
-      if(pullbackTicks<0.0)pullbackTicks=0.0;
-      int slPts=(isBuy?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
-      double brokerSL=PositionGetDouble(POSITION_SL);
-      double legacyHard=(powerCfg[index].usePointStops?slPts*point:powerCfg[index].stopPips*powerCfg[index].pipSize);
-      double hard=(brokerSL>0.0?MathAbs(entryPrice-brokerSL):legacyHard);
-      double adverse=(isBuy?entryPrice-executable:executable-entryPrice);
-      double lossProgress=(hard>0.0?MathMax(0.0,adverse)/hard:0.0);
-      bool m5LiveAgainst=(haveM5&&(isBuy?tick.bid<liveM5[0].open-tickSize*2.0:
-                                             tick.ask>liveM5[0].open+tickSize*2.0));
-      bool m5Against=(m5LiveAgainst||m5Structure==-side);
-      bool m15Against=(m15Structure==-side);
-      bool m5Break=powerA6StructureBreak(symbol,PERIOD_M5,isBuy,12);
-      bool m15Break=powerA6StructureBreak(symbol,PERIOD_M15,isBuy,8);
-      bool structuralInvalidation=(m5Break&&(m15Break||m15Against));
-      // Live M5 rescue scan: use the still-forming candle's actual extreme.
-      // BUY risk is measured at the live Bid low; SELL risk at the live Bid high.
-      // This is tick-driven and does not wait for the M5 candle to close.
-      bool liveExtremePressure=false;
-      if(haveM5){
-         double liveExtreme=(isBuy?liveM5[0].low:liveM5[0].high);
-         double liveQuote=(isBuy?tick.bid:tick.bid);
-         liveExtremePressure=(isBuy?
-            (liveQuote<=liveExtreme+tickSize*1.0):
-            (liveQuote>=liveExtreme-tickSize*1.0));
-      }
-      bool structuralRecovery=(m5Structure==side&&m15Structure==side&&!m5LiveAgainst);
-      string adverseKey="PW_LR_ADVERSE_TICKS_"+suffix;
-      int adverseTicks=(GlobalVariableCheck(adverseKey)?(int)GlobalVariableGet(adverseKey):0);
-      double previousExecutable=(isBuy?previousBid:previousAsk);
-      double adverseMoveTicks=0.0;
-      if(hasPreviousTick&&previousExecutable>0.0){
-         double signedMove=(isBuy?previousExecutable-executable:executable-previousExecutable);
-         if(signedMove>=tickSize*0.5){
-            adverseMoveTicks=signedMove/tickSize;
-            adverseTicks++;
-         }else if(signedMove<=-tickSize*0.5){
-            adverseTicks=0;
-            adverseMoveTicks=0.0;
-         }
-      }
-      if(pullbackTicks<0.5||!m5Against)adverseTicks=0;
-      GlobalVariableSet(adverseKey,(double)adverseTicks);
-      string logKey="PW_LR_LOG_MS_"+suffix;
-      bool logDue=(!GlobalVariableCheck(logKey)||
-                   (uint)(nowMs-(uint)GlobalVariableGet(logKey))>=1000);
-      // In a loss zone, scan the live M5 candle on every tick. Require the
-      // candle to remain against the position, price to press its live extreme,
-      // at least two consecutive adverse ticks, and >=70% SL exposure.
-      // M15/H1/H4 remain context; they cannot delay this local emergency exit.
-      bool lossZone=(net<=0.0);
-      bool rescueExitLoss=(lossZone&&m5LiveAgainst&&liveExtremePressure&&
-                           adverseTicks>=2&&lossProgress>=0.70);
-      bool profitableReversal=(net>0.0&&pullbackTicks>=2.0&&m5Against&&
-                               (adverseTicks>=2||adverseMoveTicks>=2.0));
-      string eventName="LOSS_ZONE_WAIT_RECOVERY";
-      if(structuralRecovery)eventName="LOSS_ZONE_RECOVERY_CONFIRMED";
-      else if(rescueExitLoss)eventName="LOSS_ZONE_LIVE_M5_EXTREME_PRESSURE";
-      else if(profitableReversal)eventName="PROFIT_REVERSAL_EXIT_SIGNAL";
-      else if(net>0.0)eventName=(newPeak?"NEW_NET_PROFIT_PEAK":"PROFIT_RECOVERY_MONITOR");
-      if(logDue||rescueExitLoss||profitableReversal){
+      double pullbackTicks=(isBuy?(frozenExtreme-executable):(executable-frozenExtreme))/tickSize;
+      if(logDue||crossed){
+         string eventName=(crossed?"FROZEN_EXTREME_RECOVERY_CROSSED":"WAIT_FROZEN_EXTREME_RECOVERY");
          Print("POWERFULL LOSS_RESCUE MONITOR symbol=",symbol," ticket=",ticket,
             " side=",(isBuy?"BUY":"SELL"),
-            " projected_net=",DoubleToString(net,2),
-            " peak_net_tracked=",DoubleToString(peakNet,2),
-            " executable_price=",DoubleToString(executable,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
-            " peak_price=",DoubleToString(peakPrice,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
-            " pullback_ticks=",DoubleToString(pullbackTicks,1),
-            " loss_progress=",DoubleToString(lossProgress*100.0,1),"% ",
-            " m5_structure=",m5Structure," m15_structure=",m15Structure,
-            " live_m5_extreme_pressure=",liveExtremePressure,
-            " m5_break=",m5Break," m15_break=",m15Break,
-            " adverse_ticks=",adverseTicks," decision=",eventName);
-         powerWriteLossRescueLog(ticket,symbol,isBuy,net,peakNet,peakPrice,executable,
-                                  pullbackTicks,adverseTicks,eventName);
+            " net=",DoubleToString(net,2),
+            " executable=",DoubleToString(executable,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " frozen_extreme=",DoubleToString(frozenExtreme,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " close_trigger=",DoubleToString(closeTrigger,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " loss_zone=true h1=",h1Structure," h4=",h4Structure,
+            " m15_against=",m15Against," m5_against=",m5Against,
+            " decision=",eventName);
+         powerWriteLossRescueLog(ticket,symbol,isBuy,net,peakNet,frozenExtreme,executable,
+                                  pullbackTicks,0,eventName);
          GlobalVariableSet(logKey,(double)nowMs);
       }
-      if(structuralRecovery){
-         GlobalVariableSet(modeKey,(double)POWERFULL_MODE_TREND_HOLD);
-         if(GlobalVariableCheck(adverseKey))GlobalVariableDel(adverseKey);
-         Print("POWERFULL LOSS_RESCUE RECOVERY symbol=",symbol," ticket=",ticket,
-            " projected_net=",DoubleToString(net,2),
-            " action=RETURN_TO_TREND_HOLD_NO_CLOSE");
-         continue;
-      }
-      if(!rescueExitLoss&&!profitableReversal)continue;
-      string closeReason=(rescueExitLoss?"LOSS_RESCUE_LIVE_M5_EXTREME_PRESSURE":
-                                            "LOSS_RESCUE_PROFIT_REVERSAL");
+      if(!crossed)continue;
+      string closeReason=(isBuy?"LOSS_RESCUE_RECOVER_ABOVE_FROZEN_HIGH":
+                                  "LOSS_RESCUE_RECOVER_BELOW_FROZEN_LOW");
       Print("POWERFULL LOSS_RESCUE EXIT REQUEST symbol=",symbol," ticket=",ticket,
-         " projected_net=",DoubleToString(net,2),
-         " loss_progress=",DoubleToString(lossProgress*100.0,1),"% ",
-         " m5_structure=",m5Structure," m15_structure=",m15Structure,
-         " m5_break=",m5Break," m15_break=",m15Break,
+         " frozen_extreme=",DoubleToString(frozenExtreme,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+         " trigger=",DoubleToString(closeTrigger,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
          " reason=",closeReason);
       if(powerClosePosition(ticket,closeReason)){closedAny=true;closedCount++;}
-      else powerWriteLossRescueLog(ticket,symbol,isBuy,net,peakNet,peakPrice,executable,
-                                   pullbackTicks,adverseTicks,"CLOSE_REQUEST_FAILED");
+      else powerWriteLossRescueLog(ticket,symbol,isBuy,net,peakNet,frozenExtreme,executable,
+                                   pullbackTicks,0,"CLOSE_REQUEST_FAILED");
    }
    if(closedAny)Print("POWERFULL LOSS_RESCUE CLOSED COUNT symbol=",symbol," count=",closedCount);
    return closedAny;
@@ -3606,10 +3588,17 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       bool isBuy=((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
       double entry=PositionGetDouble(POSITION_PRICE_OPEN),executable=(isBuy?tick.bid:tick.ask);
       string suffix=IntegerToString((long)ticket),peakPriceKey="PW_PEAK_"+suffix;
+      string modeKey="PW_HMODE_"+suffix;
+      int mode=(GlobalVariableCheck(modeKey)?(int)GlobalVariableGet(modeKey):0);
       if(!GlobalVariableCheck(peakPriceKey))GlobalVariableSet(peakPriceKey,entry);
       double peakPrice=GlobalVariableGet(peakPriceKey);
-      if(isBuy?executable>peakPrice+ts*0.1:executable<peakPrice-ts*0.1)
-         GlobalVariableSet(peakPriceKey,executable);
+      // Track the best post-entry executable extreme until LOSS_RESCUE is armed.
+      // Freeze it during LOSS_RESCUE so the recovery target cannot chase price.
+      if(mode!=POWERFULL_MODE_LOSS_RESCUE&&
+         (isBuy?executable>peakPrice+ts*0.1:executable<peakPrice-ts*0.1)){
+         peakPrice=executable;
+         GlobalVariableSet(peakPriceKey,peakPrice);
+      }
       double currentNet=powerProjectedNet(ticket);
       string peakNetKey="PW_PEAK_NET_"+suffix;
       if(!GlobalVariableCheck(peakNetKey))GlobalVariableSet(peakNetKey,MathMax(0.0,currentNet));
@@ -3628,8 +3617,7 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
             " hard_limit=",DoubleToString(hard,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)));
          powerClosePosition(ticket,"HARD_LOSS_GUARD");continue;
       }
-      string modeKey="PW_HMODE_"+suffix,adverseKey="PW_LR_ADVERSE_TICKS_"+suffix;
-      int mode=(GlobalVariableCheck(modeKey)?(int)GlobalVariableGet(modeKey):0);
+      string adverseKey="PW_LR_ADVERSE_TICKS_"+suffix;
       int side=(isBuy?1:-1);
       int structure=consensusStructure; // H1/H4 macro consensus.
       int m5Structure=m5StructureNow;
@@ -3663,20 +3651,29 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
          Print("POWERFULL PEAK PROFIT GUARD CLOSE FAILED symbol=",symbol," ticket=",ticket);
       }
 
-      // Early warning: M5 pressure plus M15 confirmation or rising SL exposure.
-      // H1/H4 remains macro context and cannot veto a clear local risk signal.
-      bool localRisk=(m5Against&&(m15Against||m15Break||lossProgress>=0.25))||
-                     (m5Break&&(m15Against||m15Break));
-      bool localRecovery=(m5Structure==side&&m15Structure==side&&!m5LiveAgainst);
-      bool rescueRequired=(structure==-side||localRisk);
+      // The loss zone is measured from the best post-entry candle extreme to SL,
+      // NOT from entry to SL. Entry remains only the position's opening price.
+      double slBoundary=(brokerSL>0.0?brokerSL:(isBuy?entry-hard:entry+hard));
+      bool lossZone=(hard>0.0&&
+         (isBuy?(executable<peakPrice-ts*0.1&&executable>slBoundary+ts*0.1):
+                (executable>peakPrice+ts*0.1&&executable<slBoundary-ts*0.1)));
+      // TREND_HOLD has priority: H1 and H4 must BOTH oppose the ticket,
+      // M15 must confirm (a doji/neutral M15 is not a reversal), and M5
+      // must show counter-pressure or a structural break.
+      bool macroAgainst=(structure==-side);
+      bool failureConfirmed=(macroAgainst&&m15Against&&(m5Against||m5Break));
+      bool rescueRequired=(lossZone&&failureConfirmed);
       if(mode==POWERFULL_MODE_LOSS_RESCUE){
-         if(localRecovery||(structure==side&&!m5Against&&!m15Against)){
+         if(!rescueRequired){
             GlobalVariableSet(modeKey,(double)POWERFULL_MODE_TREND_HOLD);
             if(GlobalVariableCheck(adverseKey))GlobalVariableDel(adverseKey);
+            string armedKey="PW_LR_ARMED_"+suffix,frozenKey="PW_LR_EXTREME_"+suffix;
+            if(GlobalVariableCheck(armedKey))GlobalVariableDel(armedKey);
+            if(GlobalVariableCheck(frozenKey))GlobalVariableDel(frozenKey);
             Print("POWERFULL MODE symbol=",symbol," ticket=",ticket,
-               " mode=TREND_HOLD reason=",(localRecovery?"M5_M15_RECOVERY_CONFIRMED":"H1_H4_STRUCTURE_SUPPORTS_POSITION_AGAIN"),
-               " projected_net=",DoubleToString(currentNet,2)," peak_net_tracked=",DoubleToString(peakNet,2),
-               " action=hold_position_for_recovery_no_forced_close");
+               " mode=TREND_HOLD reason=TREND_FAILURE_NOT_CONFIRMED_OR_OUTSIDE_LOSS_ZONE",
+               " h1_h4_structure=",structure," m5_against=",m5Against," m15_against=",m15Against,
+               " loss_zone=",lossZone," action=HOLD_NO_CLOSE");
          }
          continue;
       }
@@ -3685,11 +3682,11 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
             GlobalVariableSet(modeKey,(double)POWERFULL_MODE_LOSS_RESCUE);
             if(GlobalVariableCheck(adverseKey))GlobalVariableDel(adverseKey);
             Print("POWERFULL MODE symbol=",symbol," ticket=",ticket,
-               " mode=LOSS_RESCUE reason=",(structure==-side?"H1_H4_CONFIRMED_REVERSAL":"EARLY_M5_M15_COUNTERTREND_RISK"),
+               " mode=LOSS_RESCUE reason=LOSS_ZONE_AND_H1_H4_M15_M5_REVERSAL_CONFIRMED",
                " h1_h4_structure=",structure," m5_against=",m5Against," m15_against=",m15Against,
-               " sl_progress=",DoubleToString(lossProgress*100.0,1),"% projected_net=",DoubleToString(currentNet,2),
-               " peak_net_tracked=",DoubleToString(peakNet,2),
-               " action=arm_adaptive_loss_rescue_without_forced_close");
+               " loss_zone_from_extreme=",DoubleToString(peakPrice,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+               " sl_boundary=",DoubleToString(slBoundary,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+               " action=FREEZE_EXTREME_AND_WAIT_FOR_RECOVERY_CROSS");
          }
          continue;
       }
