@@ -3420,6 +3420,7 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
       bool failureConfirmed=(macroAgainst&&m15Against&&(m5Against||m5Break));
       string armedKey="PW_LR_ARMED_"+suffix;
       string frozenKey="PW_LR_EXTREME_"+suffix;
+      bool rescueArmed=(GlobalVariableCheck(armedKey)&&GlobalVariableGet(armedKey)>=0.5);
       if(!failureConfirmed){
          GlobalVariableSet(modeKey,(double)POWERFULL_MODE_TREND_HOLD);
          if(GlobalVariableCheck(armedKey))GlobalVariableDel(armedKey);
@@ -3429,14 +3430,13 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
             " m5_against=",m5Against," action=TREND_HOLD_NO_CLOSE");
          continue;
       }
-      if(!lossZone){
-         // Keep monitoring, but do not arm the recovery-exit trigger until price
-         // is actually between the favorable candle extreme and the SL boundary.
-         continue;
-      }
-      if(!GlobalVariableCheck(armedKey)||GlobalVariableGet(armedKey)<0.5){
+      // Arm only on first entry into the high/low-to-SL loss zone. Once armed,
+      // keep the frozen target while price recovers; do not disarm at the old high/low.
+      if(!rescueArmed){
+         if(!lossZone)continue;
          GlobalVariableSet(frozenKey,peakPrice);
          GlobalVariableSet(armedKey,1.0);
+         rescueArmed=true;
          Print("POWERFULL LOSS_RESCUE ARMED symbol=",symbol," ticket=",ticket,
             " side=",(isBuy?"BUY":"SELL"),
             " loss_zone_from_extreme=",DoubleToString(peakPrice,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
@@ -3664,7 +3664,10 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       bool failureConfirmed=(macroAgainst&&m15Against&&(m5Against||m5Break));
       bool rescueRequired=(lossZone&&failureConfirmed);
       if(mode==POWERFULL_MODE_LOSS_RESCUE){
-         if(!rescueRequired){
+         // Once armed, allow the rebound to leave the loss zone; keep waiting
+         // for the frozen-extreme cross as long as the multi-timeframe failure
+         // remains confirmed. Only restored/uncertain trend evidence returns HOLD.
+         if(!failureConfirmed){
             GlobalVariableSet(modeKey,(double)POWERFULL_MODE_TREND_HOLD);
             if(GlobalVariableCheck(adverseKey))GlobalVariableDel(adverseKey);
             string armedKey="PW_LR_ARMED_"+suffix,frozenKey="PW_LR_EXTREME_"+suffix;
