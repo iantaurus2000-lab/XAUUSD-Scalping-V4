@@ -17,9 +17,9 @@ public class CandleChartView extends View {
     private double bid, ask;
     private float cw = 3.2f, ox = 0, oy = 0, lx, ly, ld, cx, cy;
     private final float leftPad = 18, rightAxis = 82, topPad = 8, bottomPad = 26, lastCandlePad = 12;
-    private boolean showEMA50=true, showEMA200=true;
-    private boolean showSR=true, showFibo=true, showRSI=true, showMACD=true, showATR=true;
-    private boolean showSignals=true, showWickBos=true, showTradeLevels=true, showPosition=true, showBidAsk=true;
+    private boolean showEMA50=false, showEMA200=false;
+    private boolean showSR=false, showFibo=true, showRSI=false, showMACD=false, showATR=false, showHarmonic=true;
+    private boolean showSignals=false, showWickBos=false, showTradeLevels=true, showPosition=true, showBidAsk=true;
     private boolean follow=true;
     private String timeframe="M1";
     private String marketName="XAUUSD";
@@ -150,7 +150,7 @@ public class CandleChartView extends View {
     public void setShowEMA50(boolean v){showEMA50=v;invalidate();}
     public void setShowEMA200(boolean v){showEMA200=v;invalidate();}
     public void setShowSR(boolean v){showSR=v;invalidate();}
-    public void setShowFibo(boolean v){showFibo=v;invalidate();}
+    public void setShowFibo(boolean v){showFibo=v;invalidate();}\n    public void setShowHarmonic(boolean v){showHarmonic=v;invalidate();}
     /** Levels are ratios: 23.6% is 0.236, and -27% is -0.27. */
     public void setFibonacciLevels(double[] levels){
         if(levels==null||levels.length==0)return;
@@ -317,6 +317,8 @@ public class CandleChartView extends View {
             }
         }
 
+        if(showHarmonic)drawHarmonicPattern(c,L,R,T,B,lo,hi,step);
+
         if(showBidAsk){
             if(bid>0){float y=py(bid,lo,hi,T,B);ln(c,L,y,R,y,Color.rgb(0,255,145),2);box(c,"BID "+f(bid),y,Color.rgb(0,200,125),Color.BLACK);}
             if(ask>0){float y=py(ask,lo,hi,T,B);ln(c,L,y,R,y,Color.rgb(255,65,85),2);box(c,"ASK "+f(ask),y,Color.rgb(225,45,65),Color.WHITE);}
@@ -398,6 +400,52 @@ public class CandleChartView extends View {
         if(showATR){drawAtr(c,L,R,panelTop,panelTop+each);}
 
         if(cx>0){ln(c,cx,T,cx,B,chartCrosshair,1);ln(c,L,cy,R,cy,chartCrosshair,1);}
+    }
+
+    private void drawHarmonicPattern(Canvas c,float L,float R,float T,float B,double lo,double hi,float step){
+        if(cs.size()<12)return;
+        ArrayList<Integer> pivots=new ArrayList<>();
+        ArrayList<Boolean> highs=new ArrayList<>();
+        int first=Math.max(2,cs.size()-36);
+        for(int i=first;i<cs.size()-2;i++){
+            Candle z=cs.get(i);boolean high=true,low=true;
+            for(int j=i-2;j<=i+2;j++){
+                if(j==i)continue;
+                if(cs.get(j).h>=z.h)high=false;
+                if(cs.get(j).l<=z.l)low=false;
+            }
+            if(high||low){
+                boolean isHigh=high;
+                if(!high&&!low)continue;
+                if(!pivots.isEmpty()&&highs.get(highs.size()-1)==isHigh){
+                    int prev=pivots.get(pivots.size()-1);
+                    if((isHigh&&z.h>cs.get(prev).h)||(!isHigh&&z.l<cs.get(prev).l))pivots.set(pivots.size()-1,i);
+                }else{
+                    pivots.add(i);highs.add(isHigh);
+                }
+            }
+        }
+        if(pivots.size()<5)return;
+        int n=pivots.size();
+        int[] ix={pivots.get(n-5),pivots.get(n-4),pivots.get(n-3),pivots.get(n-2),pivots.get(n-1)};
+        double[] v=new double[5];
+        for(int i=0;i<5;i++){Candle z=cs.get(ix[i]);v[i]=highs.get(n-5+i)?z.h:z.l;}
+        double xa=Math.abs(v[1]-v[0]),ab=Math.abs(v[2]-v[1]),bc=Math.abs(v[3]-v[2]),cd=Math.abs(v[4]-v[3]);
+        if(xa<=0||ab<=0||bc<=0)return;
+        double rAB=ab/xa,rBC=bc/ab,rCD=cd/bc,rAD=Math.abs(v[4]-v[0])/xa;
+        boolean harmonic=rAB>=.30&&rAB<=.70&&rBC>=.30&&rBC<=.95&&rCD>=1.05&&rCD<=1.75&&rAD>=.70&&rAD<=1.05;
+        if(!harmonic)return;
+        int col=Color.rgb(190,135,255);
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2);p.setColor(col);
+        for(int i=0;i<4;i++){
+            float x1=L+ix[i]*step+ox+step/2f,x2=L+ix[i+1]*step+ox+step/2f;
+            float y1=py(v[i],lo,hi,T,B),y2=py(v[i+1],lo,hi,T,B);
+            c.drawLine(x1,y1,x2,y2,p);
+            text(c,new String[]{"X","A","B","C","D"}[i],x1-4,y1-7,10,col);
+            if(i==3)text(c,"D",x2-4,y2-7,10,col);
+        }
+        p.setStyle(Paint.Style.FILL);
+        text(c,"HARMONIC",L+8,T+12,9,col);
     }
 
     private long periodForTimeframe() {
