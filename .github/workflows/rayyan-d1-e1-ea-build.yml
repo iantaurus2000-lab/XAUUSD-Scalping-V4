@@ -1,12 +1,6 @@
 name: RAYYAN D1 E1 MT5 EA Build
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - RAYYAN
-    paths:
-      - 'mt5/Experts/RayyanD1Standalone.mq5'
-      - '.github/workflows/rayyan-d1-e1-ea-build.yml'
 jobs:
   mt5-ea:
     runs-on: windows-2022
@@ -78,36 +72,42 @@ jobs:
           }
           "METAEDITOR=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "MT5ROOT=$mt5Root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-      - name: Compile Rayyan D1 Standalone EA
+      - name: Compile both Gateway and D1 Standalone EAs
         shell: pwsh
         run: |
-          $source = (Resolve-Path 'mt5/Experts/RayyanD1Standalone.mq5').Path
+          New-Item -ItemType Directory -Force -Path build\ea | Out-Null
           $mt5Root = $env:MT5ROOT
           if (-not $mt5Root -or -not (Test-Path (Join-Path $mt5Root 'MQL5\Include\Trade\Trade.mqh'))) {
             throw "MT5 standard library not found under $mt5Root"
           }
           $experts = Join-Path $mt5Root 'MQL5\Experts'
           New-Item -ItemType Directory -Force -Path $experts | Out-Null
-          $terminalSource = Join-Path $experts 'RayyanD1Standalone.mq5'
-          Copy-Item $source $terminalSource -Force
-          $log = Join-Path $env:RUNNER_TEMP 'RayyanD1Standalone-compile.log'
-          Remove-Item $log -Force -ErrorAction SilentlyContinue
-          $args = "/compile:`"$terminalSource`" /log:`"$log`""
-          $process = Start-Process -FilePath $env:METAEDITOR -ArgumentList $args -PassThru -Wait
-          Start-Sleep -Seconds 2
-          if (-not (Test-Path $log)) { throw "MetaEditor produced no compile log (exit $($process.ExitCode))." }
-          Get-Content $log
-          $compileLog = Get-Content $log -Raw
-          if ($compileLog -match '(?im)\b[1-9]\d* errors?\b') { throw 'MetaEditor reported compile errors.' }
-          $binary = Join-Path $experts 'RayyanD1Standalone.ex5'
-          if (-not (Test-Path $binary)) { throw 'EA binary was not produced.' }
-          New-Item -ItemType Directory -Force -Path build\ea | Out-Null
-          Copy-Item $binary 'build/ea/RayyanD1Standalone.ex5' -Force
-          Copy-Item $source 'build/ea/RayyanD1Standalone.mq5' -Force
-          Copy-Item $log 'build/ea/RayyanD1Standalone-compile.log' -Force
+          $sources = @(
+            @{ Source = 'mt5/Experts/Rayyan4GatewayEA.mq5'; Name = 'Rayyan4GatewayEA' },
+            @{ Source = 'mt5/Experts/RayyanD1Standalone.mq5'; Name = 'RayyanD1Standalone' }
+          )
+          foreach ($item in $sources) {
+            $source = (Resolve-Path $item.Source).Path
+            $terminalSource = Join-Path $experts ($item.Name + '.mq5')
+            Copy-Item $source $terminalSource -Force
+            $log = Join-Path $env:RUNNER_TEMP ($item.Name + '-compile.log')
+            Remove-Item $log -Force -ErrorAction SilentlyContinue
+            $args = "/compile:`"$terminalSource`" /log:`"$log`""
+            $process = Start-Process -FilePath $env:METAEDITOR -ArgumentList $args -PassThru -Wait
+            Start-Sleep -Seconds 2
+            if (-not (Test-Path $log)) { throw "MetaEditor produced no compile log for $($item.Name) (exit $($process.ExitCode))." }
+            Get-Content $log
+            $compileLog = Get-Content $log -Raw
+            if ($compileLog -match '(?im)\b[1-9]\d* errors?\b') { throw "MetaEditor reported compile errors for $($item.Name)." }
+            $binary = Join-Path $experts ($item.Name + '.ex5')
+            if (-not (Test-Path $binary)) { throw "EA binary was not produced: $binary" }
+            Copy-Item $binary (Join-Path 'build\ea' ($item.Name + '.ex5')) -Force
+            Copy-Item $source (Join-Path 'build\ea' ($item.Name + '.mq5')) -Force
+            Copy-Item $log (Join-Path 'build\ea' ($item.Name + '.log')) -Force
+          }
       - uses: actions/upload-artifact@v4
         with:
-          name: RAYYAN-D1-E1-MT5-EA
+          name: RAYYAN-D1-GATEWAY-TWO-EA
           path: build/ea/*
           if-no-files-found: error
           retention-days: 30
