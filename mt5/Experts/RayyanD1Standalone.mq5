@@ -3647,10 +3647,10 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       // PEAK PROFIT GUARD: protect every position, including TREND_HOLD.
       // A fresh favorable extreme updates peakNet above before this test, so
       // renewed trend strength automatically resets the drawdown calculation.
-      // Exit only after >=45% net-profit giveback AND live/structural weakening.
+      // Exit only after >=25% net-profit giveback AND live/structural weakening.
       double peakGiveback=(peakNet>0.0?MathMax(0.0,(peakNet-currentNet)/peakNet):0.0);
       bool trendWeakening=(m5Against&&(m5Break||m15Against||m15Break));
-      bool peakProfitGuard=(peakNet>0.0&&peakGiveback>=0.45&&trendWeakening);
+      bool peakProfitGuard=(peakNet>0.0&&peakGiveback>=0.25&&trendWeakening);
       if(peakProfitGuard){
          Print("POWERFULL PEAK PROFIT GUARD symbol=",symbol," ticket=",ticket,
             " peak_net=",DoubleToString(peakNet,2),
@@ -3659,7 +3659,7 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
             " m5_structure=",m5Structure," m15_structure=",m15Structure,
             " m5_break=",m5Break," m15_break=",m15Break,
             " action=CLOSE_PROTECT_REMAINING_PROFIT");
-         if(powerClosePosition(ticket,"PEAK_PROFIT_GUARD_45PCT_TREND_WEAKENING"))continue;
+         if(powerClosePosition(ticket,"PEAK_PROFIT_GUARD_25PCT_TREND_WEAKENING"))continue;
          Print("POWERFULL PEAK PROFIT GUARD CLOSE FAILED symbol=",symbol," ticket=",ticket);
       }
 
