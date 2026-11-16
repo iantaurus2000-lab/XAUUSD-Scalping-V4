@@ -508,7 +508,6 @@ public class MainActivity extends Activity {
         boolean fresh=stateAt>0L&&now>=stateAt&&now-stateAt<=8000L;
         String statusText=fresh?gp.getString("powerfull_status_"+symbol,"UNKNOWN"):"MENUNGGU / DATA EA STALE";
         setControlValue("algo_status",fresh?statusText:"MENUNGGU MT5");
-        setControlValue("layers",fresh?"OPEN LAYERS  "+positions:"OPEN LAYERS  --");
         setControlValue("m15","Data arah candle belum dikirim Gateway");
         setControlValue("h1","Data arah candle belum dikirim Gateway");
         setControlValue("h4","Data arah candle belum dikirim Gateway");
@@ -517,6 +516,7 @@ public class MainActivity extends Activity {
         int losses=gp.getInt("powerfull_losses_"+symbol,0);
         int closed=gp.getInt("powerfull_closed_deals_"+symbol,0);
         int positions=parseControlInt(gp.getString("powerfull_positions_"+symbol,"0"));
+        setControlValue("layers",fresh?"OPEN LAYERS  "+positions:"OPEN LAYERS  --");
         int pending=parseControlInt(gp.getString("powerfull_pending_"+symbol,"0"));
         int total=wins+losses+positions+pending;
         double winrate=(wins+losses)>0?100.0*wins/(wins+losses):0.0;
