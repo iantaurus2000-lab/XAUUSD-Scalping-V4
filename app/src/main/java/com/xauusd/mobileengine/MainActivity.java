@@ -557,7 +557,13 @@ public class MainActivity extends Activity {
         setControlValue("closed",fresh?String.valueOf(closed):"--");
 
         String side=gp.getString("powerfull_order_side_"+symbol,"").toUpperCase(Locale.US);
-        updateLayerSlots(fresh?positions:0,side,fresh,pending);
+        String marketDirection="NEUTRAL";
+        Candle[] liveM5=readNativeMt5Bars(selectedMarket,"M5",3);
+        if(liveM5!=null&&liveM5.length>0){
+            Candle live=liveM5[liveM5.length-1];
+            marketDirection=live.c>live.o?"BULLISH":(live.c<live.o?"BEARISH":"NEUTRAL");
+        }
+        updateLayerSlots(fresh?positions:0,side,marketDirection,fresh,pending);
         setControlValue("total_profit",fresh?"--":"--");
         setControlValue("total_loss",fresh?"--":"--");
         setControlCardTone("total_profit",Color.rgb(8,76,48),Color.rgb(106,255,174));
@@ -586,10 +592,11 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void updateLayerSlots(int positions,String side,boolean fresh,int pending){
+    private void updateLayerSlots(int positions,String side,String marketDirection,boolean fresh,int pending){
         int active=Math.min(5,Math.max(0,positions));
-        boolean bullish="BUY".equals(side)||"BULLISH".equals(side);
-        boolean bearish="SELL".equals(side)||"BEARISH".equals(side);
+        boolean bullish="BULLISH".equals(marketDirection);
+        boolean bearish="BEARISH".equals(marketDirection);
+        String positionSide=("BUY".equals(side)||"SELL".equals(side))?side:"POSISI";
         for(int i=0;i<5;i++){
             boolean on=fresh&&i<active;
             if(!on){
@@ -597,15 +604,15 @@ public class MainActivity extends Activity {
                 layerSlotViews[i].setTextColor(Color.rgb(105,129,148));
                 layerSlotCards[i].setBackground(roundBg(Color.rgb(17,31,45),7));
             }else if(bullish){
-                layerSlotViews[i].setText("●  BUY  /  AKTIF");
+                layerSlotViews[i].setText("●  "+positionSide+"  /  BULLISH");
                 layerSlotViews[i].setTextColor(Color.rgb(106,255,174));
                 layerSlotCards[i].setBackground(roundBg(Color.rgb(8,76,48),7));
             }else if(bearish){
-                layerSlotViews[i].setText("●  SELL  /  AKTIF");
+                layerSlotViews[i].setText("●  "+positionSide+"  /  BEARISH");
                 layerSlotViews[i].setTextColor(Color.rgb(255,132,145));
                 layerSlotCards[i].setBackground(roundBg(Color.rgb(83,24,35),7));
             }else{
-                layerSlotViews[i].setText("●  AKTIF");
+                layerSlotViews[i].setText("●  "+positionSide+"  /  NEUTRAL");
                 layerSlotViews[i].setTextColor(Color.rgb(224,235,244));
                 layerSlotCards[i].setBackground(roundBg(Color.rgb(38,48,59),7));
             }
