@@ -77,6 +77,11 @@ public final class GatewayService extends Service {
                 int code=result.startsWith("BARS OK")?200:400;
                 writeResponse(socket,code,"text/plain; charset=utf-8",result.getBytes(StandardCharsets.UTF_8));return;
             }
+            if(path.startsWith("/d1_snapshot")&&"GET".equalsIgnoreCase(method)){
+                String result=receiveD1Snapshot(path);
+                int code=result.startsWith("D1 SNAPSHOT OK")?200:400;
+                writeResponse(socket,code,"text/plain; charset=utf-8",result.getBytes(StandardCharsets.UTF_8));return;
+            }
             if(path.startsWith("/quote/upload")&&"POST".equalsIgnoreCase(method)){
                 if(contentLength<20||contentLength>4096){
                     writeResponse(socket,400,"text/plain; charset=utf-8","QUOTE ERROR SIZE".getBytes(StandardCharsets.UTF_8));return;
@@ -176,6 +181,53 @@ public final class GatewayService extends Service {
         String reason=status==200?"OK":status==404?"Not Found":"Bad Request";
         String h="HTTP/1.1 "+status+" "+reason+"\r\nContent-Type: "+contentType+"\r\nContent-Length: "+body.length+"\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n";
         OutputStream o=socket.getOutputStream();o.write(h.getBytes(StandardCharsets.US_ASCII));o.write(body);o.flush();
+    }
+
+    /** Persist the read-only dashboard snapshot copied from the D1 Standalone chart. */
+    private synchronized String receiveD1Snapshot(String path){
+        String symbol=query(path,"symbol");
+        if(!("XAUUSDm".equals(symbol)||"BTCUSDm".equals(symbol)||"ETHUSDm".equals(symbol)))
+            return "D1 SNAPSHOT ERROR SYMBOL";
+        String algo=query(path,"algo");
+        if(!("0".equals(algo)||"1".equals(algo)))return "D1 SNAPSHOT ERROR ALGO";
+        String[] fields={"status","m15","h1","h4","winrate","wins","losses","entries",
+            "closed","profit","loss","layers","floating","peak","timer","open0","open1","open2","open3"};
+        SharedPreferences.Editor edit=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit();
+        long now=System.currentTimeMillis();
+        edit.putString("d1_symbol_"+symbol,symbol)
+            .putString("d1_algo_"+symbol,algo)
+            .putLong("d1_snapshot_at_"+symbol,now);
+        for(String field:fields){
+            String value=query(path,field);
+            edit.putString("d1_"+field+"_"+symbol,value==null?"":value);
+        }
+        String wins=query(path,"wins"),losses=query(path,"losses"),closed=query(path,"closed");
+        String layers=query(path,"layers");
+        int openCount=0;
+        try{
+            int start=layers==null?-1:layers.indexOf("OPEN LAYERS");
+            if(start>=0){
+                String tail=layers.substring(start+"OPEN LAYERS".length()).trim();
+                int slash=tail.indexOf('/');
+                String count=slash>=0?tail.substring(0,slash).trim():tail.split("\\s+")[0];
+                openCount=Math.max(0,Integer.parseInt(count));
+            }
+        }catch(Exception ignored){}
+        String side="";
+        String open0=query(path,"open0");
+        if(open0!=null){
+            if(open0.contains("BUY"))side="BUY";
+            else if(open0.contains("SELL"))side="SELL";
+        }
+        edit.putString("powerfull_status_"+symbol,query(path,"status")==null?"":query(path,"status"))
+            .putLong("powerfull_state_at_"+symbol,now)
+            .putString("powerfull_wins_"+symbol,wins==null?"0":wins)
+            .putString("powerfull_losses_"+symbol,losses==null?"0":losses)
+            .putString("powerfull_closed_deals_"+symbol,closed==null?"0":closed)
+            .putString("powerfull_positions_"+symbol,Integer.toString(openCount))
+            .putString("powerfull_order_side_"+symbol,side)
+            .apply();
+        return "D1 SNAPSHOT OK";
     }
 
     /**

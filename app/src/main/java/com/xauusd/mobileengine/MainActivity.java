@@ -263,7 +263,16 @@ public class MainActivity extends Activity {
         TextView footer=tv("MT5 NATIVE DATA  •  POWERFULL EA CONTROL PANEL",8);
         footer.setTextColor(Color.rgb(105,143,166));
         footer.setGravity(Gravity.CENTER);
-        body.addView(footer,new LinearLayout.LayoutParams(-1,dashH(25)));
+        LinearLayout footerRow=new LinearLayout(this);
+        footerRow.setGravity(Gravity.CENTER_VERTICAL);
+        footerRow.addView(footer,new LinearLayout.LayoutParams(0,dashH(25),1));
+        TextView timerValue=tv("--:--",12);
+        timerValue.setTypeface(null,Typeface.BOLD);
+        timerValue.setTextColor(Color.rgb(225,235,245));
+        timerValue.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+        controlValues.put("timer",timerValue);
+        footerRow.addView(timerValue,new LinearLayout.LayoutParams(uiDp(66),dashH(25)));
+        body.addView(footerRow,new LinearLayout.LayoutParams(-1,dashH(25)));
         root.addView(body,new LinearLayout.LayoutParams(-1,0,1));
 
         frame.addView(root,new FrameLayout.LayoutParams(-1,-1));
@@ -534,27 +543,24 @@ public class MainActivity extends Activity {
         SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         String symbol=mt5SymbolForMarket(selectedMarket);
         long now=System.currentTimeMillis();
-        long stateAt=gp.getLong("powerfull_state_at_"+symbol,0L);
+        long stateAt=gp.getLong("d1_snapshot_at_"+symbol,gp.getLong("powerfull_state_at_"+symbol,0L));
         boolean fresh=stateAt>0L&&now>=stateAt&&now-stateAt<=8000L;
-        String statusText=fresh?gp.getString("powerfull_status_"+symbol,"UNKNOWN"):"MENUNGGU / DATA EA STALE";
+        String statusText=fresh?gp.getString("d1_status_"+symbol,gp.getString("powerfull_status_"+symbol,"UNKNOWN")):"MENUNGGU / DATA EA STALE";
         setControlValue("algo_status",fresh?statusText:"MENUNGGU MT5");
         updateDirectionCard("M15",symbol,"m15");
         updateDirectionCard("H1",symbol,"h1");
         updateDirectionCard("H4",symbol,"h4");
 
-        int wins=gp.getInt("powerfull_wins_"+symbol,0);
-        int losses=gp.getInt("powerfull_losses_"+symbol,0);
-        int closed=gp.getInt("powerfull_closed_deals_"+symbol,0);
+        int wins=parseControlInt(gp.getString("d1_wins_"+symbol,gp.getString("powerfull_wins_"+symbol,"0")));
+        int losses=parseControlInt(gp.getString("d1_losses_"+symbol,gp.getString("powerfull_losses_"+symbol,"0")));
+        int closed=parseControlInt(gp.getString("d1_closed_"+symbol,gp.getString("powerfull_closed_deals_"+symbol,"0")));
         int positions=parseControlInt(gp.getString("powerfull_positions_"+symbol,"0"));
-        setControlValue("layers",fresh?"OPEN LAYERS  "+positions:"OPEN LAYERS  --");
-        int pending=parseControlInt(gp.getString("powerfull_pending_"+symbol,"0"));
-        int total=wins+losses+positions+pending;
-        double winrate=(wins+losses)>0?100.0*wins/(wins+losses):0.0;
-        setControlValue("wins",fresh?String.valueOf(wins):"--");
-        setControlValue("losses",fresh?String.valueOf(losses):"--");
-        setControlValue("winrate",fresh?String.format(Locale.US,"%.1f%%",winrate):"--");
-        setControlValue("total_entry",fresh?String.valueOf(total):"--");
-        setControlValue("closed",fresh?String.valueOf(closed):"--");
+        setControlValue("layers",fresh?gp.getString("d1_layers_"+symbol,"OPEN LAYERS  "+positions):"OPEN LAYERS  --");
+        setControlValue("wins",fresh?gp.getString("d1_wins_"+symbol,String.valueOf(wins)):"--");
+        setControlValue("losses",fresh?gp.getString("d1_losses_"+symbol,String.valueOf(losses)):"--");
+        setControlValue("winrate",fresh?gp.getString("d1_winrate_"+symbol,"--"):"--");
+        setControlValue("total_entry",fresh?gp.getString("d1_entries_"+symbol,"--"):"--");
+        setControlValue("closed",fresh?gp.getString("d1_closed_"+symbol,String.valueOf(closed)):"--");
 
         String side=gp.getString("powerfull_order_side_"+symbol,"").toUpperCase(Locale.US);
         String marketDirection="NEUTRAL";
@@ -564,15 +570,29 @@ public class MainActivity extends Activity {
             marketDirection=live.c>live.o?"BULLISH":(live.c<live.o?"BEARISH":"NEUTRAL");
         }
         updateLayerSlots(fresh?positions:0,side,marketDirection,fresh,pending);
-        setControlValue("total_profit",fresh?"--":"--");
-        setControlValue("total_loss",fresh?"--":"--");
+        setControlValue("total_profit",fresh?gp.getString("d1_profit_"+symbol,"--"):"--");
+        setControlValue("total_loss",fresh?gp.getString("d1_loss_"+symbol,"--"):"--");
         setControlCardTone("total_profit",Color.rgb(8,76,48),Color.rgb(106,255,174));
         setControlCardTone("total_loss",Color.rgb(83,24,35),Color.rgb(255,132,145));
-        setControlValue("floating",fresh?"Belum tersedia dari Gateway":"Menunggu data MT5...");
-        setControlValue("peaks",fresh?"Belum tersedia dari Gateway":"Menunggu data MT5...");
+        setControlValue("floating",fresh?gp.getString("d1_floating_"+symbol,"--"):"Menunggu data MT5...");
+        setControlValue("peaks",fresh?gp.getString("d1_peak_"+symbol,"--"):"Menunggu data MT5...");
+        setControlValue("timer",fresh?gp.getString("d1_timer_"+symbol,"--:--"):"--:--");
     }
 
     private void updateDirectionCard(String timeframe,String symbol,String key){
+        SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        long snapshotAt=gp.getLong("d1_snapshot_at_"+symbol,0L);
+        boolean snapshotFresh=snapshotAt>0L&&System.currentTimeMillis()>=snapshotAt
+            &&System.currentTimeMillis()-snapshotAt<=8000L;
+        String d1Value=snapshotFresh?gp.getString("d1_"+key+"_"+symbol,""):"";
+        if(!d1Value.isEmpty()){
+            setControlValue(key,d1Value);
+            String upper=d1Value.toUpperCase(Locale.US);
+            if(upper.contains("BULLISH"))setControlCardTone(key,Color.rgb(8,76,48),Color.rgb(106,255,174));
+            else if(upper.contains("BEARISH"))setControlCardTone(key,Color.rgb(83,24,35),Color.rgb(255,132,145));
+            else setControlCardTone(key,Color.rgb(38,48,59),Color.rgb(205,218,228));
+            return;
+        }
         Candle[] bars=readNativeMt5Bars(selectedMarket,timeframe,3);
         if(bars==null||bars.length==0){
             setControlValue(key,"—  MENUNGGU MT5");
@@ -597,7 +617,18 @@ public class MainActivity extends Activity {
         boolean bullish="BULLISH".equals(marketDirection);
         boolean bearish="BEARISH".equals(marketDirection);
         String positionSide=("BUY".equals(side)||"SELL".equals(side))?side:"POSISI";
+        SharedPreferences d1Prefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        String d1Symbol=mt5SymbolForMarket(selectedMarket);
         for(int i=0;i<5;i++){
+            String actualOpen=d1Prefs.getString("d1_open"+i+"_"+d1Symbol,"");
+            if(fresh&&!actualOpen.isEmpty()&&i<4){
+                layerSlotViews[i].setText(actualOpen);
+                boolean buy=actualOpen.toUpperCase(Locale.US).contains("BUY");
+                boolean sell=actualOpen.toUpperCase(Locale.US).contains("SELL");
+                layerSlotViews[i].setTextColor(buy?Color.rgb(106,255,174):(sell?Color.rgb(255,132,145):Color.rgb(224,235,244)));
+                layerSlotCards[i].setBackground(roundBg(buy?Color.rgb(8,76,48):(sell?Color.rgb(83,24,35):Color.rgb(38,48,59)),7));
+                continue;
+            }
             boolean on=fresh&&i<active;
             if(!on){
                 layerSlotViews[i].setText(fresh?"STANDBY":"MENUNGGU DATA");

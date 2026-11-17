@@ -46,6 +46,7 @@ bool appendBarsForTimeframe(string symbol,ENUM_TIMEFRAMES tf,string tfName,int c
 void publishBarsForTimeframe(string symbol,ENUM_TIMEFRAMES tf,string tfName,int count);
 string chartTimeframeName(ENUM_TIMEFRAMES tf);
 uint lastNativeBarsTick=0;
+uint d1SnapshotLastMs=0;
 uint lastScreenshotTick=0;
 
 // Native chart layers are managed by this same EA; no second EA is needed.
@@ -163,6 +164,7 @@ string powerLastDetail[3];
 string powerSignalDetail[3];
 
 void managePowerfullAllMarkets(bool pollConfig);
+void publishD1DashboardState();
 void managePowerfullSymbol(int index);
 bool powerGatewayGet(string path,int &httpCode,string &body,string &diagnostic,int timeoutMs);
 bool powerRefreshConfig(int index);
@@ -643,6 +645,8 @@ void powerCaptureEntryCandle(ulong deal){
 }
 
 void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &request,const MqlTradeResult &result){
+   // Read-only relay: all trade ownership and reporting remain in D1 Standalone.
+   return;
    if(trans.type!=TRADE_TRANSACTION_DEAL_ADD||trans.deal==0)return;
    if(!HistoryDealSelect(trans.deal))return;
    long dealMagic=(long)HistoryDealGetInteger(trans.deal,DEAL_MAGIC);
@@ -901,6 +905,8 @@ void powerDashboardRefresh(bool force=false){
    ChartRedraw(0);
 }
 void OnChartEvent(const int id,const long &lparam,const double &dparam,const string &sparam){
+   // The relay has no interactive strategy controls.
+   return;
    if(id==CHARTEVENT_OBJECT_CLICK&&sparam==RAYYAN_DASH_PREFIX+"REFRESH"){
       ObjectSetInteger(0,sparam,OBJPROP_STATE,false);
       powerDashboardRefresh(true);
@@ -908,6 +914,15 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
 }
 
 int OnInit(){
+   // HARD LOCK: this EA is a data relay only. D1 Standalone is the sole trading authority.
+   if(StringFind(GatewayUrl,"http://")!=0 && StringFind(GatewayUrl,"https://")!=0){
+      Print("RAYYAN GATEWAY CONFIG ERROR: GatewayUrl must start with http:// or https://");
+      return(INIT_FAILED);
+   }
+   if(!EventSetMillisecondTimer(250)) EventSetTimer(1);
+   Print("RAYYAN GATEWAY RELAY-ONLY READY: quotes + native OHLC + D1 dashboard snapshots.");
+   return(INIT_SUCCEEDED);
+   // Legacy code below is intentionally unreachable; retained to avoid deleting accepted history.
    // Remove legacy chart-attached EMA/MA indicators and old Rayyan EMA objects.
    // The EA below is the sole owner of the two colored EMA curves.
    cleanupDuplicateEmaLayers();
@@ -991,6 +1006,8 @@ void OnDeinit(const int r){
    }
 }
 void OnTick(){
+   publishMarketQuotes();
+   return; // Relay only: no strategy, order queue, or position management.
    if(StandaloneD1Mode){powerSessionRefresh();powerDashboardRefresh(false);}
    if(!StandaloneD1Mode) manageTP2RetraceProtection(); // Standalone mode manages D1 positions only.
    // Opportunistic fast path; no gateway config request is issued from this event.
@@ -998,6 +1015,10 @@ void OnTick(){
 }
 
 void OnTimer(){
+   publishMarketQuotes();
+   publishNativeChartBars();
+   publishD1DashboardState();
+   return; // Relay only: never poll trading/config queues or manage positions.
    if(StandaloneD1Mode){
       updateChartCountdown(); // Display-only candle timer; never gates trade management.
       updateHarmonicOverlay(); updateFibo(); powerSessionRefresh();
@@ -2318,6 +2339,66 @@ bool powerGatewayGet(string path,int &httpCode,string &body,string &diagnostic,i
    httpCode=status;
    body=CharArrayToString(responseData,0,ArraySize(responseData),CP_UTF8);
    return (status>=100 && status<=599);
+}
+
+string d1DashboardObjectText(long chartId,string suffix){
+   string name="RAYYAN_DASH_"+suffix;
+   if(ObjectFind(chartId,name)<0)return "";
+   return ObjectGetString(chartId,name,OBJPROP_TEXT);
+}
+
+void publishD1DashboardState(){
+   uint now=GetTickCount();
+   if(d1SnapshotLastMs>0&&(uint)(now-d1SnapshotLastMs)<500)return;
+   d1SnapshotLastMs=now;
+   long sourceChart=-1;
+   string symbol="";
+   for(long candidate=ChartFirst();candidate>=0;candidate=ChartNext(candidate)){
+      if(ObjectFind(candidate,"RAYYAN_DASH_TITLE")>=0 &&
+         ObjectFind(candidate,"RAYYAN_DASH_STATUS")>=0){
+         sourceChart=candidate;
+         symbol=ChartSymbol(candidate);
+         break;
+      }
+   }
+   if(sourceChart<0||symbol==""){
+      if(TimeCurrent()-lastDiag>=15){
+         lastDiag=TimeCurrent();
+         Print("RAYYAN GATEWAY WAIT: D1 Standalone dashboard chart not found.");
+      }
+      return;
+   }
+   string status=d1DashboardObjectText(sourceChart,"STATUS");
+   string algo=(StringFind(status,"ALGO ON")>=0?"1":"0");
+   string path="/d1_snapshot?symbol="+urlEncode(symbol)
+      +"&algo="+algo
+      +"&status="+urlEncode(status)
+      +"&m15="+urlEncode(d1DashboardObjectText(sourceChart,"M15"))
+      +"&h1="+urlEncode(d1DashboardObjectText(sourceChart,"H1"))
+      +"&h4="+urlEncode(d1DashboardObjectText(sourceChart,"H4"))
+      +"&winrate="+urlEncode(d1DashboardObjectText(sourceChart,"WINRATEVAL"))
+      +"&wins="+urlEncode(d1DashboardObjectText(sourceChart,"WINSVAL"))
+      +"&losses="+urlEncode(d1DashboardObjectText(sourceChart,"LOSSESVAL"))
+      +"&entries="+urlEncode(d1DashboardObjectText(sourceChart,"ENTRIESVAL"))
+      +"&closed="+urlEncode(d1DashboardObjectText(sourceChart,"CLOSEDVAL"))
+      +"&profit="+urlEncode(d1DashboardObjectText(sourceChart,"PROFITVAL"))
+      +"&loss="+urlEncode(d1DashboardObjectText(sourceChart,"LOSSVAL"))
+      +"&layers="+urlEncode(d1DashboardObjectText(sourceChart,"LAYERS_TOP_RIGHT"))
+      +"&floating="+urlEncode(d1DashboardObjectText(sourceChart,"FLOATVALUE"))
+      +"&peak="+urlEncode(d1DashboardObjectText(sourceChart,"PEAKVALUE"))
+      +"&timer="+urlEncode(ObjectFind(sourceChart,"RAYYAN_MT5_BAR_TIMER")>=0
+         ?ObjectGetString(sourceChart,"RAYYAN_MT5_BAR_TIMER",OBJPROP_TEXT):"");
+   for(int row=0;row<4;row++)
+      path+="&open"+IntegerToString(row)+"="+urlEncode(d1DashboardObjectText(sourceChart,"OPEN"+IntegerToString(row)));
+   int code=-1;
+   string body="",diagnostic="";
+   bool sent=powerGatewayGet(path,code,body,diagnostic,500);
+   if(!sent||code!=200||StringFind(body,"D1 SNAPSHOT OK")!=0){
+      if(TimeCurrent()-lastDiag>=10){
+         lastDiag=TimeCurrent();
+         Print("RAYYAN D1 SNAPSHOT RELAY FAILED http=",code," detail=",diagnostic," response=",body);
+      }
+   }
 }
 
 bool powerRefreshConfig(int index){
