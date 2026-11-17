@@ -645,20 +645,18 @@ void powerCaptureEntryCandle(ulong deal){
 }
 
 void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &request,const MqlTradeResult &result){
-   // Read-only relay: all trade ownership and reporting remain in D1 Standalone.
-   return;
    if(trans.type!=TRADE_TRANSACTION_DEAL_ADD||trans.deal==0)return;
    if(!HistoryDealSelect(trans.deal))return;
    long dealMagic=(long)HistoryDealGetInteger(trans.deal,DEAL_MAGIC);
    ulong positionId=(ulong)HistoryDealGetInteger(trans.deal,DEAL_POSITION_ID);
    bool trackedPowerfullPosition=GlobalVariableCheck("PW_SID_"+(string)positionId);
-   // Accept a non-EA deal magic only for a position previously linked to
-   // POWERFULL. This captures manual exits without admitting unrelated trades.
+   // Accept a non-EA deal magic only for a position previously linked to POWERFULL.
+   // This captures manual exits without admitting unrelated trades.
    if(dealMagic!=POWERFULL_MAGIC&&!trackedPowerfullPosition)return;
    powerSessionRefresh();
    powerAppendDealRecord(trans.deal);
    if(dealMagic==POWERFULL_MAGIC)
-      powerCaptureEntryCandle(trans.deal); // Entry diagnostics only; never gates or delays an order.
+      powerCaptureEntryCandle(trans.deal); // Diagnostics only; never gates or delays an order.
 }
 
 
@@ -781,12 +779,16 @@ void powerDashboardOpenPositions(string symbol,color bull,color bear,color neutr
    if(row==0)powerDashboardLabel(RAYYAN_DASH_PREFIX+"OPEN0","No open POWERFULL positions",27,350,neutral,8);
 }
 void powerDashboardRefresh(bool force=false){
-   if(!StandaloneD1Mode)return;
    uint now=GetTickCount();
    if(!force&&powerDashboardLastMs>0&&(uint)(now-powerDashboardLastMs)<50)return;
    powerDashboardLastMs=now;
-   string symbol=(StringLen(StandaloneSymbol)>0?StandaloneSymbol:_Symbol);
-   bool algoOn=powerAlgoTradingEnabled();
+   string symbol=(StandaloneD1Mode?(StringLen(StandaloneSymbol)>0?StandaloneSymbol:_Symbol):_Symbol);
+   int dashboardIndex=-1;
+   for(int i=0;i<ArraySize(powerSymbols);i++)if(powerSymbols[i]==symbol){dashboardIndex=i;break;}
+   if(!StandaloneD1Mode&&dashboardIndex<0)return;
+   bool algoOn=powerAlgoTradingEnabled() &&
+      (StandaloneD1Mode || (dashboardIndex>=0&&powerConfigReceivedMs[dashboardIndex]>0&&powerCfg[dashboardIndex].enabled));
+   int dashboardMaxLayers=(StandaloneD1Mode?StandaloneMaxLayers:(dashboardIndex>=0?powerCfg[dashboardIndex].maxLayers:5));
    int entries=0,wins=0,losses=0;
    double totalProfit=0.0,totalLoss=0.0;
    if(algoOn)powerDashboardStats(symbol,entries,wins,losses,totalProfit,totalLoss);
@@ -888,7 +890,7 @@ void powerDashboardRefresh(bool force=false){
    ObjectSetInteger(0,layerName,OBJPROP_ZORDER,10050);
    ObjectSetInteger(0,layerName,OBJPROP_BACK,false);
    ObjectSetString(0,layerName,OBJPROP_FONT,"Arial Bold");
-   ObjectSetString(0,layerName,OBJPROP_TEXT,"OPEN LAYERS  "+IntegerToString(openLayers)+"/"+IntegerToString(MathMax(1,StandaloneMaxLayers)));
+   ObjectSetString(0,layerName,OBJPROP_TEXT,"OPEN LAYERS  "+IntegerToString(openLayers)+"/"+IntegerToString(MathMax(1,dashboardMaxLayers)));
    ObjectSetInteger(0,layerName,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,layerName,OBJPROP_HIDDEN,true);
 
@@ -905,8 +907,6 @@ void powerDashboardRefresh(bool force=false){
    ChartRedraw(0);
 }
 void OnChartEvent(const int id,const long &lparam,const double &dparam,const string &sparam){
-   // The relay has no interactive strategy controls.
-   return;
    if(id==CHARTEVENT_OBJECT_CLICK&&sparam==RAYYAN_DASH_PREFIX+"REFRESH"){
       ObjectSetInteger(0,sparam,OBJPROP_STATE,false);
       powerDashboardRefresh(true);
@@ -914,64 +914,33 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
 }
 
 int OnInit(){
-   // HARD LOCK: this EA is a data relay only. D1 Standalone is the sole trading authority.
    if(StringFind(GatewayUrl,"http://")!=0 && StringFind(GatewayUrl,"https://")!=0){
       Print("RAYYAN GATEWAY CONFIG ERROR: GatewayUrl must start with http:// or https://");
       return(INIT_FAILED);
    }
-   if(!EventSetMillisecondTimer(250)) EventSetTimer(1);
-   Print("RAYYAN GATEWAY RELAY-ONLY READY: quotes + native OHLC + D1 dashboard snapshots.");
-   return(INIT_SUCCEEDED);
-   // Legacy code below is intentionally unreachable; retained to avoid deleting accepted history.
-   // Remove legacy chart-attached EMA/MA indicators and old Rayyan EMA objects.
-   // The EA below is the sole owner of the two colored EMA curves.
+   if(StandaloneD1Mode){
+      Print("RAYYAN GATEWAY CONFIG ERROR: StandaloneD1Mode must remain OFF; Gateway receives POWERFULL configuration from APK.");
+      return(INIT_FAILED);
+   }
+
    cleanupDuplicateEmaLayers();
    hEma50=iMA(_Symbol,_Period,50,0,MODE_EMA,PRICE_CLOSE);
    hEma200=iMA(_Symbol,_Period,200,0,MODE_EMA,PRICE_CLOSE);
-   if(StandaloneD1Mode){
-      powerSessionRefresh();
-      string directSymbol=(StringLen(StandaloneSymbol)>0?StandaloneSymbol:_Symbol);
-      powerSymbols[0]=directSymbol; powerSymbols[1]=""; powerSymbols[2]="";
-      if(!SymbolSelect(directSymbol,true)){
-         Print("D1 STANDALONE CONFIG ERROR: symbol unavailable: ",directSymbol);
-         return(INIT_FAILED);
+
+   for(int i=0;i<ArraySize(powerSymbols);i++){
+      if(powerSymbols[i]=="")continue;
+      if(!SymbolSelect(powerSymbols[i],true)){
+         Print("RAYYAN GATEWAY SYMBOL WARNING unavailable=",powerSymbols[i]);
+         continue;
       }
-      powerCfg[0].enabled=(StandaloneLot>0.0&&PowerfullStopLossUSD>0.0
-          &&StandaloneMaxLayers>=1&&StandaloneMaxLayers<=5);
-      powerCfg[0].lot=StandaloneLot;
-      powerCfg[0].stopLossUSD=PowerfullStopLossUSD;
-      powerCfg[0].pipSize=SymbolInfoDouble(directSymbol,SYMBOL_POINT);
-      powerCfg[0].lotStep=SymbolInfoDouble(directSymbol,SYMBOL_VOLUME_STEP);
-      powerCfg[0].usePointStops=false;
-      powerCfg[0].slEntry1Points=StandaloneSLBuyPoints;
-      powerCfg[0].slEntry2Points=StandaloneSLSellPoints;
-      powerCfg[0].maxLayers=StandaloneMaxLayers;
-      powerCfg[0].minProfitLockPoints=5;
-      powerCfg[0].minHoldCandles=0;
-      powerCfg[0].reason=(powerCfg[0].enabled?"STANDALONE_READY":"STANDALONE_CONFIG_INVALID");
-      powerConfigReceivedMs[0]=1;
-      if(EnableEAReports)FolderCreate(POWERFULL_REPORT_DIR);
-      // Session reports are generated only inside the active Algo Trading session.
-      int symbolDigits=(int)SymbolInfoInteger(directSymbol,SYMBOL_DIGITS);
-      double symbolPoint=SymbolInfoDouble(directSymbol,SYMBOL_POINT);
-      Print("D1 STANDALONE MODE symbol=",directSymbol," lot=",DoubleToString(StandaloneLot,2),
-         " Digits=",symbolDigits," Point=",DoubleToString(symbolPoint,symbolDigits+2),
-         " SL_USD_per_position=",DoubleToString(PowerfullStopLossUSD,2),
-          " maxLayers=",StandaloneMaxLayers," enabled=",powerCfg[0].enabled,
-          " reports=",(EnableEAReports?"ON":"OFF"),
-          " | SL cash conversion uses MT5 OrderCalcProfit");
-   }else{
-      for(int i=0;i<ArraySize(powerSymbols);i++){
-         if(powerSymbols[i]=="")continue;
-         if(SymbolSelect(powerSymbols[i],true))
-            powerAtrHandles[i]=iATR(powerSymbols[i],PERIOD_M5,14);
-         if(powerAtrHandles[i]==INVALID_HANDLE)
-            Print("POWERFULL ATR HANDLE WARNING symbol=",powerSymbols[i]," error=",GetLastError());
-      }
+      // Retained only for legacy chart/forecast compatibility; POWERFULL D1 entry does not use ATR.
+      powerAtrHandles[i]=iATR(powerSymbols[i],PERIOD_M5,14);
+      if(powerAtrHandles[i]==INVALID_HANDLE)
+         Print("POWERFULL ATR HANDLE WARNING symbol=",powerSymbols[i]," error=",GetLastError());
    }
    if(hEma50==INVALID_HANDLE || hEma200==INVALID_HANDLE)
       Print("RAYYAN4 INDICATOR WARNING EMA handles=",hEma50,",",hEma200);
-   // Match Android CandleChartView exactly: bull RGB(34,197,94), bear RGB(239,68,68).
+
    ChartSetInteger(0,CHART_MODE,CHART_CANDLES);
    ChartSetInteger(0,CHART_COLOR_CANDLE_BULL,C'34,197,94');
    ChartSetInteger(0,CHART_COLOR_CANDLE_BEAR,C'239,68,68');
@@ -981,11 +950,10 @@ int OnInit(){
    ChartSetInteger(0,CHART_SHIFT,false);
    ChartSetInteger(0,CHART_SCALE,4);
    applyAll();
-   if(!EventSetMillisecondTimer(100)) EventSetTimer(MathMax(1,PollSeconds));
-   if(StandaloneD1Mode) Print("RAYYAN D1 STANDALONE READY: no Gateway/WebRequest calls will be made.");
-   else Print("RAYYAN4 START Gateway=",GatewayUrl," Symbol=",AllowedSymbol,
-         " trade queue=/next indicator queue=/indicator_next");
-   if(StandaloneD1Mode){if(EnableEAReports)FolderCreate(POWERFULL_REPORT_DIR);powerSessionRefresh();}
+
+   if(EnableEAReports)FolderCreate(POWERFULL_REPORT_DIR);
+   if(!EventSetMillisecondTimer(100))EventSetTimer(MathMax(1,PollSeconds));
+   Print("RAYYAN4 GATEWAY READY: D1 POWERFULL engine active in MT5; APK controls per-symbol parameters and Algo ON/OFF. Gateway=",GatewayUrl);
    return(INIT_SUCCEEDED);
 }
 void OnDeinit(const int r){
@@ -1006,31 +974,22 @@ void OnDeinit(const int r){
    }
 }
 void OnTick(){
+   // POWERFULL D1 evaluates every fresh executable MT5 tick; quote publishing is throttled.
    publishMarketQuotes();
-   return; // Relay only: no strategy, order queue, or position management.
-   if(StandaloneD1Mode){powerSessionRefresh();powerDashboardRefresh(false);}
-   if(!StandaloneD1Mode) manageTP2RetraceProtection(); // Standalone mode manages D1 positions only.
-   // Opportunistic fast path; no gateway config request is issued from this event.
+   manageTP2RetraceProtection();
    managePowerfullAllMarkets(false);
+   powerDashboardRefresh(false);
 }
 
 void OnTimer(){
-   publishMarketQuotes();
-   publishNativeChartBars();
-   publishD1DashboardState();
-   return; // Relay only: never poll trading/config queues or manage positions.
-   if(StandaloneD1Mode){
-      updateChartCountdown(); // Display-only candle timer; never gates trade management.
-      updateHarmonicOverlay(); updateFibo(); powerSessionRefresh();
-      powerDashboardRefresh(false); managePowerfullAllMarkets(false); return;
-   }
-   // Fast quote path: publish changed MT5 ticks without waiting for the OHLC batch.
-   // The publisher throttles requests and sends only symbols whose tick changed.
    uint nowMs=GetTickCount();
    publishMarketQuotes();
-   // Countdown is display-only: refresh independently from trade/gateway housekeeping.
    updateChartCountdown();
-   // Legacy gateway/chart work still runs only at PollSeconds cadence.
+   updateHarmonicOverlay();
+   updateFibo();
+   powerSessionRefresh();
+
+   // Keep manual APK order queue and native MT5 chart publishing independent from D1 entry timing.
    uint legacyInterval=(uint)MathMax(1,PollSeconds)*1000;
    if(powerLastLegacyTimerMs==0 || (uint)(nowMs-powerLastLegacyTimerMs)>=legacyInterval){
       powerLastLegacyTimerMs=nowMs;
@@ -1040,10 +999,12 @@ void OnTimer(){
       publishMarketQuotes();
       publishNativeChartBars();
       processIndicatorQueue();
-      // Screenshot mirroring disabled: native CopyRates OHLC is the chart source.
    }
-   // POWERFULL still evaluates fresh ticks in OnTick; this timer only handles housekeeping/config.
+
+   // Timer polls APK configuration/START-STOP; OnTick keeps D1 position and entry logic tick-driven.
    managePowerfullAllMarkets(true);
+   powerDashboardRefresh(false);
+   publishD1DashboardState();
 }
 
 void processTradeQueue(){
@@ -2364,7 +2325,7 @@ void publishD1DashboardState(){
    if(sourceChart<0||symbol==""){
       if(TimeCurrent()-lastDiag>=15){
          lastDiag=TimeCurrent();
-         Print("RAYYAN GATEWAY WAIT: D1 Standalone dashboard chart not found.");
+         Print("RAYYAN GATEWAY WAIT: POWERFULL dashboard chart object not found.");
       }
       return;
    }
@@ -2396,7 +2357,7 @@ void publishD1DashboardState(){
    if(!sent||code!=200||StringFind(body,"D1 SNAPSHOT OK")!=0){
       if(TimeCurrent()-lastDiag>=10){
          lastDiag=TimeCurrent();
-         Print("RAYYAN D1 SNAPSHOT RELAY FAILED http=",code," detail=",diagnostic," response=",body);
+         Print("RAYYAN GATEWAY DASHBOARD SNAPSHOT FAILED http=",code," detail=",diagnostic," response=",body);
       }
    }
 }
