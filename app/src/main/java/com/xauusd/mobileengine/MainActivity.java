@@ -569,7 +569,7 @@ public class MainActivity extends Activity {
             Candle live=liveM5[liveM5.length-1];
             marketDirection=live.c>live.o?"BULLISH":(live.c<live.o?"BEARISH":"NEUTRAL");
         }
-        updateLayerSlots(fresh?positions:0,side,marketDirection,fresh,pending);
+        updateLayerSlots(fresh?positions:0,side,marketDirection,fresh);
         setControlValue("total_profit",fresh?gp.getString("d1_profit_"+symbol,"--"):"--");
         setControlValue("total_loss",fresh?gp.getString("d1_loss_"+symbol,"--"):"--");
         setControlCardTone("total_profit",Color.rgb(8,76,48),Color.rgb(106,255,174));
@@ -612,7 +612,7 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void updateLayerSlots(int positions,String side,String marketDirection,boolean fresh,int pending){
+    private void updateLayerSlots(int positions,String side,String marketDirection,boolean fresh){
         int active=Math.min(5,Math.max(0,positions));
         boolean bullish="BULLISH".equals(marketDirection);
         boolean bearish="BEARISH".equals(marketDirection);
