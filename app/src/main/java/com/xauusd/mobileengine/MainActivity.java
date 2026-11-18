@@ -1707,6 +1707,30 @@ public class MainActivity extends Activity {
         Switch enabled=new Switch(this);enabled.setText("POWERFULL EA • MASTER ON / OFF");enabled.setTextSize(15);enabled.setTextColor(Color.WHITE);
         enabled.setChecked(gp.getBoolean("powerfull_enabled_"+symbol,false));
         root.addView(enabled,new LinearLayout.LayoutParams(-1,uiDp(48)));
+
+        // MASTER is a setting, not a temporary dialog value. Persist every toggle
+        // immediately so closing the dialog or restarting the app cannot revert it.
+        final CompoundButton.OnCheckedChangeListener[] masterListener =
+            new CompoundButton.OnCheckedChangeListener[1];
+        masterListener[0]=(button,isChecked)->{
+            String validation=persistPowerfullMasterState(gp,symbol,isChecked);
+            if(!validation.isEmpty()){
+                boolean savedValue=gp.getBoolean("powerfull_enabled_"+symbol,false);
+                button.setOnCheckedChangeListener(null);
+                button.setChecked(savedValue);
+                button.setOnCheckedChangeListener(masterListener[0]);
+                Toast.makeText(this,validation,Toast.LENGTH_LONG).show();
+                return;
+            }
+            applyStrategyIndicatorProfile();
+            queueNativeIndicatorState();
+            AppLog.add(this,"UJI TEST EA","POWERFULL "+(isChecked?"ON":"OFF")+" saved immediately symbol="+symbol);
+            Toast.makeText(this,"POWERFULL "+(isChecked?"ON":"OFF")+" tersimpan untuk "+symbol,Toast.LENGTH_SHORT).show();
+        };
+        enabled.setOnCheckedChangeListener(masterListener[0]);
+        TextView persistenceNote=tv("MASTER tersimpan otomatis saat sakelar digeser.",10);
+        persistenceNote.setTextColor(Color.rgb(130,190,205));
+        root.addView(persistenceNote,new LinearLayout.LayoutParams(-1,uiDp(25)));
         Button settings=btn("SUBMENU • PARAMETER EA UJI TEST");settings.setTextSize(12);
         settings.setBackground(roundBg(Color.rgb(8,70,103),10));
         root.addView(settings,new LinearLayout.LayoutParams(-1,uiDp(48)));
@@ -1724,24 +1748,45 @@ public class MainActivity extends Activity {
         close.setOnClickListener(v->dialog.dismiss());
         settings.setOnClickListener(v->showPowerfullSettingsDialog());
         save.setOnClickListener(v->{
-            if(enabled.isChecked()){
-                double lot=gp.getFloat("powerfull_lot_"+symbol,0f);
-                if(lot<minLotForSymbol(symbol)){
-                    Toast.makeText(this,"Isi dan simpan Initial Lot di submenu terlebih dahulu.",Toast.LENGTH_LONG).show();
-                    return;
-                }
+            String validation=persistPowerfullMasterState(gp,symbol,enabled.isChecked());
+            if(!validation.isEmpty()){
+                Toast.makeText(this,validation,Toast.LENGTH_LONG).show();
+                return;
             }
-            gp.edit().putBoolean("powerfull_enabled_"+symbol,enabled.isChecked())
-                .putBoolean("powerfull_buy_limit_"+symbol,true).putBoolean("powerfull_sell_limit_"+symbol,true)
-                .putBoolean("powerfull_quick_profit_"+symbol,true).putBoolean("powerfull_cross_candle_"+symbol,true)
-                .putBoolean("powerfull_reforecast_"+symbol,true)
-.apply();
             applyStrategyIndicatorProfile();queueNativeIndicatorState();
-            AppLog.add(this,"UJI TEST EA","POWERFULL "+(enabled.isChecked()?"ON":"OFF")+" symbol="+symbol);
-            Toast.makeText(this,"POWERFULL EA "+(enabled.isChecked()?"ON":"OFF"),Toast.LENGTH_SHORT).show();
+            AppLog.add(this,"UJI TEST EA","POWERFULL "+(enabled.isChecked()?"ON":"OFF")+" confirmed symbol="+symbol);
+            Toast.makeText(this,"POWERFULL EA "+(enabled.isChecked()?"ON":"OFF")+" tersimpan",Toast.LENGTH_SHORT).show();
             dialog.dismiss();
         });
         showSizedDialog(dialog,0.82f,460);
+    }
+
+    /** Persist the per-market MASTER switch and mirror GatewayService validation. */
+    private String persistPowerfullMasterState(SharedPreferences gp,String symbol,boolean enabled){
+        if(enabled){
+            double lot=gp.getFloat("powerfull_lot_"+symbol,0f);
+            double stopLossUsd=gp.getFloat("powerfull_stop_loss_usd_"+symbol,0f);
+            int maxLayers=gp.getInt("powerfull_max_layers_"+symbol,5);
+            int minProfitLock=gp.getInt("powerfull_min_profit_lock_points_"+symbol,5);
+            double brokerPoint=0.0;
+            try{brokerPoint=Double.parseDouble(gp.getString("broker_quote_point_"+symbol,"0"));}
+            catch(Exception ignored){}
+            double pip=gp.getFloat("powerfull_pip_size_"+symbol,(float)(brokerPoint>0.0?brokerPoint:0.01));
+
+            if(!Double.isFinite(lot)||lot<minLotForSymbol(symbol))
+                return "MASTER belum ON: simpan Initial Lot yang valid di submenu parameter.";
+            if(!Double.isFinite(stopLossUsd)||stopLossUsd<=0.0)
+                return "MASTER belum ON: isi dan simpan Stop Loss USD lebih dari 0.";
+            if(maxLayers<1||maxLayers>5)
+                return "MASTER belum ON: Maximum Layers harus antara 1 sampai 5.";
+            if(minProfitLock<0||minProfitLock>100000)
+                return "MASTER belum ON: Profit Lock Minimum Points tidak valid.";
+            if(!Double.isFinite(pip)||pip<=0.0)
+                return "MASTER belum ON: Pip Size tidak valid; periksa data market.";
+        }
+
+        boolean stored=gp.edit().putBoolean("powerfull_enabled_"+symbol,enabled).commit();
+        return stored?"":"Gagal menyimpan MASTER "+(enabled?"ON":"OFF")+" ke penyimpanan perangkat.";
     }
 
     private EditText addEaParameter(LinearLayout parent,String label,String value,boolean decimal){
