@@ -1785,7 +1785,11 @@ public class MainActivity extends Activity {
                 return "MASTER belum ON: Pip Size tidak valid; periksa data market.";
         }
 
-        boolean stored=gp.edit().putBoolean("powerfull_enabled_"+symbol,enabled).commit();
+        boolean stored=gp.edit().putBoolean("powerfull_enabled_"+symbol,enabled)
+            .putBoolean("powerfull_buy_limit_"+symbol,true).putBoolean("powerfull_sell_limit_"+symbol,true)
+            .putBoolean("powerfull_quick_profit_"+symbol,true).putBoolean("powerfull_cross_candle_"+symbol,true)
+            .putBoolean("powerfull_reforecast_"+symbol,true)
+            .commit();
         return stored?"":"Gagal menyimpan MASTER "+(enabled?"ON":"OFF")+" ke penyimpanan perangkat.";
     }
 
