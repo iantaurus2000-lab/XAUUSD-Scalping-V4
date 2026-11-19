@@ -4,7 +4,8 @@ CTrade trade;
 CTrade powerTrade; // isolated order manager: legacy CTrade state/magic remains untouched
 #define RAYYAN_MAGIC 4104407
 
-input string GatewayUrl="http://100.103.185.17:8787";
+input string GatewayUrl=""; // HTTPS Cloudflare/VPS relay URL; set in EA Inputs.
+input string GatewayToken=""; // Same private token configured on the VPS and in APK Gateway settings.
 input string AllowedSymbol="XAUUSDm";
 input bool DemoOnly=true;
 // Standalone test mode: trades directly from MT5 ticks and never calls the APK Gateway.
@@ -914,8 +915,12 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
 }
 
 int OnInit(){
-   if(StringFind(GatewayUrl,"http://")!=0 && StringFind(GatewayUrl,"https://")!=0){
-      Print("RAYYAN GATEWAY CONFIG ERROR: GatewayUrl must start with http:// or https://");
+   if(StringFind(GatewayUrl,"https://")!=0){
+      Print("RAYYAN GATEWAY CONFIG ERROR: use the HTTPS Cloudflare/VPS Gateway URL.");
+      return(INIT_FAILED);
+   }
+   if(StringLen(GatewayToken)<32){
+      Print("RAYYAN GATEWAY CONFIG ERROR: GatewayToken must contain at least 32 characters.");
       return(INIT_FAILED);
    }
    if(StandaloneD1Mode){
@@ -1348,9 +1353,9 @@ void uploadChartSnapshot(){
    FileClose(fh);
    if(read!=size){Print("RAYYAN CHART READ MISMATCH ",read,"/",size);return;}
    char result[]; string responseHeaders="";
-   string headers="Content-Type: image/png\r\n";
+   string headers=gatewayAuthHeaders("image/png");
    ResetLastError();
-   int code=WebRequest("POST",GatewayUrl+"/chart/upload",headers,2500,data,result,responseHeaders);
+   int code=WebRequest("POST",gatewayBaseUrl()+"/chart/upload",headers,2500,data,result,responseHeaders);
    if(code!=200){
       if(TimeCurrent()-lastDiag>=10){
          lastDiag=TimeCurrent();
@@ -1632,7 +1637,7 @@ void publishMarketQuotes(){
    lastQuotePublishAttemptMs=GetTickCount();
    ResetLastError();
    int code=WebRequest("POST",base+"/quote/upload",
-      "Content-Type: text/plain; charset=utf-8\r\n",350,
+      gatewayAuthHeaders("text/plain; charset=utf-8"),350,
       requestData,responseData,responseHeaders);
    string response=CharArrayToString(responseData,0,WHOLE_ARRAY,CP_UTF8);
    if(code!=200||StringFind(response,"QUOTE OK")!=0){
@@ -1691,7 +1696,7 @@ void publishNativeChartBars(){
    ArrayResize(requestData,bytes-1);
    ResetLastError();
    int code=WebRequest("POST",base+"/bars/upload",
-      "Content-Type: text/plain; charset=utf-8\r\n",5000,
+      gatewayAuthHeaders("text/plain; charset=utf-8"),5000,
       requestData,responseData,responseHeaders);
    string response=CharArrayToString(responseData,0,WHOLE_ARRAY,CP_UTF8);
    if(code!=200 || StringFind(response,"BARS OK")!=0){
@@ -1727,13 +1732,24 @@ bool appendBarsForTimeframe(string symbol,ENUM_TIMEFRAMES tf,string tfName,int c
 
 // Local LAN bridge uses WebRequest (not MQL5 TCP sockets).
 // Add the exact GatewayUrl base to MT5 Tools > Options > Expert Advisors > Allow WebRequest.
-bool gatewayGet(string path,int &httpCode,string &body,string &diagnostic){
-   httpCode=-1; body=""; diagnostic="";
+string gatewayBaseUrl(){
    string base=GatewayUrl;
    while(StringLen(base)>0 && StringSubstr(base,StringLen(base)-1,1)=="/")
       base=StringSubstr(base,0,StringLen(base)-1);
-   if(StringFind(base,"http://")!=0 && StringFind(base,"https://")!=0){
-      diagnostic="GatewayUrl must start with http:// or https://";
+   return base;
+}
+string gatewayAuthHeaders(string contentType=""){
+   string headers="";
+   if(contentType!="")headers+="Content-Type: "+contentType+"\r\n";
+   headers+="X-Rayyan-Token: "+GatewayToken+"\r\n";
+   return headers;
+}
+
+bool gatewayGet(string path,int &httpCode,string &body,string &diagnostic){
+   httpCode=-1; body=""; diagnostic="";
+   string base=gatewayBaseUrl();
+   if(StringFind(base,"https://")!=0){
+      diagnostic="GatewayUrl must be an HTTPS Cloudflare/VPS URL";
       return false;
    }
 
@@ -1748,7 +1764,7 @@ bool gatewayGet(string path,int &httpCode,string &body,string &diagnostic){
    // This is more compatible with MetaTrader builds that reject an empty array in
    // the headers overload with internal error 1001 / runtime error 4006.
    ResetLastError();
-   int status=WebRequest("GET",url,"","",2500,requestData,0,responseData,responseHeaders);
+   int status=WebRequest("GET",url,gatewayAuthHeaders(),2500,requestData,responseData,responseHeaders);
    int err=GetLastError();
    if(status==-1 || status==1001){
       diagnostic="WebRequest has no HTTP connection status="+IntegerToString(status)+
@@ -2290,8 +2306,8 @@ bool powerGatewayGet(string path,int &httpCode,string &body,string &diagnostic,i
    char requestData[];
    char responseData[];
    ResetLastError();
-   int status=WebRequest("GET",base+path,"","",timeoutMs,
-                         requestData,0,responseData,responseHeaders);
+   int status=WebRequest("GET",base+path,gatewayAuthHeaders(),timeoutMs,
+                         requestData,responseData,responseHeaders);
    int err=GetLastError();
    if(status==-1 || status==1001){
       diagnostic="POWERFULL WebRequest failed err="+IntegerToString(err);
