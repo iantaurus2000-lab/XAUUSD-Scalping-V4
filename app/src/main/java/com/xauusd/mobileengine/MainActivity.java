@@ -1951,10 +1951,22 @@ public class MainActivity extends Activity {
         TextView title=tv("GATEWAY / QUEUE / ACK",18);title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
         box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(38)));
         TextView note=tv("Diagnostik baca-saja • tidak mengirim order tes",12);note.setTextColor(Color.LTGRAY);
-        box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(38)));
+        box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(34)));
+        Button remoteConfig=new Button(this);
+        remoteConfig.setText("ATUR SERVER VPS / CLOUDFLARE");
+        remoteConfig.setOnClickListener(v->showRemoteGatewayConfigDialog());
+        box.addView(remoteConfig,new LinearLayout.LayoutParams(-1,uiDp(46)));
 
         LinearLayout rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);
-        addPanelRow(rows,"GATEWAY","Port 8787 • status layanan diperiksa terpisah",Color.WHITE);
+        addPanelRow(rows,"GATEWAY","Port 8787 • lokal + relay VPS",Color.WHITE);
+        String remoteUrl=p.getString("remote_gateway_url","");
+        long remoteOkAt=p.getLong("remote_gateway_last_ok_ms",0L);
+        boolean remoteOnline=remoteOkAt>0L&&now>=remoteOkAt&&now-remoteOkAt<=15000L;
+        String remoteError=p.getString("remote_gateway_last_error","");
+        addPanelRow(rows,"VPS RELAY",remoteOnline?"PASS • sinkron "+Math.max(0,(now-remoteOkAt)/1000L)+" dtk lalu":
+            (remoteUrl.isEmpty()?"BELUM DIATUR":(remoteError.isEmpty()?"MENUNGGU KONEKSI":remoteError)),
+            remoteOnline?green:Color.rgb(255,190,70));
+        if(!remoteUrl.isEmpty())addPanelRow(rows,"URL VPS",remoteUrl,Color.CYAN);
         addPanelRow(rows,"EA POLLING",(eaOnline?"PASS":"BELUM TERDETEKSI")+(age>=0?" • poll "+age+" dtk lalu":""),eaOnline?green:Color.rgb(255,190,70));
         addPanelRow(rows,"QUEUE",queue==null||queue.trim().isEmpty()?"KOSONG":"ADA PERINTAH MENUNGGU",(queue==null||queue.trim().isEmpty())?green:Color.rgb(255,190,70));
         addPanelRow(rows,"ACK / ORDER TERAKHIR",orderStatus+(orderId.isEmpty()?"":" • ID "+orderId),Color.CYAN);
@@ -1976,6 +1988,51 @@ public class MainActivity extends Activity {
         showSizedDialog(d,0.80f,450);
         AppLog.add(this,"DIAGNOSTIC","Gateway/ACK status checked; EA online="+eaOnline+" ageSec="+age+" order="+orderStatus);
     }
+    private void showRemoteGatewayConfigDialog(){
+        SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        LinearLayout box=new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(uiDp(18),uiDp(16),uiDp(18),uiDp(14));
+        box.setBackground(roundBg(Color.rgb(3,18,30),16));
+        TextView title=tv("KONEKSI GATEWAY VPS",18);
+        title.setTextColor(Color.CYAN);title.setTypeface(null,Typeface.BOLD);
+        box.addView(title,new LinearLayout.LayoutParams(-1,uiDp(38)));
+        TextView note=tv("Masukkan URL HTTPS Cloudflare dan token yang sama dengan input Rayyan4GatewayEA di MT5. Token tidak ditampilkan di log.",12);
+        note.setTextColor(Color.LTGRAY);
+        box.addView(note,new LinearLayout.LayoutParams(-1,uiDp(54)));
+        EditText url=new EditText(this);
+        url.setSingleLine(true);url.setText(p.getString("remote_gateway_url",""));
+        url.setHint("https://nama-tunnel.trycloudflare.com");
+        url.setTextColor(Color.WHITE);url.setHintTextColor(Color.GRAY);
+        url.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        box.addView(url,new LinearLayout.LayoutParams(-1,uiDp(48)));
+        EditText token=new EditText(this);
+        token.setSingleLine(true);token.setText(p.getString("remote_gateway_token",""));
+        token.setHint("Gateway token (minimal 32 karakter)");
+        token.setTextColor(Color.WHITE);token.setHintTextColor(Color.GRAY);
+        token.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        box.addView(token,new LinearLayout.LayoutParams(-1,uiDp(48)));
+        AlertDialog dialog=new AlertDialog.Builder(this).setView(box)
+            .setPositiveButton("SIMPAN",null).setNegativeButton("BATAL",null).create();
+        dialog.setOnShowListener(ignored->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            String base=url.getText().toString().trim();
+            while(base.endsWith("/"))base=base.substring(0,base.length()-1);
+            String secret=token.getText().toString().trim();
+            if(!base.startsWith("https://")||base.length()<16){
+                url.setError("Gunakan URL HTTPS Cloudflare yang aktif");return;
+            }
+            if(secret.length()<32){
+                token.setError("Token minimal 32 karakter");return;
+            }
+            p.edit().putString("remote_gateway_url",base).putString("remote_gateway_token",secret)
+                .putString("remote_gateway_last_error","").putLong("remote_gateway_last_ok_ms",0L).apply();
+            Toast.makeText(this,"Konfigurasi VPS tersimpan; menunggu sinkronisasi",Toast.LENGTH_LONG).show();
+            dialog.dismiss();
+            showGatewayAckDiagnostics();
+        }));
+        showSizedDialog(dialog,0.62f,450);
+    }
+
     String marketDescription(String market){
         if("BTCUSD".equals(market))return "Bitcoin / US Dollar";
         if("ETHUSD".equals(market))return "Ethereum / US Dollar";
