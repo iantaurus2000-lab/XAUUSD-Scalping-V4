@@ -737,7 +737,8 @@ public final class GatewayService extends Service {
             values.put("powerfull_cross_candle_"+symbol,prefs.getBoolean("powerfull_cross_candle_"+symbol,true));
             values.put("powerfull_lot_"+symbol,(double)prefs.getFloat("powerfull_lot_"+symbol,0.0f));
             values.put("powerfull_stop_loss_usd_"+symbol,(double)prefs.getFloat("powerfull_stop_loss_usd_"+symbol,0.0f));
-            values.put("powerfull_pip_size_"+symbol,(double)prefs.getFloat("powerfull_pip_size_"+symbol,0.01f));
+            if(prefs.contains("powerfull_pip_size_"+symbol))
+                values.put("powerfull_pip_size_"+symbol,(double)prefs.getFloat("powerfull_pip_size_"+symbol,0.01f));
             values.put("powerfull_min_profit_lock_points_"+symbol,prefs.getInt("powerfull_min_profit_lock_points_"+symbol,5));
             values.put("broker_quote_point_"+symbol,prefs.getString("broker_quote_point_"+symbol,"0"));
         }
