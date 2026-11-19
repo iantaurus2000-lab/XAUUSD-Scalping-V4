@@ -1,6 +1,14 @@
 name: RAYYAN D1 E1 MT5 EA Build
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - RAYYAN
+    paths:
+      - 'mt5/Experts/Rayyan4GatewayEA.mq5'
+      - 'mt5/Experts/RayyanD1Standalone.mq5'
+      - 'gateway/server.py'
+      - '.github/workflows/rayyan-d1-e1-ea-build.yml'
 jobs:
   mt5-ea:
     runs-on: windows-2022
@@ -8,6 +16,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: RAYYAN
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate VPS Gateway relay syntax
+        run: python -m py_compile gateway/server.py
       - name: Install MetaTrader 5 and prepare MetaEditor
         shell: pwsh
         run: |
@@ -99,6 +112,7 @@ jobs:
             Get-Content $log
             $compileLog = Get-Content $log -Raw
             if ($compileLog -match '(?im)\b[1-9]\d* errors?\b') { throw "MetaEditor reported compile errors for $($item.Name)." }
+            if ($compileLog -match '(?im)\b[1-9]\d* warnings?\b') { throw "MetaEditor reported compile warnings for $($item.Name)." }
             $binary = Join-Path $experts ($item.Name + '.ex5')
             if (-not (Test-Path $binary)) { throw "EA binary was not produced: $binary" }
             Copy-Item $binary (Join-Path 'build\ea' ($item.Name + '.ex5')) -Force
