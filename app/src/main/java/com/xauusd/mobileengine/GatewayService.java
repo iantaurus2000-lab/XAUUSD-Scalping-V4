@@ -8,6 +8,7 @@ import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
+import org.json.JSONObject;
 
 public final class GatewayService extends Service {
     private ServerSocket server;
@@ -21,6 +22,8 @@ public final class GatewayService extends Service {
     private volatile long lastNextPollLog = 0L;
     private volatile long serverStartedAtMs = 0L;
     private volatile String serverLastError = "";
+    private volatile long lastRemoteSyncLogAt = 0L;
+    private volatile String lastRemoteSyncError = "";
 
     public static boolean isEaRecentlyOnline(Context c){
         long last=c.getSharedPreferences("rayyan4_gateway",Context.MODE_PRIVATE).getLong("ea_last_poll_ms",0L);
@@ -668,14 +671,140 @@ public final class GatewayService extends Service {
 
     private synchronized void startBackgroundEngine(){
         if(engine!=null&&!engine.isShutdown())return;
-        engine=Executors.newScheduledThreadPool(1);
+        engine=Executors.newScheduledThreadPool(2);
         engine.scheduleWithFixedDelay(this::backgroundSignalTick,5,15,TimeUnit.SECONDS);
+        // VPS relay synchronization is independent from the local LAN listener.
+        engine.scheduleWithFixedDelay(this::remoteSyncTick,2,2,TimeUnit.SECONDS);
     }
 
     private void backgroundSignalTick(){
         // Removed legacy Android STANDAR/EXCELLENT background signal engine.
         // POWERFULL is executed and reported by the attached MT5 EA only.
         logBgStatus("APK_SIGNAL_ENGINE_REMOVED_POWERFULL_EA_OWNED");
+    }
+
+    /**
+     * Authenticated client bridge to the Digios VPS Gateway. The local listener
+     * remains available for LAN mode; remote mode mirrors APK commands/config up
+     * and broker data/status down without making the Android UI a network server.
+     */
+    private void remoteSyncTick(){
+        SharedPreferences prefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        String base=prefs.getString("remote_gateway_url","").trim();
+        String token=prefs.getString("remote_gateway_token","").trim();
+        if(!base.startsWith("https://")||token.length()<32)return;
+        while(base.endsWith("/"))base=base.substring(0,base.length()-1);
+        long now=System.currentTimeMillis();
+        try{
+            JSONObject payload=buildRemotePush(prefs);
+            String push=remoteGatewayRequest(base+"/bridge/push","POST",token,payload.toString());
+            if(push==null||!push.startsWith("BRIDGE PUSH OK"))throw new IOException("push rejected: "+push);
+            String pull=remoteGatewayRequest(base+"/bridge/pull","GET",token,null);
+            JSONObject response=new JSONObject(pull);
+            JSONObject values=response.optJSONObject("values");
+            if(values==null)throw new IOException("pull response has no values object");
+            applyRemotePull(prefs,values);
+            prefs.edit().putLong("remote_gateway_last_ok_ms",now)
+                .putString("remote_gateway_last_error","").apply();
+            if(!lastRemoteSyncError.isEmpty()||now-lastRemoteSyncLogAt>=60000L){
+                lastRemoteSyncError="";
+                lastRemoteSyncLogAt=now;
+                AppLog.add(this,"REMOTE GATEWAY","VPS bridge sync PASS");
+            }
+        }catch(Exception e){
+            String detail=e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage());
+            prefs.edit().putString("remote_gateway_last_error",detail).apply();
+            if(!detail.equals(lastRemoteSyncError)||now-lastRemoteSyncLogAt>=60000L){
+                lastRemoteSyncError=detail;
+                lastRemoteSyncLogAt=now;
+                AppLog.add(this,"REMOTE GATEWAY","SYNC FAILED "+detail);
+            }
+        }
+    }
+
+    private JSONObject buildRemotePush(SharedPreferences prefs)throws Exception{
+        JSONObject values=new JSONObject();
+        String next=prefs.getString("next","");
+        String indicator=prefs.getString("indicator_next","");
+        if(next!=null&&!next.trim().isEmpty())values.put("next",next);
+        if(indicator!=null&&!indicator.trim().isEmpty())values.put("indicator_next",indicator);
+        String[] symbols={"XAUUSDm","BTCUSDm","ETHUSDm"};
+        for(String symbol:symbols){
+            values.put("powerfull_enabled_"+symbol,prefs.getBoolean("powerfull_enabled_"+symbol,false));
+            values.put("powerfull_max_layers_"+symbol,prefs.getInt("powerfull_max_layers_"+symbol,5));
+            values.put("powerfull_reforecast_"+symbol,prefs.getBoolean("powerfull_reforecast_"+symbol,true));
+            values.put("powerfull_quick_profit_"+symbol,prefs.getBoolean("powerfull_quick_profit_"+symbol,true));
+            values.put("powerfull_cross_candle_"+symbol,prefs.getBoolean("powerfull_cross_candle_"+symbol,true));
+            values.put("powerfull_lot_"+symbol,(double)prefs.getFloat("powerfull_lot_"+symbol,0.0f));
+            values.put("powerfull_stop_loss_usd_"+symbol,(double)prefs.getFloat("powerfull_stop_loss_usd_"+symbol,0.0f));
+            values.put("powerfull_pip_size_"+symbol,(double)prefs.getFloat("powerfull_pip_size_"+symbol,0.01f));
+            values.put("powerfull_min_profit_lock_points_"+symbol,prefs.getInt("powerfull_min_profit_lock_points_"+symbol,5));
+            values.put("broker_quote_point_"+symbol,prefs.getString("broker_quote_point_"+symbol,"0"));
+        }
+        return new JSONObject().put("values",values);
+    }
+
+    private String remoteGatewayRequest(String url,String method,String token,String body)throws IOException{
+        HttpURLConnection connection=null;
+        try{
+            connection=(HttpURLConnection)new URL(url).openConnection();
+            connection.setRequestMethod(method);
+            connection.setConnectTimeout(1800);
+            connection.setReadTimeout(2200);
+            connection.setUseCaches(false);
+            connection.setRequestProperty("X-Rayyan-Token",token);
+            connection.setRequestProperty("Accept","application/json, text/plain");
+            if("POST".equals(method)){
+                byte[] bytes=(body==null?"{}":body).getBytes(StandardCharsets.UTF_8);
+                connection.setDoOutput(true);
+                connection.setRequestProperty("Content-Type","application/json; charset=utf-8");
+                connection.setFixedLengthStreamingMode(bytes.length);
+                try(OutputStream out=connection.getOutputStream()){out.write(bytes);}
+            }
+            int code=connection.getResponseCode();
+            InputStream input=code>=200&&code<300?connection.getInputStream():connection.getErrorStream();
+            StringBuilder result=new StringBuilder();
+            if(input!=null)try(BufferedReader reader=new BufferedReader(new InputStreamReader(input,StandardCharsets.UTF_8))){
+                String line;while((line=reader.readLine())!=null)result.append(line);
+            }
+            if(code<200||code>=300)throw new IOException("HTTP "+code+" "+result);
+            return result.toString();
+        }finally{
+            if(connection!=null)connection.disconnect();
+        }
+    }
+
+    private void applyRemotePull(SharedPreferences prefs,JSONObject values)throws Exception{
+        SharedPreferences.Editor edit=prefs.edit();
+        java.util.Iterator<String> keys=values.keys();
+        while(keys.hasNext()){
+            String key=keys.next();
+            Object value=values.get(key);
+            if(value==null||value==JSONObject.NULL)continue;
+            if(value instanceof Boolean)edit.putBoolean(key,(Boolean)value);
+            else if(value instanceof Number){
+                long number=((Number)value).longValue();
+                if(key.endsWith("_at")||key.contains("_at_")||key.endsWith("_ms")||
+                    "ea_last_poll_ms".equals(key)||"mt5_server_time_ms".equals(key))
+                    edit.putLong(key,number);
+                else if(key.contains("_digits_")||key.contains("_count_")||
+                    key.startsWith("powerfull_wins_")||key.startsWith("powerfull_losses_")||
+                    key.startsWith("powerfull_closed_deals_"))
+                    edit.putInt(key,(int)number);
+                else edit.putFloat(key,((Number)value).floatValue());
+            }else edit.putString(key,String.valueOf(value));
+        }
+        String queued=prefs.getString("next","");
+        String queuedId=field(queued,"id");
+        if(!queuedId.isEmpty()&&queuedId.equals(values.optString("order_status_id","")))
+            edit.remove("next");
+        String indicator=prefs.getString("indicator_next","");
+        String indicatorId=field(indicator,"id");
+        if(!indicatorId.isEmpty()&&indicatorId.equals(values.optString("indicator_ack_id","")))
+            edit.remove("indicator_next");
+        if(values.has("mt5_server_time_ms"))
+            edit.putLong("mt5_server_time_received_elapsed",SystemClock.elapsedRealtime());
+        edit.apply();
     }
 
     private String backgroundMt5Symbol(String market){
