@@ -14,11 +14,13 @@ public final class GatewayService extends Service {
     private ExecutorService serverPool;
     private ScheduledExecutorService engine;
     private volatile boolean running;
+    private volatile boolean stopping;
+    private volatile boolean serverRetryScheduled;
     private volatile String lastBgStatus = "";
     private volatile long lastBgHeartbeat = 0L;
     private volatile long lastNextPollLog = 0L;
-    private volatile long nextBgAttemptAt = 0L;
-    private volatile int bgFailureCount = 0;
+    private volatile long serverStartedAtMs = 0L;
+    private volatile String serverLastError = "";
 
     public static boolean isEaRecentlyOnline(Context c){
         long last=c.getSharedPreferences("rayyan4_gateway",Context.MODE_PRIVATE).getLong("ea_last_poll_ms",0L);
@@ -26,28 +28,97 @@ public final class GatewayService extends Service {
         return last>0L && age>=0L && age<=90000L;
     }
 
+    @Override public void onCreate(){
+        super.onCreate();
+        stopping=false;
+    }
+
     @Override public int onStartCommand(Intent i,int flags,int id){
         startForeground(77,notification("Background Engine berjalan • menyiapkan LAN Gateway"));
-        if(!running){ running=true; startServer(); startBackgroundEngine(); }
+        stopping=false;
+        startBackgroundEngine();
+        if(server==null||server.isClosed())startServer();
         return START_STICKY;
     }
 
-    private void startServer(){
-        serverPool=Executors.newCachedThreadPool();
-        serverPool.execute(()->{
-            try{
-                server=new ServerSocket(8787);
-                AppLog.add(this,"GATEWAY","LAN gateway listening on port 8787");
-                getSystemService(NotificationManager.class).notify(77,notification("MT5 LAN Gateway aktif • port 8787 | Background Engine berjalan"));
-                while(!server.isClosed()){
-                    final Socket s=server.accept();
-                    serverPool.execute(()->handle(s));
+    /**
+     * Bind synchronously before reporting the gateway as running. The previous
+     * implementation set running=true before the background bind completed,
+     * so a bind failure permanently suppressed future start attempts.
+     */
+    private synchronized void startServer(){
+        if(stopping|| (server!=null&&!server.isClosed()))return;
+        try{
+            ServerSocket candidate=new ServerSocket();
+            candidate.setReuseAddress(true);
+            candidate.bind(new InetSocketAddress("0.0.0.0",8787),50);
+            server=candidate;
+            serverStartedAtMs=System.currentTimeMillis();
+            serverLastError="";
+            running=true;
+            serverRetryScheduled=false;
+            if(serverPool==null||serverPool.isShutdown())
+                serverPool=Executors.newCachedThreadPool();
+            AppLog.add(this,"GATEWAY","LAN gateway listening on 0.0.0.0:8787");
+            NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+            if(nm!=null)nm.notify(77,notification("MT5 LAN Gateway aktif • 0.0.0.0:8787"));
+            final ServerSocket active=candidate;
+            serverPool.execute(()->{
+                while(!stopping&&!active.isClosed()){
+                    try{
+                        final Socket socket=active.accept();
+                        ExecutorService pool=serverPool;
+                        if(pool!=null&&!pool.isShutdown())pool.execute(()->handle(socket));
+                        else socket.close();
+                    }catch(SocketException closed){
+                        if(!stopping)serverFailed("accept: "+closed.getMessage());
+                        break;
+                    }catch(Exception e){
+                        if(!stopping)AppLog.add(this,"GATEWAY","accept error: "+e.getMessage());
+                    }
                 }
-            }catch(Exception e){
-                AppLog.add(this,"GATEWAY","server stopped: "+e.getMessage());
-                getSystemService(NotificationManager.class).notify(77,notification("LAN Gateway gagal aktif • periksa port 8787"));
-            }
-        });
+            });
+        }catch(Exception e){
+            running=false;
+            serverLastError=e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage());
+            AppLog.add(this,"GATEWAY","SERVER BIND FAILED port=8787 "+serverLastError);
+            NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+            if(nm!=null)nm.notify(77,notification("LAN Gateway gagal bind • mencoba ulang otomatis"));
+            scheduleServerRetry();
+        }
+    }
+
+    private synchronized void serverFailed(String detail){
+        running=false;
+        serverLastError=detail==null?"unknown":detail;
+        AppLog.add(this,"GATEWAY","SERVER STOPPED "+serverLastError);
+        try{if(server!=null)server.close();}catch(Exception ignored){}
+        scheduleServerRetry();
+    }
+
+    private synchronized void scheduleServerRetry(){
+        if(stopping||serverRetryScheduled)return;
+        if(engine==null||engine.isShutdown())startBackgroundEngine();
+        if(engine==null||engine.isShutdown())return;
+        serverRetryScheduled=true;
+        engine.schedule(()->{
+            synchronized(GatewayService.this){serverRetryScheduled=false;}
+            if(!stopping&&(server==null||server.isClosed()))startServer();
+        },5,TimeUnit.SECONDS);
+    }
+
+    private synchronized String gatewayHealth(){
+        long now=System.currentTimeMillis();
+        SharedPreferences p=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
+        long bars=p.getLong("mt5_bars_at_XAUUSDm_M5",0L);
+        long quote=p.getLong("broker_quote_received_ms_XAUUSDm",0L);
+        long ea=p.getLong("ea_last_poll_ms",0L);
+        return "Rayyan4 gateway OK;server="+(running?"LISTENING":"STOPPED")+
+            ";port=8787;uptimeMs="+(serverStartedAtMs>0L?Math.max(0L,now-serverStartedAtMs):0L)+
+            ";barsAgeMs="+(bars>0L?Math.max(0L,now-bars):-1L)+
+            ";quoteAgeMs="+(quote>0L?Math.max(0L,now-quote):-1L)+
+            ";eaPollAgeMs="+(ea>0L?Math.max(0L,now-ea):-1L)+
+            ";error="+(serverLastError.isEmpty()?"none":serverLastError.replace(';',','));
     }
 
     private void handle(Socket s){
@@ -136,7 +207,9 @@ public final class GatewayService extends Service {
                 writeResponse(socket,200,"image/png",png);return;
             }
             String out;
-            if(path.startsWith("/next")){
+            if(path.equals("/")||path.startsWith("/health")){
+                out=gatewayHealth();
+            }else if(path.startsWith("/next")){
                 long now=System.currentTimeMillis();
                 getSharedPreferences("rayyan4_gateway",MODE_PRIVATE).edit().putLong("ea_last_poll_ms",now).apply();
                 if(now-lastNextPollLog>=30000L){lastNextPollLog=now;AppLog.add(this,"MT5 GATEWAY","EA polling /next received");}
@@ -593,7 +666,8 @@ public final class GatewayService extends Service {
         return s.substring(a,b);
     }
 
-    private void startBackgroundEngine(){
+    private synchronized void startBackgroundEngine(){
+        if(engine!=null&&!engine.isShutdown())return;
         engine=Executors.newScheduledThreadPool(1);
         engine.scheduleWithFixedDelay(this::backgroundSignalTick,5,15,TimeUnit.SECONDS);
     }
@@ -678,11 +752,19 @@ public final class GatewayService extends Service {
             .setOngoing(true).setPriority(Notification.PRIORITY_LOW).build();
     }
 
+    @Override public void onTaskRemoved(Intent rootIntent){
+        // Keep the foreground gateway alive when the user removes the app task.
+        super.onTaskRemoved(rootIntent);
+    }
+
     @Override public void onDestroy(){
+        stopping=true;
         running=false;
+        serverRetryScheduled=false;
         try{if(server!=null)server.close();}catch(Exception ignored){}
         if(serverPool!=null)serverPool.shutdownNow();
         if(engine!=null)engine.shutdownNow();
+        AppLog.add(this,"GATEWAY","service destroyed; listener closed");
         super.onDestroy();
     }
 
