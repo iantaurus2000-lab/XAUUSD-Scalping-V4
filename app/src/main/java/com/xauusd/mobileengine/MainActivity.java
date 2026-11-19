@@ -931,7 +931,6 @@ public class MainActivity extends Activity {
         mainRoot = root;
         applyCurrentAppTheme();
         requestNotificationPermission();
-        startGateway();
         selectTimeframe("M1",false);load("1m","M1");
     }
 
@@ -2280,9 +2279,21 @@ public class MainActivity extends Activity {
     }
 
     void startGateway(){
-        try{startForegroundService(new Intent(this,GatewayService.class));}
-        catch(Exception e){try{startService(new Intent(this,GatewayService.class));}catch(Exception ignored){}}
-        AppLog.add(this,"MT5","gateway start requested on port 8787");
+        Intent intent=new Intent(this,GatewayService.class);
+        try{
+            if(android.os.Build.VERSION.SDK_INT>=26)startForegroundService(intent);
+            else startService(intent);
+            AppLog.add(this,"GATEWAY","foreground service start requested; waiting for confirmed port 8787 bind");
+        }catch(Exception first){
+            AppLog.add(this,"GATEWAY","foreground start failed: "+first.getClass().getSimpleName()+": "+first.getMessage());
+            try{
+                startService(intent);
+                AppLog.add(this,"GATEWAY","fallback service start accepted; waiting for port 8787 bind");
+            }catch(Exception second){
+                AppLog.add(this,"GATEWAY","SERVICE START FAILED: "+second.getClass().getSimpleName()+": "+second.getMessage());
+                android.widget.Toast.makeText(this,"Gateway gagal dijalankan. Buka Log untuk detail.",android.widget.Toast.LENGTH_LONG).show();
+            }
+        }
     }
 
     String mt5SymbolForMarket(String market){
