@@ -7,6 +7,11 @@ on:
       - RAYYAN
     paths:
       - '.github/workflows/rayyan-apk-only-build.yml'
+      - 'app/src/**'
+      - 'app/build.gradle'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'gradle/**'
 
 permissions:
   contents: read
