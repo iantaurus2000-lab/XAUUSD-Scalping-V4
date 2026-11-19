@@ -2139,8 +2139,14 @@ public class MainActivity extends Activity {
 
     void setInd(String key,boolean enabled){
         prefs.edit().putBoolean(key,enabled).apply();
-        switch(key){
-            case "signals":chart.setShowSignals(enabled);break;case "wickbos":chart.setShowWickBos(enabled);break;case "orders":chart.setShowTradeLevels(enabled);break;case "position":chart.setShowPosition(enabled);break;case "bidask":chart.setShowBidAsk(enabled);break;
+        if(chart!=null){
+            switch(key){
+                case "signals":chart.setShowSignals(enabled);break;
+                case "wickbos":chart.setShowWickBos(enabled);break;
+                case "orders":chart.setShowTradeLevels(enabled);break;
+                case "position":chart.setShowPosition(enabled);break;
+                case "bidask":chart.setShowBidAsk(enabled);break;
+            }
         }
         // Indicator preferences are remembered, but only the active strategy may render them.
         applyStrategyIndicatorProfile();
