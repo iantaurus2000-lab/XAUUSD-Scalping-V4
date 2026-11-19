@@ -24,7 +24,7 @@ SYMBOLS = {"XAUUSDm", "BTCUSDm", "ETHUSDm"}
 TIMEFRAMES = {"M1", "M5", "M15", "H1", "H4", "D1"}
 SNAPSHOT_PREFIXES = (
     "broker_quote_", "mt5_bars_", "d1_", "powerfull_status_", "powerfull_range_pips_",
-    "powerfull_low_", "powerfull_high_", "powerfull_bar_", "powerfull_samples_",
+    "powerfull_low_", "powerfull_high_", "powerfull_bar_", "powerfull_state_at_", "powerfull_samples_",
     "powerfull_days_", "powerfull_pending_", "powerfull_positions_", "powerfull_order_",
     "powerfull_detail_", "powerfull_wins_", "powerfull_losses_", "powerfull_closed_deals_",
 )
