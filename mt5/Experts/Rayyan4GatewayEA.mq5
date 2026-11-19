@@ -979,8 +979,7 @@ void OnDeinit(const int r){
    }
 }
 void OnTick(){
-   // POWERFULL D1 evaluates every fresh executable MT5 tick; quote publishing is throttled.
-   publishMarketQuotes();
+   // Keep network I/O out of the tick path so Cloudflare latency cannot delay POWERFULL evaluation.
    manageTP2RetraceProtection();
    managePowerfullAllMarkets(false);
    powerDashboardRefresh(false);
@@ -1760,9 +1759,8 @@ bool gatewayGet(string path,int &httpCode,string &body,string &diagnostic){
    string responseHeaders="";
    char requestData[];
    char responseData[];
-   // Use WebRequest's cookie/referer overload with an explicit zero-length GET body.
-   // This is more compatible with MetaTrader builds that reject an empty array in
-   // the headers overload with internal error 1001 / runtime error 4006.
+   // Use the headers overload so the private Gateway token is sent in an HTTP header,
+   // never in the URL. The request body is intentionally empty for this GET.
    ResetLastError();
    int status=WebRequest("GET",url,gatewayAuthHeaders(),2500,requestData,responseData,responseHeaders);
    int err=GetLastError();
