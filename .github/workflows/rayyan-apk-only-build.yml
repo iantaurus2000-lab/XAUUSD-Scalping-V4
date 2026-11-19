@@ -1,0 +1,58 @@
+name: Rayyan APK-only build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - RAYYAN
+    paths:
+      - '.github/workflows/rayyan-apk-only-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  android-apk:
+    name: Build APK Mobile Engine (APK only)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout RAYYAN
+        uses: actions/checkout@v4
+        with:
+          ref: RAYYAN
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10'
+
+      - name: Restore APK signing key
+        run: |
+          test -s app/rayyan4-debug.keystore.b64
+          base64 -d app/rayyan4-debug.keystore.b64 > app/rayyan4-debug.keystore
+          test -s app/rayyan4-debug.keystore
+
+      - name: Build APK Mobile Engine
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Verify APK output
+        run: |
+          APK='app/build/outputs/apk/debug/app-debug.apk'
+          test -s "$APK"
+          sha256sum "$APK"
+          ls -lh "$APK"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: APK-MOBILE-ENGINE-RAYYAN
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
