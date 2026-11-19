@@ -1014,7 +1014,7 @@ public class MainActivity extends Activity {
         double[] broker=freshBrokerQuote(market);
         if(broker!=null){
             // Keep live price, spread and signal tick aligned to the MT5 broker quote.
-            chart.setQuote(broker[0],broker[1],selectedTf);
+            if(chart!=null)chart.setQuote(broker[0],broker[1],selectedTf);
             updateHeaderPrice(broker[0],broker[1]);
             SharedPreferences gp=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
             double spread=broker[1]-broker[0];
@@ -1027,7 +1027,7 @@ public class MainActivity extends Activity {
             spreadView.setText(lastSpreadLabel.isEmpty()?"SPREAD -- • MT5 STALE":lastSpreadLabel+" • MT5 STALE");
         }
         if(broker==null){
-            status.setText("● MT5 QUOTE STALE • ENTRY LOCKED • "+selectedTf);
+            if(status!=null)status.setText("● MT5 QUOTE STALE • ENTRY LOCKED • "+selectedTf);
             resetEntryReadyUi("harga MT5 belum segar");
         }else{
             updateLiveGatewayStatus(market);
@@ -1193,20 +1193,20 @@ public class MainActivity extends Activity {
         Candle[] m1=readNativeMt5Bars(market,"M1",200);
         Candle[] m5=readNativeMt5Bars(market,"M5",200);
         if(visible!=null){
-            chart.setData(visible);syncChartServerClock();chart.goLive();
+            if(chart!=null){chart.setData(visible);syncChartServerClock();chart.goLive();}
             m1Data=m1==null?new Candle[0]:m1;
             m5Data=m5==null?new Candle[0]:m5;
             if(m1Data.length>=30&&m5Data.length>=60){
                 syncBrokerEntryLine();updateSignal(m1Data,m5Data);
-                status.setText("● MT5 CHART + SIGNAL LIVE • "+market+" • "+tf);
+                if(status!=null)status.setText("● MT5 CHART + SIGNAL LIVE • "+market+" • "+tf);
             }else{
-                status.setText("● MT5 CHART LIVE • RIWAYAT SINYAL MENUNGGU • "+market+" • "+tf);
+                if(status!=null)status.setText("● MT5 CHART LIVE • RIWAYAT SINYAL MENUNGGU • "+market+" • "+tf);
                 resetEntryReadyUi("riwayat M1/M5 MT5 belum lengkap; entry dikunci");
             }
         }else{
-            chart.setData(new Candle[0]);syncChartServerClock();
+            if(chart!=null){chart.setData(new Candle[0]);syncChartServerClock();}
             m1Data=new Candle[0];m5Data=new Candle[0];
-            status.setText("● MENUNGGU OHLC MT5 • "+market+" • "+tf);
+            if(status!=null)status.setText("● MENUNGGU OHLC MT5 • "+market+" • "+tf);
             resetEntryReadyUi("menunggu data candle langsung dari MT5");
         }
 
@@ -1235,9 +1235,12 @@ public class MainActivity extends Activity {
                 runOnUiThread(()->{
                     if(!activeMarket.equals(selectedMarket)||!tfNow.equals(selectedTf))return;
                     if(fresh!=null){
-                        boolean wasFollowing=chart.isFollow();
-                        chart.setData(fresh);syncChartServerClock();
-                        if(wasFollowing)chart.goLive();
+                        boolean wasFollowing=chart!=null&&chart.isFollow();
+                        if(chart!=null){
+                            chart.setData(fresh);
+                            syncChartServerClock();
+                            if(wasFollowing)chart.goLive();
+                        }
                     }
                     // Keep the last usable bars through a transient chart upload/read delay.
                     // D1 entry runs inside the EA; selected chart timeframe freshness is not
@@ -1247,18 +1250,18 @@ public class MainActivity extends Activity {
                     if(fresh==null){
                         if(m1Data.length>=30&&m5Data.length>=60&&hasFreshEntryQuotes()){
                             syncBrokerEntryLine();updateSignal(m1Data,m5Data);
-                            status.setText("● CHART UPDATE DELAYED • ENTRY DATA MT5 LIVE • "+activeMarket+" • "+tfNow);
+                            if(status!=null)status.setText("● CHART UPDATE DELAYED • ENTRY DATA MT5 LIVE • "+activeMarket+" • "+tfNow);
                         }else{
-                            status.setText("● CHART UPDATE DELAYED • LAST BARS KEPT • "+activeMarket+" • "+tfNow);
+                            if(status!=null)status.setText("● CHART UPDATE DELAYED • LAST BARS KEPT • "+activeMarket+" • "+tfNow);
                             if(!hasFreshEntryQuotes())resetEntryReadyUi("quote atau data M1/M5 belum segar");
                         }
                         return;
                     }
                     if(m1Data.length>=30&&m5Data.length>=60){
                         syncBrokerEntryLine();updateSignal(m1Data,m5Data);
-                        status.setText("● MT5 CHART + SIGNAL LIVE • "+activeMarket+" • "+tfNow);
+                        if(status!=null)status.setText("● MT5 CHART + SIGNAL LIVE • "+activeMarket+" • "+tfNow);
                     }else{
-                        status.setText("● MT5 CHART LIVE • RIWAYAT SINYAL MENUNGGU • "+activeMarket+" • "+tfNow);
+                        if(status!=null)status.setText("● MT5 CHART LIVE • RIWAYAT SINYAL MENUNGGU • "+activeMarket+" • "+tfNow);
                         resetEntryReadyUi("riwayat M1/M5 MT5 belum lengkap; entry dikunci");
                     }
                 });
