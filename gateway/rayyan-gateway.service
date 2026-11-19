@@ -1,0 +1,22 @@
+[Unit]
+Description=Rayyan MT5 Gateway Relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rayyan-gateway
+Group=rayyan-gateway
+WorkingDirectory=/opt/rayyan-gateway
+EnvironmentFile=/etc/rayyan-gateway.env
+ExecStart=/usr/bin/python3 /opt/rayyan-gateway/server.py
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/rayyan-gateway
+
+[Install]
+WantedBy=multi-user.target
