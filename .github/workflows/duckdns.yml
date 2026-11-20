@@ -48,10 +48,10 @@ jobs:
           response="$(curl --fail --silent --show-error --get \
             --data-urlencode "domains=$DUCKDNS_DOMAIN" \
             --data-urlencode "token=$DUCKDNS_TOKEN" \
-            --data-urlencode "ip=" \
+            --data-urlencode "ip=15.235.144.206" \
             https://www.duckdns.org/update)"
           if [ "$response" != "OK" ]; then
             echo "::error::DuckDNS update did not return OK."
             exit 1
           fi
-          echo "DuckDNS update successful for configured hostname."
+          echo "DuckDNS update successful for configured hostname to VPS IPv4."
