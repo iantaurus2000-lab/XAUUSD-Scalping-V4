@@ -692,7 +692,20 @@ public final class GatewayService extends Service {
         SharedPreferences prefs=getSharedPreferences("rayyan4_gateway",MODE_PRIVATE);
         String base=prefs.getString("remote_gateway_url","").trim();
         String token=prefs.getString("remote_gateway_token","").trim();
-        if(!base.startsWith("https://")||token.length()<32)return;
+        String configError="";
+        if(base.isEmpty())configError="VPS URL BELUM DIATUR";
+        else if(!base.startsWith("https://"))configError="VPS URL TIDAK VALID: gunakan HTTPS";
+        else if(token.length()<32)configError="GATEWAY TOKEN BELUM LENGKAP";
+        if(!configError.isEmpty()){
+            prefs.edit().putString("remote_gateway_last_error",configError).apply();
+            long skippedAt=System.currentTimeMillis();
+            if(!configError.equals(lastRemoteSyncError)||skippedAt-lastRemoteSyncLogAt>=60000L){
+                lastRemoteSyncError=configError;
+                lastRemoteSyncLogAt=skippedAt;
+                AppLog.add(this,"REMOTE GATEWAY","SYNC NOT STARTED "+configError+"; token value hidden");
+            }
+            return;
+        }
         while(base.endsWith("/"))base=base.substring(0,base.length()-1);
         long now=System.currentTimeMillis();
         try{
