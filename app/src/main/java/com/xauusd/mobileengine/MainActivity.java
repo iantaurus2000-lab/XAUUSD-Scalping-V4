@@ -634,7 +634,7 @@ public class MainActivity extends Activity {
         if(live){
             if(price!=null){
                 int digits=Math.max(0,Math.min(8,gp.getInt("broker_quote_digits_"+symbol,2)));
-                price.setText(new java.text.DecimalFormat("0."+new String(new char[digits]).replace("\\0","0")).format(bid));
+                price.setText(String.format(Locale.US,"%."+digits+"f",bid));
                 price.setTextColor(Color.rgb(0,225,135));
             }
             if(spread!=null){
