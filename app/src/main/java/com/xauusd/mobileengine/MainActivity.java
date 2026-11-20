@@ -240,6 +240,47 @@ public class MainActivity extends Activity {
         header.addView(statusBox,new LinearLayout.LayoutParams(uiDp(116),dashH(47)));
         root.addView(header,new LinearLayout.LayoutParams(-1,dashH(56)));
 
+        // Live MT5 quote strip on the first screen: Bid movement, spread and feed freshness.
+        LinearLayout quoteStrip=new LinearLayout(this);
+        quoteStrip.setGravity(Gravity.CENTER_VERTICAL);
+        quoteStrip.setPadding(uiDp(10),dashH(3),uiDp(10),dashH(3));
+        quoteStrip.setBackground(roundBg(Color.rgb(5,22,36),9));
+        LinearLayout quotePriceColumn=new LinearLayout(this);
+        quotePriceColumn.setOrientation(LinearLayout.VERTICAL);
+        TextView quotePriceLabel=tv("MT5 BID / LIVE PRICE",8);
+        quotePriceLabel.setTextColor(Color.rgb(0,210,220));
+        TextView homePrice=tv("--",19);
+        homePrice.setTypeface(null,Typeface.BOLD);
+        homePrice.setTextColor(Color.CYAN);
+        homePrice.setSingleLine(true);
+        controlValues.put("home_price",homePrice);
+        quotePriceColumn.addView(quotePriceLabel,new LinearLayout.LayoutParams(-1,dashH(13)));
+        quotePriceColumn.addView(homePrice,new LinearLayout.LayoutParams(-1,dashH(25)));
+        quoteStrip.addView(quotePriceColumn,new LinearLayout.LayoutParams(0,-2,1));
+
+        LinearLayout quoteSpreadColumn=new LinearLayout(this);
+        quoteSpreadColumn.setOrientation(LinearLayout.VERTICAL);
+        TextView quoteSpreadLabel=tv("SPREAD MT5",8);
+        quoteSpreadLabel.setTextColor(Color.rgb(175,205,210));
+        TextView homeSpread=tv("--",13);
+        homeSpread.setTypeface(null,Typeface.BOLD);
+        homeSpread.setTextColor(Color.WHITE);
+        homeSpread.setSingleLine(true);
+        controlValues.put("home_spread",homeSpread);
+        quoteSpreadColumn.addView(quoteSpreadLabel,new LinearLayout.LayoutParams(-1,dashH(13)));
+        quoteSpreadColumn.addView(homeSpread,new LinearLayout.LayoutParams(-1,dashH(25)));
+        quoteStrip.addView(quoteSpreadColumn,new LinearLayout.LayoutParams(uiDp(132),-2));
+
+        TextView homeQuoteStatus=tv("MENUNGGU DATA",8);
+        homeQuoteStatus.setTextColor(Color.rgb(255,190,90));
+        homeQuoteStatus.setGravity(Gravity.CENTER);
+        homeQuoteStatus.setMaxWidth(uiDp(88));
+        controlValues.put("home_quote_status",homeQuoteStatus);
+        quoteStrip.addView(homeQuoteStatus,new LinearLayout.LayoutParams(uiDp(88),dashH(36)));
+        LinearLayout.LayoutParams quoteStripParams=new LinearLayout.LayoutParams(-1,dashH(48));
+        quoteStripParams.setMargins(uiDp(10),dashH(4),uiDp(10),dashH(4));
+        root.addView(quoteStrip,quoteStripParams);
+
         // Dashboard body follows the same hierarchy and labels as the EA chart panel.
         LinearLayout body=new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
@@ -547,6 +588,7 @@ public class MainActivity extends Activity {
         boolean fresh=stateAt>0L&&now>=stateAt&&now-stateAt<=8000L;
         String statusText=fresh?gp.getString("d1_status_"+symbol,gp.getString("powerfull_status_"+symbol,"UNKNOWN")):"MENUNGGU / DATA EA STALE";
         setControlValue("algo_status",fresh?statusText:"MENUNGGU MT5");
+        updateHomeQuoteDashboard(gp,symbol,now);
         updateDirectionCard("M15",symbol,"m15");
         updateDirectionCard("H1",symbol,"h1");
         updateDirectionCard("H4",symbol,"h4");
@@ -577,6 +619,49 @@ public class MainActivity extends Activity {
         setControlValue("floating",fresh?gp.getString("d1_floating_"+symbol,"--"):"Menunggu data MT5...");
         setControlValue("peaks",fresh?gp.getString("d1_peak_"+symbol,"--"):"Menunggu data MT5...");
         setControlValue("timer",fresh?gp.getString("d1_timer_"+symbol,"--:--"):"--:--");
+    }
+
+    private void updateHomeQuoteDashboard(SharedPreferences gp,String symbol,long now){
+        long received=gp.getLong("broker_quote_received_ms_"+symbol,0L);
+        long tickAt=gp.getLong("broker_quote_tick_ms_"+symbol,0L);
+        double bid=preferenceDouble(gp,"broker_quote_bid_"+symbol,0.0);
+        double ask=preferenceDouble(gp,"broker_quote_ask_"+symbol,0.0);
+        double point=preferenceDouble(gp,"broker_quote_point_"+symbol,0.0);
+        boolean live=QuoteSafety.valid(bid,ask)&&QuoteSafety.isFresh(received,tickAt,now);
+        TextView price=controlValues.get("home_price");
+        TextView spread=controlValues.get("home_spread");
+        TextView feed=controlValues.get("home_quote_status");
+        if(live){
+            if(price!=null){
+                int digits=Math.max(0,Math.min(8,gp.getInt("broker_quote_digits_"+symbol,2)));
+                price.setText(new java.text.DecimalFormat("0."+new String(new char[digits]).replace("\\0","0")).format(bid));
+                price.setTextColor(Color.rgb(0,225,135));
+            }
+            if(spread!=null){
+                double raw=ask-bid;
+                spread.setText(point>0.0
+                    ?String.format(Locale.US,"%.2f / %.0f pt",raw,raw/point)
+                    :String.format(Locale.US,"%.2f",raw));
+                spread.setTextColor(Color.rgb(235,245,255));
+            }
+            if(feed!=null){
+                feed.setText("● HARGA LIVE");
+                feed.setTextColor(Color.rgb(65,230,150));
+            }
+        }else{
+            if(price!=null){
+                price.setText("--");
+                price.setTextColor(Color.rgb(255,190,90));
+            }
+            if(spread!=null){
+                spread.setText("-- / -- pt");
+                spread.setTextColor(Color.rgb(255,190,90));
+            }
+            if(feed!=null){
+                feed.setText(received>0L?"● DATA STALE":"● BELUM TERHUBUNG");
+                feed.setTextColor(Color.rgb(255,170,90));
+            }
+        }
     }
 
     private void updateDirectionCard(String timeframe,String symbol,String key){
