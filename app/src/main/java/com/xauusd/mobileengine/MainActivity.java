@@ -2007,10 +2007,15 @@ public class MainActivity extends Activity {
         url.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);
         box.addView(url,new LinearLayout.LayoutParams(-1,uiDp(48)));
         EditText token=new EditText(this);
-        token.setSingleLine(true);token.setText(p.getString("remote_gateway_token",""));
-        token.setHint("Gateway token (minimal 32 karakter)");
+        String savedToken=p.getString("remote_gateway_token","");
+        token.setSingleLine(true);token.setText(savedToken);
+        token.setHint(savedToken.length()>=32?"Token tersimpan • isi ulang hanya jika ingin mengganti":"Gateway token (minimal 32 karakter)");
         token.setTextColor(Color.WHITE);token.setHintTextColor(Color.GRAY);
         token.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        if(android.os.Build.VERSION.SDK_INT>=26){
+            url.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
+            token.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
+        }
         box.addView(token,new LinearLayout.LayoutParams(-1,uiDp(48)));
         AlertDialog dialog=new AlertDialog.Builder(this).setView(box)
             .setPositiveButton("SIMPAN",null).setNegativeButton("BATAL",null).create();
@@ -2024,9 +2029,23 @@ public class MainActivity extends Activity {
             if(secret.length()<32){
                 token.setError("Token minimal 32 karakter");return;
             }
-            p.edit().putString("remote_gateway_url",base).putString("remote_gateway_token",secret)
-                .putString("remote_gateway_last_error","").putLong("remote_gateway_last_ok_ms",0L).apply();
-            Toast.makeText(this,"Konfigurasi VPS tersimpan; menunggu sinkronisasi",Toast.LENGTH_LONG).show();
+            // Commit synchronously and read the values back before closing the dialog.
+            // This prevents reporting success while the remote-sync service still sees
+            // an empty URL/token in the shared preference store.
+            boolean committed=p.edit().putString("remote_gateway_url",base)
+                .putString("remote_gateway_token",secret)
+                .putString("remote_gateway_last_error","")
+                .putLong("remote_gateway_last_ok_ms",0L).commit();
+            String verifyUrl=p.getString("remote_gateway_url","");
+            String verifyToken=p.getString("remote_gateway_token","");
+            if(!committed||!base.equals(verifyUrl)||!secret.equals(verifyToken)){
+                AppLog.add(this,"REMOTE GATEWAY","CONFIG SAVE FAILED commit="+committed+
+                    " urlStored="+(!verifyUrl.isEmpty())+" tokenStored="+(verifyToken.length()>=32));
+                Toast.makeText(this,"Gagal menyimpan konfigurasi VPS. Coba SIMPAN kembali.",Toast.LENGTH_LONG).show();
+                return;
+            }
+            AppLog.add(this,"REMOTE GATEWAY","CONFIG SAVE VERIFIED urlStored=true tokenStored=true");
+            Toast.makeText(this,"Konfigurasi VPS tersimpan dan terverifikasi",Toast.LENGTH_LONG).show();
             dialog.dismiss();
             showGatewayAckDiagnostics();
         }));
