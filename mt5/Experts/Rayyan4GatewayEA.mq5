@@ -787,12 +787,18 @@ void powerDashboardRefresh(bool force=false){
    int dashboardIndex=-1;
    for(int i=0;i<ArraySize(powerSymbols);i++)if(powerSymbols[i]==symbol){dashboardIndex=i;break;}
    if(!StandaloneD1Mode&&dashboardIndex<0)return;
-   bool algoOn=powerAlgoTradingEnabled() &&
-      (StandaloneD1Mode || (dashboardIndex>=0&&powerConfigReceivedMs[dashboardIndex]>0&&powerCfg[dashboardIndex].enabled));
+   bool terminalAlgoOn=powerAlgoTradingEnabled();
+   bool configReceived=(StandaloneD1Mode ||
+      (dashboardIndex>=0&&powerConfigReceivedMs[dashboardIndex]>0));
+   bool configFresh=(StandaloneD1Mode ||
+      (dashboardIndex>=0&&powerConfigFresh(dashboardIndex)));
+   bool powerfullEnabled=(StandaloneD1Mode ||
+      (dashboardIndex>=0&&powerCfg[dashboardIndex].enabled));
+   bool powerfullReady=terminalAlgoOn&&configFresh&&powerfullEnabled;
    int dashboardMaxLayers=(StandaloneD1Mode?StandaloneMaxLayers:(dashboardIndex>=0?powerCfg[dashboardIndex].maxLayers:5));
    int entries=0,wins=0,losses=0;
    double totalProfit=0.0,totalLoss=0.0;
-   if(algoOn)powerDashboardStats(symbol,entries,wins,losses,totalProfit,totalLoss);
+   if(powerfullReady)powerDashboardStats(symbol,entries,wins,losses,totalProfit,totalLoss);
    int closed=wins+losses;
    double winrate=(closed>0?100.0*(double)wins/(double)closed:0.0);
 
@@ -806,15 +812,23 @@ void powerDashboardRefresh(bool force=false){
    string h4Text=(h4>0?"BULLISH":(h4<0?"BEARISH":"DOJI"));
    color bull=C'35,190,115',bear=C'235,82,82',neutral=C'165,175,190';
    color panel=C'20,27,39',card=C'31,42,58',edge=C'65,82,105';
-   color statusColor=(algoOn?bull:C'245,170,85');
+   color statusColor=(terminalAlgoOn?bull:C'245,170,85');
+   string powerControlText="POWERFULL: STANDALONE";
+   if(!StandaloneD1Mode){
+      if(!configReceived)powerControlText="POWERFULL: WAIT VPS";
+      else if(!configFresh)powerControlText="POWERFULL: CONFIG STALE";
+      else powerControlText=(powerfullEnabled?"POWERFULL: ON":"POWERFULL: OFF");
+   }
+   color powerControlColor=(configFresh?(powerfullEnabled?bull:neutral):C'245,170,85');
 
    // Solid foreground panel masks all chart candles and objects behind the dashboard.
    powerDashboardBox(RAYYAN_DASH_PREFIX+"BG",8,18,306,500,panel,C'83,101,125');
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"TITLE","RAYYAN  /  POWERFULL",19,27,clrWhite,11);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"SYMBOL",symbol,19,47,C'175,195,220',8);
    powerDashboardBox(RAYYAN_DASH_PREFIX+"STATUSBOX",202,25,100,27,
-      (algoOn?C'24,74,58':C'83,56,34'),statusColor);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"STATUS",(algoOn?"●  ALGO ON":"●  ALGO OFF"),211,32,statusColor,9);
+      (terminalAlgoOn?C'24,74,58':C'83,56,34'),statusColor);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"STATUS",(terminalAlgoOn?"●  ALGO ON":"●  ALGO OFF"),211,32,statusColor,9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"POWERCTRL",powerControlText,19,55,powerControlColor,7);
 
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"TRENDHEAD","LIVE CANDLE DIRECTION",19,72,C'185,200,220',8);
    powerDashboardBox(RAYYAN_DASH_PREFIX+"M15BOX",18,88,90,43,card,edge);
@@ -2308,7 +2322,8 @@ bool powerGatewayGet(string path,int &httpCode,string &body,string &diagnostic,i
                          requestData,responseData,responseHeaders);
    int err=GetLastError();
    if(status==-1 || status==1001){
-      diagnostic="POWERFULL WebRequest failed err="+IntegerToString(err);
+      diagnostic="POWERFULL WebRequest has no HTTP response status="+IntegerToString(status)+
+                 " err="+IntegerToString(err)+"; verify the active Cloudflare URL and MT5 WebRequest allowlist: "+base;
       return false;
    }
    httpCode=status;
@@ -2386,7 +2401,7 @@ bool powerRefreshConfig(int index){
       if(TimeCurrent()-powerLastDiag>=10){
          powerLastDiag=TimeCurrent();
          Print("POWERFULL CONFIG ERROR symbol=",powerSymbols[index],
-               " code=",code," detail=",diagnostic);
+               " code=",code," detail=",diagnostic," response=",body);
       }
       return false;
    }
@@ -3950,7 +3965,7 @@ void managePowerfullSymbol(int index){
 
    // POWERFULL direct-market entry is evaluated on every fresh MT5 tick.
    // The legacy forecast/pending engine is not used while POWERFULL is enabled.
-   bool d1Active=(powerConfigReceivedMs[index]>0&&powerCfg[index].enabled);
+   bool d1Active=(powerConfigFresh(index)&&powerCfg[index].enabled);
    if(d1Active)
       powerTryD1ExtremeEntry(index,tick,barTime,candleOpen,candleHigh,candleLow,
                              powerD1AskHigh[index],powerD1AskLow[index],
@@ -3962,6 +3977,12 @@ void managePowerfullSymbol(int index){
    // Wait for the first per-symbol APK/Gateway config before deleting any pending order.
    if(powerConfigReceivedMs[index]==0){
       powerPublishState(index,"CONFIG_WAIT","Waiting for the first SMART AUTO-POWERFULL config; existing pending orders preserved",barTime);
+      return;
+   }
+   if(!powerConfigFresh(index)){
+      powerPublishState(index,"CONFIG_STALE",
+         "APK/VPS configuration has not refreshed within 10 seconds; new POWERFULL entries paused; existing positions remain managed by MT5 EA",
+         barTime);
       return;
    }
    if(!powerCfg[index].enabled){
