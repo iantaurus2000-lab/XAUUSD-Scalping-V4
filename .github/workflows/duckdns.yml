@@ -1,6 +1,10 @@
 name: DuckDNS Update
 
 on:
+  push:
+    branches: [RAYYAN]
+    paths:
+      - ".github/workflows/duckdns.yml"
   workflow_dispatch:
   schedule:
     - cron: "*/5 * * * *"
