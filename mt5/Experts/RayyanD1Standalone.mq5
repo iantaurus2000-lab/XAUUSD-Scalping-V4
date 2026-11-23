@@ -397,7 +397,7 @@ void powerAppendDealRecord(ulong deal){
    if(h==INVALID_HANDLE){Print("POWERFULL REPORT CSV OPEN FAILED err=",GetLastError());return;}
    if(FileSize(h)==0)
       FileWrite(h,"time","deal_ticket","position_id","symbol","entry_type","side","volume","price",
-                "sl_usd_setting","sl_price_distance","actual_sl_price","sl_state",
+                "sl_pips_setting","sl_price_distance","actual_sl_price","sl_state",
                 "deal_profit","swap","commission","fee","net","reason","comment");
    FileSeek(h,0,SEEK_END);
    ulong rowStartSize=FileSize(h);
@@ -2810,7 +2810,6 @@ bool powerPlacePendingSide(int index,bool buySide,datetime barTime,const MqlTick
    powerPublishState(index,"PENDING_PLACED",EnumToString(type)+" at projected range level; expires at M5 close",barTime);
    return true;
 }
-// Convert USD risk to the account deposit currency. Missing conversion data fails closed.
 // Build a fixed PIP-distance SL; PIP size is explicitly configured per symbol.
 bool powerBuildPipStopLoss(string symbol,int side,double entryPrice,const MqlTick &tick,
                            double requestedPips,double pipSize,double &slPrice,double &slDistance,string &detail){
