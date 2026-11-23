@@ -3259,10 +3259,11 @@ bool powerClosePosition(ulong ticket,string reason){
       // Retain per-ticket peak and mode state if the broker filled only part of the close.
       if(!remains||remainingVolume<=0.0){
          string suffix=IntegerToString((long)ticket);
-         string keys[19]={"PW_HMODE_","PW_HBAR_","PW_PEAK_","PW_PEAK_NET_","PW_LR_WAS_NEG_",
+         string keys[25]={"PW_HMODE_","PW_HBAR_","PW_PEAK_","PW_PEAK_NET_","PW_LR_WAS_NEG_",
             "PW_LR_PEAK_NET_","PW_RISK_ARM_","PW_RISK_ADVERSE_","PW_RISK_RECOVERY_",
             "PW_RISK_LASTPX_","PW_RISK_REC_TICKS_","PW_A5_ARM_","PW_A5_ADVERSE_COUNT_",
-            "PW_A5_LAST_BAR_","PW_A5_COOLDOWN_","PW_LR_ADVERSE_TICKS_","PW_LR_LOG_MS_","PW_NET_LIVE_","PW_NET_HISTORY_WARN_"};
+            "PW_A5_LAST_BAR_","PW_A5_COOLDOWN_","PW_LR_ADVERSE_TICKS_","PW_LR_LOG_MS_","PW_NET_LIVE_","PW_NET_HISTORY_WARN_",
+            "PW_LR_PHASE_","PW_LR_ADVERSE_","PW_LR_RB1_","PW_LR_PULLBACK_","PW_LR_RB2_","PW_LR_ADVERSE_BREAK_"};
          for(int k=0;k<ArraySize(keys);k++){string key=keys[k]+suffix;if(GlobalVariableCheck(key))GlobalVariableDel(key);}
       }else Print("POWERFULL CLOSE RESIDUAL POSITION symbol=",symbol," ticket=",ticket,
          " remaining_volume=",DoubleToString(remainingVolume,8)," action=keep_peak_and_rescue_state");
@@ -3340,6 +3341,7 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
       string rebound1Key="PW_LR_RB1_"+suffix;
       string pullbackKey="PW_LR_PULLBACK_"+suffix;
       string rebound2Key="PW_LR_RB2_"+suffix;
+      string adverseBreakKey="PW_LR_ADVERSE_BREAK_"+suffix;
       int phase=(GlobalVariableCheck(phaseKey)?(int)GlobalVariableGet(phaseKey):0);
       double adverseExtreme=(GlobalVariableCheck(adverseKey)?GlobalVariableGet(adverseKey):executable);
       double rebound1=(GlobalVariableCheck(rebound1Key)?GlobalVariableGet(rebound1Key):0.0);
@@ -3352,13 +3354,15 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
       if(newAdverse){
          adverseExtreme=executable;
          GlobalVariableSet(adverseKey,adverseExtreme);
-         if(m5Break){
-            Print("POWERFULL LOSS_RESCUE EARLY EXIT symbol=",symbol," ticket=",ticket,
-               " new_adverse_extreme=",DoubleToString(adverseExtreme,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
-               " m5_break=true action=CLOSE_BEFORE_BROKER_SL");
-            if(powerClosePosition(ticket,"LOSS_RESCUE_NEW_ADVERSE_EXTREME_M5_BREAK")){
-               closedAny=true;closedCount++;continue;
-            }
+         GlobalVariableSet(adverseBreakKey,1.0);
+      }
+      bool adverseExtensionPending=(GlobalVariableCheck(adverseBreakKey)&&GlobalVariableGet(adverseBreakKey)>=0.5);
+      if(adverseExtensionPending&&m5Break){
+         Print("POWERFULL LOSS_RESCUE EARLY EXIT symbol=",symbol," ticket=",ticket,
+            " new_adverse_extreme=",DoubleToString(adverseExtreme,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " m5_break=true action=CLOSE_BEFORE_BROKER_SL");
+         if(powerClosePosition(ticket,"LOSS_RESCUE_NEW_ADVERSE_EXTREME_M5_BREAK")){
+            closedAny=true;closedCount++;continue;
          }
       }
 
@@ -3373,6 +3377,7 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
          if(GlobalVariableCheck(rebound1Key))GlobalVariableDel(rebound1Key);
          if(GlobalVariableCheck(pullbackKey))GlobalVariableDel(pullbackKey);
          if(GlobalVariableCheck(rebound2Key))GlobalVariableDel(rebound2Key);
+         if(GlobalVariableCheck(adverseBreakKey))GlobalVariableDel(adverseBreakKey);
          if(GlobalVariableCheck("PW_LR_ARMED_"+suffix))GlobalVariableDel("PW_LR_ARMED_"+suffix);
          if(GlobalVariableCheck("PW_LR_EXTREME_"+suffix))GlobalVariableDel("PW_LR_EXTREME_"+suffix);
          GlobalVariableSet(peakPriceKey,executable);
