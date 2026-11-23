@@ -3327,14 +3327,31 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
       if(!GlobalVariableCheck(modeKey)||(int)GlobalVariableGet(modeKey)!=POWERFULL_MODE_LOSS_RESCUE)continue;
 
       bool isBuy=((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
-      int side=(isBuy?1:-1);
       double executable=(isBuy?tick.bid:tick.ask);
       double entry=PositionGetDouble(POSITION_PRICE_OPEN);
       double brokerSL=PositionGetDouble(POSITION_SL);
       double slBoundary=(brokerSL>0.0?brokerSL:entry);
-      string peakPriceKey="PW_PEAK_"+suffix;
-      double peakPrice=(GlobalVariableCheck(peakPriceKey)?GlobalVariableGet(peakPriceKey):entry);
       bool m5Break=powerA6StructureBreak(symbol,PERIOD_M5,isBuy,12);
+
+      // Once a LOSS_RESCUE ticket has actually entered negative net P/L,
+      // the first tick that returns its projected net P/L above zero is an
+      // unconditional recovery exit. Do not wait for M5 structure or rebound 2.
+      // The flag persists across ticks/restarts and is removed after full close.
+      double rescueNet=powerProjectedNet(ticket);
+      string wasNegativeKey="PW_LR_WAS_NEG_"+suffix;
+      if(rescueNet<=0.0){
+         if(!GlobalVariableCheck(wasNegativeKey))GlobalVariableSet(wasNegativeKey,1.0);
+      }else if(GlobalVariableCheck(wasNegativeKey)&&GlobalVariableGet(wasNegativeKey)>=0.5){
+         Print("POWERFULL LOSS_RESCUE RECOVERED TO POSITIVE NET symbol=",symbol,
+            " ticket=",ticket," projected_net=",DoubleToString(rescueNet,2),
+            " action=CLOSE_IMMEDIATELY_WITHOUT_M5_CONFIRMATION");
+         if(powerClosePosition(ticket,"LOSS_RESCUE_RECOVERED_TO_POSITIVE_NET")){
+            closedAny=true;closedCount++;continue;
+         }
+         Print("POWERFULL LOSS_RESCUE POSITIVE-NET CLOSE FAILED symbol=",symbol,
+            " ticket=",ticket," projected_net=",DoubleToString(rescueNet,2),
+            " action=RETRY_ON_NEXT_TICK");
+      }
 
       string phaseKey="PW_LR_PHASE_"+suffix;
       string adverseKey="PW_LR_ADVERSE_"+suffix;
@@ -3366,25 +3383,10 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
          }
       }
 
-      // A recovery that makes a fresh favorable break and is supported by
-      // confirmed M5 structure restores the position to TREND_HOLD.
-      bool newFavorableBreak=(phase>=1&&
-         (isBuy?executable>rebound1+tickSize:executable<rebound1-tickSize));
-      if(newFavorableBreak&&m5Structure==side){
-         GlobalVariableSet(modeKey,(double)POWERFULL_MODE_TREND_HOLD);
-         if(GlobalVariableCheck(phaseKey))GlobalVariableDel(phaseKey);
-         if(GlobalVariableCheck(adverseKey))GlobalVariableDel(adverseKey);
-         if(GlobalVariableCheck(rebound1Key))GlobalVariableDel(rebound1Key);
-         if(GlobalVariableCheck(pullbackKey))GlobalVariableDel(pullbackKey);
-         if(GlobalVariableCheck(rebound2Key))GlobalVariableDel(rebound2Key);
-         if(GlobalVariableCheck(adverseBreakKey))GlobalVariableDel(adverseBreakKey);
-         if(GlobalVariableCheck("PW_LR_ARMED_"+suffix))GlobalVariableDel("PW_LR_ARMED_"+suffix);
-         if(GlobalVariableCheck("PW_LR_EXTREME_"+suffix))GlobalVariableDel("PW_LR_EXTREME_"+suffix);
-         GlobalVariableSet(peakPriceKey,executable);
-         Print("POWERFULL LOSS_RESCUE RECOVERY symbol=",symbol," ticket=",ticket,
-            " mode=TREND_HOLD reason=NEW_FAVORABLE_BREAK_WITH_M5_STRUCTURE");
-         continue;
-      }
+      // LOSS_RESCUE is now a one-way protective state. Original entry direction
+      // and a later M5 structure signal cannot restore TREND_HOLD. The position
+      // remains under rescue exits until positive-net recovery, structural failure,
+      // or broker SL protection closes it.
 
       // Per-ticket two-rebound sequence: adverse extreme -> rebound 1 ->
       // pullback boundary -> rebound 2. No fixed USD or percentage target.
