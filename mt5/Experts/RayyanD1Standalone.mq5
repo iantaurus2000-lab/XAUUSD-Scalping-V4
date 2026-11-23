@@ -3619,26 +3619,15 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       bool lossZone=(hard>0.0&&
          (isBuy?(executable<peakPrice-ts*0.1&&executable>slBoundary+ts*0.1):
                 (executable>peakPrice+ts*0.1&&executable<slBoundary-ts*0.1)));
-      // TREND_HOLD has priority: H1 and H4 must BOTH oppose the ticket,
-      // M15 must confirm (a doji/neutral M15 is not a reversal), and M5
-      // must show counter-pressure or a structural break.
+      // TREND_HOLD has priority until price is in the loss zone and M5 shows
+      // counter-pressure or a confirmed M5 structural break.
       bool failureConfirmed=(m5Against||m5Break);
       bool rescueRequired=(lossZone&&failureConfirmed);
       if(mode==POWERFULL_MODE_LOSS_RESCUE){
-         // Once armed, allow the rebound to leave the loss zone; keep waiting
-         // for the frozen-extreme cross as long as the multi-timeframe failure
-         // remains confirmed. Only restored/uncertain trend evidence returns HOLD.
-         if(!failureConfirmed){
-            GlobalVariableSet(modeKey,(double)POWERFULL_MODE_TREND_HOLD);
-            if(GlobalVariableCheck(adverseKey))GlobalVariableDel(adverseKey);
-            string armedKey="PW_LR_ARMED_"+suffix,frozenKey="PW_LR_EXTREME_"+suffix;
-            if(GlobalVariableCheck(armedKey))GlobalVariableDel(armedKey);
-            if(GlobalVariableCheck(frozenKey))GlobalVariableDel(frozenKey);
-            Print("POWERFULL MODE symbol=",symbol," ticket=",ticket,
-               " mode=TREND_HOLD reason=TREND_FAILURE_NOT_CONFIRMED_OR_OUTSIDE_LOSS_ZONE",
-               " h1_h4_structure=",structure," m5_against=",m5Against," m15_against=",m15Against,
-               " loss_zone=",lossZone," action=HOLD_NO_CLOSE");
-         }
+         // Once LOSS_RESCUE is armed, its per-ticket rebound state machine owns
+         // the decision until it closes the position or confirms recovery.
+         // Do not cancel the rescue sequence merely because the live M5 pressure
+         // temporarily eases while price is forming rebound/pullback structure.
          continue;
       }
       if(mode==POWERFULL_MODE_TREND_HOLD){
@@ -3646,11 +3635,11 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
             GlobalVariableSet(modeKey,(double)POWERFULL_MODE_LOSS_RESCUE);
             if(GlobalVariableCheck(adverseKey))GlobalVariableDel(adverseKey);
             Print("POWERFULL MODE symbol=",symbol," ticket=",ticket,
-               " mode=LOSS_RESCUE reason=LOSS_ZONE_AND_H1_H4_M15_M5_REVERSAL_CONFIRMED",
+               " mode=LOSS_RESCUE reason=LOSS_ZONE_AND_M5_FAILURE_CONFIRMED",
                " h1_h4_structure=",structure," m5_against=",m5Against," m15_against=",m15Against,
                " loss_zone_from_extreme=",DoubleToString(peakPrice,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
                " sl_boundary=",DoubleToString(slBoundary,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
-               " action=FREEZE_EXTREME_AND_WAIT_FOR_RECOVERY_CROSS");
+               " action=START_PER_TICKET_REBOUND_STRUCTURE");
          }
          continue;
       }
