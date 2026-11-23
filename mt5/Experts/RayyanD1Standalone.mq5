@@ -3142,10 +3142,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
             " rubberStretchScore=",DoubleToString(side>0?buyScore:sellScore,3),
             " Digits=",(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS),
             " Point=",DoubleToString(point,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)+2),
-             " SL_USD=",DoubleToString(PowerfullStopLossUSD,2),
-             " estimated_account_loss=",DoubleToString(slAccountLoss,2),
-             " account_budget=",DoubleToString(slAccountBudget,2),
-             " price_distance=",DoubleToString(slDist,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+                          " SL_PIPS=",DoubleToString(PowerfullStopLossPips,2),
+             " PIP_SIZE=",DoubleToString(StandalonePipSize,8),
              " SL_price=",DoubleToString(sl,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),") retcode=",rc);
       powerPublishState(index,"D1_95_LIVE_CANDLE_ENTRY_SENT",
          string(side>0?"BUY on RED candle near Low":"SELL on GREEN candle near High")+
