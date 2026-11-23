@@ -52,8 +52,9 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
          " H1_SWING=",entryH1Swing," (",h1SwingContext,")",
          " M15_SWING=",entryM15," (",m15Context,")",
          " action=H1_live_primary_H1_swing_context_only_M15_nonblocking_M5_extreme_timing");
-   if(!MathIsValidNumber(PowerfullStopLossUSD)||PowerfullStopLossUSD<=0.0){
-      powerPublishState(index,"BLOCKED_SL_USD","Set PowerfullStopLossUSD in MT5 Inputs; zero disables new POWERFULL entries",barTime);
+   if(!MathIsValidNumber(PowerfullStopLossPips)||PowerfullStopLossPips<=0.0||
+      !MathIsValidNumber(StandalonePipSize)||StandalonePipSize<=0.0){
+      powerPublishState(index,"BLOCKED_SL_PIPS","Set valid PowerfullStopLossPips and StandalonePipSize in MT5 Inputs; zero PIP disables new POWERFULL entries",barTime);
       return;
    }
 
@@ -181,13 +182,13 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    }
    // BUY executes at Ask; SELL executes at Bid after the live M5 extreme signal.
    double px=(side>0?tick.ask:tick.bid);
-   double sl=0.0,slDist=0.0,slAccountLoss=0.0,slAccountBudget=0.0;string slDetail="";
-   if(!powerBuildUsdStopLoss(symbol,side,lot,px,PowerfullStopLossUSD,
-                             sl,slDist,slAccountLoss,slAccountBudget,slDetail)){
-      powerPublishState(index,"BLOCKED_SL_USD",slDetail,barTime);
-      Print("D1 USD SL BLOCK symbol=",symbol," side=",(side>0?"BUY":"SELL"),
-            " lot=",DoubleToString(lot,8)," requestedUSD=",DoubleToString(PowerfullStopLossUSD,2),
-            " reason=",slDetail);return;
+   double sl=0.0,slDist=0.0;string slDetail="";
+   if(!powerBuildPipStopLoss(symbol,side,px,tick,PowerfullStopLossPips,StandalonePipSize,
+                             sl,slDist,slDetail)){
+      powerPublishState(index,"BLOCKED_SL_PIPS",slDetail,barTime);
+      Print("D1 PIP SL BLOCK symbol=",symbol," side=",(side>0?"BUY":"SELL"),
+            " requestedPips=",DoubleToString(PowerfullStopLossPips,2),
+            " pipSize=",DoubleToString(StandalonePipSize,8)," reason=",slDetail);return;
    }
    ENUM_ORDER_TYPE marginOrderType=(side>0?ORDER_TYPE_BUY:ORDER_TYPE_SELL);
 
@@ -296,10 +297,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
             " rubberStretchScore=",DoubleToString(side>0?buyScore:sellScore,3),
             " Digits=",(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS),
             " Point=",DoubleToString(point,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)+2),
-             " SL_USD=",DoubleToString(PowerfullStopLossUSD,2),
-             " estimated_account_loss=",DoubleToString(slAccountLoss,2),
-             " account_budget=",DoubleToString(slAccountBudget,2),
-             " price_distance=",DoubleToString(slDist,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+                          " SL_PIPS=",DoubleToString(PowerfullStopLossPips,2),
+             " PIP_SIZE=",DoubleToString(StandalonePipSize,8),
              " SL_price=",DoubleToString(sl,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),") retcode=",rc);
       powerPublishState(index,"D1_95_LIVE_CANDLE_ENTRY_SENT",
          string(side>0?"BUY on RED candle near Low":"SELL on GREEN candle near High")+
