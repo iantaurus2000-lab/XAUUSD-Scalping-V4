@@ -127,3 +127,5 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 # Manual EA artifact build requested on 2026-11-13.
+
+# Trigger: compile the current Open-to-live-extreme BACKUP source.
