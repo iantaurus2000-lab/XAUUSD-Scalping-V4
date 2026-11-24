@@ -97,7 +97,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $experts | Out-Null
           $sources = @(
             @{ Source = 'mt5/Experts/Rayyan4GatewayEA.mq5'; Name = 'Rayyan4GatewayEA' },
-            @{ Source = 'mt5/Experts/RayyanD1Standalone.mq5'; Name = 'RayyanD1Standalone' }
+            @{ Source = 'mt5/Experts/RayyanD1Standalone_127_BACKUP.mq5'; Name = 'RayyanD1Standalone_127_BACKUP' }
           )
           foreach ($item in $sources) {
             $source = (Resolve-Path $item.Source).Path
@@ -121,7 +121,7 @@ jobs:
           }
       - uses: actions/upload-artifact@v4
         with:
-          name: RAYYAN-D1-GATEWAY-TWO-EA
+          name: RAYYAN-127-BACKUP-EA
           path: build/ea/*
           if-no-files-found: error
           retention-days: 30
