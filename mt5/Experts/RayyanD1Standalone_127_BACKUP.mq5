@@ -15,6 +15,7 @@ input double StandalonePipSize=0.10; // XAUUSDm 2-digit: 1 PIP = 0.10 price = 10
 input double PowerfullStopLossPips=0.0; // Fixed POWERFULL SL distance in PIP; zero blocks new entries.
 input bool EnableEAReports=true; // ON/OFF: HTML, CSV and entry-candle screenshot reports only.
 input int StandaloneMaxLayers=5; // configurable 1..5; A6 default allows five layers
+input bool EnablePowerfullExtremeOpenEntry=true; // ON/OFF for the replacement live M5 Open-to-extreme market-entry module.
 // POWERFULL final: no time-based entry warm-up.
 input int PollSeconds=1;
 // After TP1 is reached, close on a confirmed M1 reversal before TP2.
@@ -2865,8 +2866,16 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    if(index<0||index>=ArraySize(powerSymbols))return;
    string symbol=powerSymbols[index];
 
-   // M5 closing safety window: do not open a new BUY/SELL during the final 40 seconds.
-   // This is a pre-close blackout only; it is NOT a 40-second warm-up after a new bar.
+   // Independent replacement module switch. OFF disables only new entries;
+   // existing POWERFULL positions continue through the normal manager.
+   if(!EnablePowerfullExtremeOpenEntry){
+      powerPublishState(index,"D1_EXTREME_OPEN_MODULE_OFF",
+         "Open-to-extreme market-entry module is OFF; existing positions remain managed",barTime);
+      return;
+   }
+
+   // LOCKED SAFETY: no new entries during the final 40 seconds of an M5 candle.
+   // This is a pre-close blackout, not a warm-up after candle open.
    long tickSeconds=(long)(tick.time_msc/1000);
    long candleElapsed=(long)(tickSeconds-(long)barTime);
    if(barTime>0&&candleElapsed>=260&&candleElapsed<300){
@@ -2888,32 +2897,22 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       powerPublishState(index,"D1_WAIT_DATA","Invalid MT5 point/tick geometry",barTime);
       return;
    }
-   // The LIVE H1 candle is the primary directional bias for POWERFULL entries.
-   // Confirmed H1 swing is structural context only and must never block entry.
-   // M15 swing is pullback context only and must never veto a valid M5 extreme.
+
+   // LOCKED DIRECTION FILTER: live H1 candle determines the allowed side.
+   // H1 doji/neutral blocks new entries. Swing structures remain context only.
    int entryM15=powerConfirmedSwingStructure(symbol,PERIOD_M15);
    int entryH1Swing=powerConfirmedSwingStructure(symbol,PERIOD_H1);
-   int entryH1Live=powerLiveCandleDirection(symbol,PERIOD_H1);
-   // LOCKED POWERFULL RULE: H1 must be coloured and agree with the M5 extreme.
-   // H1 doji/neutral is a hard no-entry state; wait for a green or red H1 candle.
-   int entryDirection=entryH1Live;
+   int entryDirection=powerLiveCandleDirection(symbol,PERIOD_H1);
    if(entryDirection==0){
       powerPublishState(index,"D1_WAIT_H1_COLOUR",
          "Entry locked: wait for H1 GREEN for BUY or H1 RED for SELL; H1 doji cannot enter",barTime);
       return;
    }
-   string m15Context=(entryM15==entryDirection?"M15 aligned":
-                      (entryM15==-entryDirection?"M15 pullback/opposing warning":"M15 neutral"));
-   string h1SwingContext=(entryH1Swing==entryDirection?"H1 swing aligned":
-                          (entryH1Swing==-entryDirection?"H1 swing opposing context":"H1 swing neutral"));
-   Print("D1 ENTRY BIAS symbol=",symbol,
-         " H1_LIVE=",entryDirection>0?"BULLISH":(entryDirection<0?"BEARISH":"DOJI_NEUTRAL"),
-         " H1_SWING=",entryH1Swing," (",h1SwingContext,")",
-         " M15_SWING=",entryM15," (",m15Context,")",
-         " action=H1_live_primary_H1_swing_context_only_M15_nonblocking_M5_extreme_timing");
+
    if(!MathIsValidNumber(PowerfullStopLossPips)||PowerfullStopLossPips<=0.0||
       !MathIsValidNumber(StandalonePipSize)||StandalonePipSize<=0.0){
-      powerPublishState(index,"BLOCKED_SL_PIPS","Set valid PowerfullStopLossPips and StandalonePipSize in MT5 Inputs; zero PIP disables new POWERFULL entries",barTime);
+      powerPublishState(index,"BLOCKED_SL_PIPS",
+         "Set valid PowerfullStopLossPips and StandalonePipSize in MT5 Inputs; zero PIP disables new POWERFULL entries",barTime);
       return;
    }
 
@@ -2947,88 +2946,40 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       return;
    }
 
-   // No warm-up timer: evaluate the current M5 candle as soon as live OHLC is valid.
-
-   double range=candleHigh-candleLow;
-   if(range<=0.0){
-      powerPublishState(index,"D1_CANDLE_BUILDING",
-         "Waiting for current M5 candle to establish its live High/Low",barTime);
+   if(candleOpen<=0.0||candleHigh<candleLow||candleLow<=0.0){
+      powerPublishState(index,"D1_CANDLE_DATA_INVALID",
+         "Waiting for valid live M5 Open/High/Low data",barTime);
       return;
    }
 
-   // Reset only the live candle OHLC measurement at a new M5 bar.
-   // Last successful BUY Low / SELL High remains persistent across candle changes,
-   // so continuation layers require a genuinely newer extreme than the prior fill.
-   // No timer, reversal wait, or tick-count confirmation is used.
-
-   // M5 candle colour is a hard entry condition:
-   // BUY only while the live M5 candle is RED; SELL only while it is GREEN.
-   // Entry is triggered by the first observable weakening from the live wick tip.
-   // No tick-pattern, two-sided Bid/Ask confirmation, or timed waiting is required.
-   bool sellFresh=(powerMomentumLastSellHigh[index]<=0.0||
-                   candleHigh>powerMomentumLastSellHigh[index]);
+   // NEW ENTRY RULE: enter on the live extreme itself, measured from M5 Open.
+   // BUY: current Bid is making the candle Low below Open.
+   // SELL: current Bid is making the candle High above Open.
+   // There is deliberately NO weakening, pullback, >0.0 recovery, or 2x-tick wait.
+   // The last successfully filled extreme is persistent across M5 candle changes,
+   // so the next layer requires a strictly newer extreme.
+   double extremeTolerance=ts*0.5;
    bool buyFresh=(powerMomentumLastBuyLow[index]<=0.0||
                   candleLow<powerMomentumLastBuyLow[index]);
+   bool sellFresh=(powerMomentumLastSellHigh[index]<=0.0||
+                   candleHigh>powerMomentumLastSellHigh[index]);
+   bool buyAtLiveLow=(candleLow<candleOpen&&tick.bid<=candleLow+extremeTolerance);
+   bool sellAtLiveHigh=(candleHigh>candleOpen&&tick.bid>=candleHigh-extremeTolerance);
+   bool buyReady=(entryDirection>0&&buyFresh&&buyAtLiveLow&&buyN<cap);
+   bool sellReady=(entryDirection<0&&sellFresh&&sellAtLiveHigh&&sellN<cap);
 
-   double upperWick=candleHigh-MathMax(candleOpen,tick.bid);
-   double lowerWick=MathMin(candleOpen,tick.bid)-candleLow;
-   // Retraction values are diagnostics only; they are NOT entry conditions.
-   double buyBidRecovery=tick.bid-candleLow;
-   double buyAskRecovery=tick.ask-askLow;
-   double sellBidRetreat=candleHigh-tick.bid;
-   double sellAskRetreat=askHigh-tick.ask;
-
-   double buyOpenExtension=(candleOpen-candleLow)/range;
-   double sellOpenExtension=(candleHigh-candleOpen)/range;
-   double bidLocation=(tick.bid-candleLow)/range;
-   double askLocation=(tick.ask-candleLow)/range;
-
-   bool candleRed=(tick.bid<candleOpen);
-   bool candleGreen=(tick.bid>candleOpen);
-
-   // Entry is anchored to the actual M5 Open and the live Low/High extreme.
-   // No percentage-distribution threshold and no fixed tick-distance threshold.
-   // A first observable retreat from the wick tip is sufficient confirmation.
-   bool buyCandleStructure=candleRed;
-   bool sellCandleStructure=candleGreen;
-   bool buyExtremeWeakening=(buyBidRecovery>0.0);
-   bool sellExtremeWeakening=(sellBidRetreat>0.0);
-   bool buyH1Aligned=(entryDirection>0);
-   bool sellH1Aligned=(entryDirection<0);
-   bool buyReady=(buyH1Aligned&&buyFresh&&buyCandleStructure&&
-                  buyExtremeWeakening&&buyN<cap);
-   bool sellReady=(sellH1Aligned&&sellFresh&&sellCandleStructure&&
-                   sellExtremeWeakening&&sellN<cap);
-   double buyScore=buyOpenExtension+lowerWick/range+
-                   buyBidRecovery/range+buyAskRecovery/range;
-   double sellScore=sellOpenExtension+upperWick/range+
-                    sellBidRetreat/range+sellAskRetreat/range;
-   if(!buyReady&&!sellReady){
-      powerPublishState(index,"D1_LIVE_CANDLE_DISTRIBUTION",
-         "M5 live distribution | range="+DoubleToString(range/ts,1)+"t"+
-         " | Open->Low/High="+DoubleToString(buyOpenExtension*100.0,1)+"/"+
-            DoubleToString(sellOpenExtension*100.0,1)+"%"+
-         " | H1 live bias="+(entryDirection>0?"BUY":(entryDirection<0?"SELL":"DOJI_NEUTRAL"))+" | H1 swing context="+IntegerToString(entryH1Swing)+
-          " | Bid/Ask location="+DoubleToString(bidLocation*100.0,1)+"/"+
-            DoubleToString(askLocation*100.0,1)+"%"+
-         " | wick L/U="+DoubleToString(lowerWick/range*100.0,1)+"/"+
-            DoubleToString(upperWick/range*100.0,1)+"%"+
-         " | pullback diagnostic BUY B/A="+DoubleToString(buyBidRecovery/range*100.0,1)+"/"+
-            DoubleToString(buyAskRecovery/range*100.0,1)+"%"+
-         " | SELL pullback diagnostic B/A="+DoubleToString(sellBidRetreat/range*100.0,1)+"/"+
-            DoubleToString(sellAskRetreat/range*100.0,1)+"%"+
-         " | M5 colour gate=BUY RED/SELL GREEN"+
-         " | extreme retreat BUY="+(buyExtremeWeakening?"YES":"NO")+
-            " SELL="+(sellExtremeWeakening?"YES":"NO")+
-         " | entry rule=actual M5 Open-to-Low/High extreme; continuation=strictly newer extreme"+
-         " | spread(info)="+DoubleToString((tick.ask-tick.bid)/ts,1)+"t"+
-         " | layers="+IntegerToString(total)+"/"+IntegerToString(cap),barTime);
-      return;
-   }
-   // Add layers only in the existing basket's direction; no opposite-side hedge.
+   // Keep a single basket direction; never add an opposite-side hedge.
    if(buyN>0)sellReady=false;
    if(sellN>0)buyReady=false;
-   if(!buyReady&&!sellReady)return;
+   if(!buyReady&&!sellReady){
+      powerPublishState(index,"D1_OPEN_EXTREME_WAIT",
+         "Waiting for a NEW live M5 extreme from Open | BUY=Bid at fresh Low below Open with H1 GREEN | SELL=Bid at fresh High above Open with H1 RED"+
+         " | last BUY Low="+DoubleToString(powerMomentumLastBuyLow[index],(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))+
+         " | last SELL High="+DoubleToString(powerMomentumLastSellHigh[index],(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))+
+         " | layers="+IntegerToString(total)+"/"+IntegerToString(cap)+
+         " | spread(info)="+DoubleToString((tick.ask-tick.bid)/ts,1)+" ticks",barTime);
+      return;
+   }
 
    int side=(buyReady?1:-1);
    double lot=powerCfg[index].lot;
@@ -3039,21 +2990,20 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       powerPublishState(index,"BLOCKED_LOT","Configured lot outside broker limits",barTime);
       return;
    }
-   // BUY executes at Ask; SELL executes at Bid after the live M5 extreme signal.
+
+   // Market execution: BUY at Ask, SELL at Bid, immediately on the live extreme.
    double px=(side>0?tick.ask:tick.bid);
    double sl=0.0,slDist=0.0;string slDetail="";
    if(!powerBuildPipStopLoss(symbol,side,px,tick,PowerfullStopLossPips,StandalonePipSize,
                              sl,slDist,slDetail)){
       powerPublishState(index,"BLOCKED_SL_PIPS",slDetail,barTime);
-      Print("D1 PIP SL BLOCK symbol=",symbol," side=",(side>0?"BUY":"SELL"),
+      Print("D1 OPEN-EXTREME SL BLOCK symbol=",symbol," side=",(side>0?"BUY":"SELL"),
             " requestedPips=",DoubleToString(PowerfullStopLossPips,2),
-            " pipSize=",DoubleToString(StandalonePipSize,8)," reason=",slDetail);return;
+            " pipSize=",DoubleToString(StandalonePipSize,8)," reason=",slDetail);
+      return;
    }
-   ENUM_ORDER_TYPE marginOrderType=(side>0?ORDER_TYPE_BUY:ORDER_TYPE_SELL);
 
-   // Use MT5's full request pre-check instead of OrderCalcMargin's isolated estimate.
-   // OrderCheck evaluates the proposed deal against the account's current positions,
-   // margin and broker request rules; this avoids a false BLOCKED_MARGIN_CALC result.
+   ENUM_ORDER_TYPE marginOrderType=(side>0?ORDER_TYPE_BUY:ORDER_TYPE_SELL);
    long fillingModes=SymbolInfoInteger(symbol,SYMBOL_FILLING_MODE);
    long executionMode=SymbolInfoInteger(symbol,SYMBOL_TRADE_EXEMODE);
    ENUM_ORDER_TYPE_FILLING filling=ORDER_FILLING_RETURN;
@@ -3062,9 +3012,8 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    else if((fillingModes&SYMBOL_FILLING_IOC)!=0)
       filling=ORDER_FILLING_IOC;
    else if(executionMode==SYMBOL_TRADE_EXECUTION_MARKET){
-      powerPublishState(index,"BLOCKED_FILLING_MODE","No supported FOK/IOC filling mode for Market Execution",barTime);
-      Print("D1 ORDER CHECK BLOCK symbol=",symbol," reason=NO_SUPPORTED_FILLING_MODE",
-            " filling_modes=",fillingModes," execution_mode=",executionMode);
+      powerPublishState(index,"BLOCKED_FILLING_MODE",
+         "No supported FOK/IOC filling mode for Market Execution",barTime);
       return;
    }
 
@@ -3080,7 +3029,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    marginRequest.deviation=(ulong)powerCfg[index].deviationPoints;
    marginRequest.type_filling=filling;
    marginRequest.type_time=ORDER_TIME_GTC;
-   marginRequest.comment=(side>0?"D1-A5-LIVE-RED-LOW-BUY":"D1-A5-LIVE-GREEN-HIGH-SELL");
+   marginRequest.comment=(side>0?"D1-OPEN-LOW-BUY":"D1-OPEN-HIGH-SELL");
 
    ResetLastError();
    bool marginCheckOk=OrderCheck(marginRequest,marginCheck);
@@ -3089,30 +3038,31 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       powerPublishState(index,"BLOCKED_INSUFFICIENT_MARGIN",
          "MT5 OrderCheck rejected the proposed deal or projected free margin is negative",barTime);
       Print("D1 ORDER CHECK FAILED symbol=",symbol," side=",(side>0?"BUY":"SELL"),
-            " lot=",DoubleToString(lot,2)," price=",DoubleToString(px,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " lot=",DoubleToString(lot,2),
+            " price=",DoubleToString(px,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
             " check_ok=",(marginCheckOk?"true":"false"),
             " retcode=",marginCheck.retcode,
             " required_margin=",DoubleToString(marginCheck.margin,2),
             " projected_free_margin=",DoubleToString(marginCheck.margin_free,2),
             " projected_equity=",DoubleToString(marginCheck.equity,2),
             " margin_level=",DoubleToString(marginCheck.margin_level,2),
-            " comment=",marginCheck.comment,
-            " err=",marginCheckError);
+            " comment=",marginCheck.comment," err=",marginCheckError);
       return;
    }
+
    powerTrade.SetExpertMagicNumber(POWERFULL_MAGIC);
    powerTrade.SetDeviationInPoints(powerCfg[index].deviationPoints);
    powerTrade.SetTypeFillingBySymbol(symbol);
    powerTrade.SetAsyncMode(false);
    ResetLastError();
    bool sent=(side>0?
-      powerTrade.Buy(lot,symbol,0.0,sl,0.0,"D1-A5-LIVE-RED-LOW-BUY"):
-      powerTrade.Sell(lot,symbol,0.0,sl,0.0,"D1-A5-LIVE-GREEN-HIGH-SELL"));
+      powerTrade.Buy(lot,symbol,0.0,sl,0.0,"D1-OPEN-LOW-BUY"):
+      powerTrade.Sell(lot,symbol,0.0,sl,0.0,"D1-OPEN-HIGH-SELL"));
    uint rc=powerTrade.ResultRetcode();
 
    if(sent&&(rc==TRADE_RETCODE_DONE||rc==TRADE_RETCODE_PLACED||
              rc==TRADE_RETCODE_DONE_PARTIAL)){
-      // Verify the broker-side SL on the newly opened POWERFULL position.
+      // Verify broker-side SL on the newly opened POWERFULL position.
       ulong verifiedTicket=0;
       long newestPositionMs=-1;
       double actualSL=0.0;
@@ -3146,33 +3096,35 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
                " deal=",powerTrade.ResultDeal()," requestedSL=",
                DoubleToString(sl,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)));
       }
+
+      // Consume this extreme only after a successful broker fill. A failed request
+      // may retry on a later tick at the same live extreme; it cannot duplicate a fill.
       if(side>0)powerMomentumLastBuyLow[index]=candleLow;
       else powerMomentumLastSellHigh[index]=candleHigh;
       powerMomentumLastEntryBar[index]=barTime;
-      Print("D1 A5 LIVE-CANDLE ENTRY OK ",symbol,
-            " side=",(side>0?"BUY_RED_LOW":"SELL_GREEN_HIGH"),
+      Print("D1 OPEN-EXTREME ENTRY OK ",symbol,
+            " side=",(side>0?"BUY_AT_LIVE_M5_LOW":"SELL_AT_LIVE_M5_HIGH"),
             " layer=",total+1,"/",cap,
-            " liveRangeTicks=",DoubleToString(range/ts,1),
-            " rubberStretchScore=",DoubleToString(side>0?buyScore:sellScore,3),
-            " Digits=",(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS),
-            " Point=",DoubleToString(point,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)+2),
-                          " SL_PIPS=",DoubleToString(PowerfullStopLossPips,2),
-             " PIP_SIZE=",DoubleToString(StandalonePipSize,8),
-             " SL_price=",DoubleToString(sl,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),") retcode=",rc);
-      powerPublishState(index,"D1_95_LIVE_CANDLE_ENTRY_SENT",
-         string(side>0?"BUY on RED candle near Low":"SELL on GREEN candle near High")+
+            " open=",DoubleToString(candleOpen,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " extreme=",DoubleToString(side>0?candleLow:candleHigh,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " execution=",DoubleToString(px,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " H1=",entryDirection>0?"GREEN":"RED",
+            " SL_PIPS=",DoubleToString(PowerfullStopLossPips,2),
+            " SL_price=",DoubleToString(sl,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " retcode=",rc);
+      powerPublishState(index,"D1_OPEN_EXTREME_ENTRY_SENT",
+         string(side>0?"BUY immediately at a new M5 Low below Open":"SELL immediately at a new M5 High above Open")+
          " | layer="+IntegerToString(total+1)+"/"+IntegerToString(cap)+
-         " | live M5 range="+DoubleToString(range/ts,1)+" ticks"+
-         " | confirm=correct-M5-colour + first 1-Bid-tick wick weakening",barTime);
+         " | H1 filter retained | no weakening/pullback confirmation",barTime);
    }else{
-      Print("D1 #95 LIVE-CANDLE ENTRY FAILED ",symbol,
-            " side=",(side>0?"BUY_RED_LOW":"SELL_GREEN_HIGH"),
+      Print("D1 OPEN-EXTREME ENTRY FAILED ",symbol,
+            " side=",(side>0?"BUY_AT_LIVE_M5_LOW":"SELL_AT_LIVE_M5_HIGH"),
             " retcode=",rc," desc=",powerTrade.ResultRetcodeDescription());
-      powerPublishState(index,"D1_95_LIVE_CANDLE_ENTRY_FAILED",
+      powerPublishState(index,"D1_OPEN_EXTREME_ENTRY_FAILED",
          powerTrade.ResultRetcodeDescription(),barTime);
    }
 }
-// === END LOCKED POWERFULL ENTRY RULES ===
+
 
 void powerClosedDealStats(string symbol,int &wins,int &losses,int &closed){
    int idx=-1;for(int k=0;k<ArraySize(powerSymbols);k++)if(powerSymbols[k]==symbol){idx=k;break;}
