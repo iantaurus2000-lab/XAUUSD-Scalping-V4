@@ -771,7 +771,7 @@ void powerDashboardOpenPositions(string symbol,color bull,color bear,color neutr
       powerDashboardLabel(RAYYAN_DASH_PREFIX+"OPEN"+IntegerToString(row),line,27,360+row*18,lineColor,8);
       row++;
    }
-   for(int j=row;j<4;j++)ObjectDelete(0,RAYYAN_DASH_PREFIX+"OPEN"+IntegerToString(j));
+   for(int j=row;j<5;j++)ObjectDelete(0,RAYYAN_DASH_PREFIX+"OPEN"+IntegerToString(j));
    if(row==0)powerDashboardLabel(RAYYAN_DASH_PREFIX+"OPEN0","No open POWERFULL positions",27,360,neutral,8);
 }
 void powerDashboardRefresh(bool force=false){
