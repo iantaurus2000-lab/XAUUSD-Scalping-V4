@@ -712,7 +712,7 @@ void powerDashboardStats(string symbol,int &entries,int &wins,int &losses,double
    uint nowMs=GetTickCount();
    if(symbolIndex>=0&&powerDashboardStatsCalcMs[symbolIndex]>0&&
       powerDashboardStatsSession[symbolIndex]==powerSessionStart&&
-      (uint)(nowMs-powerDashboardStatsCalcMs[symbolIndex])<1000){
+      (uint)(nowMs-powerDashboardStatsCalcMs[symbolIndex])<250){
       entries=powerDashboardStatsEntries[symbolIndex];wins=powerDashboardStatsWins[symbolIndex];
       losses=powerDashboardStatsLosses[symbolIndex];totalProfit=powerDashboardStatsProfit[symbolIndex];
       totalLoss=powerDashboardStatsLoss[symbolIndex];return;
@@ -755,7 +755,7 @@ string powerDashboardDirectionText(int direction){
 }
 void powerDashboardOpenPositions(string symbol,color bull,color bear,color neutral){
    int row=0;
-   for(int i=PositionsTotal()-1;i>=0&&row<4;i--){
+   for(int i=PositionsTotal()-1;i>=0&&row<5;i--){
       ulong ticket=PositionGetTicket(i);
       if(ticket==0)continue;
       if((long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
@@ -768,11 +768,11 @@ void powerDashboardOpenPositions(string symbol,color bull,color bear,color neutr
       string line=sideText+"  "+DoubleToString(volume,2)+"  @ "+DoubleToString(entry,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))+
                   "   "+(net>=0?"+":"")+DoubleToString(net,2);
       color lineColor=(net>0?bull:(net<0?bear:neutral));
-      powerDashboardLabel(RAYYAN_DASH_PREFIX+"OPEN"+IntegerToString(row),line,27,350+row*17,lineColor,8);
+      powerDashboardLabel(RAYYAN_DASH_PREFIX+"OPEN"+IntegerToString(row),line,27,360+row*18,lineColor,8);
       row++;
    }
    for(int j=row;j<4;j++)ObjectDelete(0,RAYYAN_DASH_PREFIX+"OPEN"+IntegerToString(j));
-   if(row==0)powerDashboardLabel(RAYYAN_DASH_PREFIX+"OPEN0","No open POWERFULL positions",27,350,neutral,8);
+   if(row==0)powerDashboardLabel(RAYYAN_DASH_PREFIX+"OPEN0","No open POWERFULL positions",27,360,neutral,8);
 }
 void powerDashboardRefresh(bool force=false){
    if(!StandaloneD1Mode)return;
@@ -800,50 +800,56 @@ void powerDashboardRefresh(bool force=false){
    color statusColor=(algoOn?bull:C'245,170,85');
 
    // Solid foreground panel masks all chart candles and objects behind the dashboard.
-   powerDashboardBox(RAYYAN_DASH_PREFIX+"BG",8,18,306,500,panel,C'83,101,125');
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"BG",8,18,306,570,panel,C'83,101,125');
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"TITLE","RAYYAN  /  POWERFULL",19,27,clrWhite,11);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"SYMBOL",symbol,19,47,C'175,195,220',8);
+   MqlTick dashTick; string quoteText="BID / ASK WAITING";
+   if(SymbolInfoTick(symbol,dashTick)&&dashTick.bid>0.0&&dashTick.ask>=dashTick.bid){
+      int quoteDigits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+      quoteText="BID  "+DoubleToString(dashTick.bid,quoteDigits)+"   ASK  "+DoubleToString(dashTick.ask,quoteDigits);
+   }
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"QUOTE",quoteText,19,61,C'105,205,165',8);
    powerDashboardBox(RAYYAN_DASH_PREFIX+"STATUSBOX",202,25,100,27,
       (algoOn?C'24,74,58':C'83,56,34'),statusColor);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"STATUS",(algoOn?"●  ALGO ON":"●  ALGO OFF"),211,32,statusColor,9);
 
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"TRENDHEAD","LIVE CANDLE DIRECTION",19,72,C'185,200,220',8);
-   powerDashboardBox(RAYYAN_DASH_PREFIX+"M15BOX",18,88,90,43,card,edge);
-   powerDashboardBox(RAYYAN_DASH_PREFIX+"H1BOX",114,88,90,43,card,edge);
-   powerDashboardBox(RAYYAN_DASH_PREFIX+"H4BOX",210,88,90,43,card,edge);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"M15","M15  "+powerDashboardDirectionText(m15),25,103,(m15>0?bull:(m15<0?bear:neutral)),8);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"H1","H1    "+powerDashboardDirectionText(h1),121,103,(h1>0?bull:(h1<0?bear:neutral)),8);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"H4","H4    "+powerDashboardDirectionText(h4),217,103,(h4>0?bull:(h4<0?bear:neutral)),8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"TRENDHEAD","LIVE CANDLE DIRECTION",19,82,C'185,200,220',8);
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"M15BOX",18,98,90,43,card,edge);
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"H1BOX",114,98,90,43,card,edge);
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"H4BOX",210,98,90,43,card,edge);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"M15","M15  "+powerDashboardDirectionText(m15),25,113,(m15>0?bull:(m15<0?bear:neutral)),8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"H1","H1    "+powerDashboardDirectionText(h1),121,113,(h1>0?bull:(h1<0?bear:neutral)),8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"H4","H4    "+powerDashboardDirectionText(h4),217,113,(h4>0?bull:(h4<0?bear:neutral)),8);
 
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"STATHEAD","SESSION PERFORMANCE",19,143,C'185,200,220',8);
-   powerDashboardBox(RAYYAN_DASH_PREFIX+"WINRATEBOX",18,158,138,51,card,edge);
-   powerDashboardBox(RAYYAN_DASH_PREFIX+"WINBOX",164,158,65,51,card,edge);
-   powerDashboardBox(RAYYAN_DASH_PREFIX+"LOSSBOX",237,158,63,51,card,edge);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINRATE","WINRATE",27,166,C'185,200,220',8);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINRATEVAL",DoubleToString(winrate,2)+"%",27,181,(closed>0?bull:neutral),14);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINS","WIN",174,166,C'185,200,220',8);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINSVAL",IntegerToString(wins),174,182,bull,13);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSSES","LOSS",246,166,C'185,200,220',8);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSSESVAL",IntegerToString(losses),246,182,bear,13);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"STATHEAD","SESSION PERFORMANCE",19,153,C'185,200,220',8);
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"WINRATEBOX",18,168,138,51,card,edge);
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"WINBOX",164,168,65,51,card,edge);
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"LOSSBOX",237,168,63,51,card,edge);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINRATE","WINRATE",27,176,C'185,200,220',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINRATEVAL",DoubleToString(winrate,2)+"%",27,191,(closed>0?bull:neutral),14);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINS","WIN",174,176,C'185,200,220',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"WINSVAL",IntegerToString(wins),174,192,bull,13);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSSES","LOSS",246,176,C'185,200,220',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSSESVAL",IntegerToString(losses),246,192,bear,13);
 
-   powerDashboardBox(RAYYAN_DASH_PREFIX+"ENTRYBOX",18,218,138,43,card,edge);
-   powerDashboardBox(RAYYAN_DASH_PREFIX+"CLOSEDBOX",164,218,136,43,card,edge);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"ENTRIES","TOTAL ENTRY",27,225,C'185,200,220',8);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"ENTRIESVAL",IntegerToString(entries),27,239,clrWhite,12);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"CLOSED","CLOSED TRADES",173,225,C'185,200,220',8);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"CLOSEDVAL",IntegerToString(closed),173,239,clrWhite,12);
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"ENTRYBOX",18,228,138,43,card,edge);
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"CLOSEDBOX",164,228,136,43,card,edge);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"ENTRIES","TOTAL ENTRY",27,235,C'185,200,220',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"ENTRIESVAL",IntegerToString(entries),27,249,clrWhite,12);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"CLOSED","CLOSED TRADES",173,235,C'185,200,220',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"CLOSEDVAL",IntegerToString(closed),173,249,clrWhite,12);
 
-   powerDashboardBox(RAYYAN_DASH_PREFIX+"PROFITBOX",18,270,138,43,C'24,61,51',C'52,125,94');
-   powerDashboardBox(RAYYAN_DASH_PREFIX+"LOSSVALBOX",164,270,136,43,C'69,39,45',C'143,69,78');
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PROFIT","TOTAL PROFIT",27,277,C'185,220,200',9);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PROFITVAL",DoubleToString(totalProfit,2),27,291,bull,13);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSS","TOTAL LOSS",173,277,C'230,190,195',9);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSSVAL",DoubleToString(totalLoss,2),173,291,bear,13);
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"PROFITBOX",18,280,138,43,C'24,61,51',C'52,125,94');
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"LOSSVALBOX",164,280,136,43,C'69,39,45',C'143,69,78');
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PROFIT","TOTAL PROFIT",27,287,C'185,220,200',9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PROFITVAL",DoubleToString(totalProfit,2),27,301,bull,13);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSS","TOTAL LOSS",173,287,C'230,190,195',9);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSSVAL",DoubleToString(totalLoss,2),173,301,bear,13);
 
    string btn=RAYYAN_DASH_PREFIX+"REFRESH";
    if(ObjectFind(0,btn)<0)ObjectCreate(0,btn,OBJ_BUTTON,0,0,0);
    ObjectSetInteger(0,btn,OBJPROP_CORNER,CORNER_LEFT_UPPER);
-   ObjectSetInteger(0,btn,OBJPROP_XDISTANCE,18);ObjectSetInteger(0,btn,OBJPROP_YDISTANCE,480);
+   ObjectSetInteger(0,btn,OBJPROP_XDISTANCE,18);ObjectSetInteger(0,btn,OBJPROP_YDISTANCE,540);
    ObjectSetInteger(0,btn,OBJPROP_XSIZE,282);ObjectSetInteger(0,btn,OBJPROP_YSIZE,20);
    ObjectSetInteger(0,btn,OBJPROP_ZORDER,10050);
    ObjectSetInteger(0,btn,OBJPROP_BACK,false);
@@ -854,7 +860,7 @@ void powerDashboardRefresh(bool force=false){
    ObjectSetInteger(0,btn,OBJPROP_FONTSIZE,8);
    ObjectSetInteger(0,btn,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,btn,OBJPROP_HIDDEN,true);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"OPENHEAD","RUNNING ENTRY  /  OPEN POSITIONS",19,326,C'185,200,220',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"OPENHEAD","RUNNING ENTRY  /  OPEN POSITIONS",19,336,C'185,200,220',8);
    powerDashboardOpenPositions(symbol,bull,bear,neutral);
 
    // Live floating P/L and layer count are read directly from MT5 positions.
@@ -886,16 +892,24 @@ void powerDashboardRefresh(bool force=false){
    ObjectSetInteger(0,layerName,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,layerName,OBJPROP_HIDDEN,true);
 
-   powerDashboardBox(RAYYAN_DASH_PREFIX+"FLOATBOX",18,430,282,42,
+   powerDashboardBox(RAYYAN_DASH_PREFIX+"FLOATBOX",18,455,282,42,
       (floatingNet>=0?C'24,61,51':C'69,39,45'),(floatingNet>=0?C'52,125,94':C'143,69,78'));
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"FLOATHEAD","LIVE FLOAT P/L (MT5)",27,433,C'220,225,235',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"FLOATHEAD","LIVE FLOAT P/L (MT5)",27,458,C'220,225,235',8);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"FLOATVALUE",
-      (floatingNet>=0?"+":"")+DoubleToString(floatingNet,2),27,445,
+      (floatingNet>=0?"+":"")+DoubleToString(floatingNet,2),27,470,
       (floatingNet>0?bull:(floatingNet<0?bear:neutral)),17);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PEAKHEAD","SUM OF TICKET PEAKS",182,433,C'220,225,235',8);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"PEAKHEAD","SUM OF TICKET PEAKS",182,458,C'220,225,235',8);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"PEAKVALUE",
-      (peakFloatingNet>=0?"+":"")+DoubleToString(peakFloatingNet,2),182,447,
+      (peakFloatingNet>=0?"+":"")+DoubleToString(peakFloatingNet,2),182,472,
       (peakFloatingNet>0?bull:(peakFloatingNet<0?bear:neutral)),13);
+
+   datetime dashBar=iTime(symbol,PERIOD_M5,0);
+   int dashPeriod=PeriodSeconds(PERIOD_M5);
+   datetime dashNow=TimeTradeServer(); if(dashNow<=0)dashNow=TimeCurrent();
+   int dashRemain=(dashBar>0&&dashPeriod>0?(int)MathMax(0,dashPeriod-(dashNow-dashBar)):0);
+   string dashClock=StringFormat("%02d:%02d",dashRemain/60,dashRemain%60);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"M5RING","○",252,496,C'95,185,220',32);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"M5CLOCK",dashClock,260,510,clrWhite,8);
    ChartRedraw(0);
 }
 void OnChartEvent(const int id,const long &lparam,const double &dparam,const string &sparam){
@@ -961,6 +975,7 @@ int OnInit(){
    ChartSetInteger(0,CHART_COLOR_CANDLE_BEAR,C'239,68,68');
    ChartSetInteger(0,CHART_COLOR_CHART_UP,C'34,197,94');
    ChartSetInteger(0,CHART_COLOR_CHART_DOWN,C'239,68,68');
+   ChartSetInteger(0,CHART_FOREGROUND,false);
    ChartSetInteger(0,CHART_AUTOSCROLL,true);
    ChartSetInteger(0,CHART_SHIFT,false);
    ChartSetInteger(0,CHART_SCALE,4);
