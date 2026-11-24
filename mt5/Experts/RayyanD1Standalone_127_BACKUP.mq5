@@ -3905,3 +3905,5 @@ void managePowerfullSymbol(int index){
       powerPublishState(index,"ENTRY_ATTEMPTED",stateDetail+"; inspect broker geometry, permissions and return code",barTime);
    }
 }
+
+// Build trigger: compile the Open-to-live-extreme BACKUP module on RAYYAN.
