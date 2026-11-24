@@ -7,6 +7,7 @@ on:
     paths:
       - 'mt5/Experts/Rayyan4GatewayEA.mq5'
       - 'mt5/Experts/RayyanD1Standalone.mq5'
+      - 'mt5/Experts/RayyanD1Standalone_127_BACKUP.mq5'
       - 'gateway/server.py'
       - '.github/workflows/rayyan-d1-e1-ea-build.yml'
 jobs:
