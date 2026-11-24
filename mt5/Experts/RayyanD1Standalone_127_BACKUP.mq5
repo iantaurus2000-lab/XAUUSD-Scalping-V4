@@ -713,7 +713,7 @@ void powerDashboardStats(string symbol,int &entries,int &wins,int &losses,double
    uint nowMs=GetTickCount();
    if(symbolIndex>=0&&powerDashboardStatsCalcMs[symbolIndex]>0&&
       powerDashboardStatsSession[symbolIndex]==powerSessionStart&&
-      (uint)(nowMs-powerDashboardStatsCalcMs[symbolIndex])<250){
+      (uint)(nowMs-powerDashboardStatsCalcMs[symbolIndex])<100){
       entries=powerDashboardStatsEntries[symbolIndex];wins=powerDashboardStatsWins[symbolIndex];
       losses=powerDashboardStatsLosses[symbolIndex];totalProfit=powerDashboardStatsProfit[symbolIndex];
       totalLoss=powerDashboardStatsLoss[symbolIndex];return;
@@ -778,7 +778,7 @@ void powerDashboardOpenPositions(string symbol,color bull,color bear,color neutr
 void powerDashboardRefresh(bool force=false){
    if(!StandaloneD1Mode)return;
    uint now=GetTickCount();
-   if(!force&&powerDashboardLastMs>0&&(uint)(now-powerDashboardLastMs)<50)return;
+   if(!force&&powerDashboardLastMs>0&&(uint)(now-powerDashboardLastMs)<25)return;
    powerDashboardLastMs=now;
    string symbol=(StringLen(StandaloneSymbol)>0?StandaloneSymbol:_Symbol);
    bool algoOn=powerAlgoTradingEnabled();
@@ -797,19 +797,21 @@ void powerDashboardRefresh(bool force=false){
    string h1Text=(h1>0?"BULLISH":(h1<0?"BEARISH":"DOJI"));
    string h4Text=(h4>0?"BULLISH":(h4<0?"BEARISH":"DOJI"));
    color bull=C'35,190,115',bear=C'235,82,82',neutral=C'165,175,190';
-   color panel=C'20,27,39',card=C'31,42,58',edge=C'65,82,105';
+   color panel=C'10,16,27',card=C'25,35,50',edge=C'65,82,105';
    color statusColor=(algoOn?bull:C'245,170,85');
 
    // Solid foreground panel masks all chart candles and objects behind the dashboard.
    powerDashboardBox(RAYYAN_DASH_PREFIX+"BG",8,18,306,570,panel,C'83,101,125');
+   ObjectSetInteger(0,RAYYAN_DASH_PREFIX+"BG",OBJPROP_BACK,false);
+   ObjectSetInteger(0,RAYYAN_DASH_PREFIX+"BG",OBJPROP_ZORDER,0);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"TITLE","RAYYAN  /  POWERFULL",19,27,clrWhite,11);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"SYMBOL",symbol,19,47,C'175,195,220',8);
-   MqlTick dashTick; string quoteText="BID / ASK WAITING";
-   if(SymbolInfoTick(symbol,dashTick)&&dashTick.bid>0.0&&dashTick.ask>=dashTick.bid){
-      int quoteDigits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
-      quoteText="BID  "+DoubleToString(dashTick.bid,quoteDigits)+"   ASK  "+DoubleToString(dashTick.ask,quoteDigits);
-   }
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"QUOTE",quoteText,19,61,C'105,205,165',8);
+   MqlTick dashTick; string quoteText="PRICE WAITING";
+   int quoteDigits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+   color quoteColor=(m15>0?bull:(m15<0?bear:neutral));
+   if(SymbolInfoTick(symbol,dashTick)&&dashTick.bid>0.0&&dashTick.ask>=dashTick.bid)
+      quoteText=DoubleToString(dashTick.bid,quoteDigits);
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"QUOTE",quoteText,19,59,quoteColor,12);
    powerDashboardBox(RAYYAN_DASH_PREFIX+"STATUSBOX",202,25,100,27,
       (algoOn?C'24,74,58':C'83,56,34'),statusColor);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"STATUS",(algoOn?"●  ALGO ON":"●  ALGO OFF"),211,32,statusColor,9);
@@ -847,20 +849,7 @@ void powerDashboardRefresh(bool force=false){
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSS","TOTAL LOSS",173,287,C'230,190,195',9);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"LOSSVAL",DoubleToString(totalLoss,2),173,301,bear,13);
 
-   string btn=RAYYAN_DASH_PREFIX+"REFRESH";
-   if(ObjectFind(0,btn)<0)ObjectCreate(0,btn,OBJ_BUTTON,0,0,0);
-   ObjectSetInteger(0,btn,OBJPROP_CORNER,CORNER_LEFT_UPPER);
-   ObjectSetInteger(0,btn,OBJPROP_XDISTANCE,18);ObjectSetInteger(0,btn,OBJPROP_YDISTANCE,540);
-   ObjectSetInteger(0,btn,OBJPROP_XSIZE,282);ObjectSetInteger(0,btn,OBJPROP_YSIZE,20);
-   ObjectSetInteger(0,btn,OBJPROP_ZORDER,10050);
-   ObjectSetInteger(0,btn,OBJPROP_BACK,false);
-   ObjectSetString(0,btn,OBJPROP_TEXT,"REFRESH DATA");
-   ObjectSetInteger(0,btn,OBJPROP_BGCOLOR,C'52,76,105');
-   ObjectSetInteger(0,btn,OBJPROP_COLOR,clrWhite);
-   ObjectSetInteger(0,btn,OBJPROP_BORDER_COLOR,C'100,125,155');
-   ObjectSetInteger(0,btn,OBJPROP_FONTSIZE,8);
-   ObjectSetInteger(0,btn,OBJPROP_SELECTABLE,false);
-   ObjectSetInteger(0,btn,OBJPROP_HIDDEN,true);
+   ObjectDelete(0,RAYYAN_DASH_PREFIX+"REFRESH");
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"OPENHEAD","RUNNING ENTRY  /  OPEN POSITIONS",19,336,C'185,200,220',8);
    powerDashboardOpenPositions(symbol,bull,bear,neutral);
 
@@ -904,22 +893,10 @@ void powerDashboardRefresh(bool force=false){
       (peakFloatingNet>=0?"+":"")+DoubleToString(peakFloatingNet,2),182,472,
       (peakFloatingNet>0?bull:(peakFloatingNet<0?bear:neutral)),13);
 
-   datetime dashBar=iTime(symbol,PERIOD_M5,0);
-   int dashPeriod=PeriodSeconds(PERIOD_M5);
-   datetime dashNow=TimeTradeServer(); if(dashNow<=0)dashNow=TimeCurrent();
-   int dashRemain=(dashBar>0&&dashPeriod>0?(int)MathMax(0,dashPeriod-(dashNow-dashBar)):0);
-   string dashClock=StringFormat("%02d:%02d",dashRemain/60,dashRemain%60);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"M5RING","○",252,496,C'95,185,220',32);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"M5CLOCK",dashClock,260,510,clrWhite,8);
+   ObjectDelete(0,RAYYAN_DASH_PREFIX+"M5RING");
+   ObjectDelete(0,RAYYAN_DASH_PREFIX+"M5CLOCK");
    ChartRedraw(0);
 }
-void OnChartEvent(const int id,const long &lparam,const double &dparam,const string &sparam){
-   if(id==CHARTEVENT_OBJECT_CLICK&&sparam==RAYYAN_DASH_PREFIX+"REFRESH"){
-      ObjectSetInteger(0,sparam,OBJPROP_STATE,false);
-      powerDashboardRefresh(true);
-   }
-}
-
 int OnInit(){
    // Remove legacy chart-attached EMA/MA indicators and old Rayyan EMA objects.
    // The EA below is the sole owner of the two colored EMA curves.
@@ -981,7 +958,7 @@ int OnInit(){
    ChartSetInteger(0,CHART_SHIFT,false);
    ChartSetInteger(0,CHART_SCALE,4);
    applyAll();
-   if(!EventSetMillisecondTimer(100)) EventSetTimer(MathMax(1,PollSeconds));
+   if(!EventSetMillisecondTimer(50)) EventSetTimer(MathMax(1,PollSeconds));
    if(StandaloneD1Mode) Print("RAYYAN D1 STANDALONE READY: no Gateway/WebRequest calls will be made.");
    else Print("RAYYAN4 START Gateway=",GatewayUrl," Symbol=",AllowedSymbol,
          " trade queue=/next indicator queue=/indicator_next");
@@ -991,6 +968,9 @@ int OnInit(){
 void OnDeinit(const int r){
    EventKillTimer();
    ObjectDelete(0,"RAYYAN_MT5_BAR_TIMER");
+   ObjectDelete(0,RAYYAN_DASH_PREFIX+"M5RING");
+   ObjectDelete(0,RAYYAN_DASH_PREFIX+"M5CLOCK");
+   ObjectDelete(0,RAYYAN_DASH_PREFIX+"REFRESH");
    ObjectDelete(0,"RAYYAN8_SR_RESISTANCE");
    ObjectDelete(0,"RAYYAN8_SR_SUPPORT");
    ObjectDelete(0,"RAYYAN8_FIBO");
@@ -1014,7 +994,6 @@ void OnTick(){
 
 void OnTimer(){
    if(StandaloneD1Mode){
-      updateChartCountdown(); // Display-only candle timer; never gates trade management.
       updateHarmonicOverlay(); updateFibo(); powerSessionRefresh();
       powerDashboardRefresh(false); managePowerfullAllMarkets(false); return;
    }
@@ -1022,8 +1001,6 @@ void OnTimer(){
    // The publisher throttles requests and sends only symbols whose tick changed.
    uint nowMs=GetTickCount();
    publishMarketQuotes();
-   // Countdown is display-only: refresh independently from trade/gateway housekeeping.
-   updateChartCountdown();
    // Legacy gateway/chart work still runs only at PollSeconds cadence.
    uint legacyInterval=(uint)MathMax(1,PollSeconds)*1000;
    if(powerLastLegacyTimerMs==0 || (uint)(nowMs-powerLastLegacyTimerMs)>=legacyInterval){
