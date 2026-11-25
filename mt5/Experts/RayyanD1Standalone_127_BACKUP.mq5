@@ -778,7 +778,8 @@ void powerDashboardOpenPositions(string symbol,color bull,color bear,color neutr
 void powerDashboardRefresh(bool force=false){
    if(!StandaloneD1Mode)return;
    uint now=GetTickCount();
-   if(!force&&powerDashboardLastMs>0&&(uint)(now-powerDashboardLastMs)<25)return;
+   // Dashboard is presentation-only. Refresh at 250 ms, never on the trade tick path.
+   if(!force&&powerDashboardLastMs>0&&(uint)(now-powerDashboardLastMs)<250)return;
    powerDashboardLastMs=now;
    string symbol=(StringLen(StandaloneSymbol)>0?StandaloneSymbol:_Symbol);
    bool algoOn=powerAlgoTradingEnabled();
@@ -986,16 +987,21 @@ void OnDeinit(const int r){
    }
 }
 void OnTick(){
-   if(StandaloneD1Mode){powerSessionRefresh();powerDashboardRefresh(false);}
+   // PRIORITY: process the live MT5 quote and POWERFULL entry/position path first.
+   // Dashboard drawing and session/report housekeeping are intentionally excluded.
    if(!StandaloneD1Mode) manageTP2RetraceProtection(); // Standalone mode manages D1 positions only.
-   // Opportunistic fast path; no gateway config request is issued from this event.
    managePowerfullAllMarkets(false);
 }
 
 void OnTimer(){
    if(StandaloneD1Mode){
-      updateHarmonicOverlay(); updateFibo(); powerSessionRefresh();
-      powerDashboardRefresh(false); managePowerfullAllMarkets(false); return;
+      // Keep trading checks ahead of all chart/panel/report housekeeping.
+      managePowerfullAllMarkets(false);
+      powerSessionRefresh();
+      powerDashboardRefresh(false);
+      updateHarmonicOverlay();
+      updateFibo();
+      return;
    }
    // Fast quote path: publish changed MT5 ticks without waiting for the OHLC batch.
    // The publisher throttles requests and sends only symbols whose tick changed.
