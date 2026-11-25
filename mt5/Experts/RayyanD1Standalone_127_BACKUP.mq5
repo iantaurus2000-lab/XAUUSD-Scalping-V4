@@ -2947,17 +2947,18 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    // There is deliberately NO weakening, pullback, >0.0 recovery, or 2x-tick wait.
    // The last successfully filled extreme is persistent across M5 candle changes,
    // so the next layer requires a strictly newer extreme.
-   double extremeTolerance=ts*0.5;
+   // No Bid-to-extreme proximity gate: fresh live M5 extreme can trigger a market entry
+   // even when Bid has moved away from that Low/High.
    bool buyFresh=(powerMomentumLastBuyLow[index]<=0.0||
                   candleLow<powerMomentumLastBuyLow[index]);
    bool sellFresh=(powerMomentumLastSellHigh[index]<=0.0||
                    candleHigh>powerMomentumLastSellHigh[index]);
-   bool buyAtLiveLow=(candleLow<candleOpen&&tick.bid<=candleLow+extremeTolerance);
-   bool sellAtLiveHigh=(candleHigh>candleOpen&&tick.bid>=candleHigh-extremeTolerance);
    // LOCKED USER RULE: BUY only on live M5 RED + H1 GREEN.
    // SELL only on live M5 GREEN + H1 RED. Both live candle colours are mandatory.
-   bool buyReady=(entryM5Direction<0&&entryDirection>0&&buyFresh&&buyAtLiveLow&&buyN<cap);
-   bool sellReady=(entryM5Direction>0&&entryDirection<0&&sellFresh&&sellAtLiveHigh&&sellN<cap);
+   bool buyReady=(entryM5Direction<0&&entryDirection>0&&buyFresh&&
+                  candleLow<candleOpen&&buyN<cap);
+   bool sellReady=(entryM5Direction>0&&entryDirection<0&&sellFresh&&
+                   candleHigh>candleOpen&&sellN<cap);
 
    // Keep a single basket direction; never add an opposite-side hedge.
    if(buyN>0)sellReady=false;
