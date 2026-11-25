@@ -3556,25 +3556,23 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       bool m15Break=(isBuy?m15BreakBuy:m15BreakSell);
       double lossProgress=(hard>0.0?MathMax(0.0,adverse)/hard:0.0);
 
-      // PEAK PROFIT GUARD: protect every position, including TREND_HOLD.
-      // A fresh favorable extreme updates peakNet above before this test, so
-      // renewed trend strength automatically resets the drawdown calculation.
-      // Exit only after >=15% net-profit giveback AND live/structural weakening.
-      double peakGiveback=(peakNet>0.0?MathMax(0.0,(peakNet-currentNet)/peakNet):0.0);
-      // Profit protection must also respect TREND_HOLD: do not close while
-      // H1/H4 still support the position or M15 is neutral/doji.
-      bool trendWeakening=m5Break; // The agreed exit confirmation is an M5 structural break; H1/H4/M15 cannot veto it.
-      bool peakProfitGuard=(peakNet>0.0&&peakGiveback>=0.15&&trendWeakening);
-      if(peakProfitGuard){
-         Print("POWERFULL PEAK PROFIT GUARD symbol=",symbol," ticket=",ticket,
-            " peak_net=",DoubleToString(peakNet,2),
-            " current_net=",DoubleToString(currentNet,2),
-            " giveback=",DoubleToString(peakGiveback*100.0,1),"% ",
-            " m5_structure=",m5Structure," m15_structure=",m15Structure,
-            " m5_break=",m5Break," m15_break=",m15Break,
-            " action=CLOSE_PROTECT_REMAINING_PROFIT");
-         if(powerClosePosition(ticket,"PEAK_PROFIT_GUARD_15PCT_TREND_WEAKENING"))continue;
-         Print("POWERFULL PEAK PROFIT GUARD CLOSE FAILED symbol=",symbol," ticket=",ticket);
+      // TREND_HOLD dynamic trailing TP: close after a 25% retracement
+      // from the best favorable executable price excursion since entry.
+      // BUY tracks the highest Bid; SELL tracks the lowest Ask.
+      // This profit exit does not wait for an M5 structural break.
+      double favorableDistance=(isBuy?peakPrice-entry:entry-peakPrice);
+      double retracementFromPeak=(isBuy?peakPrice-executable:executable-peakPrice);
+      bool trendHoldTrailingTP=(mode==POWERFULL_MODE_TREND_HOLD&&
+         favorableDistance>0.0&&retracementFromPeak>=favorableDistance*0.25);
+      if(trendHoldTrailingTP){
+         Print("POWERFULL TREND_HOLD TRAILING TP symbol=",symbol," ticket=",ticket,
+            " peak_price=",DoubleToString(peakPrice,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " executable_price=",DoubleToString(executable,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " favorable_distance=",DoubleToString(favorableDistance,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " retracement=",DoubleToString(retracementFromPeak/favorableDistance*100.0,1),"% ",
+            " threshold=25.0% action=CLOSE_ORDER");
+         if(powerClosePosition(ticket,"TREND_HOLD_TRAILING_TP_25PCT"))continue;
+         Print("POWERFULL TREND_HOLD TRAILING TP CLOSE FAILED symbol=",symbol," ticket=",ticket);
       }
 
       // The loss zone is measured from the best post-entry candle extreme to SL,
