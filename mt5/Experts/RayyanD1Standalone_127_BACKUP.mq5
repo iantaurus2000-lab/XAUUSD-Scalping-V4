@@ -2886,9 +2886,15 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    int entryM15=powerConfirmedSwingStructure(symbol,PERIOD_M15);
    int entryH1Swing=powerConfirmedSwingStructure(symbol,PERIOD_H1);
    int entryDirection=powerLiveCandleDirection(symbol,PERIOD_H1);
+   int entryM5Direction=powerLiveCandleDirection(symbol,PERIOD_M5);
    if(entryDirection==0){
       powerPublishState(index,"D1_WAIT_H1_COLOUR",
-         "Entry locked: wait for H1 GREEN for BUY or H1 RED for SELL; H1 doji cannot enter",barTime);
+         "Entry locked: BUY requires H1 GREEN; SELL requires H1 RED; H1 doji cannot enter",barTime);
+      return;
+   }
+   if(entryM5Direction==0){
+      powerPublishState(index,"D1_WAIT_M5_COLOUR",
+         "Entry locked: BUY requires M5 RED; SELL requires M5 GREEN; M5 doji cannot enter",barTime);
       return;
    }
 
@@ -2948,15 +2954,17 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
                    candleHigh>powerMomentumLastSellHigh[index]);
    bool buyAtLiveLow=(candleLow<candleOpen&&tick.bid<=candleLow+extremeTolerance);
    bool sellAtLiveHigh=(candleHigh>candleOpen&&tick.bid>=candleHigh-extremeTolerance);
-   bool buyReady=(entryDirection>0&&buyFresh&&buyAtLiveLow&&buyN<cap);
-   bool sellReady=(entryDirection<0&&sellFresh&&sellAtLiveHigh&&sellN<cap);
+   // LOCKED USER RULE: BUY only on live M5 RED + H1 GREEN.
+   // SELL only on live M5 GREEN + H1 RED. Both live candle colours are mandatory.
+   bool buyReady=(entryM5Direction<0&&entryDirection>0&&buyFresh&&buyAtLiveLow&&buyN<cap);
+   bool sellReady=(entryM5Direction>0&&entryDirection<0&&sellFresh&&sellAtLiveHigh&&sellN<cap);
 
    // Keep a single basket direction; never add an opposite-side hedge.
    if(buyN>0)sellReady=false;
    if(sellN>0)buyReady=false;
    if(!buyReady&&!sellReady){
       powerPublishState(index,"D1_OPEN_EXTREME_WAIT",
-         "Waiting for a NEW live M5 extreme from Open | BUY=Bid at fresh Low below Open with H1 GREEN | SELL=Bid at fresh High above Open with H1 RED"+
+         "Waiting for a NEW live M5 extreme from Open | BUY=M5 RED + H1 GREEN at fresh Low | SELL=M5 GREEN + H1 RED at fresh High"+
          " | last BUY Low="+DoubleToString(powerMomentumLastBuyLow[index],(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))+
          " | last SELL High="+DoubleToString(powerMomentumLastSellHigh[index],(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))+
          " | layers="+IntegerToString(total)+"/"+IntegerToString(cap)+
@@ -3091,6 +3099,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
             " open=",DoubleToString(candleOpen,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
             " extreme=",DoubleToString(side>0?candleLow:candleHigh,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
             " execution=",DoubleToString(px,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
+            " M5=",entryM5Direction>0?"GREEN":"RED",
             " H1=",entryDirection>0?"GREEN":"RED",
             " SL_PIPS=",DoubleToString(PowerfullStopLossPips,2),
             " SL_price=",DoubleToString(sl,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
@@ -3098,7 +3107,9 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       powerPublishState(index,"D1_OPEN_EXTREME_ENTRY_SENT",
          string(side>0?"BUY immediately at a new M5 Low below Open":"SELL immediately at a new M5 High above Open")+
          " | layer="+IntegerToString(total+1)+"/"+IntegerToString(cap)+
-         " | H1 filter retained | no weakening/pullback confirmation",barTime);
+         " | M5 colour="+(entryM5Direction>0?"GREEN":"RED")+
+         " | H1 filter="+(entryDirection>0?"GREEN":"RED")+
+         " | no weakening/pullback confirmation",barTime);
    }else{
       Print("D1 OPEN-EXTREME ENTRY FAILED ",symbol,
             " side=",(side>0?"BUY_AT_LIVE_M5_LOW":"SELL_AT_LIVE_M5_HIGH"),
