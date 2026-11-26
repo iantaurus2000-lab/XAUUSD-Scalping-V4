@@ -3304,12 +3304,25 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
       double slBoundary=(brokerSL>0.0?brokerSL:entry);
       bool m5Break=powerA6StructureBreak(symbol,PERIOD_M5,isBuy,12);
 
-      // Restore TREND_HOLD only after both closed M5 and M15 swing structures
-      // confirm the original position direction. The rescue state machine below
-      // remains unchanged whenever this independent recovery confirmation is absent.
+      // Independent recovery gate: price must be outside the existing
+      // peak-to-SL loss zone, projected net must be positive, and closed M5
+      // swing structure must confirm the original position direction.
+      // M15 is deliberately not required. Rescue phase mechanics below remain
+      // unchanged unless this complete recovery gate is satisfied.
+      string peakPriceKey="PW_PEAK_"+suffix;
+      double peakPrice=(GlobalVariableCheck(peakPriceKey)?GlobalVariableGet(peakPriceKey):entry);
+      double recoveryTolerance=tickSize*0.1;
+      bool recoveryLossZone=(isBuy?
+         (executable<peakPrice-recoveryTolerance&&executable>slBoundary+recoveryTolerance):
+         (executable>peakPrice+recoveryTolerance&&executable<slBoundary-recoveryTolerance));
+      bool outsideRecoveryLossZone=!recoveryLossZone;
+      double rescueNet=powerProjectedNet(ticket);
       int recoveryM5=powerConfirmedSwingStructure(symbol,PERIOD_M5);
-      int recoveryM15=powerConfirmedSwingStructure(symbol,PERIOD_M15);
-      if(recoveryM5==side&&recoveryM15==side){
+      string wasNegativeKey="PW_LR_WAS_NEG_"+suffix;
+      if(rescueNet<=0.0&&!GlobalVariableCheck(wasNegativeKey))
+         GlobalVariableSet(wasNegativeKey,1.0);
+
+      if(outsideRecoveryLossZone&&rescueNet>0.0&&recoveryM5==side){
          GlobalVariableSet(modeKey,(double)POWERFULL_MODE_TREND_HOLD);
          string rescueKeys[7]={"PW_LR_PHASE_","PW_LR_ADVERSE_","PW_LR_RB1_",
             "PW_LR_PULLBACK_","PW_LR_RB2_","PW_LR_ADVERSE_BREAK_","PW_LR_WAS_NEG_"};
@@ -3318,30 +3331,11 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
             if(GlobalVariableCheck(rescueKey))GlobalVariableDel(rescueKey);
          }
          Print("POWERFULL MODE RECOVERY symbol=",symbol," ticket=",ticket,
-            " mode=TREND_HOLD reason=M5_M15_STRUCTURE_CONFIRMED",
-            " m5_structure=",recoveryM5," m15_structure=",recoveryM15,
+            " mode=TREND_HOLD reason=OUTSIDE_LOSS_ZONE_AND_POSITIVE_NET_AND_M5_CONFIRMED",
+            " outside_loss_zone=true projected_net=",DoubleToString(rescueNet,2),
+            " m5_structure=",recoveryM5," m15_required=false",
             " peak_price_preserved=true peak_net_preserved=true");
          continue;
-      }
-
-      // Once a LOSS_RESCUE ticket has actually entered negative net P/L,
-      // the first tick that returns its projected net P/L above zero is an
-      // unconditional recovery exit. Do not wait for M5 structure or rebound 2.
-      // The flag persists across ticks/restarts and is removed after full close.
-      double rescueNet=powerProjectedNet(ticket);
-      string wasNegativeKey="PW_LR_WAS_NEG_"+suffix;
-      if(rescueNet<=0.0){
-         if(!GlobalVariableCheck(wasNegativeKey))GlobalVariableSet(wasNegativeKey,1.0);
-      }else if(GlobalVariableCheck(wasNegativeKey)&&GlobalVariableGet(wasNegativeKey)>=0.5){
-         Print("POWERFULL LOSS_RESCUE RECOVERED TO POSITIVE NET symbol=",symbol,
-            " ticket=",ticket," projected_net=",DoubleToString(rescueNet,2),
-            " action=CLOSE_IMMEDIATELY_WITHOUT_M5_CONFIRMATION");
-         if(powerClosePosition(ticket,"LOSS_RESCUE_RECOVERED_TO_POSITIVE_NET")){
-            closedAny=true;closedCount++;continue;
-         }
-         Print("POWERFULL LOSS_RESCUE POSITIVE-NET CLOSE FAILED symbol=",symbol,
-            " ticket=",ticket," projected_net=",DoubleToString(rescueNet,2),
-            " action=RETRY_ON_NEXT_TICK");
       }
 
       string phaseKey="PW_LR_PHASE_"+suffix;
