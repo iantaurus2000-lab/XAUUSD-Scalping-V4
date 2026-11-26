@@ -3579,23 +3579,37 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       bool m15Break=(isBuy?m15BreakBuy:m15BreakSell);
       double lossProgress=(hard>0.0?MathMax(0.0,adverse)/hard:0.0);
 
-      // TREND_HOLD dynamic trailing TP: close after a 25% retracement
-      // from the best favorable executable price excursion since entry.
-      // BUY tracks the highest Bid; SELL tracks the lowest Ask.
-      // This profit exit does not wait for an M5 structural break.
-      double favorableDistance=(isBuy?peakPrice-entry:entry-peakPrice);
-      double retracementFromPeak=(isBuy?peakPrice-executable:executable-peakPrice);
-      bool trendHoldTrailingTP=(mode==POWERFULL_MODE_TREND_HOLD&&
-         favorableDistance>0.0&&retracementFromPeak>=favorableDistance*0.25);
-      if(trendHoldTrailingTP){
-         Print("POWERFULL TREND_HOLD TRAILING TP symbol=",symbol," ticket=",ticket,
-            " peak_price=",DoubleToString(peakPrice,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
-            " executable_price=",DoubleToString(executable,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
-            " favorable_distance=",DoubleToString(favorableDistance,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
-            " retracement=",DoubleToString(retracementFromPeak/favorableDistance*100.0,1),"% ",
-            " threshold=25.0% action=CLOSE_ORDER");
-         if(powerClosePosition(ticket,"TREND_HOLD_TRAILING_TP_25PCT"))continue;
-         Print("POWERFULL TREND_HOLD TRAILING TP CLOSE FAILED symbol=",symbol," ticket=",ticket);
+      // NET PROFIT LOCK: use projected net profit, not price-distance retracement.
+      // Below $20 peak net, keep a 25% net-profit pullback trail (75% floor).
+      // At higher peaks, step the protected percentage upward.
+      double lockPercent=0.0;
+      if(peakNet>0.0&&peakNet<50.0) lockPercent=0.75;
+      else if(peakNet>=50.0&&peakNet<100.0) lockPercent=0.80;
+      else if(peakNet>=100.0&&peakNet<200.0) lockPercent=0.85;
+      else if(peakNet>=200.0&&peakNet<500.0) lockPercent=0.88;
+      else if(peakNet>=500.0) lockPercent=0.90;
+      double calculatedFloor=(lockPercent>0.0?peakNet*lockPercent:0.0);
+      string profitFloorKey="PW_PROFIT_FLOOR_"+suffix;
+      double protectedFloor=(GlobalVariableCheck(profitFloorKey)?
+         GlobalVariableGet(profitFloorKey):0.0);
+      if(calculatedFloor>protectedFloor){
+         protectedFloor=calculatedFloor;
+         GlobalVariableSet(profitFloorKey,protectedFloor);
+      }
+      bool trendHoldNetProfitLock=(mode==POWERFULL_MODE_TREND_HOLD&&
+         protectedFloor>0.0&&currentNet<=protectedFloor);
+      if(trendHoldNetProfitLock){
+         string closeReason=(peakNet<20.0?
+            "TREND_HOLD_NET_TRAILING_25PCT":"TREND_HOLD_NET_PROFIT_LOCK");
+         Print("POWERFULL TREND_HOLD NET PROFIT LOCK symbol=",symbol," ticket=",ticket,
+            " current_net=",DoubleToString(currentNet,2),
+            " peak_net=",DoubleToString(peakNet,2),
+            " protected_floor=",DoubleToString(protectedFloor,2),
+            " lock_percent=",DoubleToString(lockPercent*100.0,1),
+            " action=CLOSE_ORDER");
+         if(powerClosePosition(ticket,closeReason))continue;
+         Print("POWERFULL TREND_HOLD NET PROFIT LOCK CLOSE FAILED symbol=",symbol,
+            " ticket=",ticket," floor=",DoubleToString(protectedFloor,2));
       }
 
       // The loss zone is measured from the best post-entry candle extreme to SL,
@@ -3642,67 +3656,12 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
 }
 
 void powerUpdateTrailingTPChart(){
+   // The former price-based TP line is no longer valid because exits now
+   // use projected net profit. Remove stale legacy price-level drawings.
    string prefix="RAYYAN_TREND_TP25_";
-   // Remove lines for tickets that have closed, changed symbol, or are in LOSS_RESCUE.
    for(int i=ObjectsTotal(0,0,-1)-1;i>=0;i--){
       string objectName=ObjectName(0,i,0,-1);
-      if(StringFind(objectName,prefix)!=0)continue;
-      string tail=StringSubstr(objectName,StringLen(prefix));
-      int textPos=StringFind(tail,"_TEXT");
-      if(textPos>=0)tail=StringSubstr(tail,0,textPos);
-      ulong ticket=(ulong)StringToInteger(tail);
-      bool keep=false;
-      if(ticket>0&&PositionSelectByTicket(ticket)&&
-         PositionGetString(POSITION_SYMBOL)==_Symbol&&
-         (long)PositionGetInteger(POSITION_MAGIC)==POWERFULL_MAGIC){
-         string modeKey="PW_HMODE_"+IntegerToString((long)ticket);
-         keep=(GlobalVariableCheck(modeKey)&&
-               (int)GlobalVariableGet(modeKey)==POWERFULL_MODE_TREND_HOLD);
-      }
-      if(!keep)ObjectDelete(0,objectName);
-   }
-
-   for(int i=PositionsTotal()-1;i>=0;i--){
-      ulong ticket=PositionGetTicket(i);
-      if(ticket==0||!PositionSelectByTicket(ticket)||
-         PositionGetString(POSITION_SYMBOL)!=_Symbol||
-         (long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
-      string suffix=IntegerToString((long)ticket);
-      string modeKey="PW_HMODE_"+suffix,peakKey="PW_PEAK_"+suffix;
-      if(!GlobalVariableCheck(modeKey)||
-         (int)GlobalVariableGet(modeKey)!=POWERFULL_MODE_TREND_HOLD||
-         !GlobalVariableCheck(peakKey))continue;
-
-      bool isBuy=((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
-      double entry=PositionGetDouble(POSITION_PRICE_OPEN);
-      double peak=GlobalVariableGet(peakKey);
-      double favorable=(isBuy?peak-entry:entry-peak);
-      if(favorable<=0.0)continue;
-      double tpLine=(isBuy?peak-favorable*0.25:peak+favorable*0.25);
-      int digits=(int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS);
-      string lineName=prefix+suffix;
-      string textName=lineName+"_TEXT";
-      if(ObjectFind(0,lineName)<0)ObjectCreate(0,lineName,OBJ_HLINE,0,0,tpLine);
-      ObjectSetDouble(0,lineName,OBJPROP_PRICE,tpLine);
-      ObjectSetInteger(0,lineName,OBJPROP_COLOR,clrDeepSkyBlue);
-      ObjectSetInteger(0,lineName,OBJPROP_STYLE,STYLE_DASH);
-      ObjectSetInteger(0,lineName,OBJPROP_WIDTH,2);
-      ObjectSetInteger(0,lineName,OBJPROP_BACK,false);
-      ObjectSetInteger(0,lineName,OBJPROP_SELECTABLE,false);
-      ObjectSetInteger(0,lineName,OBJPROP_HIDDEN,true);
-      ObjectSetString(0,lineName,OBJPROP_TEXT,
-         "TRAILING TP 25% #"+suffix+" @ "+DoubleToString(tpLine,digits));
-
-      datetime labelTime=iTime(_Symbol,_Period,0);
-      if(labelTime<=0)labelTime=TimeCurrent();
-      if(ObjectFind(0,textName)<0)ObjectCreate(0,textName,OBJ_TEXT,0,labelTime,tpLine);
-      ObjectMove(0,textName,0,labelTime,tpLine);
-      ObjectSetString(0,textName,OBJPROP_TEXT,"TRAILING TP 25% #"+suffix);
-      ObjectSetString(0,textName,OBJPROP_FONT,"Arial");
-      ObjectSetInteger(0,textName,OBJPROP_FONTSIZE,8);
-      ObjectSetInteger(0,textName,OBJPROP_COLOR,clrDeepSkyBlue);
-      ObjectSetInteger(0,textName,OBJPROP_SELECTABLE,false);
-      ObjectSetInteger(0,textName,OBJPROP_HIDDEN,true);
+      if(StringFind(objectName,prefix)==0)ObjectDelete(0,objectName);
    }
    ChartRedraw(0);
 }
