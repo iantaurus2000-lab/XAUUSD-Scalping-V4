@@ -178,6 +178,7 @@ int powerConfirmedSwingStructure(string symbol,ENUM_TIMEFRAMES timeframe);
 void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double candleOpen,
                           bool candleJustChanged,bool hasPreviousTick,double previousBid,double previousAsk);
 bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,double previousBid,double previousAsk);
+void powerUpdateTrailingTPChart();
 void powerRefreshAnalysisReports();
 void powerWriteAnalysisReport(string targetPath,datetime sessionStart=0);
 void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
@@ -969,6 +970,10 @@ int OnInit(){
 void OnDeinit(const int r){
    EventKillTimer();
    ObjectDelete(0,"RAYYAN_MT5_BAR_TIMER");
+   for(int oi=ObjectsTotal(0,0,-1)-1;oi>=0;oi--){
+      string on=ObjectName(0,oi,0,-1);
+      if(StringFind(on,"RAYYAN_TREND_TP25_")==0)ObjectDelete(0,on);
+   }
    ObjectDelete(0,RAYYAN_DASH_PREFIX+"M5RING");
    ObjectDelete(0,RAYYAN_DASH_PREFIX+"M5CLOCK");
    ObjectDelete(0,RAYYAN_DASH_PREFIX+"REFRESH");
@@ -991,12 +996,14 @@ void OnTick(){
    // Dashboard drawing and session/report housekeeping are intentionally excluded.
    if(!StandaloneD1Mode) manageTP2RetraceProtection(); // Standalone mode manages D1 positions only.
    managePowerfullAllMarkets(false);
+   powerUpdateTrailingTPChart();
 }
 
 void OnTimer(){
    if(StandaloneD1Mode){
       // Keep trading checks ahead of all chart/panel/report housekeeping.
       managePowerfullAllMarkets(false);
+      powerUpdateTrailingTPChart();
       powerSessionRefresh();
       powerDashboardRefresh(false);
       updateHarmonicOverlay();
@@ -1021,6 +1028,7 @@ void OnTimer(){
    }
    // POWERFULL still evaluates fresh ticks in OnTick; this timer only handles housekeeping/config.
    managePowerfullAllMarkets(true);
+   powerUpdateTrailingTPChart();
 }
 
 void processTradeQueue(){
@@ -3289,11 +3297,32 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
       if(!GlobalVariableCheck(modeKey)||(int)GlobalVariableGet(modeKey)!=POWERFULL_MODE_LOSS_RESCUE)continue;
 
       bool isBuy=((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
+      int side=(isBuy?1:-1);
       double executable=(isBuy?tick.bid:tick.ask);
       double entry=PositionGetDouble(POSITION_PRICE_OPEN);
       double brokerSL=PositionGetDouble(POSITION_SL);
       double slBoundary=(brokerSL>0.0?brokerSL:entry);
       bool m5Break=powerA6StructureBreak(symbol,PERIOD_M5,isBuy,12);
+
+      // Restore TREND_HOLD only after both closed M5 and M15 swing structures
+      // confirm the original position direction. The rescue state machine below
+      // remains unchanged whenever this independent recovery confirmation is absent.
+      int recoveryM5=powerConfirmedSwingStructure(symbol,PERIOD_M5);
+      int recoveryM15=powerConfirmedSwingStructure(symbol,PERIOD_M15);
+      if(recoveryM5==side&&recoveryM15==side){
+         GlobalVariableSet(modeKey,(double)POWERFULL_MODE_TREND_HOLD);
+         string rescueKeys[7]={"PW_LR_PHASE_","PW_LR_ADVERSE_","PW_LR_RB1_",
+            "PW_LR_PULLBACK_","PW_LR_RB2_","PW_LR_ADVERSE_BREAK_","PW_LR_WAS_NEG_"};
+         for(int k=0;k<ArraySize(rescueKeys);k++){
+            string rescueKey=rescueKeys[k]+suffix;
+            if(GlobalVariableCheck(rescueKey))GlobalVariableDel(rescueKey);
+         }
+         Print("POWERFULL MODE RECOVERY symbol=",symbol," ticket=",ticket,
+            " mode=TREND_HOLD reason=M5_M15_STRUCTURE_CONFIRMED",
+            " m5_structure=",recoveryM5," m15_structure=",recoveryM15,
+            " peak_price_preserved=true peak_net_preserved=true");
+         continue;
+      }
 
       // Once a LOSS_RESCUE ticket has actually entered negative net P/L,
       // the first tick that returns its projected net P/L above zero is an
@@ -3616,6 +3645,72 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
          " peak_net_tracked=",DoubleToString(peakNet,2));
    }
    powerManageLossRescue(index,tick,hasPreviousTick,previousBid,previousAsk);
+}
+
+void powerUpdateTrailingTPChart(){
+   string prefix="RAYYAN_TREND_TP25_";
+   // Remove lines for tickets that have closed, changed symbol, or are in LOSS_RESCUE.
+   for(int i=ObjectsTotal(0,0,-1)-1;i>=0;i--){
+      string objectName=ObjectName(0,i,0,-1);
+      if(StringFind(objectName,prefix)!=0)continue;
+      string tail=StringSubstr(objectName,StringLen(prefix));
+      int textPos=StringFind(tail,"_TEXT");
+      if(textPos>=0)tail=StringSubstr(tail,0,textPos);
+      ulong ticket=(ulong)StringToInteger(tail);
+      bool keep=false;
+      if(ticket>0&&PositionSelectByTicket(ticket)&&
+         PositionGetString(POSITION_SYMBOL)==_Symbol&&
+         (long)PositionGetInteger(POSITION_MAGIC)==POWERFULL_MAGIC){
+         string modeKey="PW_HMODE_"+IntegerToString((long)ticket);
+         keep=(GlobalVariableCheck(modeKey)&&
+               (int)GlobalVariableGet(modeKey)==POWERFULL_MODE_TREND_HOLD);
+      }
+      if(!keep)ObjectDelete(0,objectName);
+   }
+
+   for(int i=PositionsTotal()-1;i>=0;i--){
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0||!PositionSelectByTicket(ticket)||
+         PositionGetString(POSITION_SYMBOL)!=_Symbol||
+         (long)PositionGetInteger(POSITION_MAGIC)!=POWERFULL_MAGIC)continue;
+      string suffix=IntegerToString((long)ticket);
+      string modeKey="PW_HMODE_"+suffix,peakKey="PW_PEAK_"+suffix;
+      if(!GlobalVariableCheck(modeKey)||
+         (int)GlobalVariableGet(modeKey)!=POWERFULL_MODE_TREND_HOLD||
+         !GlobalVariableCheck(peakKey))continue;
+
+      bool isBuy=((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
+      double entry=PositionGetDouble(POSITION_PRICE_OPEN);
+      double peak=GlobalVariableGet(peakKey);
+      double favorable=(isBuy?peak-entry:entry-peak);
+      if(favorable<=0.0)continue;
+      double tpLine=(isBuy?peak-favorable*0.25:peak+favorable*0.25);
+      int digits=(int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS);
+      string lineName=prefix+suffix;
+      string textName=lineName+"_TEXT";
+      if(ObjectFind(0,lineName)<0)ObjectCreate(0,lineName,OBJ_HLINE,0,0,tpLine);
+      ObjectSetDouble(0,lineName,OBJPROP_PRICE,tpLine);
+      ObjectSetInteger(0,lineName,OBJPROP_COLOR,clrDeepSkyBlue);
+      ObjectSetInteger(0,lineName,OBJPROP_STYLE,STYLE_DASH);
+      ObjectSetInteger(0,lineName,OBJPROP_WIDTH,2);
+      ObjectSetInteger(0,lineName,OBJPROP_BACK,false);
+      ObjectSetInteger(0,lineName,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,lineName,OBJPROP_HIDDEN,true);
+      ObjectSetString(0,lineName,OBJPROP_TEXT,
+         "TRAILING TP 25% #"+suffix+" @ "+DoubleToString(tpLine,digits));
+
+      datetime labelTime=iTime(_Symbol,_Period,0);
+      if(labelTime<=0)labelTime=TimeCurrent();
+      if(ObjectFind(0,textName)<0)ObjectCreate(0,textName,OBJ_TEXT,0,labelTime,tpLine);
+      ObjectMove(0,textName,0,labelTime,tpLine);
+      ObjectSetString(0,textName,OBJPROP_TEXT,"TRAILING TP 25% #"+suffix);
+      ObjectSetString(0,textName,OBJPROP_FONT,"Arial");
+      ObjectSetInteger(0,textName,OBJPROP_FONTSIZE,8);
+      ObjectSetInteger(0,textName,OBJPROP_COLOR,clrDeepSkyBlue);
+      ObjectSetInteger(0,textName,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,textName,OBJPROP_HIDDEN,true);
+   }
+   ChartRedraw(0);
 }
 
 void powerPublishState(int index,string status,string detail,datetime barTime){
