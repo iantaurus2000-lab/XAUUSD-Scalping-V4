@@ -3596,19 +3596,24 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
          protectedFloor=calculatedFloor;
          GlobalVariableSet(profitFloorKey,protectedFloor);
       }
-      bool trendHoldNetProfitLock=(mode==POWERFULL_MODE_TREND_HOLD&&
-         protectedFloor>0.0&&currentNet<=protectedFloor);
-      if(trendHoldNetProfitLock){
+      // Profit Lock has priority across TREND_HOLD and LOSS_RESCUE.
+      // Once a per-ticket floor exists, mode changes cannot disable it.
+      // LOSS_RESCUE's internal rebound state machine remains unchanged for
+      // positions whose protected net-profit floor has not been reached.
+      bool netProfitFloorReached=(protectedFloor>0.0&&currentNet<=protectedFloor);
+      if(netProfitFloorReached){
          string closeReason=(peakNet<20.0?
-            "TREND_HOLD_NET_TRAILING_25PCT":"TREND_HOLD_NET_PROFIT_LOCK");
-         Print("POWERFULL TREND_HOLD NET PROFIT LOCK symbol=",symbol," ticket=",ticket,
+            "NET_PROFIT_TRAIL_25PCT":"NET_PROFIT_LOCK_FLOOR_REACHED");
+         Print("POWERFULL NET PROFIT PROTECTION symbol=",symbol," ticket=",ticket,
+            " mode=",(mode==POWERFULL_MODE_LOSS_RESCUE?"LOSS_RESCUE":
+                      (mode==POWERFULL_MODE_TREND_HOLD?"TREND_HOLD":"INITIALIZING")),
             " current_net=",DoubleToString(currentNet,2),
             " peak_net=",DoubleToString(peakNet,2),
             " protected_floor=",DoubleToString(protectedFloor,2),
             " lock_percent=",DoubleToString(lockPercent*100.0,1),
-            " action=CLOSE_ORDER");
+            " action=CLOSE_ORDER_PRIORITY_OVER_RESCUE");
          if(powerClosePosition(ticket,closeReason))continue;
-         Print("POWERFULL TREND_HOLD NET PROFIT LOCK CLOSE FAILED symbol=",symbol,
+         Print("POWERFULL NET PROFIT PROTECTION CLOSE FAILED symbol=",symbol,
             " ticket=",ticket," floor=",DoubleToString(protectedFloor,2));
       }
 
