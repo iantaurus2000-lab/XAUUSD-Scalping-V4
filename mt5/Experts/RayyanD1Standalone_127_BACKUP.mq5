@@ -3303,6 +3303,11 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
       double brokerSL=PositionGetDouble(POSITION_SL);
       double slBoundary=(brokerSL>0.0?brokerSL:entry);
       bool m5Break=powerA6StructureBreak(symbol,PERIOD_M5,isBuy,12);
+      int macroStructure=powerCachedConsensusStructure(index,symbol);
+      int m15Structure=powerConfirmedSwingStructure(symbol,PERIOD_M15);
+      bool m15Break=powerA6StructureBreak(symbol,PERIOD_M15,isBuy,8);
+      bool rescueTrendStillAgainst=(macroStructure==-side&&
+                                    (m15Structure==-side||m15Break)&&m5Break);
 
       // Independent recovery gate: price must be outside the existing
       // peak-to-SL loss zone, projected net must be positive, and closed M5
@@ -3318,11 +3323,12 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
       bool outsideRecoveryLossZone=!recoveryLossZone;
       double rescueNet=powerProjectedNet(ticket);
       int recoveryM5=powerConfirmedSwingStructure(symbol,PERIOD_M5);
+      int recoveryM15=powerConfirmedSwingStructure(symbol,PERIOD_M15);
       string wasNegativeKey="PW_LR_WAS_NEG_"+suffix;
       if(rescueNet<=0.0&&!GlobalVariableCheck(wasNegativeKey))
          GlobalVariableSet(wasNegativeKey,1.0);
 
-      if(outsideRecoveryLossZone&&rescueNet>0.0&&recoveryM5==side){
+      if(outsideRecoveryLossZone&&rescueNet>0.0&&recoveryM5==side&&recoveryM15==side){
          GlobalVariableSet(modeKey,(double)POWERFULL_MODE_TREND_HOLD);
          string rescueKeys[7]={"PW_LR_PHASE_","PW_LR_ADVERSE_","PW_LR_RB1_",
             "PW_LR_PULLBACK_","PW_LR_RB2_","PW_LR_ADVERSE_BREAK_","PW_LR_WAS_NEG_"};
@@ -3350,8 +3356,9 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
       double pullback=(GlobalVariableCheck(pullbackKey)?GlobalVariableGet(pullbackKey):0.0);
       double rebound2=(GlobalVariableCheck(rebound2Key)?GlobalVariableGet(rebound2Key):0.0);
 
-      // An extension to a fresh adverse extreme plus an M5 structural break
-      // is an early-failure exit; the broker SL remains the final hard boundary.
+      // A negative-net rescue may close early only on confirmed M5+M15+H1/H4
+      // structural failure. A failed second rebound alone is not a loss-close.
+      // Broker SL and the hard-loss guard remain the final loss protections.
       bool newAdverse=(isBuy?executable<adverseExtreme-tickSize:executable>adverseExtreme+tickSize);
       if(newAdverse){
          adverseExtreme=executable;
@@ -3359,19 +3366,19 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
          GlobalVariableSet(adverseBreakKey,1.0);
       }
       bool adverseExtensionPending=(GlobalVariableCheck(adverseBreakKey)&&GlobalVariableGet(adverseBreakKey)>=0.5);
-      if(adverseExtensionPending&&m5Break){
+      if(adverseExtensionPending&&rescueNet>0.0&&rescueTrendStillAgainst){
          Print("POWERFULL LOSS_RESCUE EARLY EXIT symbol=",symbol," ticket=",ticket,
             " new_adverse_extreme=",DoubleToString(adverseExtreme,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
-            " m5_break=true action=CLOSE_BEFORE_BROKER_SL");
-         if(powerClosePosition(ticket,"LOSS_RESCUE_NEW_ADVERSE_EXTREME_M5_BREAK")){
+            " m5_break=true m15_structure=",m15Structure," h1_h4_structure=",macroStructure,
+            " projected_net=",DoubleToString(rescueNet,2),
+            " action=CLOSE_CONFIRMED_MTF_FAILURE");
+         if(powerClosePosition(ticket,"LOSS_RESCUE_CONFIRMED_MTF_FAILURE")){
             closedAny=true;closedCount++;continue;
          }
       }
 
-      // LOSS_RESCUE is now a one-way protective state. Original entry direction
-      // and a later M5 structure signal cannot restore TREND_HOLD. The position
-      // remains under rescue exits until positive-net recovery, structural failure,
-      // or broker SL protection closes it.
+      // LOSS_RESCUE remains armed until positive-net M5+M15 recovery, a
+      // confirmed multi-timeframe failure, Profit Lock, or broker SL protection.
 
       // Per-ticket two-rebound sequence: adverse extreme -> rebound 1 ->
       // pullback boundary -> rebound 2. No fixed USD or percentage target.
@@ -3401,13 +3408,13 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
          if(isBuy&&executable>rebound2){rebound2=executable;GlobalVariableSet(rebound2Key,rebound2);}
          if(!isBuy&&executable<rebound2){rebound2=executable;GlobalVariableSet(rebound2Key,rebound2);}
          bool failedSecondRebound=(isBuy?executable<pullback-tickSize:executable>pullback+tickSize);
-         if(failedSecondRebound){
+         if(failedSecondRebound&&rescueNet>0.0){
             Print("POWERFULL LOSS_RESCUE SECOND REBOUND FAILED symbol=",symbol," ticket=",ticket,
                " rebound1=",DoubleToString(rebound1,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
                " pullback_boundary=",DoubleToString(pullback,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
                " rebound2_peak=",DoubleToString(rebound2,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
-               " action=CLOSE_ON_PULLBACK_BREAK");
-            if(powerClosePosition(ticket,"LOSS_RESCUE_SECOND_REBOUND_FAILED_PULLBACK_BREAK")){
+               " action=CLOSE_ON_PULLBACK_BREAK_POSITIVE_NET_ONLY");
+            if(powerClosePosition(ticket,"LOSS_RESCUE_SECOND_REBOUND_FAILED_POSITIVE_NET")){
                closedAny=true;closedCount++;continue;
             }
          }
@@ -3625,8 +3632,13 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
                 (executable>peakPrice+ts*0.1&&executable<slBoundary-ts*0.1)));
       // TREND_HOLD has priority until price is in the loss zone and M5 shows
       // counter-pressure or a confirmed M5 structural break.
+      // TREND_CONFLICT requires closed M15 structure/break plus H1/H4 macro
+      // consensus against the position. M5 alone is never enough to arm rescue.
+      bool m15ConfirmedAgainst=(m15Structure==-side||m15Break);
+      bool macroConfirmedAgainst=(structure==-side);
+      bool trendConflict=(m15ConfirmedAgainst&&macroConfirmedAgainst);
       bool failureConfirmed=(m5Against||m5Break);
-      bool rescueRequired=(lossZone&&failureConfirmed);
+      bool rescueRequired=(lossZone&&trendConflict&&failureConfirmed);
       if(mode==POWERFULL_MODE_LOSS_RESCUE){
          // Once LOSS_RESCUE is armed, its per-ticket rebound state machine owns
          // the decision until it closes the position or confirms recovery.
@@ -3639,8 +3651,8 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
             GlobalVariableSet(modeKey,(double)POWERFULL_MODE_LOSS_RESCUE);
             if(GlobalVariableCheck(adverseKey))GlobalVariableDel(adverseKey);
             Print("POWERFULL MODE symbol=",symbol," ticket=",ticket,
-               " mode=LOSS_RESCUE reason=LOSS_ZONE_AND_M5_FAILURE_CONFIRMED",
-               " h1_h4_structure=",structure," m5_against=",m5Against," m15_against=",m15Against,
+               " mode=LOSS_RESCUE reason=LOSS_ZONE_AND_TREND_CONFLICT_CONFIRMED",
+               " trend_conflict=true h1_h4_structure=",structure," m5_against=",m5Against," m15_against=",m15Against,
                " loss_zone_from_extreme=",DoubleToString(peakPrice,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
                " sl_boundary=",DoubleToString(slBoundary,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)),
                " action=START_PER_TICKET_REBOUND_STRUCTURE");
@@ -3651,7 +3663,7 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       GlobalVariableSet(modeKey,(double)initialMode);
       Print("POWERFULL MODE INIT symbol=",symbol," ticket=",ticket,
          " mode=",(initialMode==POWERFULL_MODE_LOSS_RESCUE?"LOSS_RESCUE":"TREND_HOLD"),
-         " h1_h4_structure=",structure," m5_structure=",m5Structure," m15_structure=",m15Structure,
+         " trend_conflict=",trendConflict," h1_h4_structure=",structure," m5_structure=",m5Structure," m15_structure=",m15Structure,
          " m5_against=",m5Against," m15_against=",m15Against,
          " m5_break=",m5Break," m15_break=",m15Break,
          " sl_progress=",DoubleToString(lossProgress*100.0,1),"% projected_net=",DoubleToString(currentNet,2),
