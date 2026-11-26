@@ -3313,8 +3313,8 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
       double peakPrice=(GlobalVariableCheck(peakPriceKey)?GlobalVariableGet(peakPriceKey):entry);
       double recoveryTolerance=tickSize*0.1;
       bool recoveryLossZone=(isBuy?
-         (executable<peakPrice-recoveryTolerance&&executable>slBoundary+recoveryTolerance):
-         (executable>peakPrice+recoveryTolerance&&executable<slBoundary-recoveryTolerance));
+         (executable<peakPrice-recoveryTolerance&&executable>entry+recoveryTolerance):
+         (executable>peakPrice+recoveryTolerance&&executable<entry-recoveryTolerance));
       bool outsideRecoveryLossZone=!recoveryLossZone;
       double rescueNet=powerProjectedNet(ticket);
       int recoveryM5=powerConfirmedSwingStructure(symbol,PERIOD_M5);
@@ -3441,7 +3441,7 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
 int powerConfirmedSwingStructure(string symbol,ENUM_TIMEFRAMES tf){
    MqlRates rates[]; ArraySetAsSeries(rates,true);
    int copied=CopyRates(symbol,tf,1,180,rates);
-   if(copied<20)return 0;
+   // No arbitrary 20-candle history gate; confirmed pivots are validated below.
    double recentHigh=0.0,olderHigh=0.0,recentLow=0.0,olderLow=0.0;
    int highCount=0,lowCount=0;
    // Series index 2 is the newest pivot candidate with two newer and two older
