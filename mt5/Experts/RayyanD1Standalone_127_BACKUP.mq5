@@ -2949,33 +2949,28 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       return;
    }
 
-   // NEW ENTRY RULE: enter on the live extreme itself, measured from M5 Open.
-   // BUY: current Bid is making the candle Low below Open.
-   // SELL: current Bid is making the candle High above Open.
-   // There is deliberately NO weakening, pullback, >0.0 recovery, or 2x-tick wait.
-   // The last successfully filled extreme is persistent across M5 candle changes,
-   // so the next layer requires a strictly newer extreme.
-   // No Bid-to-extreme proximity gate: fresh live M5 extreme can trigger a market entry
-   // even when Bid has moved away from that Low/High.
-   bool buyFresh=(powerMomentumLastBuyLow[index]<=0.0||
-                  candleLow<powerMomentumLastBuyLow[index]);
-   bool sellFresh=(powerMomentumLastSellHigh[index]<=0.0||
-                   candleHigh>powerMomentumLastSellHigh[index]);
-   // LOCKED USER RULE: BUY only on live M5 RED + H1 GREEN.
-   // SELL only on live M5 GREEN + H1 RED. Both live candle colours are mandatory.
-   bool buyReady=(entryM5Direction<0&&entryDirection>0&&buyFresh&&
-                  candleLow<candleOpen&&buyN<cap);
-   bool sellReady=(entryM5Direction>0&&entryDirection<0&&sellFresh&&
-                   candleHigh>candleOpen&&sellN<cap);
+   // WICK-EXTREME ENTRY: a successful layer does NOT need a lower Low or higher High
+   // than the previous successful same-side entry. Each M5 candle can provide one
+   // entry opportunity when its live wick extreme has weakened by at least 2 ticks.
+   // BUY executes after price lifts 2 tradable ticks from the current M5 Low.
+   // SELL executes after price falls 2 tradable ticks from the current M5 High.
+   // This confirms wick weakening without ATR, fixed time warm-up or tick counting.
+   bool buyWickWeakening=(tick.bid-candleLow)>=2.0*ts;
+   bool sellWickWeakening=(candleHigh-tick.bid)>=2.0*ts;
+   bool newM5EntryOpportunity=(powerMomentumLastEntryBar[index]!=barTime);
+   // LOCKED USER RULE: BUY = M5 RED + H1 GREEN; SELL = M5 GREEN + H1 RED.
+   bool buyReady=(entryM5Direction<0&&entryDirection>0&&buyWickWeakening&&
+                  newM5EntryOpportunity&&candleLow<candleOpen&&buyN<cap);
+   bool sellReady=(entryM5Direction>0&&entryDirection<0&&sellWickWeakening&&
+                   newM5EntryOpportunity&&candleHigh>candleOpen&&sellN<cap);
 
    // Keep a single basket direction; never add an opposite-side hedge.
    if(buyN>0)sellReady=false;
    if(sellN>0)buyReady=false;
    if(!buyReady&&!sellReady){
       powerPublishState(index,"D1_OPEN_EXTREME_WAIT",
-         "Waiting for a NEW live M5 extreme from Open | BUY=M5 RED + H1 GREEN at fresh Low | SELL=M5 GREEN + H1 RED at fresh High"+
-         " | last BUY Low="+DoubleToString(powerMomentumLastBuyLow[index],(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))+
-         " | last SELL High="+DoubleToString(powerMomentumLastSellHigh[index],(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS))+
+         "Waiting for M5 wick weakening >= 2 ticks | BUY=M5 RED + H1 GREEN at Low | SELL=M5 GREEN + H1 RED at High"+
+         " | one successful entry per M5 candle; prior entry extreme is not a filter"+
          " | layers="+IntegerToString(total)+"/"+IntegerToString(cap)+
          " | spread(info)="+DoubleToString((tick.ask-tick.bid)/ts,1)+" ticks",barTime);
       return;
