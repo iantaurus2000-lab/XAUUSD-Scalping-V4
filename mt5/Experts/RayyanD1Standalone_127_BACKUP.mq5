@@ -823,7 +823,9 @@ void powerDashboardRefresh(bool force=false){
    color quoteColor=(m15>0?bull:(m15<0?bear:neutral));
    if(SymbolInfoTick(symbol,dashTick)&&dashTick.bid>0.0&&dashTick.ask>=dashTick.bid)
       quoteText=DoubleToString(dashTick.bid,quoteDigits);
-   powerDashboardLabel(RAYYAN_DASH_PREFIX+"QUOTE",quoteText,19,59,quoteColor,12);
+   // Put the live MT5 quote directly below ALGO status on the right side.
+   powerDashboardLabel(RAYYAN_DASH_PREFIX+"QUOTE",quoteText,202,59,quoteColor,15);
+   ObjectSetString(0,RAYYAN_DASH_PREFIX+"QUOTE",OBJPROP_FONT,"Arial Bold");
    powerDashboardBox(RAYYAN_DASH_PREFIX+"STATUSBOX",202,25,100,27,
       (algoOn?C'24,74,58':C'83,56,34'),statusColor);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"STATUS",(algoOn?"●  ALGO ON":"●  ALGO OFF"),211,32,statusColor,9);
