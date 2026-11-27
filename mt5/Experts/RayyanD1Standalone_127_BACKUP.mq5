@@ -16,6 +16,7 @@ input double PowerfullStopLossPips=0.0; // Fixed POWERFULL SL distance in PIP; z
 input bool EnableEAReports=true; // ON/OFF: HTML, CSV and entry-candle screenshot reports only.
 input int StandaloneMaxLayers=5; // configurable 1..5; A6 default allows five layers
 input bool EnablePowerfullExtremeOpenEntry=true; // ON/OFF for the replacement live M5 Open-to-extreme market-entry module.
+input int PowerfullMinExtremeDistancePoints=700; // Activate live extreme weakening trail only after M5 Open-to-extreme distance reaches this many broker points.
 // POWERFULL final: no time-based entry warm-up.
 input int PollSeconds=1;
 // After TP1 is reached, close on a confirmed M1 reversal before TP2.
@@ -2948,16 +2949,18 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       return;
    }
 
-   // LIVE M5 EXTREME + WEAKENING-WICK CONFIRMATION:
-   // BUY tracks the current M5 Low below Open. While price keeps making lower
-   // lows, no order is sent. Confirm the wick only after Bid rebounds >= 2
-   // tradable ticks from the CURRENT live Low, then send a market BUY.
-   // SELL is symmetrical: track the current M5 High above Open; while price
-   // keeps making higher highs, wait. Confirm after Bid retreats >= 2 ticks
-   // from the CURRENT live High, then send a market SELL.
-   // A newly extended extreme automatically moves the confirmation reference.
-   // Successful extremes are consumed only after broker fill, so same-candle
-   // layering remains allowed at each distinct new extreme.
+   // LOCKED POWERFULL: 700 broker POINTS from the live M5 Open is the
+   // activation threshold for the weakening trail (not the pullback distance).
+   // BUY activates only after Open-Low >= threshold; SELL after High-Open >= threshold.
+   // Once activated, trail the CURRENT live extreme: every new Low/High moves
+   // the reference. Preserve the existing 2-tradable-tick weakening confirmation.
+   // If price extends the extreme before confirmation, the reference moves again.
+   // Successful extremes are consumed only after broker fill; same-candle layers
+   // remain allowed at each distinct qualifying new extreme.
+   int minExtremePoints=MathMax(1,PowerfullMinExtremeDistancePoints);
+   double minExtremeDistance=minExtremePoints*point;
+   bool buyExtremeDistanceReached=(candleOpen-candleLow>=minExtremeDistance);
+   bool sellExtremeDistanceReached=(candleHigh-candleOpen>=minExtremeDistance);
    bool buyNewExtreme=(powerMomentumLastBuyLow[index]<=0.0||
                        candleLow<powerMomentumLastBuyLow[index]-ts*0.5);
    bool sellNewExtreme=(powerMomentumLastSellHigh[index]<=0.0||
@@ -2967,9 +2970,11 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    // LOCKED USER RULE: BUY = actual M5 RED + actual H1 GREEN;
    // SELL = actual M5 GREEN + actual H1 RED.
    bool buyReady=(entryM5Direction<0&&entryDirection>0&&buyNewExtreme&&
-                  buyWickWeakening&&candleLow<candleOpen&&buyN<cap);
+                  buyExtremeDistanceReached&&buyWickWeakening&&
+                  candleLow<candleOpen&&buyN<cap);
    bool sellReady=(entryM5Direction>0&&entryDirection<0&&sellNewExtreme&&
-                   sellWickWeakening&&candleHigh>candleOpen&&sellN<cap);
+                   sellExtremeDistanceReached&&sellWickWeakening&&
+                   candleHigh>candleOpen&&sellN<cap);
 
    // Keep a single basket direction; never add an opposite-side hedge.
    if(buyN>0)sellReady=false;
@@ -2978,7 +2983,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       powerPublishState(index,"D1_OPEN_EXTREME_WAIT",
           "Waiting for a NEW live M5 extreme | BUY=M5 RED + H1 GREEN at Low | SELL=M5 GREEN + H1 RED at High"+
           " | next layer requires lower BUY Low / higher SELL High than last successful extreme"+
-          " | wait for 2-tick wick weakening; same-candle layers allowed"+
+          " | 700-point Open-to-extreme activation then 2-tick weakening trail; same-candle layers allowed"+
           " | layers="+IntegerToString(total)+"/"+IntegerToString(cap)+
          " | spread(info)="+DoubleToString((tick.ask-tick.bid)/ts,1)+" ticks",barTime);
       return;
