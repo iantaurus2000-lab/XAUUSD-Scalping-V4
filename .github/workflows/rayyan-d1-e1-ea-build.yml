@@ -120,6 +120,24 @@ jobs:
             Copy-Item $source (Join-Path 'build\ea' ($item.Name + '.mq5')) -Force
             Copy-Item $log (Join-Path 'build\ea' ($item.Name + '.log')) -Force
           }
+      - name: Add build note to EA ZIP package
+        shell: pwsh
+        run: |
+          $note = Get-Content 'RAYYAN_NOTE.md' -Raw
+          $runNumber = $env:GITHUB_RUN_NUMBER
+          $runId = $env:GITHUB_RUN_ID
+          $commit = $env:GITHUB_SHA
+          $branch = $env:GITHUB_REF_NAME
+          $header = @"
+          ## Package build metadata
+          - Workflow build number: #$runNumber
+          - Workflow run ID: $runId
+          - Branch: $branch
+          - Commit: $commit
+          - Workflow: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$runId
+
+          "@
+          Set-Content -Path 'build/ea/RAYYAN_NOTE.md' -Value ($header + $note) -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:
           name: RAYYAN-127-BACKUP-EA
