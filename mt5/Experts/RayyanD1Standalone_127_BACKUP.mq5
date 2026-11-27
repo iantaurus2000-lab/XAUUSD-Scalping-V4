@@ -117,7 +117,6 @@ double powerD1FallbackOpen[3],powerD1FallbackHigh[3],powerD1FallbackLow[3];
 double powerD1AskHigh[3],powerD1AskLow[3];
 // A12: live M5 candle distribution only. No completed-candle reference/history is used.
 long powerD1LastCountedTickMs[3];
-datetime powerMomentumLastEntryBar[3];
 // Successful-entry extremes persist within each M5 candle for subsequent layers.
 uint powerStatsCalcMs[3];
 int powerStatsWins[3];
@@ -2949,29 +2948,35 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       return;
    }
 
-   // WICK-EXTREME ENTRY: a successful layer does NOT need a lower Low or higher High
-   // than the previous successful same-side entry. Each M5 candle can provide one
-   // entry opportunity when its live wick extreme has weakened by at least 2 ticks.
-   // BUY executes after price lifts 2 tradable ticks from the current M5 Low.
-   // SELL executes after price falls 2 tradable ticks from the current M5 High.
-   // This confirms wick weakening without ATR, fixed time warm-up or tick counting.
-   bool buyWickWeakening=(tick.bid-candleLow)>=2.0*ts;
-   bool sellWickWeakening=(candleHigh-tick.bid)>=2.0*ts;
-   bool newM5EntryOpportunity=(powerMomentumLastEntryBar[index]!=barTime);
+   // DIRECT LIVE M5 EXTREME ENTRY:
+   // First BUY may enter at the current candle's live Low below Open.
+   // Further BUY layers require a strictly lower Low than the last successful BUY fill.
+   // SELL is symmetrical: live High above Open, then each new higher High.
+   // Enter at the extreme itself (within half a tradable tick); do NOT wait for
+   // a 2-tick pullback, failed retest, weakening confirmation, or candle change.
+   // The successful extreme is stored only after broker fill, preventing duplicate
+   // orders from repeated ticks at the same extreme while allowing same-candle layers.
+   bool buyNewExtreme=(powerMomentumLastBuyLow[index]<=0.0||
+                       candleLow<powerMomentumLastBuyLow[index]-ts*0.5);
+   bool sellNewExtreme=(powerMomentumLastSellHigh[index]<=0.0||
+                        candleHigh>powerMomentumLastSellHigh[index]+ts*0.5);
+   bool buyAtLiveLow=(MathAbs(tick.bid-candleLow)<=ts*0.5);
+   bool sellAtLiveHigh=(MathAbs(candleHigh-tick.bid)<=ts*0.5);
    // LOCKED USER RULE: BUY = M5 RED + H1 GREEN; SELL = M5 GREEN + H1 RED.
-   bool buyReady=(entryM5Direction<0&&entryDirection>0&&buyWickWeakening&&
-                  newM5EntryOpportunity&&candleLow<candleOpen&&buyN<cap);
-   bool sellReady=(entryM5Direction>0&&entryDirection<0&&sellWickWeakening&&
-                   newM5EntryOpportunity&&candleHigh>candleOpen&&sellN<cap);
+   bool buyReady=(entryM5Direction<0&&entryDirection>0&&buyNewExtreme&&
+                  buyAtLiveLow&&candleLow<candleOpen&&buyN<cap);
+   bool sellReady=(entryM5Direction>0&&entryDirection<0&&sellNewExtreme&&
+                   sellAtLiveHigh&&candleHigh>candleOpen&&sellN<cap);
 
    // Keep a single basket direction; never add an opposite-side hedge.
    if(buyN>0)sellReady=false;
    if(sellN>0)buyReady=false;
    if(!buyReady&&!sellReady){
       powerPublishState(index,"D1_OPEN_EXTREME_WAIT",
-         "Waiting for M5 wick weakening >= 2 ticks | BUY=M5 RED + H1 GREEN at Low | SELL=M5 GREEN + H1 RED at High"+
-         " | one successful entry per M5 candle; prior entry extreme is not a filter"+
-         " | layers="+IntegerToString(total)+"/"+IntegerToString(cap)+
+          "Waiting for a NEW live M5 extreme | BUY=M5 RED + H1 GREEN at Low | SELL=M5 GREEN + H1 RED at High"+
+          " | next layer requires lower BUY Low / higher SELL High than last successful extreme"+
+          " | no pullback confirmation; same-candle layers allowed"+
+          " | layers="+IntegerToString(total)+"/"+IntegerToString(cap)+
          " | spread(info)="+DoubleToString((tick.ask-tick.bid)/ts,1)+" ticks",barTime);
       return;
    }
@@ -3092,11 +3097,11 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
                DoubleToString(sl,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)));
       }
 
-      // Consume this extreme only after a successful broker fill. A failed request
-      // may retry on a later tick at the same live extreme; it cannot duplicate a fill.
-      if(side>0)powerMomentumLastBuyLow[index]=candleLow;
-      else powerMomentumLastSellHigh[index]=candleHigh;
-      powerMomentumLastEntryBar[index]=barTime;
+       // Consume this same-side extreme only after a successful broker fill.
+       // A failed request may retry; the next same-side layer requires a strictly
+       // newer extreme, including when it forms inside this same M5 candle.
+       if(side>0)powerMomentumLastBuyLow[index]=candleLow;
+       else powerMomentumLastSellHigh[index]=candleHigh;
       Print("D1 OPEN-EXTREME ENTRY OK ",symbol,
             " side=",(side>0?"BUY_AT_LIVE_M5_LOW":"SELL_AT_LIVE_M5_HIGH"),
             " layer=",total+1,"/",cap,
