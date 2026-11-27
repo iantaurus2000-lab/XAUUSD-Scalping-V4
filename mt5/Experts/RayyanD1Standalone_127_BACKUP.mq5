@@ -3328,7 +3328,14 @@ bool powerManageLossRescue(int index,const MqlTick &tick,bool hasPreviousTick,do
       if(rescueNet<=0.0&&!GlobalVariableCheck(wasNegativeKey))
          GlobalVariableSet(wasNegativeKey,1.0);
 
-      if(outsideRecoveryLossZone&&rescueNet>0.0&&recoveryM5==side&&recoveryM15==side){
+      string rescuePeakNetKey="PW_PEAK_NET_"+suffix;
+      double rescuePeakNet=(GlobalVariableCheck(rescuePeakNetKey)?
+         GlobalVariableGet(rescuePeakNetKey):MathMax(0.0,rescueNet));
+      // Before the $2 net-profit activation threshold, LOSS_RESCUE retains
+      // ownership of the position even during a temporary positive recovery.
+      // This prevents TREND_HOLD from bypassing the positive-value rescue stage.
+      if(rescuePeakNet>=2.0&&outsideRecoveryLossZone&&rescueNet>0.0&&
+         recoveryM5==side&&recoveryM15==side){
          GlobalVariableSet(modeKey,(double)POWERFULL_MODE_TREND_HOLD);
          string rescueKeys[7]={"PW_LR_PHASE_","PW_LR_ADVERSE_","PW_LR_RB1_",
             "PW_LR_PULLBACK_","PW_LR_RB2_","PW_LR_ADVERSE_BREAK_","PW_LR_WAS_NEG_"};
@@ -3558,6 +3565,16 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       if(!GlobalVariableCheck(peakNetKey))GlobalVariableSet(peakNetKey,MathMax(0.0,currentNet));
       double peakNet=GlobalVariableGet(peakNetKey);
       if(currentNet>peakNet){peakNet=currentNet;GlobalVariableSet(peakNetKey,peakNet);}
+      // Until peak net profit reaches $2, route this ticket through the
+      // LOSS_RESCUE positive-value preservation state machine.
+      if(peakNet<2.0&&mode!=POWERFULL_MODE_LOSS_RESCUE){
+         GlobalVariableSet(modeKey,(double)POWERFULL_MODE_LOSS_RESCUE);
+         mode=POWERFULL_MODE_LOSS_RESCUE;
+         Print("POWERFULL MODE symbol=",symbol," ticket=",ticket,
+            " mode=LOSS_RESCUE reason=POSITIVE_VALUE_PRESERVATION_BELOW_USD_2",
+            " current_net=",DoubleToString(currentNet,2),
+            " peak_net=",DoubleToString(peakNet,2));
+      }
       GlobalVariableSet("PW_NET_LIVE_"+suffix,currentNet);
       int slPts=(isBuy?powerCfg[index].slEntry1Points:powerCfg[index].slEntry2Points);
       double brokerSL=PositionGetDouble(POSITION_SL);
@@ -3587,10 +3604,11 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       double lossProgress=(hard>0.0?MathMax(0.0,adverse)/hard:0.0);
 
       // NET PROFIT LOCK: use projected net profit, not price-distance retracement.
-      // Below $20 peak net, keep a 25% net-profit pullback trail (75% floor).
-      // At higher peaks, step the protected percentage upward.
+      // Activate the 25% trail only when peak net profit reaches $2.
+      // The $0-$2 stage belongs to LOSS_RESCUE positive-value preservation.
+      // At $20 and above, retain the existing stepped protection percentages.
       double lockPercent=0.0;
-      if(peakNet>0.0&&peakNet<50.0) lockPercent=0.75;
+      if(peakNet>=2.0&&peakNet<50.0) lockPercent=0.75;
       else if(peakNet>=50.0&&peakNet<100.0) lockPercent=0.80;
       else if(peakNet>=100.0&&peakNet<200.0) lockPercent=0.85;
       else if(peakNet>=200.0&&peakNet<500.0) lockPercent=0.88;
@@ -3599,6 +3617,12 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
       string profitFloorKey="PW_PROFIT_FLOOR_"+suffix;
       double protectedFloor=(GlobalVariableCheck(profitFloorKey)?
          GlobalVariableGet(profitFloorKey):0.0);
+      // Discard any legacy sub-$2 floor persisted by an earlier EA build.
+      // A fresh floor is created only after the $2 activation threshold.
+      if(peakNet<2.0){
+         protectedFloor=0.0;
+         if(GlobalVariableCheck(profitFloorKey))GlobalVariableDel(profitFloorKey);
+      }
       if(calculatedFloor>protectedFloor){
          protectedFloor=calculatedFloor;
          GlobalVariableSet(profitFloorKey,protectedFloor);
