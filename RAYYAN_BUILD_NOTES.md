@@ -24,7 +24,10 @@ This file is the handover ledger for every EA build. Append a new entry for each
 - Workflow run: [46009449316](https://github.com/iantaurus2000-lab/XAUUSD-Scalping-V4/actions/runs/46009449316)
 - Source: `mt5/Experts/RayyanD1Standalone_127_BACKUP.mq5`
 - Changes: 1,000-point activation; adaptive 2–8 tick weakening confirmation using 1% of current M5 range; all layers use the same trailing process.
-- Compile result: pending at time of note. Update this entry only from verified workflow logs.
+- Compile result: verified successful; both Gateway and Standalone EA reported 0 errors, 0 warnings.
+- Artifact ID: `15202736534`
+- Artifact SHA256: `016840263c93bdfca6489cf41b21a4d9ef4d75df4ce79a50557e302585884971`
+- Artifact: [Download RAYYAN-127-BACKUP-EA](https://github.com/iantaurus2000-lab/XAUUSD-Scalping-V4/actions/runs/46009449316/artifacts/15202736534)
 
 ### Build #127 — Dashboard live quote placement
 - Date: 2026-11-27
