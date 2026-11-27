@@ -967,6 +967,10 @@ int OnInit(){
    ChartSetInteger(0,CHART_COLOR_CHART_UP,C'34,197,94');
    ChartSetInteger(0,CHART_COLOR_CHART_DOWN,C'239,68,68');
    ChartSetInteger(0,CHART_FOREGROUND,false);
+   // Hide historical deal arrows and connecting trade-history lines on this chart.
+   // Keep CHART_SHOW_TRADE_LEVELS unchanged so live positions and their SL/TP remain visible.
+   if(!ChartSetInteger(0,CHART_SHOW_TRADE_HISTORY,false))
+      Print("RAYYAN CHART WARNING: failed to hide historical trade markers, error=",GetLastError());
    ChartSetInteger(0,CHART_AUTOSCROLL,true);
    ChartSetInteger(0,CHART_SHIFT,false);
    ChartSetInteger(0,CHART_SCALE,4);
