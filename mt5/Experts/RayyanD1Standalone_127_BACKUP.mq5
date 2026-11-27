@@ -16,7 +16,10 @@ input double PowerfullStopLossPips=0.0; // Fixed POWERFULL SL distance in PIP; z
 input bool EnableEAReports=true; // ON/OFF: HTML, CSV and entry-candle screenshot reports only.
 input int StandaloneMaxLayers=5; // configurable 1..5; A6 default allows five layers
 input bool EnablePowerfullExtremeOpenEntry=true; // ON/OFF for the replacement live M5 Open-to-extreme market-entry module.
-input int PowerfullMinExtremeDistancePoints=700; // Activate live extreme weakening trail only after M5 Open-to-extreme distance reaches this many broker points.
+input int PowerfullMinExtremeDistancePoints=1000; // Activate live extreme weakening trail only after M5 Open-to-extreme distance reaches this many broker points.
+input int PowerfullWeakeningMinTicks=2; // Minimum adaptive pullback confirmation in tradable ticks.
+input int PowerfullWeakeningMaxTicks=8; // Maximum adaptive pullback confirmation in tradable ticks.
+input double PowerfullWeakeningRangePercent=1.0; // Adaptive pullback = this percent of the live M5 range, clamped to min/max ticks.
 // POWERFULL final: no time-based entry warm-up.
 input int PollSeconds=1;
 // After TP1 is reached, close on a confirmed M1 reversal before TP2.
@@ -2979,12 +2982,13 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       return;
    }
 
-   // LOCKED POWERFULL: 700 broker POINTS from the live M5 Open is the
-   // activation threshold for the weakening trail (not the pullback distance).
+   // LOCKED POWERFULL ENTRY REVISION #128:
+   // 1,000 broker POINTS from the live M5 Open activates the weakening trail.
    // BUY activates only after Open-Low >= threshold; SELL after High-Open >= threshold.
-   // Once activated, trail the CURRENT live extreme: every new Low/High moves
-   // the reference. Preserve the existing 2-tradable-tick weakening confirmation.
-   // If price extends the extreme before confirmation, the reference moves again.
+   // The trail always follows the CURRENT live M5 extreme. A new extreme replaces
+   // the prior candidate before confirmation; only a confirmed pullback can enter.
+   // Adaptive pullback distance scales with the live M5 range, then clamps to the
+   // configured minimum/maximum tradable ticks. No ATR or completed-candle data.
    // Successful extremes are consumed only after broker fill; same-candle layers
    // remain allowed at each distinct qualifying new extreme.
    int minExtremePoints=MathMax(1,PowerfullMinExtremeDistancePoints);
@@ -2995,8 +2999,15 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
                        candleLow<powerMomentumLastBuyLow[index]-ts*0.5);
    bool sellNewExtreme=(powerMomentumLastSellHigh[index]<=0.0||
                         candleHigh>powerMomentumLastSellHigh[index]+ts*0.5);
-   bool buyWickWeakening=(tick.bid>=candleLow+2.0*ts);
-   bool sellWickWeakening=(tick.bid<=candleHigh-2.0*ts);
+   int minWeakeningTicks=MathMax(1,PowerfullWeakeningMinTicks);
+   int maxWeakeningTicks=MathMax(minWeakeningTicks,PowerfullWeakeningMaxTicks);
+   double liveM5Range=MathMax(ts,candleHigh-candleLow);
+   double weakeningPercent=MathMax(0.0,PowerfullWeakeningRangePercent);
+   int adaptiveWeakeningTicks=(int)MathCeil((liveM5Range*(weakeningPercent/100.0))/ts);
+   adaptiveWeakeningTicks=MathMax(minWeakeningTicks,MathMin(maxWeakeningTicks,adaptiveWeakeningTicks));
+   double adaptiveWeakeningDistance=adaptiveWeakeningTicks*ts;
+   bool buyWickWeakening=(tick.bid>=candleLow+adaptiveWeakeningDistance);
+   bool sellWickWeakening=(tick.bid<=candleHigh-adaptiveWeakeningDistance);
    // LOCKED USER RULE: BUY = actual M5 RED + actual H1 GREEN;
    // SELL = actual M5 GREEN + actual H1 RED.
    bool buyReady=(entryM5Direction<0&&entryDirection>0&&buyNewExtreme&&
@@ -3013,7 +3024,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       powerPublishState(index,"D1_OPEN_EXTREME_WAIT",
           "Waiting for a NEW live M5 extreme | BUY=M5 RED + H1 GREEN at Low | SELL=M5 GREEN + H1 RED at High"+
           " | next layer requires lower BUY Low / higher SELL High than last successful extreme"+
-          " | 700-point Open-to-extreme activation then 2-tick weakening trail; same-candle layers allowed"+
+          " | 1000-point Open-to-extreme activation then adaptive "+IntegerToString(adaptiveWeakeningTicks)+"-tick weakening trail; same-candle layers allowed"+
           " | layers="+IntegerToString(total)+"/"+IntegerToString(cap)+
          " | spread(info)="+DoubleToString((tick.ask-tick.bid)/ts,1)+" ticks",barTime);
       return;
@@ -3156,7 +3167,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
          " | layer="+IntegerToString(total+1)+"/"+IntegerToString(cap)+
          " | M5 colour="+(entryM5Direction>0?"GREEN":"RED")+
          " | H1 filter="+(entryDirection>0?"GREEN":"RED")+
-         " | wick weakening confirmed by 2 tradable ticks; same-candle layers allowed",barTime);
+         " | adaptive wick weakening="+IntegerToString(adaptiveWeakeningTicks)+" ticks; same-candle layers allowed",barTime);
    }else{
       Print("D1 OPEN-EXTREME ENTRY FAILED ",symbol,
             " side=",(side>0?"BUY_AT_LIVE_M5_LOW":"SELL_AT_LIVE_M5_HIGH"),
