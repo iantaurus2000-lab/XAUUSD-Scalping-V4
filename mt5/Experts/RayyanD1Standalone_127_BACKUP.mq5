@@ -115,6 +115,10 @@ uint powerLastSeedAttemptMs[3];
 uint powerLastManageMs[3];
 double powerMomentumLastSellHigh[3];
 double powerMomentumLastBuyLow[3];
+// Per-M5 candidate trails: each layer must confirm weakening from its own newest extreme.
+datetime powerEntryTrailBar[3];
+double powerEntryTrailBuyLow[3],powerEntryTrailSellHigh[3];
+bool powerEntryTrailBuyArmed[3],powerEntryTrailSellArmed[3];
 // A6 tracks live Ask range separately because standard MT5 OHLC candles are Bid-based.
 datetime powerD1FallbackBar[3];
 double powerD1FallbackOpen[3],powerD1FallbackHigh[3],powerD1FallbackLow[3];
@@ -2982,23 +2986,41 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       return;
    }
 
-   // LOCKED POWERFULL ENTRY REVISION #128:
-   // 1,000 broker POINTS from the live M5 Open activates the weakening trail.
-   // BUY activates only after Open-Low >= threshold; SELL after High-Open >= threshold.
-   // The trail always follows the CURRENT live M5 extreme. A new extreme replaces
-   // the prior candidate before confirmation; only a confirmed pullback can enter.
-   // Adaptive pullback distance scales with the live M5 range, then clamps to the
-   // configured minimum/maximum tradable ticks. No ATR or completed-candle data.
-   // Successful extremes are consumed only after broker fill; same-candle layers
-   // remain allowed at each distinct qualifying new extreme.
+   // LOCKED POWERFULL ENTRY REVISION #161:
+   // Every layer requires a distinct live M5 extreme and a trailing weakening
+   // confirmation from that newest candidate. No one-entry-per-candle restriction.
+   // A later extreme replaces the candidate and restarts its weakening trail.
    int minExtremePoints=MathMax(1,PowerfullMinExtremeDistancePoints);
    double minExtremeDistance=minExtremePoints*point;
-   bool buyExtremeDistanceReached=(candleOpen-candleLow>=minExtremeDistance);
-   bool sellExtremeDistanceReached=(candleHigh-candleOpen>=minExtremeDistance);
+   if(powerEntryTrailBar[index]!=barTime){
+      powerEntryTrailBar[index]=barTime;
+      powerEntryTrailBuyLow[index]=0.0;
+      powerEntryTrailSellHigh[index]=0.0;
+      powerEntryTrailBuyArmed[index]=false;
+      powerEntryTrailSellArmed[index]=false;
+   }
    bool buyNewExtreme=(powerMomentumLastBuyLow[index]<=0.0||
                        candleLow<powerMomentumLastBuyLow[index]-ts*0.5);
    bool sellNewExtreme=(powerMomentumLastSellHigh[index]<=0.0||
                         candleHigh>powerMomentumLastSellHigh[index]+ts*0.5);
+   bool buyExtremeDistanceReached=(candleOpen-candleLow>=minExtremeDistance);
+   bool sellExtremeDistanceReached=(candleHigh-candleOpen>=minExtremeDistance);
+   // Arm/re-arm only on a qualifying new extreme beyond the last successfully
+   // filled same-side layer. The trail is anchored to that exact candidate.
+   if(buyNewExtreme&&buyExtremeDistanceReached&&candleLow<candleOpen){
+      if(!powerEntryTrailBuyArmed[index]||
+         candleLow<powerEntryTrailBuyLow[index]-ts*0.5){
+         powerEntryTrailBuyLow[index]=candleLow;
+         powerEntryTrailBuyArmed[index]=true;
+      }
+   }
+   if(sellNewExtreme&&sellExtremeDistanceReached&&candleHigh>candleOpen){
+      if(!powerEntryTrailSellArmed[index]||
+         candleHigh>powerEntryTrailSellHigh[index]+ts*0.5){
+         powerEntryTrailSellHigh[index]=candleHigh;
+         powerEntryTrailSellArmed[index]=true;
+      }
+   }
    int minWeakeningTicks=MathMax(1,PowerfullWeakeningMinTicks);
    int maxWeakeningTicks=MathMax(minWeakeningTicks,PowerfullWeakeningMaxTicks);
    double liveM5Range=MathMax(ts,candleHigh-candleLow);
@@ -3006,16 +3028,22 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
    int adaptiveWeakeningTicks=(int)MathCeil((liveM5Range*(weakeningPercent/100.0))/ts);
    adaptiveWeakeningTicks=MathMax(minWeakeningTicks,MathMin(maxWeakeningTicks,adaptiveWeakeningTicks));
    double adaptiveWeakeningDistance=adaptiveWeakeningTicks*ts;
-   bool buyWickWeakening=(tick.bid>=candleLow+adaptiveWeakeningDistance);
-   bool sellWickWeakening=(tick.bid<=candleHigh-adaptiveWeakeningDistance);
+   bool buyWickWeakening=(powerEntryTrailBuyArmed[index]&&
+      tick.bid>=powerEntryTrailBuyLow[index]+adaptiveWeakeningDistance);
+   bool sellWickWeakening=(powerEntryTrailSellArmed[index]&&
+      tick.bid<=powerEntryTrailSellHigh[index]-adaptiveWeakeningDistance);
+   // Execution-distance gate is checked against the actual executable quote:
+   // BUY Ask must remain >= threshold below Open; SELL Bid >= threshold above Open.
+   bool buyExecutionDistanceReached=(candleOpen-tick.ask>=minExtremeDistance);
+   bool sellExecutionDistanceReached=(tick.bid-candleOpen>=minExtremeDistance);
    // LOCKED USER RULE: BUY = actual M5 RED + actual H1 GREEN;
    // SELL = actual M5 GREEN + actual H1 RED.
    bool buyReady=(entryM5Direction<0&&entryDirection>0&&buyNewExtreme&&
-                  buyExtremeDistanceReached&&buyWickWeakening&&
-                  candleLow<candleOpen&&buyN<cap);
+                  powerEntryTrailBuyArmed[index]&&buyWickWeakening&&
+                  buyExecutionDistanceReached&&candleLow<candleOpen&&buyN<cap);
    bool sellReady=(entryM5Direction>0&&entryDirection<0&&sellNewExtreme&&
-                   sellExtremeDistanceReached&&sellWickWeakening&&
-                   candleHigh>candleOpen&&sellN<cap);
+                   powerEntryTrailSellArmed[index]&&sellWickWeakening&&
+                   sellExecutionDistanceReached&&candleHigh>candleOpen&&sellN<cap);
 
    // Keep a single basket direction; never add an opposite-side hedge.
    if(buyN>0)sellReady=false;
@@ -3040,7 +3068,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       return;
    }
 
-   // Market execution: BUY at Ask, SELL at Bid, immediately on the live extreme.
+   // Market execution after the candidate's weakening trail and executable Open-distance gate.
    double px=(side>0?tick.ask:tick.bid);
    double sl=0.0,slDist=0.0;string slDetail="";
    if(!powerBuildPipStopLoss(symbol,side,px,tick,PowerfullStopLossPips,StandalonePipSize,
@@ -3149,8 +3177,15 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
        // Consume this same-side wick extreme only after a successful broker fill.
        // A failed request may retry; the next same-side layer requires a strictly
        // newer live M5 extreme, including when it forms inside this same candle.
-       if(side>0)powerMomentumLastBuyLow[index]=candleLow;
-       else powerMomentumLastSellHigh[index]=candleHigh;
+       if(side>0){
+          powerMomentumLastBuyLow[index]=powerEntryTrailBuyLow[index];
+          powerEntryTrailBuyArmed[index]=false;
+          powerEntryTrailBuyLow[index]=0.0;
+       }else{
+          powerMomentumLastSellHigh[index]=powerEntryTrailSellHigh[index];
+          powerEntryTrailSellArmed[index]=false;
+          powerEntryTrailSellHigh[index]=0.0;
+       }
       Print("D1 OPEN-EXTREME ENTRY OK ",symbol,
             " side=",(side>0?"BUY_AT_LIVE_M5_LOW":"SELL_AT_LIVE_M5_HIGH"),
             " layer=",total+1,"/",cap,
