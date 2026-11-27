@@ -3729,14 +3729,20 @@ void powerManagePositions(int index,const MqlTick &tick,datetime barTime,double 
 }
 
 void powerUpdateTrailingTPChart(){
-   // The former price-based TP line is no longer valid because exits now
-   // use projected net profit. Remove stale legacy price-level drawings.
+   // Legacy price-based TP drawings are obsolete. Scan chart objects only once,
+   // not on every tick/timer pass; this function never participates in trade logic.
+   static bool cleanupComplete=false;
+   if(cleanupComplete)return;
+   cleanupComplete=true;
    string prefix="RAYYAN_TREND_TP25_";
+   bool removed=false;
    for(int i=ObjectsTotal(0,0,-1)-1;i>=0;i--){
       string objectName=ObjectName(0,i,0,-1);
-      if(StringFind(objectName,prefix)==0)ObjectDelete(0,objectName);
+      if(StringFind(objectName,prefix)==0){
+         if(ObjectDelete(0,objectName))removed=true;
+      }
    }
-   ChartRedraw(0);
+   if(removed)ChartRedraw(0);
 }
 
 void powerPublishState(int index,string status,string detail,datetime barTime){
