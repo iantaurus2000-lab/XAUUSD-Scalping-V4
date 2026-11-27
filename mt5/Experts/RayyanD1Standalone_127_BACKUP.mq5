@@ -666,6 +666,9 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
 #define RAYYAN_DASH_PREFIX "RAYYAN_DASH_"
 uint powerDashboardLastMs=0;
 bool powerDashboardNeedsRefresh=true;
+uint powerLastSessionRefreshMs=0;
+uint powerLastHarmonicRefreshMs=0;
+uint powerLastFiboRefreshMs=0;
 
 void powerDashboardLabel(string name,string value,int x,int y,color clr,int size=9){
    if(ObjectFind(0,name)<0)ObjectCreate(0,name,OBJ_LABEL,0,0,0);
@@ -719,7 +722,7 @@ void powerDashboardStats(string symbol,int &entries,int &wins,int &losses,double
    uint nowMs=GetTickCount();
    if(symbolIndex>=0&&powerDashboardStatsCalcMs[symbolIndex]>0&&
       powerDashboardStatsSession[symbolIndex]==powerSessionStart&&
-      (uint)(nowMs-powerDashboardStatsCalcMs[symbolIndex])<100){
+      (uint)(nowMs-powerDashboardStatsCalcMs[symbolIndex])<1000){
       entries=powerDashboardStatsEntries[symbolIndex];wins=powerDashboardStatsWins[symbolIndex];
       losses=powerDashboardStatsLosses[symbolIndex];totalProfit=powerDashboardStatsProfit[symbolIndex];
       totalLoss=powerDashboardStatsLoss[symbolIndex];return;
@@ -791,7 +794,9 @@ void powerDashboardRefresh(bool force=false){
    bool algoOn=powerAlgoTradingEnabled();
    int entries=0,wins=0,losses=0;
    double totalProfit=0.0,totalLoss=0.0;
-   if(algoOn)powerDashboardStats(symbol,entries,wins,losses,totalProfit,totalLoss);
+   // Session statistics are independent of the Algo Trading switch.
+   // Turning automation OFF must not blank already recorded session results.
+   powerDashboardStats(symbol,entries,wins,losses,totalProfit,totalLoss);
    int closed=wins+losses;
    double winrate=(closed>0?100.0*(double)wins/(double)closed:0.0);
 
@@ -999,22 +1004,34 @@ void OnDeinit(const int r){
 }
 void OnTick(){
    // PRIORITY: process the live MT5 quote and POWERFULL entry/position path first.
-   // Dashboard drawing and session/report housekeeping are intentionally excluded.
+   // Dashboard, chart-object cleanup and visual-analysis work are timer-only.
    if(!StandaloneD1Mode) manageTP2RetraceProtection(); // Standalone mode manages D1 positions only.
    managePowerfullAllMarkets(false);
-   powerUpdateTrailingTPChart();
 }
 
 void OnTimer(){
    if(StandaloneD1Mode){
-      // Keep trading checks ahead of all chart/panel/report housekeeping.
+      // Trading management always runs first; presentation never gates entry/exit checks.
       managePowerfullAllMarkets(false);
-      powerUpdateTrailingTPChart();
-      powerSessionRefresh();
-      updateHarmonicOverlay();
-      updateFibo();
-      // Draw the panel after chart overlays so its foreground objects are reapplied last.
+      uint uiNow=GetTickCount();
+      // Session bookkeeping is not a 50 ms task.
+      if(powerLastSessionRefreshMs==0 || (uint)(uiNow-powerLastSessionRefreshMs)>=1000){
+         powerLastSessionRefreshMs=uiNow;
+         powerSessionRefresh();
+      }
+      // Refresh the dashboard independently and before expensive visual overlays.
       powerDashboardRefresh(powerDashboardNeedsRefresh);
+      // Legacy TP drawings are removed once only; no full chart-object scan on every tick.
+      powerUpdateTrailingTPChart();
+      // Visual analysis is throttled separately and cannot delay the dashboard every timer pass.
+      if(powerLastHarmonicRefreshMs==0 || (uint)(uiNow-powerLastHarmonicRefreshMs)>=2000){
+         powerLastHarmonicRefreshMs=uiNow;
+         updateHarmonicOverlay();
+      }
+      if(powerLastFiboRefreshMs==0 || (uint)(uiNow-powerLastFiboRefreshMs)>=2000){
+         powerLastFiboRefreshMs=uiNow;
+         updateFibo();
+      }
       return;
    }
    // Fast quote path: publish changed MT5 ticks without waiting for the OHLC batch.
