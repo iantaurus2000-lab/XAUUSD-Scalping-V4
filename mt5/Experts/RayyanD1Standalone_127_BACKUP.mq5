@@ -651,6 +651,11 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
    // Accept a non-EA deal magic only for a position previously linked to
    // POWERFULL. This captures manual exits without admitting unrelated trades.
    if(dealMagic!=POWERFULL_MAGIC&&!trackedPowerfullPosition)return;
+   // A broker-confirmed POWERFULL deal invalidates dashboard statistics.
+   // The timer performs the actual redraw outside the trade-transaction callback.
+   powerDashboardNeedsRefresh=true;
+   for(int dashboardIndex=0;dashboardIndex<ArraySize(powerSymbols);dashboardIndex++)
+      if(powerSymbols[dashboardIndex]==trans.symbol)powerDashboardStatsCalcMs[dashboardIndex]=0;
    powerSessionRefresh();
    powerAppendDealRecord(trans.deal);
    if(dealMagic==POWERFULL_MAGIC)
@@ -685,7 +690,7 @@ void powerDashboardBox(string name,int x,int y,int w,int h,color fill,color edge
    ObjectSetInteger(0,name,OBJPROP_YSIZE,h);
    ObjectSetInteger(0,name,OBJPROP_BGCOLOR,fill);
    ObjectSetInteger(0,name,OBJPROP_COLOR,edge);
-   ObjectSetInteger(0,name,OBJPROP_ZORDER,10050);
+   ObjectSetInteger(0,name,OBJPROP_ZORDER,2147483647);
    ObjectSetInteger(0,name,OBJPROP_BORDER_COLOR,edge);
    ObjectSetInteger(0,name,OBJPROP_BORDER_TYPE,BORDER_FLAT);
    ObjectSetInteger(0,name,OBJPROP_BACK,false);
@@ -779,8 +784,8 @@ void powerDashboardOpenPositions(string symbol,color bull,color bear,color neutr
 void powerDashboardRefresh(bool force=false){
    if(!StandaloneD1Mode)return;
    uint now=GetTickCount();
-   // Dashboard is presentation-only. Refresh at 250 ms, never on the trade tick path.
-   if(!force&&powerDashboardLastMs>0&&(uint)(now-powerDashboardLastMs)<250)return;
+   // Dashboard is presentation-only. Refresh at 100 ms, never on the trade tick path.
+   if(!force&&powerDashboardLastMs>0&&(uint)(now-powerDashboardLastMs)<100)return;
    powerDashboardLastMs=now;
    string symbol=(StringLen(StandaloneSymbol)>0?StandaloneSymbol:_Symbol);
    bool algoOn=powerAlgoTradingEnabled();
@@ -805,7 +810,7 @@ void powerDashboardRefresh(bool force=false){
    // Solid foreground panel masks all chart candles and objects behind the dashboard.
    powerDashboardBox(RAYYAN_DASH_PREFIX+"BG",8,18,306,570,panel,C'83,101,125');
    ObjectSetInteger(0,RAYYAN_DASH_PREFIX+"BG",OBJPROP_BACK,false);
-   ObjectSetInteger(0,RAYYAN_DASH_PREFIX+"BG",OBJPROP_ZORDER,0);
+   ObjectSetInteger(0,RAYYAN_DASH_PREFIX+"BG",OBJPROP_ZORDER,2147483647);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"TITLE","RAYYAN  /  POWERFULL",19,27,clrWhite,11);
    powerDashboardLabel(RAYYAN_DASH_PREFIX+"SYMBOL",symbol,19,47,C'175,195,220',8);
    MqlTick dashTick; string quoteText="PRICE WAITING";
@@ -897,6 +902,7 @@ void powerDashboardRefresh(bool force=false){
 
    ObjectDelete(0,RAYYAN_DASH_PREFIX+"M5RING");
    ObjectDelete(0,RAYYAN_DASH_PREFIX+"M5CLOCK");
+   powerDashboardNeedsRefresh=false;
    ChartRedraw(0);
 }
 int OnInit(){
@@ -1005,9 +1011,10 @@ void OnTimer(){
       managePowerfullAllMarkets(false);
       powerUpdateTrailingTPChart();
       powerSessionRefresh();
-      powerDashboardRefresh(false);
       updateHarmonicOverlay();
       updateFibo();
+      // Draw the panel after chart overlays so its foreground objects are reapplied last.
+      powerDashboardRefresh(powerDashboardNeedsRefresh);
       return;
    }
    // Fast quote path: publish changed MT5 ticks without waiting for the OHLC batch.
