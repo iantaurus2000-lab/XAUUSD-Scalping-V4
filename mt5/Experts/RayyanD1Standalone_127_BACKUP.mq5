@@ -2948,25 +2948,28 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       return;
    }
 
-   // DIRECT LIVE M5 EXTREME ENTRY:
-   // First BUY may enter at the current candle's live Low below Open.
-   // Further BUY layers require a strictly lower Low than the last successful BUY fill.
-   // SELL is symmetrical: live High above Open, then each new higher High.
-   // Enter at the extreme itself (within half a tradable tick); do NOT wait for
-   // a 2-tick pullback, failed retest, weakening confirmation, or candle change.
-   // The successful extreme is stored only after broker fill, preventing duplicate
-   // orders from repeated ticks at the same extreme while allowing same-candle layers.
+   // LIVE M5 EXTREME + WEAKENING-WICK CONFIRMATION:
+   // BUY tracks the current M5 Low below Open. While price keeps making lower
+   // lows, no order is sent. Confirm the wick only after Bid rebounds >= 2
+   // tradable ticks from the CURRENT live Low, then send a market BUY.
+   // SELL is symmetrical: track the current M5 High above Open; while price
+   // keeps making higher highs, wait. Confirm after Bid retreats >= 2 ticks
+   // from the CURRENT live High, then send a market SELL.
+   // A newly extended extreme automatically moves the confirmation reference.
+   // Successful extremes are consumed only after broker fill, so same-candle
+   // layering remains allowed at each distinct new extreme.
    bool buyNewExtreme=(powerMomentumLastBuyLow[index]<=0.0||
                        candleLow<powerMomentumLastBuyLow[index]-ts*0.5);
    bool sellNewExtreme=(powerMomentumLastSellHigh[index]<=0.0||
                         candleHigh>powerMomentumLastSellHigh[index]+ts*0.5);
-   bool buyAtLiveLow=(MathAbs(tick.bid-candleLow)<=ts*0.5);
-   bool sellAtLiveHigh=(MathAbs(candleHigh-tick.bid)<=ts*0.5);
-   // LOCKED USER RULE: BUY = M5 RED + H1 GREEN; SELL = M5 GREEN + H1 RED.
+   bool buyWickWeakening=(tick.bid>=candleLow+2.0*ts);
+   bool sellWickWeakening=(tick.bid<=candleHigh-2.0*ts);
+   // LOCKED USER RULE: BUY = actual M5 RED + actual H1 GREEN;
+   // SELL = actual M5 GREEN + actual H1 RED.
    bool buyReady=(entryM5Direction<0&&entryDirection>0&&buyNewExtreme&&
-                  buyAtLiveLow&&candleLow<candleOpen&&buyN<cap);
+                  buyWickWeakening&&candleLow<candleOpen&&buyN<cap);
    bool sellReady=(entryM5Direction>0&&entryDirection<0&&sellNewExtreme&&
-                   sellAtLiveHigh&&candleHigh>candleOpen&&sellN<cap);
+                   sellWickWeakening&&candleHigh>candleOpen&&sellN<cap);
 
    // Keep a single basket direction; never add an opposite-side hedge.
    if(buyN>0)sellReady=false;
@@ -2975,7 +2978,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
       powerPublishState(index,"D1_OPEN_EXTREME_WAIT",
           "Waiting for a NEW live M5 extreme | BUY=M5 RED + H1 GREEN at Low | SELL=M5 GREEN + H1 RED at High"+
           " | next layer requires lower BUY Low / higher SELL High than last successful extreme"+
-          " | no pullback confirmation; same-candle layers allowed"+
+          " | wait for 2-tick wick weakening; same-candle layers allowed"+
           " | layers="+IntegerToString(total)+"/"+IntegerToString(cap)+
          " | spread(info)="+DoubleToString((tick.ask-tick.bid)/ts,1)+" ticks",barTime);
       return;
@@ -3097,9 +3100,9 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
                DoubleToString(sl,(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS)));
       }
 
-       // Consume this same-side extreme only after a successful broker fill.
+       // Consume this same-side wick extreme only after a successful broker fill.
        // A failed request may retry; the next same-side layer requires a strictly
-       // newer extreme, including when it forms inside this same M5 candle.
+       // newer live M5 extreme, including when it forms inside this same candle.
        if(side>0)powerMomentumLastBuyLow[index]=candleLow;
        else powerMomentumLastSellHigh[index]=candleHigh;
       Print("D1 OPEN-EXTREME ENTRY OK ",symbol,
@@ -3118,7 +3121,7 @@ void powerTryD1ExtremeEntry(int index,const MqlTick &tick,datetime barTime,
          " | layer="+IntegerToString(total+1)+"/"+IntegerToString(cap)+
          " | M5 colour="+(entryM5Direction>0?"GREEN":"RED")+
          " | H1 filter="+(entryDirection>0?"GREEN":"RED")+
-         " | no weakening/pullback confirmation",barTime);
+         " | wick weakening confirmed by 2 tradable ticks; same-candle layers allowed",barTime);
    }else{
       Print("D1 OPEN-EXTREME ENTRY FAILED ",symbol,
             " side=",(side>0?"BUY_AT_LIVE_M5_LOW":"SELL_AT_LIVE_M5_HIGH"),
